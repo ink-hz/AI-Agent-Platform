@@ -1,0 +1,270 @@
+<div id="hannah-redesign">
+  <style>
+    #hannah-redesign { --hn-bg:light-dark(#fbfcfe,#181b22); --hn-side:light-dark(#f0f3f8,#20242d); --hn-paper:light-dark(#fff,#252a34); --hn-ink:light-dark(#202c40,#edf1f8); --hn-muted:light-dark(#68768a,#a4b0c2); --hn-line:light-dark(#e0e6ef,#363e4d); --hn-blue:light-dark(#365ecc,#92adff); --hn-wash:light-dark(#e7edff,#303f64); --hn-hover:light-dark(#e8edf5,#2d3442); font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color:var(--hn-ink); }
+    #hannah-redesign * { box-sizing:border-box; }
+    #hannah-redesign [hidden] { display:none!important; }
+    #hannah-redesign .hn-caption { display:flex; justify-content:space-between; gap:12px; margin:0 0 10px; color:var(--hn-muted); font-size:12px; }
+    #hannah-redesign .hn-product { position:relative; display:grid; grid-template-columns:164px minmax(0,1fr); min-height:650px; background:var(--hn-bg); border:1px solid var(--hn-line); border-radius:14px; overflow:hidden; }
+    #hannah-redesign button, #hannah-redesign input, #hannah-redesign select, #hannah-redesign textarea { font:inherit; color:inherit; }
+    #hannah-redesign button { cursor:pointer; }
+    #hannah-redesign button:disabled { cursor:default; opacity:.45; }
+    #hannah-redesign button { display:inline-flex; align-items:center; justify-content:center; gap:8px; border:0; border-radius:8px; background:transparent; padding:9px 11px; font-size:13px; line-height:1.4; }
+    #hannah-redesign button:hover:not(:disabled) { background:var(--hn-hover); }
+    #hannah-redesign svg { width:17px; height:17px; flex:none; stroke:currentColor; }
+    #hannah-redesign .hn-side { display:flex; flex-direction:column; padding:24px 12px 14px; background:var(--hn-side); border-right:1px solid var(--hn-line); }
+    #hannah-redesign .hn-brand { display:flex; align-items:center; gap:10px; padding:0 10px 28px; }
+    #hannah-redesign .hn-mark { display:grid; place-items:center; width:31px; height:34px; border-radius:10px; color:var(--hn-blue); background:var(--hn-wash); font-size:24px; font-weight:500; letter-spacing:-2px; }
+    #hannah-redesign .hn-brand strong { display:block; font-size:18px; font-weight:500; letter-spacing:-.5px; }
+    #hannah-redesign .hn-brand small { display:block; margin-top:3px; color:var(--hn-muted); font-size:11px; }
+    #hannah-redesign .hn-new { width:100%; justify-content:flex-start; background:var(--hn-paper); border:1px solid var(--hn-line); padding:10px 12px; margin-bottom:22px; }
+    #hannah-redesign .hn-nav { display:grid; gap:5px; }
+    #hannah-redesign .hn-nav button { justify-content:flex-start; padding:10px 13px; color:var(--hn-muted); }
+    #hannah-redesign .hn-nav button[aria-current=page] { background:var(--hn-wash); color:var(--hn-blue); font-weight:500; }
+    #hannah-redesign .hn-recent { margin-top:32px; }
+    #hannah-redesign .hn-recent>span { display:block; padding:0 12px 10px; color:var(--hn-muted); font-size:11px; }
+    #hannah-redesign .hn-recent button { width:100%; justify-content:flex-start; text-align:left; font-size:12px; line-height:1.7; }
+    #hannah-redesign .hn-side-bottom { margin-top:auto; padding-top:28px; }
+    #hannah-redesign .hn-side-bottom>button { justify-content:flex-start; width:100%; color:var(--hn-muted); font-size:12px; }
+    #hannah-redesign .hn-account { display:flex; align-items:center; gap:9px; margin-top:12px; padding:14px 10px 0; border-top:1px solid var(--hn-line); font-size:12px; }
+    #hannah-redesign .hn-account>span { display:grid; place-items:center; width:27px; height:27px; border:1px solid var(--hn-line); border-radius:50%; background:var(--hn-paper); color:var(--hn-muted); }
+    #hannah-redesign .hn-stage { min-width:0; display:flex; flex-direction:column; }
+    #hannah-redesign .hn-top { display:flex; align-items:center; justify-content:space-between; gap:12px; height:65px; flex:none; padding:0 28px; border-bottom:1px solid var(--hn-line); font-size:13px; }
+    #hannah-redesign .hn-top>span { font-weight:500; }
+    #hannah-redesign .hn-top>button { font-size:12px; color:var(--hn-muted); }
+    #hannah-redesign .hn-page { flex:1; min-width:0; padding:28px; }
+    #hannah-redesign .hn-chat { display:flex; flex-direction:column; justify-content:center; padding:38px 30px 80px; }
+    #hannah-redesign .hn-intro { margin:0 auto 26px; width:100%; max-width:660px; }
+    #hannah-redesign .hn-intro .hn-greeting { display:flex; align-items:center; gap:7px; color:var(--hn-blue); font-size:12px; margin-bottom:16px; }
+    #hannah-redesign h1 { margin:0; font-size:27px; font-weight:500; line-height:1.5; letter-spacing:-.8px; }
+    #hannah-redesign .hn-intro p { margin:10px 0 0; color:var(--hn-muted); font-size:13px; line-height:1.8; }
+    #hannah-redesign .hn-compose { width:100%; max-width:660px; margin:0 auto; border:1px solid var(--hn-line); border-radius:16px; background:var(--hn-paper); box-shadow:0 6px 26px light-dark(#25365d08,#0002); }
+    #hannah-redesign .hn-compose:focus-within { border-color:var(--hn-blue); }
+    #hannah-redesign textarea { width:100%; min-height:116px; resize:vertical; border:0; background:transparent; padding:20px 20px 8px; font-size:14px; line-height:1.8; }
+    #hannah-redesign textarea::placeholder { color:var(--hn-muted); }
+    #hannah-redesign .hn-compose-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px 12px; }
+    #hannah-redesign .hn-compose-tools { display:flex; align-items:center; gap:3px; min-width:0; }
+    #hannah-redesign .hn-compose-tools button { color:var(--hn-muted); font-size:12px; }
+    #hannah-redesign .hn-position-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px; }
+    #hannah-redesign .hn-send { width:34px; height:34px; border-radius:10px; padding:8px; color:light-dark(#fff,#172443); background:var(--hn-blue); }
+    #hannah-redesign .hn-send:hover:not(:disabled) { background:var(--hn-blue); opacity:.9; }
+    #hannah-redesign .hn-prompts { display:flex; flex-wrap:wrap; gap:8px; max-width:660px; width:100%; margin:14px auto 0; }
+    #hannah-redesign .hn-prompts button { padding:7px 10px; border:1px solid var(--hn-line); border-radius:7px; color:var(--hn-muted); font-size:11px; }
+    #hannah-redesign .hn-input-tags { display:flex; gap:6px; flex-wrap:wrap; padding:0 15px; }
+    #hannah-redesign .hn-input-tags:not(:empty) { padding-bottom:8px; }
+    #hannah-redesign .hn-tag { display:inline-flex; align-items:center; gap:5px; max-width:100%; border-radius:5px; padding:5px 8px; background:var(--hn-wash); color:var(--hn-blue); font-size:11px; overflow-wrap:anywhere; }
+    #hannah-redesign .hn-history { max-width:660px; width:100%; margin:0 auto 32px; font-size:14px; line-height:1.9; }
+    #hannah-redesign .hn-user-message { width:fit-content; max-width:85%; margin:0 0 28px auto; padding:11px 16px; background:var(--hn-wash); border-radius:12px 12px 3px 12px; }
+    #hannah-redesign .hn-answer>span { display:block; font-size:12px; color:var(--hn-blue); margin-bottom:12px; }
+    #hannah-redesign .hn-answer p { margin:0 0 14px; }
+    #hannah-redesign .hn-answer ul { padding-left:20px; margin:10px 0 22px; }
+    #hannah-redesign .hn-answer button { border:1px solid var(--hn-line); font-size:12px; }
+    #hannah-redesign .hn-page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:10px 0 25px; }
+    #hannah-redesign .hn-page-heading h1 { font-size:25px; }
+    #hannah-redesign .hn-page-heading p { color:var(--hn-muted); font-size:12px; margin:7px 0 0; }
+    #hannah-redesign .hn-primary { background:var(--hn-blue); color:light-dark(#fff,#172443); white-space:nowrap; }
+    #hannah-redesign .hn-primary:hover:not(:disabled) { background:var(--hn-blue); opacity:.9; }
+    #hannah-redesign .hn-list-tools { display:flex; gap:10px; align-items:center; margin-bottom:18px; }
+    #hannah-redesign .hn-search { display:flex; gap:8px; align-items:center; flex:1; min-width:0; padding:9px 11px; border:1px solid var(--hn-line); border-radius:8px; color:var(--hn-muted); background:var(--hn-paper); }
+    #hannah-redesign .hn-search input { min-width:0; width:100%; border:0; background:transparent; font-size:12px; }
+    #hannah-redesign select { min-width:0; max-width:120px; padding:9px; border:1px solid var(--hn-line); border-radius:8px; background:var(--hn-paper); font-size:12px; }
+    #hannah-redesign .hn-list { width:100%; border-collapse:collapse; table-layout:fixed; font-size:12px; }
+    #hannah-redesign .hn-list thead { color:var(--hn-muted); text-align:left; }
+    #hannah-redesign .hn-list th { font-size:11px; font-weight:400; padding:12px 6px; border-bottom:1px solid var(--hn-line); }
+    #hannah-redesign .hn-list td { padding:18px 6px; border-bottom:1px solid var(--hn-line); vertical-align:middle; line-height:1.7; overflow-wrap:anywhere; }
+    #hannah-redesign .hn-list tbody tr:hover { background:var(--hn-paper); }
+    #hannah-redesign .hn-list th:first-child { width:43%; padding-left:0; }
+    #hannah-redesign .hn-list th:last-child { width:68px; }
+    #hannah-redesign .hn-list td:first-child { padding-left:0; }
+    #hannah-redesign .hn-list td button { padding:0; border-radius:3px; text-align:left; justify-content:flex-start; font-size:12px; line-height:1.65; }
+    #hannah-redesign .hn-list td button:hover { color:var(--hn-blue); background:transparent; }
+    #hannah-redesign .hn-list td:first-child button { font-weight:500; }
+    #hannah-redesign .hn-list td:last-child button { font-size:11px; color:var(--hn-blue); white-space:nowrap; }
+    #hannah-redesign .hn-list small { display:block; color:var(--hn-muted); font-size:11px; margin-top:3px; }
+    #hannah-redesign .hn-state { white-space:nowrap; color:var(--hn-muted); font-size:11px; }
+    #hannah-redesign .hn-state.is-active { color:light-dark(#317661,#8acdb5); }
+    #hannah-redesign .hn-list-count { padding-top:15px; color:var(--hn-muted); font-size:11px; }
+    #hannah-redesign .hn-empty { padding:68px 10px; text-align:center; }
+    #hannah-redesign .hn-empty>svg { width:30px; height:30px; color:var(--hn-muted); margin-bottom:17px; }
+    #hannah-redesign .hn-empty h2 { font-size:17px; margin:0 0 10px; font-weight:500; }
+    #hannah-redesign .hn-empty p { color:var(--hn-muted); font-size:12px; line-height:1.8; margin:0 0 22px; }
+    #hannah-redesign .hn-research-row { display:flex; align-items:center; justify-content:space-between; gap:18px; width:100%; padding:24px 0; border-radius:0; border-bottom:1px solid var(--hn-line); text-align:left; }
+    #hannah-redesign .hn-research-row strong { font-size:15px; font-weight:500; }
+    #hannah-redesign .hn-research-row p { font-size:12px; color:var(--hn-muted); margin:8px 0 0; line-height:1.7; }
+    #hannah-redesign .hn-detail-tabs { display:flex; gap:20px; margin:24px 0; border-bottom:1px solid var(--hn-line); }
+    #hannah-redesign .hn-detail-tabs button { padding:11px 0; border-radius:0; color:var(--hn-muted); border-bottom:2px solid transparent; }
+    #hannah-redesign .hn-detail-tabs button[aria-selected=true] { color:var(--hn-blue); border-bottom-color:var(--hn-blue); }
+    #hannah-redesign .hn-detail-content { font-size:13px; line-height:1.9; }
+    #hannah-redesign .hn-detail-content h2 { font-size:16px; font-weight:500; margin:27px 0 12px; }
+    #hannah-redesign .hn-detail-content p { color:var(--hn-muted); }
+    #hannah-redesign .hn-drawer-layer { position:absolute; inset:0; z-index:10; }
+    #hannah-redesign .hn-scrim { position:absolute; inset:0; width:100%; height:100%; border-radius:0; background:light-dark(#16294326,#0007); }
+    #hannah-redesign .hn-scrim:hover { background:light-dark(#16294326,#0007); }
+    #hannah-redesign .hn-drawer { position:absolute; top:0; right:0; bottom:0; width:min(390px,90%); background:var(--hn-paper); border-left:1px solid var(--hn-line); box-shadow:-12px 0 44px light-dark(#27365210,#0003); display:flex; flex-direction:column; }
+    #hannah-redesign .hn-drawer-header { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--hn-line); padding:18px 22px; }
+    #hannah-redesign .hn-drawer-header h2 { font-size:16px; font-weight:500; margin:0; }
+    #hannah-redesign .hn-drawer-body { padding:22px; overflow-y:auto; font-size:13px; line-height:1.8; }
+    #hannah-redesign .hn-drawer-body p { color:var(--hn-muted); }
+    #hannah-redesign .hn-drawer-body h3 { font-size:14px; margin:0 0 12px; font-weight:500; }
+    #hannah-redesign .hn-choice { width:100%; display:flex; justify-content:space-between; text-align:left; padding:16px 4px; border-bottom:1px solid var(--hn-line); border-radius:0; }
+    #hannah-redesign .hn-choice small { display:block; color:var(--hn-muted); font-size:11px; margin-top:6px; }
+    #hannah-redesign .hn-drawer-divider { margin:26px 0; border:0; border-top:1px solid var(--hn-line); }
+    #hannah-redesign .hn-note { margin-top:9px; color:var(--hn-muted); font-size:11px; }
+    @media(max-width:620px) {
+      #hannah-redesign .hn-product { grid-template-columns:62px minmax(0,1fr); }
+      #hannah-redesign .hn-side { padding:20px 8px 12px; }
+      #hannah-redesign .hn-brand { padding:0 0 23px; justify-content:center; }
+      #hannah-redesign .hn-brand>div:last-child, #hannah-redesign .hn-side .hn-label, #hannah-redesign .hn-recent, #hannah-redesign .hn-account>strong { display:none; }
+      #hannah-redesign .hn-new, #hannah-redesign .hn-nav button, #hannah-redesign .hn-side-bottom>button { justify-content:center; padding:11px; }
+      #hannah-redesign .hn-account { justify-content:center; padding:14px 0 0; }
+      #hannah-redesign .hn-top { height:57px; padding:0 18px; }
+      #hannah-redesign .hn-page { padding:24px 18px; }
+      #hannah-redesign .hn-chat { padding:40px 20px 72px; }
+      #hannah-redesign h1 { font-size:24px; }
+      #hannah-redesign .hn-intro p { font-size:12px; }
+      #hannah-redesign .hn-list .hn-location { display:none; }
+      #hannah-redesign .hn-list th:first-child { width:46%; }
+      #hannah-redesign .hn-position-label { max-width:125px; }
+    }
+    @media(max-width:420px) {
+      #hannah-redesign .hn-product { grid-template-columns:1fr; min-height:620px; }
+      #hannah-redesign .hn-side { padding:12px 14px; flex-direction:row; align-items:center; gap:10px; border-right:0; border-bottom:1px solid var(--hn-line); }
+      #hannah-redesign .hn-brand { padding:0; }
+      #hannah-redesign .hn-brand .hn-mark { height:29px; width:27px; font-size:20px; }
+      #hannah-redesign .hn-new, #hannah-redesign .hn-side-bottom { display:none; }
+      #hannah-redesign .hn-nav { display:flex; flex:1; justify-content:flex-end; gap:2px; }
+      #hannah-redesign .hn-nav button { padding:8px 9px; }
+      #hannah-redesign .hn-top { padding:0 16px; }
+      #hannah-redesign .hn-page { padding:20px 16px; }
+      #hannah-redesign .hn-chat { padding:35px 18px 58px; }
+      #hannah-redesign h1 { font-size:23px; }
+      #hannah-redesign .hn-list .hn-department { display:none; }
+      #hannah-redesign .hn-list th:first-child { width:58%; }
+      #hannah-redesign .hn-list th:last-child { width:60px; }
+      #hannah-redesign .hn-page-heading { gap:8px; }
+      #hannah-redesign .hn-page-heading .hn-primary { padding:8px; font-size:11px; }
+      #hannah-redesign .hn-detail-tabs { gap:16px; }
+    }
+  </style>
+  <div class="hn-caption"><span>新版工作台 · 交互设计稿</span><span>示例数据</span></div>
+  <div class="hn-product">
+    <aside class="hn-side">
+      <div class="hn-brand"><div class="hn-mark" aria-hidden="true">h</div><div><strong>Hannah</strong><small>招聘工作台</small></div></div>
+      <button class="hn-new" data-action="new" aria-label="新对话"><i data-lucide="plus" aria-hidden="true"></i><span class="hn-label">新对话</span></button>
+      <nav class="hn-nav" aria-label="工作台导航">
+        <button data-view="chat" aria-current="page" aria-label="对话"><i data-lucide="message-square" aria-hidden="true"></i><span class="hn-label">对话</span></button>
+        <button data-view="positions" aria-label="岗位"><i data-lucide="briefcase-business" aria-hidden="true"></i><span class="hn-label">岗位</span></button>
+        <button data-view="candidates" aria-label="候选人"><i data-lucide="users" aria-hidden="true"></i><span class="hn-label">候选人</span></button>
+        <button data-view="research" aria-label="情报"><i data-lucide="compass" aria-hidden="true"></i><span class="hn-label">情报</span></button>
+      </nav>
+      <div class="hn-recent"><span>最近对话</span><button data-action="example">DQE 工程师招聘</button></div>
+      <div class="hn-side-bottom"><button data-drawer="methods" aria-label="专业方法"><i data-lucide="book-open" aria-hidden="true"></i><span class="hn-label">专业方法</span></button><div class="hn-account"><span aria-hidden="true"><i data-lucide="user-round"></i></span><strong>苍渊</strong></div></div>
+    </aside>
+    <main class="hn-stage">
+      <header class="hn-top"><span data-current-title>对话</span><button data-drawer="resources"><i data-lucide="panel-right" aria-hidden="true"></i>材料与成果</button></header>
+      <section class="hn-page hn-chat" data-page="chat" aria-label="对话工作区">
+        <div class="hn-intro"><div class="hn-greeting"><i data-lucide="sparkles" aria-hidden="true"></i>与 Hannah 一起工作</div><h1>今天想推进哪项<br>招聘工作？</h1><p>从一个问题开始，也可以选择岗位继续。</p></div>
+        <div class="hn-history" hidden><div class="hn-user-message" data-user-message></div><div class="hn-answer"><span>Hannah · 对话示例</span><p>先把岗位要解决的问题理清，再讨论需要什么样的人。</p><ul><li>这个岗位最需要完成哪些关键任务？</li><li>哪些要求有明确依据，哪些还需要向用人经理确认？</li><li>怎样从候选人的经历中获得相关证据？</li></ul><button data-drawer="resources"><i data-lucide="file-text" aria-hidden="true"></i>查看本次材料与成果</button></div></div>
+        <form class="hn-compose"><textarea aria-label="给 Hannah 的问题" placeholder="说说你想解决的问题…" rows="3"></textarea><div class="hn-input-tags"></div><div class="hn-compose-foot"><div class="hn-compose-tools"><button type="button" data-action="attach" aria-label="添加材料"><i data-lucide="paperclip" aria-hidden="true"></i></button><button type="button" data-drawer="positions"><i data-lucide="briefcase-business" aria-hidden="true"></i><span class="hn-position-label">选择岗位</span><i data-lucide="chevron-down" aria-hidden="true"></i></button></div><button class="hn-send" type="submit" disabled aria-label="发送"><i data-lucide="arrow-up" aria-hidden="true"></i></button></div></form>
+        <input data-file type="file" accept=".pdf,.docx,.txt,.md" hidden>
+        <div class="hn-prompts"><button data-prompt="帮我梳理这个岗位的招聘要求。">梳理岗位要求</button><button data-prompt="我想为一场候选人面试做准备。">准备面试</button><button data-prompt="我想研究这个岗位的人才来源。">寻找人才来源</button></div>
+      </section>
+      <section class="hn-page" data-page="positions" aria-label="岗位列表" hidden>
+        <div class="hn-page-heading"><div><h1>岗位</h1><p>在一个地方，推进每个岗位的招聘工作。</p></div><button class="hn-primary" data-action="new-position"><i data-lucide="plus" aria-hidden="true"></i>新建岗位</button></div>
+        <div class="hn-list-tools"><label class="hn-search"><i data-lucide="search" aria-hidden="true"></i><input data-search aria-label="搜索岗位" placeholder="搜索岗位、部门或地点"></label><select data-status aria-label="岗位状态"><option value="all">全部状态</option><option value="active">进行中</option><option value="draft">草案</option><option value="archived">已归档</option></select></div>
+        <table class="hn-list"><thead><tr><th scope="col">岗位名称</th><th class="hn-department" scope="col">部门</th><th class="hn-location" scope="col">地点</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody data-position-rows></tbody></table><div class="hn-list-count" data-position-count></div>
+      </section>
+      <section class="hn-page" data-page="detail" aria-label="岗位详情" hidden>
+        <button data-view="positions"><i data-lucide="arrow-left" aria-hidden="true"></i>全部岗位</button><div class="hn-page-heading"><div><h1 data-detail-title>DQE 工程师（数采设备）</h1><p data-detail-subtitle></p></div></div>
+        <button class="hn-primary" data-action="discuss-current"><i data-lucide="message-square" aria-hidden="true"></i>与 Hannah 讨论</button>
+        <div class="hn-detail-tabs" role="tablist" aria-label="岗位内容"><button role="tab" aria-selected="true" data-detail-tab="requirements">岗位要求</button><button role="tab" aria-selected="false" data-detail-tab="people">候选人</button><button role="tab" aria-selected="false" data-detail-tab="interview">面试</button><button role="tab" aria-selected="false" data-detail-tab="results">成果</button></div>
+        <div class="hn-detail-content" role="tabpanel" data-detail-content></div>
+      </section>
+      <section class="hn-page" data-page="candidates" aria-label="候选人" hidden><div class="hn-page-heading"><div><h1>候选人</h1><p>查看材料，整理判断，继续面试工作。</p></div></div><div class="hn-empty"><i data-lucide="users" aria-hidden="true"></i><h2>从候选人的材料开始</h2><p>选择材料后，再关联到具体岗位。</p><button class="hn-primary" data-drawer="candidate-materials"><i data-lucide="plus" aria-hidden="true"></i>添加候选人材料</button></div></section>
+      <section class="hn-page" data-page="research" aria-label="招聘情报" hidden><div class="hn-page-heading"><div><h1>招聘情报</h1><p>了解业务、市场与人才，形成有依据的判断。</p></div></div><button class="hn-research-row" data-research="公司"><div><strong>公司研究</strong><p>了解一家公司及其业务、岗位与人才背景。</p></div><i data-lucide="arrow-up-right" aria-hidden="true"></i></button><button class="hn-research-row" data-research="专题"><div><strong>专题研究</strong><p>围绕行业、技术方向或人才来源展开研究。</p></div><i data-lucide="arrow-up-right" aria-hidden="true"></i></button></section>
+    </main>
+    <div class="hn-drawer-layer" hidden><button class="hn-scrim" data-action="close" aria-label="关闭侧栏"></button><section class="hn-drawer" role="dialog" aria-modal="true" aria-labelledby="hn-drawer-title"><header class="hn-drawer-header"><h2 id="hn-drawer-title"></h2><button data-action="close" aria-label="关闭"><i data-lucide="x" aria-hidden="true"></i></button></header><div class="hn-drawer-body"></div></section></div>
+  </div>
+  <div class="hn-note" aria-live="polite">可以切换左侧入口，搜索岗位、打开详情，或展开材料与成果。</div>
+  <script>
+    (() => {
+      const root = document.getElementById('hannah-redesign');
+      const q = selector => root.querySelector(selector);
+      const qa = selector => [...root.querySelectorAll(selector)];
+      const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const jobs = [
+        {id:'dqe', title:'DQE 工程师（数采设备）', department:'质量', location:'深圳', state:'active', source:'官网岗位'},
+        {id:'algorithm', title:'算法工程师', department:'研发', location:'深圳', state:'active', source:'官网岗位'},
+        {id:'optics', title:'光学工程师', department:'研发', location:'上海', state:'active', source:'内部岗位'},
+        {id:'mechanical', title:'结构工程师', department:'研发', location:'深圳', state:'draft', source:'内部岗位'},
+        {id:'product', title:'产品经理', department:'产品', location:'深圳', state:'archived', source:'内部岗位'}
+      ];
+      const labels = {active:'进行中',draft:'草案',archived:'已归档'};
+      let selected = null, currentDetail = jobs[0], fileName = '', lastFocus = null;
+      const note = text => { q('.hn-note').textContent = text; };
+      function switchView(view) {
+        closeDrawer(false);
+        qa('[data-page]').forEach(el => { el.hidden = el.dataset.page !== view; });
+        qa('.hn-nav button').forEach(el => { if (el.dataset.view === (view === 'detail' ? 'positions' : view)) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current'); });
+        q('[data-current-title]').textContent = {chat:'对话',positions:'岗位',detail:'岗位 / 详情',candidates:'候选人',research:'情报'}[view];
+        q('.hn-top [data-drawer]').hidden = view !== 'chat';
+      }
+      function setDraft(text) { q('textarea').value = text; q('.hn-send').disabled = !text.trim(); }
+      function selectJob(job) { selected = job; q('.hn-position-label').textContent = job ? job.title : '选择岗位'; closeDrawer(); }
+      function renderJobs() {
+        const term = q('[data-search]').value.trim().toLowerCase(), status = q('[data-status]').value;
+        const visible = jobs.filter(j => (status === 'all' || j.state === status) && [j.title,j.department,j.location].some(s => s.toLowerCase().includes(term)));
+        q('[data-position-rows]').innerHTML = visible.map(j => `<tr><td><button data-job="${j.id}">${escape(j.title)}</button><small>${j.source}</small></td><td class="hn-department">${j.department}</td><td class="hn-location">${j.location}</td><td><span class="hn-state ${j.state === 'active' ? 'is-active' : ''}">${labels[j.state]}</span></td><td><button data-discuss="${j.id}">继续讨论</button></td></tr>`).join('');
+        q('[data-position-count]').textContent = visible.length ? `${visible.length} 个岗位` : '没有匹配的岗位';
+      }
+      function detailTab(tab) {
+        qa('[data-detail-tab]').forEach(el => el.setAttribute('aria-selected',String(el.dataset.detailTab === tab)));
+        q('[data-detail-content]').innerHTML = {
+          requirements:'<h2>岗位原文</h2><p>原始 JD 与已确认要求在这里分别呈现，保留来源和版本。</p><button data-drawer="resources">查看岗位材料</button><h2>已确认要求</h2><p>尚未确认。可以先与 Hannah 梳理，再将讨论结果保存到岗位。</p>',
+          people:'<h2>关联候选人</h2><p>本岗位还没有关联候选人。</p><button data-view="candidates">前往候选人</button>',
+          interview:'<h2>面试准备</h2><p>面试方案、候选人专属问题与面试记录集中在这里。</p><button data-prompt="请根据当前岗位要求，帮我准备面试问题。">与 Hannah 准备面试</button>',
+          results:'<h2>岗位成果</h2><p>经过讨论并保存的岗位要求、面试方案和复盘会出现在这里。</p><button data-action="discuss-current">继续岗位讨论</button>'
+        }[tab];
+      }
+      function openDetail(id) { currentDetail = jobs.find(j => j.id === id); switchView('detail'); q('[data-detail-title]').textContent = currentDetail.title; q('[data-detail-subtitle]').textContent = `${currentDetail.department} · ${currentDetail.location} · ${labels[currentDetail.state]}`; detailTab('requirements'); }
+      function openDrawer(kind) {
+        lastFocus = document.activeElement;
+        const title = {resources:'材料与成果',positions:'选择岗位',methods:'专业方法','candidate-materials':'候选人材料'}[kind];
+        q('#hn-drawer-title').textContent = title;
+        q('.hn-drawer-body').innerHTML = {
+          resources:`<h3>本次材料</h3>${fileName ? `<p>${escape(fileName)}</p>` : '<p>还没有添加材料。</p>'}<button data-action="attach">添加材料</button><hr class="hn-drawer-divider"><h3>保存的成果</h3><p>仅在形成成果后显示，随时可以回到关联岗位查看。</p>`,
+          positions:'<button class="hn-choice" data-select="none"><span>通用对话<small>不关联岗位</small></span></button>'+jobs.filter(j=>j.state==='active').map(j=>`<button class="hn-choice" data-select="${j.id}"><span>${escape(j.title)}<small>${j.department} · ${j.location}</small></span></button>`).join(''),
+          methods:'<p>按需要查看方法，或带入当前讨论。</p>'+['岗位与业务情境','循证判断','甄选与工作样本'].map(m=>`<button class="hn-choice" data-method="${m}"><span>${m}</span><span aria-hidden="true">→</span></button>`).join(''),
+          'candidate-materials':'<h3>添加材料</h3><p>材料阅读、候选人确认与岗位关联在这里完成。</p><button class="hn-primary" data-action="attach">选择材料</button><p>此设计稿只展示文件名，不上传或读取文件内容。</p>'
+        }[kind];
+        q('.hn-drawer-layer').hidden = false; q('.hn-stage').inert = true; q('.hn-side').inert = true;
+        q('.hn-drawer-header button').focus();
+      }
+      function closeDrawer(restore = true) { q('.hn-drawer-layer').hidden = true; q('.hn-stage').inert = false; q('.hn-side').inert = false; if (restore && lastFocus instanceof HTMLElement && lastFocus.isConnected) lastFocus.focus(); }
+      function showExample(text) { switchView('chat'); q('.hn-intro').hidden = true; q('.hn-prompts').hidden = true; q('.hn-history').hidden = false; q('[data-user-message]').textContent = text; setDraft(''); note('对话状态示例：材料、成果和专业方法按需打开，正文保持完整。'); }
+      root.addEventListener('click', event => {
+        const b = event.target.closest('button'); if (!b || !root.contains(b)) return;
+        if (b.dataset.view) switchView(b.dataset.view);
+        if (b.dataset.drawer) openDrawer(b.dataset.drawer);
+        if (b.dataset.job) openDetail(b.dataset.job);
+        if (b.dataset.detailTab) detailTab(b.dataset.detailTab);
+        if (b.dataset.discuss) { selectJob(jobs.find(j=>j.id===b.dataset.discuss)); switchView('chat'); setDraft(''); }
+        if (b.dataset.select) selectJob(jobs.find(j=>j.id===b.dataset.select) || null);
+        if (b.dataset.prompt) { switchView('chat'); setDraft(b.dataset.prompt); q('textarea').focus(); }
+        if (b.dataset.research) { switchView('chat'); setDraft(b.dataset.research === '公司' ? '我想研究一家公司的业务与人才情况。' : '我想围绕一个招聘相关的专题展开研究。'); }
+        if (b.dataset.method) { switchView('chat'); q('.hn-input-tags').innerHTML = `<span class="hn-tag">参考方法：${escape(b.dataset.method)}</span>`; q('textarea').focus(); }
+        if (b.dataset.action === 'close') closeDrawer();
+        if (b.dataset.action === 'attach') q('[data-file]').click();
+        if (b.dataset.action === 'example') { selectJob(jobs[0]); showExample('帮我梳理 DQE 工程师这个岗位的招聘要求。'); }
+        if (b.dataset.action === 'new') { switchView('chat'); selectJob(null); q('.hn-intro').hidden=false; q('.hn-prompts').hidden=false; q('.hn-history').hidden=true; q('.hn-input-tags').replaceChildren(); fileName=''; setDraft(''); note('新对话：直接输入问题，或选择一个岗位开始。'); }
+        if (b.dataset.action === 'new-position') { switchView('chat'); selectJob(null); setDraft('我想建立一个新岗位，先帮我梳理招聘需求。'); q('textarea').focus(); }
+        if (b.dataset.action === 'discuss-current') { selectJob(currentDetail); switchView('chat'); setDraft(''); }
+      });
+      q('textarea').addEventListener('input', e => { q('.hn-send').disabled = !e.target.value.trim(); });
+      q('.hn-compose').addEventListener('submit', e => { e.preventDefault(); const text=q('textarea').value.trim(); if(text) showExample(text); });
+      q('[data-search]').addEventListener('input',renderJobs); q('[data-status]').addEventListener('change',renderJobs);
+      q('[data-file]').addEventListener('change',e=> { const file=e.target.files[0]; if(!file) return; fileName=file.name; closeDrawer(); switchView('chat'); q('.hn-input-tags').innerHTML=`<span class="hn-tag">${escape(fileName)}</span>`; note('仅展示所选文件名；此设计稿没有上传或读取文件内容。'); e.target.value=''; });
+      root.addEventListener('keydown', e => { if(q('.hn-drawer-layer').hidden) return; if(e.key==='Escape'){e.preventDefault();closeDrawer();} if(e.key==='Tab'){const controls=[...q('.hn-drawer').querySelectorAll('button,input,select,textarea')].filter(x=>!x.disabled); const first=controls[0],last=controls[controls.length-1]; if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();} else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}} });
+      renderJobs();
+    })();
+  </script>
+</div>
