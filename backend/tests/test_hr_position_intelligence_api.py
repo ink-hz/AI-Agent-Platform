@@ -151,8 +151,8 @@ def test_official_fact_api_exports_the_selected_owner_scoped_version() -> None:
     )) in service.calls
 
 
-def test_context_api_creates_and_human_confirms_selected_modules() -> None:
-    client, service, owner_id, position_id = _client()
+def test_retired_context_mutations_are_absent_and_never_reach_service() -> None:
+    client, service, _owner_id, position_id = _client()
     request_id = str(uuid4())
     draft = client.post(
         f"/api/hr/positions/{position_id}/context/drafts",
@@ -178,12 +178,8 @@ def test_context_api_creates_and_human_confirms_selected_modules() -> None:
         },
     )
 
-    assert draft.status_code == confirmed.status_code == 200
-    create_call = next(call for call in service.calls if call[0] == "create")
-    assert create_call[1]["owner_id"] == owner_id
-    confirm_call = next(call for call in service.calls if call[0] == "confirm")
-    assert confirm_call[1]["confirmed_by"] == owner_id
-    assert confirm_call[1]["module_names"] == ("mission",)
+    assert draft.status_code == confirmed.status_code == 404
+    assert not any(call[0] in {"create", "confirm"} for call in service.calls)
 
 
 def test_context_api_maps_scope_and_conflict_failures_without_leaking() -> None:
