@@ -20,11 +20,22 @@ fi
 compose=(/usr/bin/docker compose --env-file "$environment_file" -f "$compose_file")
 api_container="$("${compose[@]}" ps -q platform-api)"
 [[ -n "$api_container" ]] || fail
-image_name="$(/usr/bin/docker inspect --format '{{.Config.Image}}' "$api_container")"
-[[ "$image_name" == orbbec-agent-platform:* ]] || fail
+image_id="$(/usr/bin/docker inspect --format '{{.Image}}' "$api_container")"
+[[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || fail
+# Config.Image may be a tag or a digest. Verify the running image belongs to
+# this application, then use its immutable ID even if a tag moves meanwhile.
+image_tags="$(/usr/bin/docker image inspect --format '{{range .RepoTags}}{{println .}}{{end}}' "$image_id")"
+trusted_image=0
+while IFS= read -r image_tag; do
+  if [[ "$image_tag" == orbbec-agent-platform:* ]]; then
+    trusted_image=1
+    break
+  fi
+done <<< "$image_tags"
+[[ "$trusted_image" == 1 ]] || fail
 
 if ! result="$(
-  /usr/bin/docker run --rm -i \
+  /usr/bin/docker run --rm -i --pull=never \
     --user 10001:10001 \
     --read-only \
     --cap-drop ALL \
@@ -35,7 +46,7 @@ if ! result="$(
     -e PLATFORM_REPLICA_DATABASE_URL_FILE=/run/import-secrets/replica-database-url \
     -e PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key \
     -e PLATFORM_REPLICA_SIGNING_PUBLIC_KEY_FILE=/run/import-secrets/replica-signing-public-key \
-    "$image_name" \
+    "$image_id" \
     python -m app.cloud_replica.cli import
 )"; then
   fail
