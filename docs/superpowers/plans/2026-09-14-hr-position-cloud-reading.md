@@ -28,7 +28,7 @@ Files: 新增 backend/tests/test_hr_position_cloud_reading.py；必要时复用�
 
 Files: webui/src/workspaces/hr/HrPositionWorkflow.tsx 与测试；必要时新增相邻当前标准/成果阅读组件；webui/src/hrLoopApi.ts 与测试仅在契约支持需要时修改。其他前端文件仅为直接集成需要，不扩大 UI 改造。
 
-1. 先补失败组件回归：旧 context/current 与旧 results 返回非空，云端返回不同内容，当前栏只显示云端；历史栏包括旧 current 及 superseded，旧成果可读可下载但不可确认或执行。
+1. 先补失败组件回归：旧 context/current 与旧 results 返回非空，云端返回不同内容，当前栏只显示云端；历史栏包括旧 current 及 superseded，旧成果可读但不可确认或执行；云端成果须可准确下载。
 2. 使用 memoized createHrLoopApi(account.csrf_token)，岗位存在校验之后加载云端 current 与岗位范围成果全部分页。标准 404 not_found 表示尚无当前值；其他错误保留真实失败。维护状态隔离与失败关闭。
 3. 标准按 items 文本展示，标注 revision；不输出内部 ID。岗位总览同一数据来源。旧候选人组件依赖的 context 暂保留作为旧链数据，不用云端 revision 伪造 contextVersionId。
 4. 成果使用现有 SavedResult/ExactRef 协议，按准确 ref 打开正文与下载；验证读取 ref/岗位范围。页面类型分组：requirements=role_calibration,jd,requirements,standard_proposal；sourcing=sourcing；candidates=candidate_assessment；interviews=interview_plan,interview_record；review=retrospective；research 不混入五阶段。旧 analysis 共用提示退出当前栏。
