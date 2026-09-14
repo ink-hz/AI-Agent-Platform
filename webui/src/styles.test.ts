@@ -92,7 +92,7 @@ describe("Executive Operations visual contract", () => {
     }
   });
 
-  it.each(["HrLoopWorkspace.css", "hrResearch.css", "hrCompanyIntelligence.css"])(
+  it.each(["HrLoopWorkspace.css", "hrResearch.css"])(
     "keeps %s text at the approved minimum",
     (file) => {
       const css = readFileSync(new URL(`./workspaces/hr/${file}`, import.meta.url), "utf8");

@@ -5,7 +5,7 @@ from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.agent_brain.authorization import AgentUseAuthorization
@@ -14,19 +14,12 @@ from app.control_plane.authorization import AuthorizationRepository, Authorizati
 from app.control_plane.middleware import IdentitySecurityMiddleware
 from app.hr.models import CreateManualPosition
 from app.hr.repository import HrNotFound, HrPositionRepository
-from app.hr.position_intelligence_models import ConfirmContextModules, CreateContextDraft
-from app.hr.position_intelligence_repository import PositionIntelligenceRepository
-from app.hr.position_intelligence_routes import build_position_intelligence_router
-from app.hr.position_intelligence_service import PositionIntelligenceService
-from app.hr.tool_routes import build_hr_result_router
-from app.hr.tool_service import HrToolService
 from app.hr_agent.access import HrAccess
 from app.hr_agent.repository import HrAgentRepository
 from app.hr_agent.routes import build_hr_agent_router
 from app.hr_agent.service import HrAgentService
 from app.hr_agent.standards import StandardService
 from app.hr_agent.types import ModelContext, ModelReply, ToolCall, Usage
-from app.execution_relay.repository import ExecutionRelayRepository
 from tests.hr_agent_support import hr_agent_database, make_hr_settings
 from tests.test_hr_agent_proposals import proposal_args
 from tests.test_hr_agent_standards import confirmation
@@ -124,20 +117,6 @@ def cloud_api(tmp_path, database):
     repository_holder["repository"] = repository
     service = HrAgentService(repository, access)
     service.standards = StandardService(repository)
-    contexts = PositionIntelligenceRepository(database.dsn)
-    context_service = PositionIntelligenceService(contexts)
-    draft = contexts.create_draft(
-        CreateContextDraft(
-            owner, uuid4(), owned.position_id, None, None,
-            {"mission": {"text": "历史岗位使命"}}, "历史岗位上下文", uuid4(),
-        )
-    )
-    confirmed_context = contexts.confirm_modules(
-        ConfirmContextModules(
-            owner, owned.position_id, draft.context_version_id, uuid4(), None,
-            draft.row_version, ("mission",), owner,
-        )
-    )
     secrets = AuthSecrets(b"p" * 32, key_version=1)
 
     async def local_login(code, _verifier):
@@ -160,14 +139,6 @@ def cloud_api(tmp_path, database):
     app.state.hr_agent_service = service
     app.include_router(build_hr_agent_router(service))
 
-    async def require_hr_access(request: Request, *, writable=False):
-        return access.authorize_user(request.state.auth_context, writable=writable)
-
-    app.include_router(build_position_intelligence_router(context_service, require_hr_access))
-    legacy_results = HrToolService(
-        ExecutionRelayRepository(database.dsn, content_codec=settings.create_codec())
-    )
-    app.include_router(build_hr_result_router(legacy_results, require_hr_access))
     app.add_middleware(
         IdentitySecurityMiddleware,
         auth=auth,
@@ -182,7 +153,6 @@ def cloud_api(tmp_path, database):
     return (
         client, headers, repository, owner, owned.position_id, other_owned.position_id,
         foreign.position_id,
-        confirmed_context.context_version_id,
     )
 
 
@@ -235,7 +205,7 @@ def _save_result(repository, owner, position_id, *, prior_ref=None, active=None)
 
 
 def test_cloud_standard_partial_confirmation_is_current_and_stale_safe(cloud_api):
-    client, headers, repository, owner, position_id, _other_position_id, foreign_position_id, _ = cloud_api
+    client, headers, repository, owner, position_id, _other_position_id, foreign_position_id = cloud_api
     position = {"kind": "position", "id": str(position_id)}
     proposal = proposal_args(position)
     work = repository.submit(
@@ -300,11 +270,7 @@ def test_cloud_standard_partial_confirmation_is_current_and_stale_safe(cloud_api
 
 
 def test_cloud_position_result_list_and_exact_old_revision_remain_readable(cloud_api):
-    client, _headers, repository, owner, position_id, other_position_id, foreign_position_id, context_id = cloud_api
-    context = client.get(f"/api/hr/positions/{position_id}/context")
-    assert context.status_code == 200, context.text
-    assert context.json()["current"]["context_version_id"] == str(context_id)
-    assert context.json()["current"]["modules"]["mission"]["text"] == "历史岗位使命"
+    client, _headers, repository, owner, position_id, other_position_id, foreign_position_id = cloud_api
     first, active = _save_result(repository, owner, position_id)
     second, _ = _save_result(
         repository, owner, position_id, prior_ref=first["ref"], active=active,
@@ -317,10 +283,6 @@ def test_cloud_position_result_list_and_exact_old_revision_remain_readable(cloud
     assert listed.status_code == 200, listed.text
     assert [item["ref"] for item in listed.json()["items"]] == [second["ref"]]
     assert distractor["ref"] not in [item["ref"] for item in listed.json()["items"]]
-    legacy = client.get(f"/api/v1/hr/positions/{position_id}/results")
-    assert legacy.status_code == 200, legacy.text
-    assert legacy.json()["items"] == []
-    assert legacy.json()["positionId"] == str(position_id)
     exact = client.get(
         f"/api/hr/agent/results/{first['ref']['id']}/revisions/{first['ref']['revision']}"
     )

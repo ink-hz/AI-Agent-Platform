@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { Account } from "../../auth";
-import type { HrPosition, HrPositionDraft } from "../../hrTypes";
+import type { HrPosition } from "../../hrTypes";
 import { HrPositionIndex } from "./HrPositionIndex";
 
 
@@ -26,23 +26,10 @@ const manual: HrPosition = {
   ...base, positionId: "22222222-2222-4222-8222-222222222222", sourceKind: "manual",
   officialJobId: null, title: "3D 打印高级结构工程师", officialStatus: null, sourceVersion: null,
 };
-const draft: HrPositionDraft = {
-  draftId: "33333333-3333-4333-8333-333333333333", sourceKind: "historical_conversation",
-  sourceKey: "history:one", sourceConversationId: null, title: "光学设计岗位",
-  proposal: {}, evidence: { message_seq: 2 }, discoveryRuleVersion: "history-v1",
-  state: "proposed", resolvedPositionId: null, rowVersion: 1,
-  createdAt: base.createdAt, updatedAt: base.updatedAt,
-};
-
-
 function api(overrides = {}) {
   return {
     listPositions: vi.fn().mockResolvedValue({ items: [official, manual], nextCursor: null }),
-    listDrafts: vi.fn().mockResolvedValue([draft]),
-    confirmDraft: vi.fn().mockResolvedValue(manual),
-    mergeDraft: vi.fn().mockResolvedValue({ ...draft, state: "merged" }),
-    dismissDraft: vi.fn().mockResolvedValue({ ...draft, state: "dismissed" }),
-    proposeDraft: vi.fn().mockResolvedValue(draft),
+    listDrafts: vi.fn(),
     ...overrides,
   };
 }

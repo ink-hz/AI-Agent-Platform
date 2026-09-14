@@ -24,7 +24,8 @@ it('maps every supported result kind to exactly one of the five stages',()=>{
 it('uses cloud current and paginated results without reading or rendering legacy data',async()=>{
  (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;const host=document.createElement('div');const root=createRoot(host);
  const api={position:vi.fn().mockResolvedValue(position)} as unknown as HrApi;
- const r12={context:vi.fn(),positionCandidates:vi.fn(),officialVersions:vi.fn().mockResolvedValue([])} as unknown as HrR12Api;
+ const legacyContext=vi.fn(), legacyCandidates=vi.fn();
+ const r12={context:legacyContext,positionCandidates:legacyCandidates,officialVersions:vi.fn().mockResolvedValue([])} as unknown as HrR12Api;
  const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async input=>{const url=String(input);
   if(url.includes('/api/v1/hr/positions/'))throw new Error('legacy results must not be requested');
   if(url.includes('/standards/current'))return new Response(JSON.stringify({ref:{kind:'standard',id:'position-a',revision:'standard-uuid',sha256:'c'.repeat(64)},position_id:'position-a',items:[{item_id:'must',text:'云端当前标准'}],selected_change_ids:['must'],confirmed_at:'2026-09-14T02:00:00Z'}));
@@ -37,7 +38,7 @@ it('uses cloud current and paginated results without reading or rendering legacy
   expect(host.textContent).toContain('已有确认标准');expect(host.textContent).toContain('云成果');
   await act(async()=>[...host.querySelectorAll('nav button')].find(b=>b.textContent?.includes('JD / JR'))!.dispatchEvent(new MouseEvent('click',{bubbles:true})));
   expect(host.textContent).toContain('云端当前标准');expect(host.textContent).not.toContain('standard-uuid');
-  expect(host.textContent).not.toContain('旧版标准');expect(host.textContent).not.toContain('旧成果');expect(r12.context).not.toHaveBeenCalled();expect(r12.positionCandidates).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain('旧版标准');expect(host.textContent).not.toContain('旧成果');expect(legacyContext).not.toHaveBeenCalled();expect(legacyCandidates).not.toHaveBeenCalled();
   expect(fetcher.mock.calls.some(([u])=>String(u).includes('cursor=next'))).toBe(true);
  }finally{await act(async()=>root.unmount());fetcher.mockRestore();}
 });

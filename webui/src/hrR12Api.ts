@@ -1,17 +1,8 @@
 import { platformPath } from "./auth";
-import type {
-  HrCandidate, HrCandidateAnalysisKind, HrCandidateAnalysisVersion, HrCandidateDocument,
-  HrCandidateDraft, HrConfirmedCandidate, HrContextComparison, HrContextVersion,
-  HrDownloadTicket, HrHumanFeedback, HrPositionCandidate, HrPositionResources,
-  HrCandidateInterviewPlanResult, HrCandidateInterviewQuestion, HrCandidateMatchResult,
-  HrOfficialPositionDownload, HrOfficialPositionVersion,
-} from "./hrR12Types";
+import type { HrDownloadTicket, HrPositionResources, HrOfficialPositionDownload, HrOfficialPositionVersion } from "./hrR12Types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256 = /^[0-9a-f]{64}$/;
-const DRAFT_STATES = new Set(["pending", "processing", "ready", "failed", "confirmed", "dismissed"]);
-const CONTEXT_STATES = new Set(["draft", "confirmed", "superseded"]);
-const ANALYSIS_KINDS = new Set(["resume_extract", "match", "candidate_interview_plan", "comparison"]);
 
 export class HrR12ApiError extends Error {
   constructor(public readonly status: number, public readonly detail: unknown = null) {
@@ -27,35 +18,10 @@ function positive(value: unknown): number { if (!Number.isSafeInteger(value) || 
 function nonnegative(value: unknown): number { if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error("HR R1.2 response invalid"); return Number(value); }
 function object(value: unknown): Record<string, unknown> { if (!record(value)) throw new Error("HR R1.2 response invalid"); return value; }
 function stringList(value: unknown): string[] { if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error("HR R1.2 response invalid"); return [...value]; }
-function idList(value: unknown): string[] { return stringList(value).map(identifier); }
 function items(value: unknown): unknown[] { if (!record(value) || !Array.isArray(value.items)) throw new Error("HR R1.2 list response invalid"); return value.items; }
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const actual = Object.keys(value).sort(); const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-function nonempty(value: unknown): string {
-  if (typeof value !== "string" || !value.trim() || value.includes("\0")) throw new Error("HR R1.2 analysis response invalid");
-  return value;
-}
-function analysisStrings(value: unknown): string[] {
-  if (!Array.isArray(value)) throw new Error("HR R1.2 analysis response invalid");
-  return value.map(nonempty);
-}
-function matchResult(value: unknown): HrCandidateMatchResult {
-  const raw = object(value);
-  if (!exactKeys(raw, ["summary", "dimensions", "evidence", "gaps", "risks", "unknowns", "verification_questions"]) || !record(raw.dimensions) || !Array.isArray(raw.evidence) || !raw.evidence.every(record)) throw new Error("HR R1.2 analysis response invalid");
-  const dimensions = { ...raw.dimensions };
-  return { summary: nonempty(raw.summary), dimensions, evidence: raw.evidence.map((entry) => ({ ...entry })), gaps: analysisStrings(raw.gaps), risks: analysisStrings(raw.risks), unknowns: analysisStrings(raw.unknowns), verification_questions: analysisStrings(raw.verification_questions) };
-}
-function interviewResult(value: unknown): HrCandidateInterviewPlanResult {
-  const raw = object(value);
-  if (!exactKeys(raw, ["title", "questions"]) || !Array.isArray(raw.questions) || raw.questions.length === 0) throw new Error("HR R1.2 analysis response invalid");
-  const questions: HrCandidateInterviewQuestion[] = raw.questions.map((value) => {
-    const question = object(value);
-    if (!exactKeys(question, ["verification_goal", "candidate_reason", "question", "follow_ups", "strong_evidence", "risk_signals"])) throw new Error("HR R1.2 analysis response invalid");
-    return { verification_goal: nonempty(question.verification_goal), candidate_reason: nonempty(question.candidate_reason), question: nonempty(question.question), follow_ups: analysisStrings(question.follow_ups), strong_evidence: analysisStrings(question.strong_evidence), risk_signals: analysisStrings(question.risk_signals) };
-  });
-  return { title: nonempty(raw.title), questions };
 }
 
 async function request(path: string, init: RequestInit = {}): Promise<unknown> {
@@ -108,46 +74,6 @@ function officialVersion(value: unknown): HrOfficialPositionVersion {
     createdAt: string(raw.created_at),
   };
 }
-function contextVersion(value: unknown): HrContextVersion {
-  const raw = object(value);
-  if (!CONTEXT_STATES.has(String(raw.state)) || !record(raw.modules)) throw new Error("HR R1.2 context response invalid");
-  const modules: Record<string, Record<string, unknown>> = {};
-  for (const [key, module] of Object.entries(raw.modules)) modules[key] = object(module);
-  return { contextVersionId: identifier(raw.context_version_id), positionId: identifier(raw.position_id), displayVersion: positive(raw.version_number), status: raw.state as HrContextVersion["status"], modules, summary: string(raw.summary), officialVersionId: raw.official_version_id === null ? null : identifier(raw.official_version_id), baseContextVersionId: raw.base_context_version_id === null ? null : identifier(raw.base_context_version_id), sourceConversationId: raw.source_conversation_id === null ? null : identifier(raw.source_conversation_id), sourceTurnId: raw.source_turn_id === null ? null : identifier(raw.source_turn_id), sourceArtifactVersionId: raw.source_artifact_version_id === null ? null : identifier(raw.source_artifact_version_id), sourceMaterialAttachmentIds: idList(raw.source_material_attachment_ids), agentId: nullableString(raw.agent_id), modelVersion: nullableString(raw.model_version), rowVersion: positive(raw.row_version), createdAt: string(raw.created_at), confirmedAt: raw.confirmed_at === null ? null : string(raw.confirmed_at) };
-}
-function draft(value: unknown): HrCandidateDraft {
-  const raw = object(value);
-  if (!DRAFT_STATES.has(String(raw.state)) || (raw.error_code !== null && typeof raw.error_code !== "string")) throw new Error("HR R1.2 candidate response invalid");
-  return { draftId: identifier(raw.draft_id), positionId: identifier(raw.position_id), attachmentId: identifier(raw.attachment_id), batchRequestId: identifier(raw.batch_request_id), state: raw.state as HrCandidateDraft["state"], extractedFacts: object(raw.extracted_facts), identityCandidateIds: idList(raw.identity_candidates), errorCode: raw.error_code as string | null, rowVersion: positive(raw.row_version), createdAt: string(raw.created_at), updatedAt: string(raw.updated_at) };
-}
-function candidate(value: unknown): HrCandidate { const raw = object(value); return { candidateId: identifier(raw.candidate_id), stableName: string(raw.stable_name), facts: object(raw.facts), createdAt: string(raw.created_at), updatedAt: string(raw.updated_at) }; }
-function document(value: unknown): HrCandidateDocument {
-  const raw = object(value);
-  if ((raw.status !== "active" && raw.status !== "erased") || typeof raw.content_sha256 !== "string" || !SHA256.test(raw.content_sha256)) throw new Error("HR R1.2 candidate response invalid");
-  return { documentId: identifier(raw.document_id), candidateId: identifier(raw.candidate_id), attachmentId: identifier(raw.attachment_id), sourceDraftId: identifier(raw.source_draft_id), documentKind: string(raw.document_kind), versionNumber: positive(raw.version_number), contentSha256: raw.content_sha256, status: raw.status, createdAt: string(raw.created_at) };
-}
-function positionCandidate(value: unknown): HrPositionCandidate {
-  const raw = object(value); if (raw.status !== "active" && raw.status !== "archived") throw new Error("HR R1.2 candidate response invalid");
-  return { positionCandidateId: identifier(raw.position_candidate_id), positionId: identifier(raw.position_id), candidateId: identifier(raw.candidate_id), contextVersionId: identifier(raw.context_version_id), sourceDraftId: identifier(raw.source_draft_id), status: raw.status, rowVersion: positive(raw.row_version), createdAt: string(raw.created_at), updatedAt: string(raw.updated_at) };
-}
-function confirmedCandidate(value: unknown): HrConfirmedCandidate { const raw = object(value); return { candidate: candidate(raw.candidate), document: document(raw.document), positionCandidate: positionCandidate(raw.position_candidate) }; }
-function analysis(value: unknown): HrCandidateAnalysisVersion {
-  const raw = object(value); if (!ANALYSIS_KINDS.has(String(raw.analysis_kind)) || !Array.isArray(raw.evidence) || !raw.evidence.every(record)) throw new Error("HR R1.2 analysis response invalid");
-  const analysisKind = raw.analysis_kind as HrCandidateAnalysisKind;
-  const sourceArtifactVersionId = raw.source_artifact_version_id === null || raw.source_artifact_version_id === undefined
-    ? null : identifier(raw.source_artifact_version_id);
-  const common = { analysisVersionId: identifier(raw.analysis_version_id), positionCandidateId: identifier(raw.position_candidate_id), positionId: identifier(raw.position_id), candidateId: identifier(raw.candidate_id), contextVersionId: identifier(raw.context_version_id), versionNumber: positive(raw.version_number), documentIds: idList(raw.document_ids), feedbackIds: idList(raw.feedback_ids), evidence: raw.evidence.map((entry) => ({ ...entry })), unknowns: stringList(raw.unknowns), conflicts: stringList(raw.conflicts), verificationQuestions: stringList(raw.verification_questions), agentVersion: string(raw.agent_version), modelVersion: string(raw.model_version), createdAt: string(raw.created_at), sourceArtifactVersionId };
-  if (analysisKind === "match") return { ...common, analysisKind, result: matchResult(raw.result) };
-  if (analysisKind === "candidate_interview_plan") return { ...common, analysisKind, result: interviewResult(raw.result) };
-  return { ...common, analysisKind, result: { ...object(raw.result) } };
-}
-function feedback(value: unknown): HrHumanFeedback {
-  const raw = object(value); if (!["accepted", "rejected", "correction"].includes(String(raw.feedback_kind))) throw new Error("HR R1.2 feedback response invalid");
-  return { feedbackId: identifier(raw.feedback_id), positionCandidateId: identifier(raw.position_candidate_id), analysisVersionId: identifier(raw.analysis_version_id), feedbackKind: raw.feedback_kind as HrHumanFeedback["feedbackKind"], conclusionKey: string(raw.conclusion_key), correction: raw.correction === null ? null : string(raw.correction), reason: string(raw.reason), createdAt: string(raw.created_at) };
-}
-export interface ConfirmCandidateInput { expectedRowVersion: number; contextVersionId: string; stableName: string; confirmedFacts: Record<string, unknown>; mergeCandidateId: string | null; }
-export interface CandidateAnalysisInput { contextVersionId: string; documentIds: string[]; analysisKind: Exclude<HrCandidateAnalysisKind, "comparison">; result: Record<string, unknown>; evidence: Record<string, unknown>[]; unknowns: string[]; conflicts: string[]; verificationQuestions: string[]; agentVersion: string; modelVersion: string; }
-export interface HumanFeedbackInput { analysisVersionId: string; feedbackKind: HrHumanFeedback["feedbackKind"]; conclusionKey: string; correction: string | null; reason: string; }
 export function createHrR12Api(csrfToken: string) {
   const positionPath = (positionId: string, suffix = "") => `/api/hr/positions/${encodeURIComponent(identifier(positionId))}${suffix}`;
   const write = (path: string, requestId: string, body: unknown, signal?: AbortSignal) => request(path, mutation(csrfToken, requestId, body, signal));
@@ -169,23 +95,6 @@ export function createHrR12Api(csrfToken: string) {
     },
     resources(positionId: string, signal?: AbortSignal): Promise<HrPositionResources> { return request(positionPath(positionId, "/resources"), { signal }).then(resources); },
     downloadResource(positionId: string, attachmentId: string, requestId: string, purpose: "preview" | "download" = "download", signal?: AbortSignal): Promise<HrDownloadTicket> { return write(positionPath(positionId, `/resources/${encodeURIComponent(identifier(attachmentId))}/ticket`), requestId, { purpose }, signal).then(ticket); },
-    async context(positionId: string, signal?: AbortSignal): Promise<{ current: HrContextVersion | null; drafts: HrContextVersion[]; history: HrContextVersion[] }> {
-      const [summary, history] = await Promise.all([request(positionPath(positionId, "/context"), { signal }), request(positionPath(positionId, "/context/versions"), { signal })]);
-      if (!record(summary) || (summary.current !== null && !record(summary.current)) || !Array.isArray(summary.drafts)) throw new Error("HR R1.2 context response invalid");
-      return { current: summary.current === null ? null : contextVersion(summary.current), drafts: summary.drafts.map(contextVersion), history: items(history).map(contextVersion) };
-    },
-    compareContext(positionId: string, leftId: string, rightId: string, signal?: AbortSignal): Promise<HrContextComparison> { const query = new URLSearchParams({ left: identifier(leftId), right: identifier(rightId) }); return request(positionPath(positionId, `/context/compare?${query}`), { signal }).then((value) => { const raw = object(value); return { leftVersionId: identifier(raw.left_version_id), rightVersionId: identifier(raw.right_version_id), changedModules: stringList(raw.changed_modules), left: object(raw.left), right: object(raw.right) }; }); },
-    createCandidateDraftBatch(positionId: string, attachmentIds: string[], requestId: string, signal?: AbortSignal): Promise<{ batchId: string; items: HrCandidateDraft[] }> { return write(positionPath(positionId, "/candidate-drafts:batch"), requestId, { attachment_ids: attachmentIds.map(identifier) }, signal).then((value) => { const raw = object(value); if (!Array.isArray(raw.items)) throw new Error("HR R1.2 candidate response invalid"); return { batchId: identifier(raw.batch_id), items: raw.items.map(draft) }; }); },
-    candidateDrafts(positionId: string, signal?: AbortSignal): Promise<HrCandidateDraft[]> { return request(positionPath(positionId, "/candidate-drafts"), { signal }).then((value) => items(value).map(draft)); },
-    retryDraft(draftId: string, expectedRowVersion: number, requestId: string, signal?: AbortSignal): Promise<HrCandidateDraft> { return write(`/api/hr/candidate-drafts/${encodeURIComponent(identifier(draftId))}:retry`, requestId, { expected_row_version: expectedRowVersion }, signal).then(draft); },
-    confirmDraft(draftId: string, input: ConfirmCandidateInput, requestId: string, signal?: AbortSignal): Promise<HrConfirmedCandidate> { return write(`/api/hr/candidate-drafts/${encodeURIComponent(identifier(draftId))}:confirm`, requestId, { expected_row_version: input.expectedRowVersion, context_version_id: identifier(input.contextVersionId), stable_name: input.stableName, confirmed_facts: input.confirmedFacts, merge_candidate_id: input.mergeCandidateId === null ? null : identifier(input.mergeCandidateId) }, signal).then(confirmedCandidate); },
-    positionCandidates(positionId: string, signal?: AbortSignal): Promise<HrPositionCandidate[]> { return request(positionPath(positionId, "/candidates"), { signal }).then((value) => items(value).map(positionCandidate)); },
-    candidate(candidateId: string, signal?: AbortSignal): Promise<HrCandidate> { return request(`/api/hr/candidates/${encodeURIComponent(identifier(candidateId))}`, { signal }).then(candidate); },
-    candidateDocuments(candidateId: string, signal?: AbortSignal): Promise<HrCandidateDocument[]> { return request(`/api/hr/candidates/${encodeURIComponent(identifier(candidateId))}/documents`, { signal }).then((value) => items(value).map(document)); },
-    downloadCandidateDocument(documentId: string, requestId: string, purpose: "preview" | "download" = "download", signal?: AbortSignal): Promise<HrDownloadTicket> { return write(`/api/hr/candidate-documents/${encodeURIComponent(identifier(documentId))}/ticket`, requestId, { purpose }, signal).then(ticket); },
-    candidateAnalyses(positionCandidateId: string, signal?: AbortSignal): Promise<HrCandidateAnalysisVersion[]> { return request(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/analyses`, { signal }).then((value) => items(value).map(analysis)); },
-    candidateFeedback(positionCandidateId: string, signal?: AbortSignal): Promise<HrHumanFeedback[]> { return request(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/feedback`, { signal }).then((value) => items(value).map(feedback)); },
-    appendCandidateFeedback(positionCandidateId: string, input: HumanFeedbackInput, requestId: string, signal?: AbortSignal): Promise<HrHumanFeedback> { return write(`/api/hr/position-candidates/${encodeURIComponent(identifier(positionCandidateId))}/feedback`, requestId, { analysis_version_id: identifier(input.analysisVersionId), feedback_kind: input.feedbackKind, conclusion_key: input.conclusionKey, correction: input.correction, reason: input.reason }, signal).then(feedback); },
   };
 }
 export type HrR12Api = ReturnType<typeof createHrR12Api>;
