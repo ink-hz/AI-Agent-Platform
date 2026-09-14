@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRight, BriefcaseBusiness, Search } from "lucide-react";
 
 import type { Account } from "../../auth";
 import { PlatformLink } from "../../components/PlatformLink";
@@ -171,33 +172,27 @@ export function HrPositionIndex({
     finally { setWorking(null); }
   }
 
-  if (state === "loading") return <main className="hr-position-index hr-position-state"><p>正在读取岗位…</p></main>;
-  if (state === "error") return <main className="hr-position-index hr-position-state" role="alert">
+  if (state === "loading") return <main className="hr-position-directory hr-position-state"><p>正在读取岗位…</p></main>;
+  if (state === "error") return <main className="hr-position-directory hr-position-state" role="alert">
     <h1>岗位数据暂时不可用</h1><p>已有数据不会丢失，请稍后重试。</p>
     <button type="button" onClick={() => setAttempt((value) => value + 1)}>重新加载</button>
   </main>;
 
-  return <main className="hr-position-index">
-    <header className="hr-position-hero">
-      <div><span className="hr-position-eyebrow">招聘工作</span>
+  return <main className="hr-position-directory"><div className="hr-position-page-inner">
+    <header className="hr-pw-heading">
+      <div><span>RECRUITMENT WORKSPACE</span>
         <h1>岗位</h1>
-        <p>管理官网同步岗位、内部招聘需求和等待确认的历史识别结果。</p>
+        <p>围绕一个岗位，查看要求、候选人、面试与主对话中保存的成果。</p>
       </div>
-      <button className="hr-position-primary" disabled={account.hard_stale_read_only} type="button" onClick={() => setNewOpen(true)}>用对话新建岗位</button>
+      <div className="hr-pw-heading-actions"><button className="hr-pw-primary" disabled={account.hard_stale_read_only} type="button" onClick={() => setNewOpen(true)}>用对话新建岗位</button><BriefcaseBusiness size={34} aria-hidden="true" /></div>
     </header>
 
-    <section className="hr-position-metrics" aria-label="岗位概览">
-      <article><strong>{positions.length}</strong><span>正式岗位</span></article>
-      <article><strong>{official.length}</strong><span>官网同步</span></article>
-      <article><strong>{drafts.length}</strong><span>待你确认</span></article>
-    </section>
-
-    <div className="hr-position-toolbar">
-      <label><span>搜索岗位</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="岗位名称、J 编号、部门或地点" /></label>
-      <label><span>岗位状态</span><select aria-label="岗位状态" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
+    <div className="hr-pw-directory-tools">
+      <label><Search size={18} aria-hidden="true" /><input aria-label="搜索岗位" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索岗位、编号、部门或地点" /></label>
+      <select aria-label="岗位状态" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
         <option value="all">全部岗位</option><option value="active">进行中</option><option value="draft">草案</option><option value="archived">已归档</option>
-      </select></label>
-      <PlatformLink href="/hr/">返回对话</PlatformLink>
+      </select>
+      <span>{visible.length} 个岗位</span>
     </div>
     {account.hard_stale_read_only && <p className="hr-position-notice" role="status">账号目录信息已过期，岗位数据暂时只读。</p>}
     {notice && <p className="hr-position-notice" role="status">{notice}</p>}
@@ -222,6 +217,7 @@ export function HrPositionIndex({
         </article>)}</div>}
     </section>
 
+    </div>
     {newOpen && <div className="hr-position-dialog-backdrop" role="presentation">
       <section className="hr-position-dialog" role="dialog" aria-modal="true" aria-labelledby="new-position-title">
         <span className="hr-position-eyebrow">NEW POSITION</span><h2 id="new-position-title">先说清楚你要招什么人</h2>
@@ -238,16 +234,15 @@ function PositionSection({ title, caption, positions, onSelect }: { title: strin
   return <section className="hr-position-section">
     <div className="hr-position-section-heading"><div><h2>{title}</h2><p>{caption}</p></div><span>{positions.length}</span></div>
     {positions.length === 0 ? <div className="hr-position-empty">没有匹配的岗位。</div>
-      : <div className="hr-position-grid">{positions.map((position) => <article className="hr-position-card" key={position.positionId}>
-        <div><span className={`hr-position-chip hr-position-chip--${position.sourceKind}`}>{sourceLabel(position)}</span><span className="hr-position-chip">{position.internalStatus === "archived" ? "已归档" : position.internalStatus === "draft" ? "草案" : "进行中"}</span>{position.officialStatus && <span className={`hr-position-status hr-position-status--${position.officialStatus}`}>{officialStatus(position.officialStatus)}</span>}</div>
-        <h3><PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>{position.title}</PlatformLink></h3><p>{[position.department, ...position.locations].filter(Boolean).join(" · ") || "岗位信息待完善"}</p>
-        <footer><span>{position.officialJobId ?? "内部岗位"}</span><span>{position.sourceVersion ? `官网版本 ${position.sourceVersion}` : "内部上下文"}</span></footer>
-      <div className="hr-pw-card-flow" aria-label="岗位工作流阶段"><span>JD / JR</span><span>候选人</span><span>面试</span><span>复盘</span></div>
-      <div className="hr-position-card-actions">
-        <PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>查看岗位工作流</PlatformLink>
-        {onSelect && <button type="button" disabled={position.internalStatus !== "active"} onClick={() => onSelect(position)}>在主对话中继续</button>}
-        <PlatformLink href={`/hr/?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>
-      </div>
+      : <div className="hr-pw-position-grid">{positions.map((position) => <article className="hr-pw-position-card" key={position.positionId}>
+        <div><span>{position.officialJobId ?? '自建岗位'} · {sourceLabel(position)}</span><em>{position.internalStatus === "archived" ? "已归档" : position.internalStatus === "draft" ? "草案" : "进行中"}</em></div>
+        <h2><PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>{position.title}</PlatformLink></h2>
+        <p>{[position.department, ...position.locations].filter(Boolean).join(" · ") || "部门与地点待补充"}</p>
+        <div className="hr-pw-card-flow" aria-label="岗位工作流阶段"><span>JD / JR</span><span>候选人</span><span>面试</span><span>复盘</span></div>
+        <div className="hr-pw-card-source">{position.officialStatus && <span>{officialStatus(position.officialStatus)}</span>}<span>{position.sourceVersion ? `官网版本 ${position.sourceVersion}` : "内部上下文"}</span></div>
+        <footer><PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>查看岗位工作流 <ArrowUpRight size={16} aria-hidden="true" /></PlatformLink>
+          {onSelect ? <button type="button" disabled={position.internalStatus !== "active"} onClick={() => onSelect(position)}>在主对话中继续</button> : <PlatformLink href={`/hr/?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>}
+        </footer>
       </article>)}</div>}
   </section>;
 }

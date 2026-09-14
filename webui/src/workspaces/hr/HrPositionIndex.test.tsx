@@ -81,7 +81,7 @@ it("searches real loaded positions and offers all draft decisions", async () => 
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-  const positionGridText = [...container.querySelectorAll(".hr-position-grid")]
+  const positionGridText = [...container.querySelectorAll(".hr-pw-position-grid")]
     .map((grid) => grid.textContent).join(" ");
   expect(positionGridText).toContain("3D 打印高级结构工程师");
   expect(positionGridText).not.toContain("算法工程师");
@@ -318,7 +318,7 @@ it("combines internal status and search without hiding pending draft decisions",
   const status = container.querySelector<HTMLSelectElement>('select[aria-label="岗位状态"]');
   expect(status).not.toBeNull();
   const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
-  const grid = () => [...container.querySelectorAll(".hr-position-grid")].map(item => item.textContent).join(" ");
+  const grid = () => [...container.querySelectorAll(".hr-pw-position-grid")].map(item => item.textContent).join(" ");
   async function selectStatus(value: string) {
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(status, value);

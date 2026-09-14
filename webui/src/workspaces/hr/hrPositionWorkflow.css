@@ -2,3 +2,20 @@
 @media(max-width:1000px){.hr-pw-flow{grid-template-columns:repeat(3,minmax(0,1fr))}.hr-pw-subnav>span{display:none}.hr-pw-heading{align-items:flex-start;flex-wrap:wrap}.hr-pw-summary strong{font-size:21px}}
 @media(max-width:640px){.hr-position-directory,.hr-position-workflow{padding:20px 16px 44px}.hr-pw-directory-tools{flex-wrap:wrap}.hr-pw-directory-tools label{flex-basis:100%}.hr-pw-flow{grid-template-columns:repeat(2,minmax(0,1fr))}.hr-pw-flow button{padding:13px}.hr-pw-summary{grid-template-columns:1fr;gap:10px}.hr-pw-summary button{padding:18px}.hr-pw-heading-actions{width:100%}.hr-pw-position-card{padding:22px}.hr-pw-result-meta{flex-wrap:wrap}.hr-position-workflow .hr-official-position{padding:16px}.hr-position-workflow .hr-official-position dl{grid-template-columns:1fr}.hr-position-workflow .hr-turn-result{padding:16px}}
 .hr-position-workflow .hr-official-position dt,.hr-position-workflow .hr-official-position footer,.hr-position-workflow .hr-official-position label,.hr-position-workflow .hr-candidate-workspace small{color:#455f70}
+
+/* Position directory reuses the published workflow card layout and scroll owner. */
+.hr-position-directory .hr-position-section { max-width: none; margin: 26px 0; }
+.hr-position-directory .hr-position-section-heading { color: #20394d; }
+.hr-position-directory .hr-position-section-heading h2 { font-size: 18px; font-weight: 600; }
+.hr-position-directory .hr-position-section-heading p { color: #455f70; }
+.hr-pw-position-card h2 a { color: inherit; text-decoration: none; }
+.hr-pw-position-card footer { gap: 12px; flex-wrap: wrap; }
+.hr-pw-position-card footer a { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; }
+.hr-pw-position-card footer button { border: 0; padding: 0; color: #24596b; background: transparent; font: inherit; cursor: pointer; }
+.hr-pw-position-card footer button:disabled { opacity: .5; cursor: default; }
+.hr-pw-card-source { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; color: #455f70; font-size: 12px; }
+.hr-position-directory .hr-pw-position-grid { align-items: stretch; }
+@media (max-width: 640px) {
+  .hr-position-directory .hr-pw-heading { flex-wrap: wrap; }
+  .hr-position-directory .hr-pw-heading-actions { justify-content: space-between; }
+}

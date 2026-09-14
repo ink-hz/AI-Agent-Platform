@@ -684,23 +684,12 @@ function Workspace({
           </button>
         </aside>
         <section className="hr-loop-conversation" aria-label="HR Agent 对话">
-          <header>
-            <span className="hr-loop-eyebrow">HR AGENT</span>
-            <h1>与 Hannah 一起厘清招聘问题</h1>
-            <p>从公开 JD、业务目标或一个问题开始；也可以先选岗位。</p>
-            <HrPositionPicker
-              api={positionApi}
-              selected={position}
-              disabled={disabled}
-              onSelect={(p) => {
-                setPosition(p);
-                setPositionId(p?.positionId);
-                setObjects((old) => [
-                  ...old.filter((o) => o.kind !== "position"),
-                  ...(p ? [{ kind: "position", id: p.positionId }] : []),
-                ]);
-              }}
-            />
+          <div className="hr-loop-scroll">
+          <header className="hr-conversation-welcome">
+            <span className="hr-loop-eyebrow">AI 招聘协作</span>
+            <h1>{position?.title ?? "今天想推进哪项招聘工作？"}</h1>
+            <p>搜索选择岗位，直接提出要求。与 Hannah 一起推进招聘工作。</p>
+
           </header>
           {error && (
             <div className="hr-loop-alert" role="alert">
@@ -987,6 +976,116 @@ function Workspace({
               </button>
             </section>
           )}
+        <aside className="hr-loop-results" aria-label="成果与标准">
+          <h2>成果</h2>
+          {allResults.length === 0 && (
+            <p>保存后的成果会出现在这里，也可从关联岗位找回。</p>
+          )}
+          {allResults.map((r) => (
+            <ResultCard
+              key={`${identity(r.ref)}:${positionId ?? ""}`}
+              result={r}
+              standard={standard}
+              positionId={positionId}
+              disabled={disabled}
+              onDownload={() => void download(r)}
+              onReference={() => addReference(r.ref)}
+              onLink={() => {
+                if (positionId) {
+                  const body = {
+                    objects: [{ kind: "position", id: positionId }],
+                    expected_result_revision: r.ref.revision,
+                  };
+                  void mutate(
+                    "link:" + r.ref.id,
+                    body,
+                    (k) => api.link(r.ref, body.objects, k),
+                    () => setReload((n) => n + 1),
+                  );
+                }
+              }}
+              onConfirm={(ids) => {
+                if (positionId) {
+                  const body = {
+                    proposal_ref: r.ref,
+                    selected_change_ids: ids,
+                    expected_standard_revision:
+                      r.base_standard_ref?.revision ?? null,
+                  };
+                  void mutate(
+                    "confirm:" + positionId,
+                    body,
+                    (k) => api.confirm(positionId, body, k),
+                    (v) => setStandard(v as StandardView),
+                  );
+                }
+              }}
+            />
+          ))}
+          {positionId && (
+            <section className="hr-loop-standard">
+              <h2>当前已确认标准</h2>
+              {standard ? (
+                <>
+                  <ul>
+                    {standard.items.map((item) => (
+                      <li key={item.item_id}>{item.text}</li>
+                    ))}
+                  </ul>
+                  <small>确认时间：{standard.confirmed_at}</small>
+                </>
+              ) : (
+                <p>暂无已确认标准，或尚未读取。</p>
+              )}
+              {standard && (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => addReference(standard.ref)}
+                >
+                  带此标准讨论
+                </button>
+              )}
+              <button type="button" onClick={() => void rereadStandard()}>
+                重新阅读当前标准
+              </button>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() =>
+                  setText(
+                    "请阅读当前已确认标准，并依据最新标准重新提出调整建议。",
+                  )
+                }
+              >
+                请求修订提案
+              </button>
+              <a
+                href={platformPath(
+                  `/hr/positions/${encodeURIComponent(positionId)}`,
+                )}
+              >
+                查看岗位资料
+              </a>
+            </section>
+          )}
+        </aside>
+          </div>
+          <div className="hr-loop-context">
+            <HrPositionPicker
+              api={positionApi}
+              selected={position}
+              disabled={disabled}
+              onSelect={(p) => {
+                setPosition(p);
+                setPositionId(p?.positionId);
+                setObjects((old) => [
+                  ...old.filter((o) => o.kind !== "position"),
+                  ...(p ? [{ kind: "position", id: p.positionId }] : []),
+                ]);
+              }}
+            />
+          </div>
           <form
             className="hr-loop-composer"
             onSubmit={(e) => {
@@ -1087,6 +1186,7 @@ function Workspace({
                 )}
               </div>
             ))}
+
             <label htmlFor="hr-loop-input">
               {work ? "补充问题或回复 Hannah" : "你的问题"}
             </label>
@@ -1095,7 +1195,7 @@ function Workspace({
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="描述岗位任务、目标或需要澄清的问题…"
-              rows={4}
+              rows={3}
               disabled={account.hard_stale_read_only}
             />
             <footer>
@@ -1138,100 +1238,7 @@ function Workspace({
             </small>
           </form>
         </section>
-        <aside className="hr-loop-results" aria-label="成果与标准">
-          <h2>成果</h2>
-          {allResults.length === 0 && (
-            <p>保存后的成果会出现在这里，也可从关联岗位找回。</p>
-          )}
-          {allResults.map((r) => (
-            <ResultCard
-              key={`${identity(r.ref)}:${positionId ?? ""}`}
-              result={r}
-              standard={standard}
-              positionId={positionId}
-              disabled={disabled}
-              onDownload={() => void download(r)}
-              onReference={() => addReference(r.ref)}
-              onLink={() => {
-                if (positionId) {
-                  const body = {
-                    objects: [{ kind: "position", id: positionId }],
-                    expected_result_revision: r.ref.revision,
-                  };
-                  void mutate(
-                    "link:" + r.ref.id,
-                    body,
-                    (k) => api.link(r.ref, body.objects, k),
-                    () => setReload((n) => n + 1),
-                  );
-                }
-              }}
-              onConfirm={(ids) => {
-                if (positionId) {
-                  const body = {
-                    proposal_ref: r.ref,
-                    selected_change_ids: ids,
-                    expected_standard_revision:
-                      r.base_standard_ref?.revision ?? null,
-                  };
-                  void mutate(
-                    "confirm:" + positionId,
-                    body,
-                    (k) => api.confirm(positionId, body, k),
-                    (v) => setStandard(v as StandardView),
-                  );
-                }
-              }}
-            />
-          ))}
-          {positionId && (
-            <section className="hr-loop-standard">
-              <h2>当前已确认标准</h2>
-              {standard ? (
-                <>
-                  <ul>
-                    {standard.items.map((item) => (
-                      <li key={item.item_id}>{item.text}</li>
-                    ))}
-                  </ul>
-                  <small>确认时间：{standard.confirmed_at}</small>
-                </>
-              ) : (
-                <p>暂无已确认标准，或尚未读取。</p>
-              )}
-              {standard && (
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => addReference(standard.ref)}
-                >
-                  带此标准讨论
-                </button>
-              )}
-              <button type="button" onClick={() => void rereadStandard()}>
-                重新阅读当前标准
-              </button>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() =>
-                  setText(
-                    "请阅读当前已确认标准，并依据最新标准重新提出调整建议。",
-                  )
-                }
-              >
-                请求修订提案
-              </button>
-              <a
-                href={platformPath(
-                  `/hr/positions/${encodeURIComponent(positionId)}`,
-                )}
-              >
-                查看岗位资料
-              </a>
-            </section>
-          )}
-        </aside>
+
       </main>
     </HrWorkspaceShell>
   );
