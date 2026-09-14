@@ -1,0 +1,22 @@
+{
+  "started_at": 1789350132.189842,
+  "finished_at": 1789350136.0619671,
+  "exit_code": 0,
+  "receiver_sha256": "d679736f29d98bc0a2cd7a1c6da7bcb3f4e85aeaa6526fbeba119d069968eeb3",
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/python3 -I -c '\"\"\"Receive exactly seven private files; never extract arbitrary archive paths.\"\"\"\nimport io\nimport json\nimport os\nfrom pathlib import Path\nimport stat\nimport sys\nimport tarfile\n\nTARGET = Path('\"'\"'/opt/orbbec-agent-platform/private/hr-incremental-ad5-inputs'\"'\"')\nNAMES = {'\"'\"'hr-budget-profile.json'\"'\"', '\"'\"'hr-content-keyring.json'\"'\"',\n         '\"'\"'hr-diagnostic-profile.json'\"'\"', '\"'\"'hr-provider-credential'\"'\"',\n         '\"'\"'hr-provider-profile.json'\"'\"', '\"'\"'hr-release-policy.json'\"'\"', '\"'\"'knowledge.tar.gz'\"'\"'}\nif os.getuid() != 0:\n    raise SystemExit('\"'\"'root_required'\"'\"')\nos.umask(0o077)\nparent = TARGET.parent.lstat()\nif TARGET.parent.is_symlink() or parent.st_uid != 0 or stat.S_IMODE(parent.st_mode) != 0o700:\n    raise SystemExit('\"'\"'private_parent_invalid'\"'\"')\npayload = sys.stdin.buffer.read(1_048_577)\nif len(payload) > 1_048_576:\n    raise SystemExit('\"'\"'input_too_large'\"'\"')\nwith tarfile.open(fileobj=io.BytesIO(payload), mode='\"'\"'r:'\"'\"') as archive:\n    members = archive.getmembers()\n    if len(members) != len(NAMES) or {m.name for m in members} != NAMES:\n        raise SystemExit('\"'\"'input_members_invalid'\"'\"')\n    if any(not m.isfile() or m.size > 524288 for m in members):\n        raise SystemExit('\"'\"'input_type_invalid'\"'\"')\n    TARGET.mkdir(mode=0o700, exist_ok=False)\n    for member in members:\n        body = archive.extractfile(member).read()\n        if len(body) != member.size:\n            raise SystemExit('\"'\"'input_truncated'\"'\"')\n        fd = os.open(TARGET/member.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)\n        with os.fdopen(fd, '\"'\"'wb'\"'\"') as stream:\n            stream.write(body)\n            stream.flush()\n            os.fsync(stream.fileno())\n    descriptor = os.open(TARGET, os.O_RDONLY | os.O_DIRECTORY)\n    try:\n        os.fsync(descriptor)\n    finally:\n        os.close(descriptor)\nprint(json.dumps({'\"'\"'status'\"'\"': '\"'\"'private_inputs_copied'\"'\"', '\"'\"'path'\"'\"': str(TARGET),\n                  '\"'\"'file_count'\"'\"': len(NAMES), '\"'\"'services_changed'\"'\"': False,\n                  '\"'\"'database_changed'\"'\"': False, '\"'\"'installed'\"'\"': False}))\n'"
+  ],
+  "input_boundary": "private archive streamed on encrypted SSH stdin; archive and file contents are not included in public artifacts"
+}

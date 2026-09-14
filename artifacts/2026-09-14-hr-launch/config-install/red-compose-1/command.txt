@@ -1,0 +1,2 @@
+backend/.venv/bin/python -m pytest -q artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py
+exit=1

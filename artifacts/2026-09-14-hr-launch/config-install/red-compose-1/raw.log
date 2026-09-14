@@ -1,0 +1,23 @@
+...............FF                                                        [100%]
+=================================== FAILURES ===================================
+______ test_runtime_env_updates_only_image_keeps_business_and_worker_flag ______
+
+    def test_runtime_env_updates_only_image_keeps_business_and_worker_flag():
+        payload=b'BUSINESS=synthetic\nPLATFORM_IMAGE=old\nPLATFORM_HR_WEB_WORKER_ENABLED=1\n'
+>       result=m.runtime_env(payload)
+               ^^^^^^^^^^^^^
+E       AttributeError: module 'incremental_install' has no attribute 'runtime_env'
+
+artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py:202: AttributeError
+_____ test_rendered_compose_rejects_wrong_image_and_wrong_knowledge_mount ______
+
+    def test_rendered_compose_rejects_wrong_image_and_wrong_knowledge_mount():
+>       with pytest.raises(m.InstallError):m.rendered_envs({'services':{'platform-api':{'image':'old'}}})
+                                           ^^^^^^^^^^^^^^^
+E       AttributeError: module 'incremental_install' has no attribute 'rendered_envs'
+
+artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py:207: AttributeError
+=========================== short test summary info ============================
+FAILED artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py::test_runtime_env_updates_only_image_keeps_business_and_worker_flag
+FAILED artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py::test_rendered_compose_rejects_wrong_image_and_wrong_knowledge_mount
+2 failed, 15 passed in 0.08s

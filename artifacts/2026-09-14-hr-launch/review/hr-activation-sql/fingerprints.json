@@ -1,0 +1,7 @@
+{
+  "cloud.sql": "373ba8ee71110e2d971f80115f31df4d24e7e0e0f1f2f8ff4bece9a5c6150122",
+  "counts-under-lock.sql": "476cd68cfadf4a9ab1814bad6a967390cd1a458212e0f8719fd72f4fe80c743a",
+  "initialize.sql": "4c68609fc87a48cea0d0aa9735b38a613ac65017032a0c2fa8610a8420d49c3d",
+  "draining-legacy.sql": "985518cb36ec92d378e0dbc0745dccbc1c02dfb43438ce7562049c442b9a2fb9",
+  "operations.json": "fbd1237a6c1e61b6dad1ca695a13324c589d64c89779a1c050acb89d380cb3cb"
+}

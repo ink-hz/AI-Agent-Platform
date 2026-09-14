@@ -1,0 +1,36 @@
+.................FF                                                      [100%]
+=================================== FAILURES ===================================
+______________ test_old_runtime_drift_rejected_before_generation _______________
+
+disk_host = (<incremental_install.Host object at 0x103691bd0>, PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T...ate/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9662/test_old_runtime_drift_rejecte0/volume'))
+
+    def test_old_runtime_drift_rejected_before_generation(disk_host):
+        h, _old, _api, _knowledge, generation, _dest = disk_host
+        m.OLD_RUNTIME.write_bytes(b'BUSINESS=changed\n')
+>       with pytest.raises(m.InstallError, match='runtime_source_drift'):
+E       Failed: DID NOT RAISE InstallError
+
+artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py:386: Failed
+_____________ test_docker_does_not_inherit_host_compose_overrides ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1036bac50>
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9662/test_docker_does_not_inherit_h0')
+
+    def test_docker_does_not_inherit_host_compose_overrides(monkeypatch, tmp_path):
+        import subprocess
+        captured = {}
+        def run(command, **kwargs):
+            captured.update(kwargs)
+            return subprocess.CompletedProcess(command, 0, b'[]', b'')
+        monkeypatch.setattr(m.subprocess, 'run', run)
+        monkeypatch.setenv('PLATFORM_IMAGE', 'wrong-image')
+        m.Host(tmp_path).docker('version')
+>       assert captured['env'] == {'PATH': '/usr/bin:/bin', 'HOME': '/root'}
+               ^^^^^^^^^^^^^^^
+E       KeyError: 'env'
+
+artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py:400: KeyError
+=========================== short test summary info ============================
+FAILED artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py::test_old_runtime_drift_rejected_before_generation
+FAILED artifacts/2026-09-14-hr-launch/config-install/test_incremental_install.py::test_docker_does_not_inherit_host_compose_overrides
+2 failed, 17 passed in 0.08s

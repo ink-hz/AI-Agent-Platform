@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/python3 -I -"
+  ],
+  "started_at": 1789350212.5132291,
+  "finished_at": 1789350214.367512,
+  "exit_code": 1,
+  "source_sha256": "41b6ca84eb5dfe739fbece7a59c3410792ff10084ce9f799ad41d5bc525be3fe"
+}

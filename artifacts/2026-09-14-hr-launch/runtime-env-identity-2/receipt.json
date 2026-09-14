@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "/usr/bin/ssh",
+    "-i",
+    "/Users/neo/.ssh/orbbec_aliyun_ed25519",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "StrictHostKeyChecking=yes",
+    "-o",
+    "ConnectTimeout=8",
+    "root@47.106.112.69",
+    "/usr/bin/python3 -I -"
+  ],
+  "started_at": 1789350252.855581,
+  "finished_at": 1789350253.5052469,
+  "exit_code": 0,
+  "source_sha256": "4df53bfc9341f9d051e9e92fc3f4448b58e773c7b8d671ebb48b9f9ecaa350fe",
+  "prior_probe": "First probe rejected duplicate host-compose PLATFORM_IMAGE lines; this probe implements agreed remove-all-then-one algorithm. No file mutation."
+}

@@ -1,0 +1,2 @@
+PYTHONPATH=backend backend/.venv/bin/python artifacts/2026-09-14-hr-launch/config-install/validate_local.py
+exit=0

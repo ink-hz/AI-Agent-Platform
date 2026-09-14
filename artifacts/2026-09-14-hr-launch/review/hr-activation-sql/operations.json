@@ -1,0 +1,24 @@
+{
+  "status": "prepared_not_executed",
+  "operations": {
+    "initialize": {
+      "request_id": "2e3bf81c-7f0e-4ff1-bf49-996e3a584bbf",
+      "target_phase": "legacy",
+      "sha256": "4c68609fc87a48cea0d0aa9735b38a613ac65017032a0c2fa8610a8420d49c3d"
+    },
+    "draining-legacy": {
+      "request_id": "9e1ea788-bd77-4efa-b81a-47ca78eb9a37",
+      "target_phase": "draining_legacy",
+      "sha256": "985518cb36ec92d378e0dbc0745dccbc1c02dfb43438ce7562049c442b9a2fb9"
+    },
+    "cloud": {
+      "request_id": "3a61df7e-9ab1-41ce-93f0-a9eedc8f0a3f",
+      "target_phase": "cloud",
+      "sha256": "373ba8ee71110e2d971f80115f31df4d24e7e0e0f1f2f8ff4bece9a5c6150122"
+    }
+  },
+  "counts_sha256": "476cd68cfadf4a9ab1814bad6a967390cd1a458212e0f8719fd72f4fe80c743a",
+  "role_boundary": "authenticated platform_owner operational connection; transaction-local platform_control_maintenance role executes existing restricted functions; no grants or direct gate/records update",
+  "unknown_response": "Inspect durable operation by original UUID; no replacement UUID retry.",
+  "count_timing": "One counts SELECT under the cutover lock, psql client timing includes transport; statement_timeout applies to the single counts query. Not a total transaction wall-clock guarantee."
+}
