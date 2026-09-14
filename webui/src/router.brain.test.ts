@@ -23,7 +23,7 @@ describe("Agent Brain route boundary", () => {
       name: "legacy-redirect", to: "/hr/", navigation: "spa",
     });
     expect(parseRoute("/agents/hr-bot/conversations/session-one")).toEqual({
-      name: "legacy-redirect", to: "/hr/conversations/session-one", navigation: "spa",
+      name: "not-found",
     });
     expect(routeSection({ name: "mission", missionId: "one" })).toBe("missions");
     expect(routeSection({ name: "conversation", conversationId: "one" })).toBe("brain");

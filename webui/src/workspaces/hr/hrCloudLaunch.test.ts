@@ -15,3 +15,8 @@ it('never restores another owner or position draft',()=>{
  openHrWork('owner','position-a','private');
  expect(takeHrWorkDraft('owner','position-b')).toBeUndefined();
 });
+
+it('opens the requested existing candidate panel with an owner-bound unsent launch',()=>{
+ openHrWork('owner','position-a','','','candidate-materials');
+ expect(takeHrWorkDraft('owner','position-a')).toEqual({text:'',notice:'',panel:'candidate-materials'});
+});

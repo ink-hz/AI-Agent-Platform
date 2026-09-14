@@ -125,8 +125,9 @@ function Workspace({
     ReturnType<HrLoopApi["configuration"]>
   > | null>(null);
   const methodHeading = useRef<HTMLHeadingElement>(null);
-  const [showCandidates, setShowCandidates] = useState(false);
-  const [showCandidateWork, setShowCandidateWork] = useState(false);
+  const [launchDraft] = useState(() => takeHrWorkDraft(account.internal_user_id, initialPositionId));
+  const [showCandidates, setShowCandidates] = useState(launchDraft?.panel === 'candidate-materials');
+  const [showCandidateWork, setShowCandidateWork] = useState(launchDraft?.panel === 'candidate-work');
   const [candidateName, setCandidateName] = useState("");
   const [methods, setMethods] = useState<ResourceItem[]>([]);
   const [intelligence, setIntelligence] = useState<{
@@ -153,7 +154,6 @@ function Workspace({
   const [unavailableIntelligence, setUnavailableIntelligence] = useState<
     string[]
   >([]);
-  const [launchDraft] = useState(() => takeHrWorkDraft(account.internal_user_id, initialPositionId));
   const [text, setText] = useState(launchDraft?.text ?? "");
   const [previousInput, setPreviousInput] = useState("");
   const [position, setPosition] = useState<HrPosition | null>(null);
@@ -628,7 +628,7 @@ function Workspace({
     ).values(),
   ];
   return (
-    <HrWorkspaceShell account={account} current="chat" onOpenKnowledge={() => methodHeading.current?.focus()}>
+    <HrWorkspaceShell account={account} current="chat">
       <main className="hr-loop">
         <aside className="hr-loop-sidebar" aria-label="工作与方法">
           <button type="button" onClick={() => selectWork()}>

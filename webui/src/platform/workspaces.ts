@@ -53,7 +53,7 @@ export function workspaceLaunchPath(agentId: string): string | null {
 
 export function directConversationPath(agentId: string, conversationId: string): string | null {
   const workspace = workspaceForAgent(agentId);
-  if (!workspace || workspace.routeOwner === "voc" || workspace.routeOwner === "ai-admin") return null;
+  if (!workspace || workspace.workspaceId === "hr" || workspace.routeOwner === "voc" || workspace.routeOwner === "ai-admin") return null;
   const launchPath = workspaceLaunchPath(agentId);
   if (!launchPath) return null;
   return `${launchPath.replace(/\/$/, "")}/conversations/${encodeURIComponent(conversationId)}`;

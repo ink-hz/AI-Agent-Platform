@@ -41,7 +41,7 @@ describe("workspace route registry", () => {
   });
 
   it("builds only Platform conversation deep links", () => {
-    expect(directConversationPath("hr-bot", "c:1")).toBe("/hr/conversations/c%3A1");
+    expect(directConversationPath("hr-bot", "c:1")).toBeNull();
     expect(directConversationPath("marketing-voice-bot", "c:2"))
       .toBe("/marketing/voice/conversations/c%3A2");
     expect(directConversationPath("ai-fae-agent", "c:3"))

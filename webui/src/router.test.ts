@@ -31,19 +31,14 @@ describe("Platform router", () => {
   it("round-trips the independent HR panorama routes", () => {
     const insightVersionId = "00000000-0000-4000-8000-000000000009";
     expect(parseRoute("/hr/panorama")).toEqual({ name: "hr-panorama" });
-    expect(parseRoute(`/hr/panorama/reports/${insightVersionId}`)).toEqual({
-      name: "hr-panorama-report", insightVersionId,
-    });
-    expect(routePath({ name: "hr-panorama" })).toBe("/hr/panorama");
-    expect(routePath({ name: "hr-panorama-report", insightVersionId }))
-      .toBe(`/hr/panorama/reports/${insightVersionId}`);
+    expect(parseRoute(`/hr/panorama/reports/${insightVersionId}`)).toEqual({name:'not-found'});
+    expect(routePath({name:'hr-panorama'})).toBe('/hr/panorama');
     expect(parseRoute("/hr/panorama/reports/not-a-uuid")).toEqual({ name: "not-found" });
     expect(parseRoute("/hr/panorama/reports/------------------------------------")).toEqual({ name: "not-found" });
   });
 
   const compatibilityRoutes = [
     ["/agents/hr-bot", "/hr/", "spa"],
-    ["/agents/hr-bot/conversations/hr%3Aone", "/hr/conversations/hr%3Aone", "spa"],
     ["/agents/marketing-prospecting-bot", "/marketing/prospecting", "spa"],
     ["/agents/marketing-prospecting-bot/conversations/mkt%3Aone", "/marketing/prospecting/conversations/mkt%3Aone", "spa"],
     ["/agents/marketing-inbound-bot", "/marketing/inbound", "spa"],
@@ -89,8 +84,6 @@ describe("Platform router", () => {
     ["/hr/chat", { name: "hr-chat" }],
     ["/hr/positions", { name: "hr-positions" }],
     ["/hr/positions/00000000-0000-4000-8000-000000000001", { name: "hr-position", positionId: "00000000-0000-4000-8000-000000000001" }],
-    ["/hr/positions/00000000-0000-4000-8000-000000000001/conversations/conversation-1", { name: "hr-position-conversation", positionId: "00000000-0000-4000-8000-000000000001", conversationId: "conversation-1" }],
-    ["/hr/conversations/c%3A1", { name: "hr-conversation", conversationId: "c:1" }],
     ["/marketing", { name: "legacy-redirect", to: "/marketing/prospecting", navigation: "spa" }],
     ["/marketing/", { name: "legacy-redirect", to: "/marketing/prospecting", navigation: "spa" }],
     ["/marketing/inbound", { name: "marketing", agentSlug: "inbound" }],
@@ -159,10 +152,8 @@ describe("Platform router", () => {
     expect(routePath({ name: "admin-access" })).toBe("/admin/access");
     expect(routePath({ name: "account" })).toBe("/account");
     expect(routePath({ name: "voc-workspace" })).toBe("/agents/voc/workspace");
-    expect(routePath({ name: "hr-conversation", conversationId: "c:1" })).toBe("/hr/conversations/c%3A1");
     expect(routePath({ name: "hr-positions" })).toBe("/hr/positions");
     expect(routePath({ name: "hr-position", positionId: "00000000-0000-4000-8000-000000000001" })).toBe("/hr/positions/00000000-0000-4000-8000-000000000001");
-    expect(routePath({ name: "hr-position-conversation", positionId: "00000000-0000-4000-8000-000000000001", conversationId: "conversation-1" })).toBe("/hr/positions/00000000-0000-4000-8000-000000000001/conversations/conversation-1");
     expect(routePath({ name: "marketing-conversation", agentSlug: "voice", conversationId: "c:2" })).toBe("/marketing/voice/conversations/c%3A2");
     expect(routePath({ name: "fae-manage-report", reportId: "weekly:one" })).toBe("/fae/manage/reports/weekly%3Aone");
   });

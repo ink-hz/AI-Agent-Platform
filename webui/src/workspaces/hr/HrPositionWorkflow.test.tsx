@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import {act} from 'react';
+import {takeHrWorkDraft} from './hrCloudLaunch';
 import {createRoot} from 'react-dom/client';
 import {it,expect,vi} from 'vitest';
 import {HrPositionWorkflow,positionResultStage} from './HrPositionWorkflow';
@@ -134,4 +135,17 @@ it.each([401,403])('does not deliver another pending download after a concurrent
  const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async input=>{const url=String(input);if(url.includes('/api/v1/hr/positions/'))return new Response(JSON.stringify({positionId:'position-a',items:[],nextOffset:null}));if(url.includes('/standards/current'))return new Response(JSON.stringify({code:'not_found'}),{status:404});if(url.includes('/results?'))return new Response(JSON.stringify({items:[{ref:exact,title:'一',description:''},{ref:second,title:'二',description:''}],next_cursor:null}));if(url.endsWith('/file'))return url.includes('/second/')?secondDownload:first;const ref=url.includes('/second/')?second:exact;return new Response(JSON.stringify({ref,kind:'sourcing',title:ref.id,body:'正文',objects:[],changes:[],base_standard_ref:null,basis:[]}))});
  try{await act(async()=>root.render(<HrPositionWorkflow account={account} positionId="position-a" api={api} r12={r12} onDraft={()=>{}}/>));const buttons=[...host.querySelectorAll('button')].filter(button=>button.textContent==='下载 Markdown');await act(async()=>{buttons[0].click();buttons[1].click()});fail(new Response(JSON.stringify({code:'forbidden'}),{status}));await settle();late(new Response('late'));await settle();expect(host.textContent).toContain('岗位暂时无法读取');expect(createUrl).not.toHaveBeenCalled();expect(click).not.toHaveBeenCalled()}
  finally{await act(async()=>root.unmount());fetcher.mockRestore();click.mockRestore()}
+});
+
+it.each(['候选人材料','候选人工作'])('opens %s from the position stage without creating work',async label=>{
+ (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;const host=document.createElement('div'),root=createRoot(host);
+ const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async input=>String(input).includes('/results?')?new Response(JSON.stringify({items:[],next_cursor:null})):new Response(JSON.stringify({code:'not_found'}),{status:404}));
+ const draft=vi.fn();
+ try{
+  await act(async()=>root.render(<HrPositionWorkflow account={account} positionId="position-a" section="candidates" api={{position:vi.fn().mockResolvedValue(position)} as unknown as HrApi} r12={{} as HrR12Api} onDraft={draft}/>));
+  await act(async()=>Array.from(host.querySelectorAll('button')).find(button=>button.textContent===label)!.click());
+  expect(takeHrWorkDraft('owner-a','position-a')).toEqual({text:'',notice:'',panel:label==='候选人材料'?'candidate-materials':'candidate-work'});
+  expect(draft).not.toHaveBeenCalled();
+  expect(fetcher.mock.calls.every(([,init])=>!init?.method||init.method==='GET')).toBe(true);
+ }finally{await act(async()=>root.unmount());fetcher.mockRestore();}
 });

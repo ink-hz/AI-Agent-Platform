@@ -118,7 +118,6 @@ export function HrResearchWorkspace({ account, active = true, companyOptions }: 
   return <section className="hr-research" aria-label="HR 情报研究">
     <header className="hr-research-header">
       <div><span className="hr-research-eyebrow">HR INTELLIGENCE · RESEARCH</span><h1>读懂业务，找到对的人。</h1><p>从岗位原文理解工作、技术与交付责任，让人才判断有据可循。</p></div>
-      <a className="hr-research-archive" href={platformPath("/hr/panorama?view=archive")}>历史发布归档 <ArrowUpRight size={15} /></a>
     </header>
     {failure ? <div className="hr-research-state" role="alert"><h2>{failure === 401 ? "登录状态已失效" : failure === 403 ? "当前账号没有 HR 情报权限" : failure === 404 ? "这份研究或指定版本暂不可用" : "情报暂时无法读取"}</h2><p>{failure === 404 ? "保留原引用，不会自动替换成另一份内容。" : "研究内容仅向获准的 HR 工作台账号开放。"}</p>{failure === 401 ? <a href={platformPath("/login?return_path=%2Fhr%2Fpanorama")}>重新登录</a> : <button onClick={() => setRetry(value => value + 1)}>重新读取</button>}{failure === 404 && <button onClick={() => navigate({ research: null, edition: null })}>返回研究目录</button>}</div> : loading ? <div className="hr-research-state" role="status">正在读取研究…</div> : catalog && <>
       <div className="hr-research-dateline"><span><BookOpen size={15} /> {catalog.articles.length} 篇研究 · {catalog.companies.length} 家公司</span><span>材料截至 {catalog.observed_at} · 分析于 {catalog.analyzed_at}</span><span>本批阅读覆盖 {catalog.covered_job_identities.toLocaleString()} 个岗位身份</span></div>

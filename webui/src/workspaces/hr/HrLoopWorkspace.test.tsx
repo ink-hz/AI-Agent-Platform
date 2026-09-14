@@ -1101,8 +1101,20 @@ it("restores an unsent launch draft in StrictMode without starting work", async(
  expect(el.textContent).not.toContain('试用');
 });
 
-it("opens the existing method section from primary navigation",async()=>{
+it("keeps methods in the current workspace without a legacy navigation entry",async()=>{
  await act(async()=>root.render(<HrLoopWorkspace account={account} api={api() as never}/>));
- await act(async()=>button('方法与模型').click());
- expect(document.activeElement?.textContent).toBe('专业方法');
+ expect(button('方法与模型')).toBeUndefined();
+ expect(el.textContent).toContain('专业方法');
+});
+
+it.each(['candidate-materials','candidate-work'] as const)('launches the existing %s panel without submitting',async panel=>{
+ const client=api();
+ const candidates={batches:vi.fn().mockResolvedValue({items:[]}),candidates:vi.fn().mockResolvedValue({items:[]})};
+ const positions={position:vi.fn().mockResolvedValue({positionId:'position-a',title:'算法工程师'})};
+ openHrWork(account.internal_user_id,'position-a','','',panel);
+ await act(async()=>root.render(<StrictMode><HrLoopWorkspace account={account} api={client as never} candidatesApi={candidates as never} positionApi={positions as never} initialPositionId="position-a"/></StrictMode>));
+ expect(el.querySelector(`section[aria-label="${panel==='candidate-materials'?'批量简历材料':'候选人工作'}"]`)).not.toBeNull();
+ expect(client.submit).not.toHaveBeenCalled();
+ expect(client.append).not.toHaveBeenCalled();
+ if(panel==='candidate-materials')expect(el.textContent).toContain('算法工程师');
 });

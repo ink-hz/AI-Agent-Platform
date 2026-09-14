@@ -12,6 +12,7 @@ import {PlatformLink} from '../../components/PlatformLink';
 import {HrOfficialPositionPanel} from './HrOfficialPositionPanel';
 import {HrPositionResourcesPanel} from './HrPositionResourcesPanel';
 import './hrPositionWorkflow.css';
+import {openHrWork} from './hrCloudLaunch';
 
 type Stage='overview'|'requirements'|'sourcing'|'candidates'|'interviews'|'review'|'resources';
 type ReadState<T>={value:T;error:boolean};
@@ -88,6 +89,6 @@ export function HrPositionWorkflow({account,positionId,section,api,r12,onDraft,d
  {stage==='requirements'&&<><section className="hr-pw-section"><h2>岗位要求与确认标准</h2><p>官网原文是来源事实，确认标准是团队已经认可的要求，建议在确认前单独保留。</p></section><HrOfficialPositionPanel api={r12} positionId={positionId} currentSourceVersion={position.sourceVersion} fallback={position}/><section className="hr-pw-section"><h2>当前已确认岗位标准</h2>{standard.error?<p role="alert">当前标准暂时无法读取。</p>:standard.value?<><time dateTime={standard.value.confirmed_at}>确认于 {new Date(standard.value.confirmed_at).toLocaleString('zh-CN')}</time><ul>{standard.value.items.map(item=><li key={item.item_id}>{item.text}</li>)}</ul></>:<p>尚无已确认标准。可以基于官网 JD / JR 继续讨论。</p>}</section><section className="hr-pw-section"><h2>已保存的要求与建议</h2>{cloud(grouped('requirements'),'尚无已保存的岗位要求或标准建议。')}<button disabled={readOnly} onClick={()=>draft(`请梳理《${position.title}》的 JD / JR，读取官网原文及已确认标准，列出需要澄清和调整的要求，供我逐项确认。`)}>在对话中梳理要求</button></section></>}
  {stage==='sourcing'&&<section className="hr-pw-section"><h2>人才搜寻与吸引</h2><p>查看人才画像、搜寻方向、来源与沟通建议。</p><button disabled={readOnly} onClick={()=>draft(`请为《${position.title}》制定人才搜寻策略，先读取当前要求与已有成果，明确目标背景、可迁移能力、渠道和需要补充的信息。`)}>带着这个岗位继续讨论</button>{cloud(grouped('sourcing'),'尚无已保存的搜寻成果。')}</section>}
  {stage==='review'&&<section className="hr-pw-section"><h2>招聘复盘与标准调整</h2><p>结合候选人和面试的真实证据，整理共性问题与后续调整。</p><button disabled={readOnly} onClick={()=>draft(`请结合《${position.title}》已有的岗位要求、候选人分析和面试记录做招聘复盘，区分实际证据、共性问题与待确认的标准调整；没有记录的部分明确列出。`)}>带着这个岗位继续讨论</button>{cloud(grouped('review'),'尚无已保存的招聘复盘。')}</section>}
- {stage==='candidates'&&<section className="hr-pw-section"><h2>候选人评估</h2><p>查看当前岗位已保存的候选人评估；新增或继续评估请回到主对话。</p><button disabled={readOnly} onClick={()=>draft(`请结合《${position.title}》的当前标准和已有成果，继续候选人评估。`)}>在主对话中评估候选人</button>{cloud(grouped('candidates'),'尚无已保存的候选人评估。')}</section>}
+ {stage==='candidates'&&<section className="hr-pw-section"><h2>候选人评估</h2><p>查看当前岗位已保存的候选人评估。候选人材料在主工作台按此岗位上传；候选人工作可选择跨岗位候选人。</p><button disabled={readOnly} onClick={()=>openHrWork(account.internal_user_id,positionId,'','','candidate-materials')}>候选人材料</button><button disabled={readOnly} onClick={()=>openHrWork(account.internal_user_id,positionId,'','','candidate-work')}>候选人工作</button>{cloud(grouped('candidates'),'尚无已保存的候选人评估。')}</section>}
  {stage==='interviews'&&<section className="hr-pw-section"><h2>面试方案与实际记录</h2><p>方案说明要验证什么，记录保留实际回答和待核验事项。</p><button onClick={()=>setStage('candidates')}>选择候选人与简历</button>{cloud(grouped('interviews'),'尚无已保存的面试方案或实际记录。')}</section>}{stage==='resources'&&<HrPositionResourcesPanel api={r12} positionId={positionId} readOnly={account.hard_stale_read_only}/>}</div></div></main>
 }

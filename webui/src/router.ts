@@ -25,10 +25,7 @@ export type Route =
   | { name: "hr-positions" }
   | { name: "hr-position"; positionId: string }
   | { name: "hr-position-section"; positionId: string; section: import("./hrR12Types").HrPositionSection }
-  | { name: "hr-position-conversation"; positionId: string; conversationId: string }
-  | { name: "hr-conversation"; conversationId: string }
   | { name: "hr-panorama" }
-  | { name: "hr-panorama-report"; insightVersionId: string }
   | { name: "marketing"; agentSlug: MarketingAgentSlug }
   | { name: "marketing-conversation"; agentSlug: MarketingAgentSlug; conversationId: string }
   | { name: "fae-manage-overview" }
@@ -242,7 +239,7 @@ export function parseRoute(pathname: string, search = ""): Route {
     const conversationId = safeDecodedValue(legacyAgentConversation[2]);
     if (!agentId || !conversationId) return { name: "not-found" };
     if (agentId === "hr-bot") {
-      return { name: "legacy-redirect", to: `/hr/conversations/${legacyAgentConversation[2]}`, navigation: "spa" };
+      return { name: "not-found" };
     }
     if (agentId === "ai-fae-agent") {
       return { name: "legacy-redirect", to: `/fae/conversations/${legacyAgentConversation[2]}`, navigation: "document" };
@@ -253,30 +250,12 @@ export function parseRoute(pathname: string, search = ""): Route {
     }
   }
 
-  const hrPositionConversation = /^\/hr\/positions\/([^/]+)\/conversations\/([^/]+)$/.exec(clean);
-  if (hrPositionConversation) {
-    const positionId = safeDecodedValue(hrPositionConversation[1], /^[0-9a-fA-F-]{36}$/);
-    const conversationId = safeDecodedValue(hrPositionConversation[2]);
-    return positionId && conversationId
-      ? { name: "hr-position-conversation", positionId, conversationId }
-      : { name: "not-found" };
-  }
   const hrPositionSection = /^\/hr\/positions\/([^/]+)\/(chat|context|candidates|artifacts)$/.exec(clean);
   if (hrPositionSection) {
     const positionId = safeDecodedValue(hrPositionSection[1], /^[0-9a-fA-F-]{36}$/);
     return positionId
       ? { name: "hr-position-section", positionId, section: hrPositionSection[2] as import("./hrR12Types").HrPositionSection }
       : { name: "not-found" };
-  }
-  const hrConversation = /^\/hr\/conversations\/([^/]+)$/.exec(clean);
-  if (hrConversation) {
-    const conversationId = safeDecodedValue(hrConversation[1]);
-    return conversationId ? { name: "hr-conversation", conversationId } : { name: "not-found" };
-  }
-  const hrPanoramaReport = /^\/hr\/panorama\/reports\/([^/]+)$/.exec(clean);
-  if (hrPanoramaReport) {
-    const insightVersionId = safeDecodedValue(hrPanoramaReport[1], UUID);
-    return insightVersionId ? { name: "hr-panorama-report", insightVersionId } : { name: "not-found" };
   }
   if (clean === "/hr/panorama") return { name: "hr-panorama" };
   if (clean === "/hr/positions") return { name: "hr-positions" };
@@ -444,10 +423,7 @@ export function routePath(route: Route): string {
     case "hr-positions": return "/hr/positions";
     case "hr-position": return `/hr/positions/${encodeURIComponent(route.positionId)}`;
     case "hr-position-section": return `/hr/positions/${encodeURIComponent(route.positionId)}/${route.section}`;
-    case "hr-position-conversation": return `/hr/positions/${encodeURIComponent(route.positionId)}/conversations/${encodeURIComponent(route.conversationId)}`;
-    case "hr-conversation": return `/hr/conversations/${encodeURIComponent(route.conversationId)}`;
     case "hr-panorama": return "/hr/panorama";
-    case "hr-panorama-report": return `/hr/panorama/reports/${encodeURIComponent(route.insightVersionId)}`;
     case "marketing": return `/marketing/${route.agentSlug}`;
     case "marketing-conversation": return `/marketing/${route.agentSlug}/conversations/${encodeURIComponent(route.conversationId)}`;
     case "fae-manage-overview": return "/fae/manage/";
@@ -481,7 +457,7 @@ export function routeSection(route: Route): RouteSection | null {
   if (route.name === "brain") return "brain";
   if (route.name === "conversations" || route.name === "conversation") return "brain";
   if (route.name === "agents" || route.name === "voc-workspace"
-    || route.name === "hr" || route.name === "hr-chat" || route.name === "hr-agent" || route.name === "hr-positions" || route.name === "hr-position" || route.name === "hr-position-section" || route.name === "hr-position-conversation" || route.name === "hr-conversation" || route.name === "hr-panorama" || route.name === "hr-panorama-report" || route.name === "marketing" || route.name === "marketing-conversation") return "agents";
+    || route.name === "hr" || route.name === "hr-chat" || route.name === "hr-agent" || route.name === "hr-positions" || route.name === "hr-position" || route.name === "hr-position-section" || route.name === "hr-panorama" || route.name === "marketing" || route.name === "marketing-conversation") return "agents";
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
   if (route.name === "account") return "account";

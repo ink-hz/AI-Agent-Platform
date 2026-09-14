@@ -25,3 +25,7 @@
 .hr-pw-cloud-result>button{display:inline-flex;align-items:center;gap:7px;margin-top:14px;border:1px solid #a9c4d180;border-radius:10px;padding:9px 12px;background:#f8fcff;color:#27576b;cursor:pointer}
 .hr-pw-section time{display:block;margin-bottom:12px;color:#455f70;font-size:12px}
 .hr-pw-section>ul{line-height:1.9;color:#2f4858}
+
+.hr-pw-position-list{display:flex;flex-direction:column;gap:12px}.hr-pw-position-list .hr-pw-position-card{width:100%;box-sizing:border-box}
+
+.hr-pw-position-list .hr-pw-position-card{padding:18px 22px;border-radius:12px}.hr-pw-position-list .hr-pw-position-card h2{font-size:18px;margin:8px 0}.hr-pw-position-list .hr-pw-position-card>p{margin:0 0 8px}.hr-pw-position-list .hr-pw-position-card:hover{transform:none}
