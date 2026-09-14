@@ -274,9 +274,9 @@ it("reuses the persisted conversation id through the real production start path 
   expect(requestIds).toEqual([requestIds[0], requestIds[0]]);
 });
 
-it('offers opt in Hannah work for each existing position',async()=>{
+it('offers Hannah work for each existing position',async()=>{
  await act(async()=>root.render(<HrPositionIndex account={account} api={api() as never}/>));
- expect(container.querySelector(`a[href="/hr/agent?position=${official.positionId}"]`)).not.toBeNull();
+ expect(container.querySelector(`a[href="/hr/?position=${official.positionId}"]`)).not.toBeNull();
 });
 
 it("retains production selection into the main conversation", async () => {

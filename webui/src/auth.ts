@@ -154,8 +154,8 @@ function canonicalEncodedDetailPath(value: string): boolean {
 
 
 function safeLoginReturnPath(value: string): boolean {
-  if (value.startsWith("/hr/agent?")) {
-    const query = value.slice("/hr/agent?".length);
+  if (["/hr/agent?", "/hr/?", "/hr?"].some(prefix => value.startsWith(prefix))) {
+    const query = value.slice(value.indexOf("?") + 1);
     if (!/^[a-zA-Z0-9=&-]+$/.test(query)) return false;
     const params = new URLSearchParams(query);
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

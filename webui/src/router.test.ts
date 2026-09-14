@@ -249,3 +249,14 @@ it('routes the opt in cloud HR workbench with resumable context', () => {
   expect(parseRoute('/hr/agent',`?position=${position}&work=${work}`)).toEqual({name:'hr-agent',positionId:position,workId:work});
   expect(parseRoute('/hr/agent','?work=unsafe')).toEqual({name:'not-found'});
 });
+
+it('opens the cloud HR home with bound work and position context', () => {
+ const position='11111111-1111-4111-8111-111111111111'; const work='22222222-2222-4222-8222-222222222222';
+ expect(parseRoute('/hr/',`?position=${position}&work=${work}`)).toEqual({name:'hr',positionId:position,workId:work});
+ expect(routePath({name:'hr',positionId:position,workId:work})).toBe(`/hr/?position=${position}&work=${work}`);
+ for(const path of ['/hr/','/hr/agent']) {
+  expect(parseRoute(path,'?work=unsafe')).toEqual({name:'not-found'});
+  expect(parseRoute(path,`?work=${work}&work=${work}`)).toEqual({name:'not-found'});
+ }
+ expect(parseRoute('/hr',`?work=${work}`)).toEqual({name:'legacy-redirect',to:`/hr/?work=${work}`,navigation:'spa'});
+});

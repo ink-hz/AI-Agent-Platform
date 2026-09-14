@@ -864,190 +864,31 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-it("keeps one recruiting conversation while importing candidates, scoping drafts, and reopening results", async () => {
+// The former legacy-send journey is superseded by cloud primary routing. This
+// fixture now verifies the supported historical read path through the real App.
+it("preserves historical messages and exact saved results without submitting legacy work", async () => {
+  savedResults = [
+    {turnId:'turn-1',resultId:fixture.analyses[0],schemaId:'hr.candidate-analysis.v2',contentSha256:'5'.repeat(64),candidateIndex:0},
+    {turnId:'turn-1',resultId:fixture.analyses[2],schemaId:'hr.candidate-interview-plan.v1',contentSha256:'6'.repeat(64),candidateIndex:1},
+  ];
   await act(async () => root.render(<App />));
   await waitFor(() => expect(container.textContent).toContain("岗位需求初版已生成"));
-  const chatHost = container.querySelector<HTMLElement>('.agent-use-workspace[data-agent-id="hr-bot"]');
-  expect(chatHost).not.toBeNull();
   expect(container.querySelectorAll('.agent-use-workspace[data-agent-id="hr-bot"]')).toHaveLength(1);
-
   const composer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
-  await act(async () => setInput(composer, "请补充量产良率与失效分析要求，修订 JD/JR"));
+  expect(composer.disabled).toBe(true);
+  expect(container.textContent).toContain('历史对话仅供查看');
   await click(container, "✨ 发送");
-  expect(messageBodies[0]).toEqual({
-    text: "请补充量产良率与失效分析要求，修订 JD/JR",
-    attachment_ids: [],
-    active_attachment_ids: [],
-    inputResultRefs: [],
-    scope: { attachmentIds: [], positionCandidateIds: [], positionId: null },
-  });
-  await completeCurrentTurn("已补充量产良率和失效分析要求。");
-  await waitFor(() => expect(container.textContent).toContain("已补充量产良率和失效分析要求"));
+  expect(messageBodies).toHaveLength(0);
 
-  const retainedComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
-  await act(async () => setInput(retainedComposer, "保留这段岗位对话草稿"));
-  const upload = container.querySelector<HTMLInputElement>('.conversation-composer input[type="file"]')!;
-  Object.defineProperty(upload, "files", {
-    configurable: true,
-    value: [new File(["test"], "岗位补充.pdf", { type: "application/pdf" })],
-  });
-  await act(async () => upload.dispatchEvent(new Event("change", { bubbles: true })));
-  await waitFor(() => expect(container.textContent).toContain("岗位补充.pdf已就绪"));
-
-  await follow(container, "HR 情报");
-  await waitFor(() => expect(window.location.pathname).toBe("/hr/panorama"));
-  expectSafeUi(container);
-  await follow(container, "对话");
-  await waitFor(() => expect(window.location.pathname).toBe(`/hr/conversations/${fixture.conversation}`));
-  expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(chatHost);
-  expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')?.value)
-    .toBe("保留这段岗位对话草稿");
-  expect(container.textContent).toContain("岗位补充.pdf已就绪");
-
-  const intelligenceRequest = "只读取示例光学甲公开招聘情报并说明来源";
-  const preservedComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
-  await act(async () => setInput(preservedComposer, intelligenceRequest));
-  await click(container, "✨ 发送");
-  expect(messageBodies[1]).toEqual({
-    text: intelligenceRequest,
-    attachment_ids: [fixture.attachment],
-    active_attachment_ids: [fixture.attachment],
-    inputResultRefs: [],
-    scope: {
-      attachmentIds: [fixture.attachment],
-      positionCandidateIds: [],
-      positionId: null,
-    },
-  });
-  const namedSourceAnswer = [
-    `已读取${companies[0]}公开招聘情报。`,
-    `全景版本 ${fixture.insight}，观测截至 ${now}。`,
-    "来源 https://example.com/company-1/jobs/structure",
-  ].join(" ");
-  await completeCurrentTurn(namedSourceAnswer);
-  await waitFor(() => expect(container.textContent).toContain(namedSourceAnswer));
-  const intelligenceMessage = [...container.querySelectorAll<HTMLElement>(".conversation-assistant")]
-    .find((item) => item.textContent?.includes(namedSourceAnswer));
-  expect(intelligenceMessage?.textContent).toContain(companies[0]);
-  expect(intelligenceMessage?.textContent).toContain(fixture.insight);
-  expect(intelligenceMessage?.textContent).toContain("https://example.com/company-1/jobs/structure");
-  expect(intelligenceMessage?.textContent).not.toContain(companies[1]);
-  expect(intelligenceMessage?.textContent).not.toContain(companies[2]);
-
-  await click(container, "选择本轮岗位");
-  await waitFor(() => {
-    expect([...container.querySelectorAll<HTMLButtonElement>(".hr-position-picker-option")]
-      .some((item) => item.querySelector("strong")?.textContent === "高级结构工程师")).toBe(true);
-  });
-  await act(async () => {
-    [...container.querySelectorAll<HTMLButtonElement>(".hr-position-picker-option")]
-      .find((item) => item.querySelector("strong")?.textContent === "高级结构工程师")!.click();
-  });
-  await settle();
-  await waitFor(() => expect(container.textContent).toContain("查看 JD / JR"));
-  await click(container, "查看 JD / JR");
-  await waitFor(() => expect(container.textContent).toContain("已参考全景招聘证据修订 JD/JR"));
-  expect(container.textContent).toContain("负责喷嘴、挤出系统、可靠性验证和量产良率改进");
-  expect(container.textContent).toContain("掌握挤出工艺与失效分析");
-  await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="关闭岗位资料"]')!.click());
-  await settle();
-
-  await click(container, "候选人 / 面试");
-  const resumeInput = container.querySelector<HTMLInputElement>(
-    'section[aria-label="批量简历导入"] input[type="file"]',
-  );
-  expect(resumeInput).not.toBeNull();
-  Object.defineProperty(resumeInput, "files", {
-    configurable: true,
-    value: resumeNames.map((name) => new File([name], name, { type: "application/pdf" })),
-  });
-  await act(async () => resumeInput!.dispatchEvent(new Event("change", { bubbles: true })));
-  await waitFor(() => expect(button(container, "开始解析 3 份简历").disabled).toBe(false));
-  await click(container, "开始解析 3 份简历");
-  expect(container.textContent).toContain("解析失败");
-  expect(container.textContent).toContain("未能识别这份简历的内容");
-  expect(container.textContent).not.toContain("parser_response_invalid");
-  await click(container, "重试解析");
-  await waitFor(() => expect(button(container, "审阅候选人丙").disabled).toBe(false));
-  expect(container.textContent).not.toContain("解析失败");
-  expect(container.textContent).not.toContain("未能识别这份简历的内容");
-  for (const name of ["候选人甲", "候选人乙"]) {
-    await click(container, `审阅${name}`);
-    await click(container, "确认候选人");
-  }
-  await waitFor(() => expect(container.textContent).toContain("2 位已确认"));
-
-  await click(container, "查看匿名候选人甲");
-  await click(container, "在对话中分析");
-  const candidateAComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
-  expect(candidateAComposer.value).toContain("匿名候选人甲");
-  expect(candidateAComposer.value).not.toContain("匿名候选人乙");
-  await click(container, "✨ 发送");
-  expect(messageBodies[2]).toEqual({
-    text: expect.stringMatching(/匿名候选人甲.*分析匹配证据、差距和待验证项/),
-    attachment_ids: [],
-    active_attachment_ids: [fixture.attachment],
-    inputResultRefs: [],
-    scope: {
-      attachmentIds: [fixture.resumeAttachments[0], fixture.attachment],
-      positionCandidateIds: [fixture.relations[0]],
-      positionId: fixture.position,
-    },
-  });
-  await completeCurrentTurn("匿名候选人甲匹配分析完成。");
-  await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析完成"));
-
-  await click(container, "候选人 / 面试");
-  await waitFor(() => expect(container.textContent).toContain("2 位已确认"));
-  await click(container, "查看匿名候选人乙");
-  await click(container, "在对话中设计面试");
-  const candidateBComposer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="继续对话"]')!;
-  expect(candidateBComposer.value).toContain("匿名候选人乙");
-  expect(candidateBComposer.value).not.toContain("匿名候选人甲");
-  await click(container, "✨ 发送");
-  expect(messageBodies[3]).toEqual({
-    text: expect.stringMatching(/匿名候选人乙.*设计面试问题与证据标准/),
-    attachment_ids: [],
-    active_attachment_ids: [fixture.attachment],
-    inputResultRefs: [],
-    scope: {
-      attachmentIds: [fixture.resumeAttachments[1], fixture.attachment],
-      positionCandidateIds: [fixture.relations[1]],
-      positionId: fixture.position,
-    },
-  });
-  await completeCurrentTurn("匿名候选人乙面试方案完成。");
-  await waitFor(() => expect(container.textContent).toContain("匿名候选人乙面试方案完成"));
-
-  await act(async () => root.unmount());
-  root = createRoot(container);
-  window.history.replaceState({}, "", `/hr/conversations/${fixture.conversation}`);
-  await act(async () => root.render(<App />));
-  await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析完成"));
-  expect(container.textContent).toContain("匿名候选人乙面试方案完成");
-  expect(container.querySelectorAll('.agent-use-workspace[data-agent-id="hr-bot"]')).toHaveLength(1);
   await waitFor(() => expect(container.querySelectorAll("details.hr-turn-result")).toHaveLength(2));
-  const reopenedResults = [...container.querySelectorAll<HTMLDetailsElement>("details.hr-turn-result")];
-  await act(async () => {
-    reopenedResults[0].open = true;
-    reopenedResults[0].dispatchEvent(new Event("toggle"));
-  });
+  for (const result of container.querySelectorAll<HTMLDetailsElement>("details.hr-turn-result")) {
+    await act(async () => {result.open = true; result.dispatchEvent(new Event("toggle"));});
+  }
   await waitFor(() => expect(container.textContent).toContain("匿名候选人甲匹配分析"));
   expect(container.textContent).toContain("负责挤出系统量产，证据与差距已整理");
-  await act(async () => {
-    reopenedResults[1].open = true;
-    reopenedResults[1].dispatchEvent(new Event("toggle"));
-  });
-  await waitFor(() => expect(container.textContent).toContain("匿名候选人乙专属面试方案"));
+  expect(container.textContent).toContain("匿名候选人乙专属面试方案");
   expect(container.textContent).toContain("请复盘一次喷嘴或挤出系统从设计到量产的完整过程");
   expectSafeUi(container);
-
-  expect(requests).toContain(`POST /api/hr/positions/${fixture.position}/candidate-drafts:batch`);
-  expect(requests).toContain(`POST /api/hr/candidate-drafts/${fixture.candidateDrafts[2]}:retry`);
-  expect(requests.filter((request) => request === (
-    `POST /api/v1/conversations/${fixture.conversation}/messages`
-  ))).toHaveLength(4);
-  expect(messageBodies).toHaveLength(4);
-  expect(requests.some((request) => request.includes("/position-package"))).toBe(false);
-  expect(requests.some((request) => request.includes(`/positions/${fixture.position}/tasks`))).toBe(false);
+  expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/"]')?.textContent).toBe('对话');
+  expect(requests.filter(request => request.startsWith('POST '))).toEqual([]);
 });

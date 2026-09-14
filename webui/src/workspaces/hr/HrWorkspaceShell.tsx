@@ -10,7 +10,6 @@ export type HrWorkspaceSection = "chat" | "positions" | "panorama" | "agent";
 
 export function HrWorkspaceShell({
   account,
-  chatHref = "/hr/",
   current,
   children,
   onOpenKnowledge,
@@ -28,8 +27,7 @@ export function HrWorkspaceShell({
         <strong>HR 智能工作台</strong>
       </PlatformLink>
       <nav className="hr-workspace-nav" aria-label="HR 智能工作台">
-        <PlatformLink aria-current={current === "agent" ? "page" : undefined} href="/hr/agent">Hannah 试用</PlatformLink>
-        <PlatformLink aria-current={current === "chat" ? "page" : undefined} href={chatHref}><MessageSquare size={17} aria-hidden="true" />对话</PlatformLink>
+        <PlatformLink aria-current={(current === "chat" || current === "agent") ? "page" : undefined} href="/hr/"><MessageSquare size={17} aria-hidden="true" />对话</PlatformLink>
         <PlatformLink aria-current={current === "positions" ? "page" : undefined} href="/hr/positions"><BriefcaseBusiness size={17} aria-hidden="true" />岗位</PlatformLink>
         <PlatformLink aria-current={current === "panorama" ? "page" : undefined} href="/hr/panorama"><ChartNoAxesCombined size={17} aria-hidden="true" />HR 情报</PlatformLink>
         <button onClick={onOpenKnowledge} type="button"><BookOpen size={17} aria-hidden="true" />方法与模型</button>

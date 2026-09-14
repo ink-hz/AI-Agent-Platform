@@ -15,6 +15,7 @@ import {
 import { createHrApi } from "../../hrApi";
 import { createHrR12Api } from "../../hrR12Api";
 import { HrWorkspacePage } from "./HrWorkspacePage";
+import { takeHrWorkDraft } from "./hrCloudLaunch";
 import type { HrIntelligenceReference } from "./hrIntelligenceReference";
 
 
@@ -55,6 +56,9 @@ vi.mock("./HrPanoramaWorkspace", () => ({
       excerpt: "招聘岗位主要分布于深圳。", sourceUrls: ["https://example.com/jobs/9"],
       unitId: "unit-2", claimType: "fact", localId: "fact-9",
     })} type="button">带入对话</button>
+    <button onClick={() => onSelectReference?.({
+      key: "fact:large", bundleId: "bundle-7", companyKey: "acme", companyName: "Acme", label: "Large", generatedAt: "2026-09-08T06:00:00Z", excerpt: "正文".repeat(8000), sourceUrls: [], unitId: "unit-2", claimType: "fact", localId: "large",
+    })} type="button">超大情报</button>
     <button onClick={() => onSelectReference?.({
       key: "fact:bundle-7:unit-2:fact-10", bundleId: "bundle-7", companyKey: "acme",
       companyName: "Acme Robotics", label: "新增情报", generatedAt: "2026-09-08T06:00:00Z",
@@ -155,6 +159,7 @@ describe("HrWorkspacePage", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     vi.mocked(fetchAgentCatalog).mockResolvedValue([hrCard]);
     vi.mocked(listConversations).mockResolvedValue({ items: [], next_cursor: null });
     vi.mocked(listConversationAttachments).mockResolvedValue([]);
@@ -241,6 +246,36 @@ describe("HrWorkspacePage", () => {
     expect(location.pathname).toBe('/hr/');
     expect(startConversation).not.toHaveBeenCalled();
   });
+  it("keeps historical conversation readable but prevents new legacy submissions", async () => {
+    await act(async () => root.render(<HrWorkspacePage cloudPrimary account={account} conversationId="c-7" />));
+    expect(fetchConversation).toHaveBeenCalled();
+    expect(container.textContent).toContain("历史对话仅供查看");
+    expect(container.querySelector<HTMLTextAreaElement>(".conversation-composer textarea")?.disabled).toBe(true);
+    expect(startConversation).not.toHaveBeenCalled();
+  });
+  it("does not mount a legacy composer in the cloud positions view", async () => {
+    await act(async () => root.render(<HrWorkspacePage cloudPrimary account={account} positions />));
+    expect(container.querySelector('.agent-direct-composer')).toBeNull();
+    expect(fetchAgentCatalog).not.toHaveBeenCalled();
+  });
+  it("launches a position quick action in the new cloud workspace without legacy submission", async()=>{
+    const client=vi.mocked(createHrApi).mock.results[0]?.value ?? createHrApi(account.csrf_token);
+    vi.mocked(client.listPositions).mockResolvedValue({items:[{...(await client.position(positionId)),conversationCount:0}],nextCursor:null});
+    await act(async()=>root.render(<HrWorkspacePage cloudPrimary account={account} positions/>));
+    const action=[...container.querySelectorAll('button')].find(button=>button.textContent==='在主对话中继续');
+    expect(action).toBeDefined();
+    await act(async()=>action!.click());
+    expect(window.location.pathname+window.location.search).toBe(`/hr/?position=${positionId}`);
+    expect(takeHrWorkDraft(account.internal_user_id,positionId)).toEqual({text:'',notice:''});
+    expect(startConversation).not.toHaveBeenCalled();
+  });
+  it("retains the intelligence page and explains an oversized cloud draft",async()=>{
+    window.history.replaceState({},'', '/hr/panorama');
+    await act(async()=>root.render(<HrWorkspacePage cloudPrimary account={account} panorama/>));
+    await act(async()=>[...container.querySelectorAll('button')].find(button=>button.textContent==='超大情报')!.click());
+    expect(container.textContent).toContain('所选情报超过 12 KiB');
+    expect(window.location.pathname).toBe('/hr/panorama');
+  });
   it("opens a conversation-first HR workspace at the canonical root", async () => {
     await act(async () => root.render(<HrWorkspacePage account={account} />));
 
@@ -286,7 +321,7 @@ describe("HrWorkspacePage", () => {
     expect(container.querySelector<HTMLElement>(".hr-workspace-chat-panel")?.hidden).toBe(true);
     expect(textarea.value).toBe("不应丢失的草稿");
     expect(container.textContent).toContain("待发送简历.pdf");
-    expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/conversations/c-7"]')).not.toBeNull();
+    expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/"]')).not.toBeNull();
 
     await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
     expect(container.querySelector('.agent-use-workspace[data-agent-id="hr-bot"]')).toBe(workspace);
@@ -369,12 +404,12 @@ describe("HrWorkspacePage", () => {
     expect(startConversation).not.toHaveBeenCalled();
   });
 
-  it("keeps the current conversation as the chat navigation target", async () => {
+  it("uses the cloud home as the chat navigation target", async () => {
     await act(async () => root.render(<HrWorkspacePage account={account} conversationId="c-7" />));
     await act(async () => root.render(<HrWorkspacePage account={account} positions />));
 
     expect(container.querySelector<HTMLAnchorElement>(
-      '.hr-workspace-nav a[href="/hr/conversations/c-7"]',
+      '.hr-workspace-nav a[href="/hr/"]',
     )?.textContent).toBe("对话");
   });
 

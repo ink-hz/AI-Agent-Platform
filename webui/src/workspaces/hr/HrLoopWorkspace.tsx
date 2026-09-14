@@ -36,6 +36,7 @@ import { HrLoopIntelligencePicker } from "./HrLoopIntelligencePicker";
 import { HrPositionPicker } from "./HrPositionPicker";
 import { HrWorkspaceShell } from "./HrWorkspaceShell";
 import "./HrLoopWorkspace.css";
+import { takeHrWorkDraft } from "./hrCloudLaunch";
 
 type Props = {
   account: Account;
@@ -123,6 +124,7 @@ function Workspace({
   const [configuration, setConfiguration] = useState<Awaited<
     ReturnType<HrLoopApi["configuration"]>
   > | null>(null);
+  const methodHeading = useRef<HTMLHeadingElement>(null);
   const [showCandidates, setShowCandidates] = useState(false);
   const [showCandidateWork, setShowCandidateWork] = useState(false);
   const [candidateName, setCandidateName] = useState("");
@@ -151,7 +153,8 @@ function Workspace({
   const [unavailableIntelligence, setUnavailableIntelligence] = useState<
     string[]
   >([]);
-  const [text, setText] = useState("");
+  const [launchDraft] = useState(() => takeHrWorkDraft(account.internal_user_id, initialPositionId));
+  const [text, setText] = useState(launchDraft?.text ?? "");
   const [previousInput, setPreviousInput] = useState("");
   const [position, setPosition] = useState<HrPosition | null>(null);
   const [positionId, setPositionId] = useState(initialPositionId);
@@ -168,7 +171,7 @@ function Workspace({
     active_seconds: 0,
   });
   const [reason, setReason] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(launchDraft?.notice ?? "");
   const epoch = useRef(0);
   const active = useRef(true);
   const mutationBusy = useRef(false);
@@ -625,7 +628,7 @@ function Workspace({
     ).values(),
   ];
   return (
-    <HrWorkspaceShell account={account} current="agent">
+    <HrWorkspaceShell account={account} current="chat" onOpenKnowledge={() => methodHeading.current?.focus()}>
       <main className="hr-loop">
         <aside className="hr-loop-sidebar" aria-label="工作与方法">
           <button type="button" onClick={() => selectWork()}>
@@ -651,7 +654,7 @@ function Workspace({
               {states[w.state] ?? "查看工作"} · 第 {w.input_revision} 次输入
             </button>
           ))}
-          <h2>专业方法</h2>
+          <h2 ref={methodHeading} tabIndex={-1}>专业方法</h2>
           <p>先阅读用途、边界和来源，再带入讨论。</p>
           {methods.map((m) => (
             <button
@@ -682,7 +685,7 @@ function Workspace({
         </aside>
         <section className="hr-loop-conversation" aria-label="HR Agent 对话">
           <header>
-            <span className="hr-loop-eyebrow">HR AGENT · 试用</span>
+            <span className="hr-loop-eyebrow">HR AGENT</span>
             <h1>与 Hannah 一起厘清招聘问题</h1>
             <p>从公开 JD、业务目标或一个问题开始；也可以先选岗位。</p>
             <HrPositionPicker

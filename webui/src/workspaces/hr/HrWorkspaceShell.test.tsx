@@ -35,8 +35,8 @@ describe("HrWorkspaceShell", () => {
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-nav a[href="/hr/panorama"]')?.textContent).toBe("HR 情报");
     expect(container.querySelector(".hr-workspace-identity")?.textContent).toContain("磐德");
     expect(container.querySelector<HTMLAnchorElement>('.hr-workspace-platform-link')?.getAttribute("href")).toBe("/");
-    expect(container.querySelectorAll<HTMLAnchorElement>(".hr-workspace-topbar a")).toHaveLength(6);
-    expect(container.querySelector('.hr-workspace-nav a[href="/hr/agent"]')?.textContent).toBe("Hannah 试用");
+    expect(container.querySelectorAll<HTMLAnchorElement>(".hr-workspace-topbar a")).toHaveLength(5);
+    expect(container.textContent).not.toContain("试用");
     expect(container.textContent).not.toContain("专业 Agent");
   });
 
@@ -55,7 +55,7 @@ describe("HrWorkspaceShell", () => {
     expect(container.querySelector(".hr-workspace-stale")?.textContent).toContain("只读");
   });
 
-  it("returns to the last active HR conversation from the positions view", async () => {
+  it("returns to the cloud home from the positions view", async () => {
     await act(async () => root.render(<HrWorkspaceShell
       account={account}
       chatHref="/hr/conversations/c-9"
@@ -63,7 +63,7 @@ describe("HrWorkspaceShell", () => {
     ><p>岗位内容</p></HrWorkspaceShell>));
 
     expect(container.querySelector<HTMLAnchorElement>(
-      '.hr-workspace-nav a[href="/hr/conversations/c-9"]',
+      '.hr-workspace-nav a[href="/hr/"]',
     )?.textContent).toBe("对话");
   });
 });

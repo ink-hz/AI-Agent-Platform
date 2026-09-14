@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
-import { act } from "react";
+import { act, StrictMode } from "react";
+import { openHrWork } from "./hrCloudLaunch";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { HrLoopWorkspace } from "./HrLoopWorkspace";
@@ -1089,4 +1090,19 @@ it("starts clean candidate-scoped work with only explicit candidate, position an
   await act(async () => button("发送").click());
   expect(client.submit.mock.calls[0][0]).toMatchObject({objects:[{kind:"candidate",id:"candidate-a"},{kind:"position",id:"position-a"}],references:[draft],text:"为候选人准备追问"});
   expect(client.submit.mock.calls[0][0].text).not.toContain("旧工作");
+});
+
+it("restores an unsent launch draft in StrictMode without starting work", async()=>{
+ const client=api();
+ openHrWork(account.internal_user_id,undefined,"请梳理岗位要求");
+ await act(async()=>root.render(<StrictMode><HrLoopWorkspace account={account} api={client as never}/></StrictMode>));
+ expect(el.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe("请梳理岗位要求");
+ expect(client.submit).not.toHaveBeenCalled();
+ expect(el.textContent).not.toContain('试用');
+});
+
+it("opens the existing method section from primary navigation",async()=>{
+ await act(async()=>root.render(<HrLoopWorkspace account={account} api={api() as never}/>));
+ await act(async()=>button('方法与模型').click());
+ expect(document.activeElement?.textContent).toBe('专业方法');
 });

@@ -19,7 +19,7 @@ export type Route =
   | { name: "mission"; missionId: string }
   | { name: "agents" }
   | { name: "voc-workspace" }
-  | { name: "hr" }
+  | { name: "hr"; positionId?: string; workId?: string }
   | { name: "hr-chat" }
   | { name: "hr-agent"; positionId?: string; workId?: string }
   | { name: "hr-positions" }
@@ -285,14 +285,13 @@ export function parseRoute(pathname: string, search = ""): Route {
     const positionId = safeDecodedValue(hrPosition[1], /^[0-9a-fA-F-]{36}$/);
     return positionId ? { name: "hr-position", positionId } : { name: "not-found" };
   }
-  if (local === "/hr") return { name: "legacy-redirect", to: "/hr/", navigation: "spa" };
-  if (clean === "/hr") return { name: "hr" };
-  if (clean === "/hr/agent") {
+  if (clean === "/hr" || clean === "/hr/agent") {
     const params = new URLSearchParams(search);
     const positionId = params.get("position") ?? undefined;
     const workId = params.get("work") ?? undefined;
-    if ((positionId !== undefined && !UUID.test(positionId)) || (workId !== undefined && !UUID.test(workId))) return { name: "not-found" };
-    return { name: "hr-agent", ...(positionId ? { positionId } : {}), ...(workId ? { workId } : {}) };
+    if ([...params].some(([key, value]) => !["position", "work"].includes(key) || params.getAll(key).length !== 1 || !UUID.test(value))) return { name: "not-found" };
+    if (local === "/hr") return { name: "legacy-redirect", to: `/hr/${params.size ? `?${params}` : ""}`, navigation: "spa" };
+    return { name: clean === "/hr" ? "hr" : "hr-agent", ...(positionId ? { positionId } : {}), ...(workId ? { workId } : {}) };
   }
   if (clean === "/hr/chat") return { name: "hr-chat" };
 
@@ -433,13 +432,14 @@ export function routePath(route: Route): string {
     case "mission": return `/missions/${encodeURIComponent(route.missionId)}`;
     case "agents": return "/agents";
     case "voc-workspace": return "/agents/voc/workspace";
-    case "hr": return "/hr/";
+
     case "hr-chat": return "/hr/chat";
+    case "hr":
     case "hr-agent": {
       const params = new URLSearchParams();
       if (route.positionId) params.set("position", route.positionId);
       if (route.workId) params.set("work", route.workId);
-      return `/hr/agent${params.size ? `?${params}` : ""}`;
+      return `${route.name === "hr" ? "/hr/" : "/hr/agent"}${params.size ? `?${params}` : ""}`;
     }
     case "hr-positions": return "/hr/positions";
     case "hr-position": return `/hr/positions/${encodeURIComponent(route.positionId)}`;

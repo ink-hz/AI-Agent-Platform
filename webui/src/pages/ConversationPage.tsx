@@ -180,6 +180,7 @@ function terminalTurnHasReferencedMessage(
 
 
 export function ConversationPage({
+  readOnlyReason,
   conversationId,
   account,
   client = DEFAULT_CLIENT,
@@ -208,6 +209,7 @@ export function ConversationPage({
   onIntelligenceReferencesSubmitted,
 }: {
   conversationId: string;
+  readOnlyReason?: string;
   account: Account;
   client?: ConversationPageClient;
   onConversationUpdated?: (conversation: Conversation) => void;
@@ -288,7 +290,7 @@ export function ConversationPage({
   const mergeIntoMessages = (incoming: ConversationMessage[]) => {
     replaceMessages(mergeMessages(messagesRef.current, incoming));
   };
-  const readOnly = account.hard_stale_read_only || detail?.conversation.status === "archived";
+  const readOnly = Boolean(readOnlyReason) || account.hard_stale_read_only || detail?.conversation.status === "archived";
   const materialsDrawerOpen = materialsOpen ?? internalMaterialsOpen;
   const changeMaterialsOpen = useCallback((open: boolean) => {
     if (materialsOpen === undefined) setInternalMaterialsOpen(open);
@@ -902,7 +904,7 @@ export function ConversationPage({
       </div> : undefined}
       attachmentPending={uploadPending}
       disabled={(active && (detail.conversation.mode === "direct_agent" || waitingUser)) || readOnly}
-      disabledMessage={account.hard_stale_read_only
+      disabledMessage={readOnlyReason || (account.hard_stale_read_only
         ? "当前账号为只读状态。"
         : detail.conversation.status === "archived"
           ? "当前对话已归档，不能继续发送消息。"
@@ -910,7 +912,7 @@ export function ConversationPage({
             ? "请先回答上方问题。"
             : active && detail.conversation.mode === "direct_agent"
               ? `${assistantLabel} 正在处理上一条消息…`
-              : undefined}
+              : undefined)}
       label={active && detail.conversation.mode === "brain" ? "补充当前任务" : "继续对话"}
       onChange={(value) => {
         setText(value); setStandardConsent(undefined); setSendFailure(false);

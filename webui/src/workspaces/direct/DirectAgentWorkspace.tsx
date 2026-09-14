@@ -30,6 +30,7 @@ import {
 
 
 export interface DirectAgentWorkspaceProps {
+  readOnlyReason?: string;
   account: Account;
   agentId: string;
   conversationId?: string;
@@ -106,6 +107,7 @@ export function DirectAgentWorkspace({
   conversationPath,
   createdConversationPath = conversationPath,
   header,
+  readOnlyReason,
   workspaceLabel,
   workspaceMark,
   workspaceRootPath,
@@ -344,6 +346,7 @@ export function DirectAgentWorkspace({
         ? <ConversationThread
           key={agentId === "hr-bot" ? conversationId : undefined}
           account={account}
+          readOnlyReason={readOnlyReason}
           assistantLabel={card.display_name}
           client={conversationClient}
           conversationId={conversationId}

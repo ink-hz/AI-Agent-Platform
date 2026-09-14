@@ -521,3 +521,9 @@ it('preserves only validated HR agent resume context through login',()=>{
  expect(loginReturnPath(`?${new URLSearchParams({return_path:path})}`)).toBe(path);
  for(const unsafe of ['/hr/agent?work=unsafe','/hr/agent?redirect=https://evil.test','/hr/agent?work='+work+'&work='+work])expect(loginReturnPath(`?${new URLSearchParams({return_path:unsafe})}`)).toBe('/');
 });
+
+it('preserves cloud home context through login',()=>{
+ const work='11111111-1111-4111-8111-111111111111';const path=`/hr/?work=${work}`;
+ expect(loginReturnPath(`?${new URLSearchParams({return_path:path})}`)).toBe(path);
+ expect(loginReturnPath(`?${new URLSearchParams({return_path:path+'&work='+work})}`)).toBe('/');
+});

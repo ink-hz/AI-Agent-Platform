@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { Account } from "./auth";
 
-const { positionId, account } = vi.hoisted(() => ({ positionId: "00000000-0000-4000-8000-000000000001", account: {
+const { positionId, account, activeRoute } = vi.hoisted(() => ({ activeRoute: {value: {name:"hr-position-section",positionId:"00000000-0000-4000-8000-000000000001",section:"candidates"} as import("./router").Route}, positionId: "00000000-0000-4000-8000-000000000001", account: {
   internal_user_id: "member", display_name: "HR", role: "member", departments: [],
   gender: null, observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
   hard_stale_read_only: false, csrf_token: "csrf",
@@ -18,11 +18,13 @@ vi.mock("./auth", async (original) => ({
 }));
 vi.mock("./router", async (original) => ({
   ...await original<typeof import("./router")>(),
-  useRoute: () => ({ name: "hr-position-section", positionId, section: "candidates" }),
+  useRoute: () => activeRoute.value,
 }));
 vi.mock("./workspaces/hr/HrWorkspacePage", () => ({
   HrWorkspacePage: ({ positionId: received, section }: { positionId: string; section?: string }) => <p>{received}:{section}</p>,
 }));
+
+vi.mock("./workspaces/hr/HrLoopWorkspace", () => ({ HrLoopWorkspace: ({initialPositionId,initialWorkId}: {initialPositionId?:string;initialWorkId?:string}) => <p>cloud:{initialPositionId}:{initialWorkId}</p> }));
 
 import App from "./App";
 
@@ -35,4 +37,11 @@ it("authorizes and restores an HR position section deep link for a member", asyn
   expect(container.textContent).toContain(`${positionId}:candidates`);
   expect(container.textContent).not.toContain("无权访问");
   expect(container.textContent).not.toContain("页面不存在");
+});
+
+it.each(['hr','hr-agent','hr-chat'] as const)('uses the cloud workspace for %s',async(name)=>{
+ activeRoute.value=name==='hr-chat'?{name}:{name,positionId,workId:positionId};
+ await act(async()=>root.render(<App/>));
+ expect(container.textContent).toContain('cloud:');
+ if(name!=='hr-chat')expect(container.textContent).toContain(`cloud:${positionId}:${positionId}`);
 });

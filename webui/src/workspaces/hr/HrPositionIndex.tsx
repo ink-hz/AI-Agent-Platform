@@ -246,7 +246,7 @@ function PositionSection({ title, caption, positions, onSelect }: { title: strin
       <div className="hr-position-card-actions">
         <PlatformLink href={`/hr/positions/${encodeURIComponent(position.positionId)}`}>查看岗位工作流</PlatformLink>
         {onSelect && <button type="button" disabled={position.internalStatus !== "active"} onClick={() => onSelect(position)}>在主对话中继续</button>}
-        <PlatformLink href={`/hr/agent?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>
+        <PlatformLink href={`/hr/?position=${encodeURIComponent(position.positionId)}`}>与 Hannah 讨论岗位</PlatformLink>
       </div>
       </article>)}</div>}
   </section>;

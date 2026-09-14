@@ -9,6 +9,7 @@ import type { HrPositionSection } from "../../hrR12Types";
 import type { HrPosition } from "../../hrTypes";
 import { directConversationPath } from "../../platform/workspaces";
 import { navigate } from "../../router";
+import { openHrWork } from "./hrCloudLaunch";
 import { WorkspaceErrorBoundary } from "../../shared/WorkspaceErrorBoundary";
 import { DirectAgentWorkspace, type DirectAgentDraftSnapshot } from "../direct/DirectAgentWorkspace";
 import { HrPanoramaWorkspace } from "./HrPanoramaWorkspace";
@@ -21,14 +22,14 @@ import { HrWorkspaceShell } from "./HrWorkspaceShell";
 import { HrTurnResults, HrInputResults, useHrConversationResults } from "./HrTurnResults";
 import { useHrChatPosition } from "./useHrChatPosition";
 function chatPath(id:string){return directConversationPath('hr-bot',id)??`/hr/conversations/${encodeURIComponent(id)}`;}
-export function HrWorkspacePage(props:{account:Account;conversationId?:string;positionId?:string;section?:HrPositionSection;freeChat?:boolean;positions?:boolean;panorama?:boolean;panoramaReportId?:string}){
+export function HrWorkspacePage(props:{cloudPrimary?:boolean;account:Account;conversationId?:string;positionId?:string;section?:HrPositionSection;freeChat?:boolean;positions?:boolean;panorama?:boolean;panoramaReportId?:string}){
   return <HrWorkspaceSession key={props.account.internal_user_id} {...props}/>;
 }
 function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
   const api=useMemo(()=>createHrApi(props.account.csrf_token),[props.account.csrf_token]);
   const r12=useMemo(()=>createHrR12Api(props.account.csrf_token),[props.account.csrf_token]);
   const lastChat=useRef<string|undefined>(undefined);
-  const away=Boolean(props.positions||props.panorama||props.panoramaReportId||props.positionId);
+  const away=Boolean(props.positions||props.panorama||props.panoramaReportId||(props.positionId && !(props.cloudPrimary && props.conversationId)));
   if(!away)lastChat.current=props.conversationId;
   const conversationId=away?lastChat.current:props.conversationId;
   const chatHref=conversationId?chatPath(conversationId):'/hr/';
@@ -38,11 +39,16 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
   const intelligenceRef=useRef(intelligenceReferences);intelligenceRef.current=intelligenceReferences;
   const [intelligenceError,setIntelligenceError]=useState('');
   const selectIntelligence=useCallback((reference:HrIntelligenceReference)=>{
+    if(props.cloudPrimary){
+      try{openHrWork(props.account.internal_user_id,undefined,formatHrIntelligenceReferences([reference]));}
+      catch{setIntelligenceError('所选情报超过 12 KiB，请先缩小引用范围。');}
+      return;
+    }
     const current=intelligenceRef.current;
     const next=current.some(item=>item.key===reference.key)?current:[...current,reference];
     try{formatHrIntelligenceReferences(next);}catch{setIntelligenceError('所选情报超过 12 KiB，请先移除部分引用。');return;}
     setIntelligenceReferences(next);setIntelligenceError('');navigate(chatHref);
-  },[chatHref]);
+  },[chatHref,props.cloudPrimary,props.account.internal_user_id]);
   const removeIntelligence=useCallback((key:string)=>{setIntelligenceReferences(items=>items.filter(item=>item.key!==key));setIntelligenceError('');},[]);
   const clearIntelligence=useCallback((keys:readonly string[])=>{const sent=new Set(keys);setIntelligenceReferences(items=>items.filter(item=>!sent.has(item.key)));},[]);
   const [selectedPosition,setSelectedPosition]=useState<HrPosition|null>(null);
@@ -64,6 +70,10 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
   function choose(value:HrPosition|null){if(inputResults.length)setDraftError("已切换岗位，原成果引用已移除。");setInputResults([]);setSelectedPosition(value);setCandidateIds([]);setCandidateAttachments([]);setDrawerOpen(false);}
   async function fill(value:HrComposerDraft,positionId:string|null){
     setDraftError('');
+    if(props.cloudPrimary){
+      if(value.standardConsent || value.inputResults?.length || value.positionCandidateIds?.length || value.attachmentIds?.length){setDraftError('历史成果仍可查看。请在主对话中重新选择候选人、材料或成果，再继续工作；历史确认消息不会自动提交。');return;}
+      openHrWork(props.account.internal_user_id,positionId,value.text);return;
+    }
     if(positionId!==selectedPosition?.positionId){
       try {choose(positionId?await api.position(positionId):null);}catch{setDraftError('无法读取该成果的岗位，请稍后重试。');return;}
     }
@@ -73,8 +83,8 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
     setComposerDraft({...value,positionId});setDrawerOpen(false);navigate(chatHref);
   }
   return <HrWorkspaceShell account={props.account} chatHref={chatHref} current={props.panorama||props.panoramaReportId?'panorama':props.positions||props.positionId?'positions':'chat'} onOpenKnowledge={()=>setKnowledgeOpen(true)}>
-    <div className="hr-workspace-chat-panel" hidden={away}><WorkspaceErrorBoundary title="HR 智能工作台"><DirectAgentWorkspace
-      account={props.account} agentId="hr-bot" autoFocusComposer conversationId={conversationId} conversationPath={chatPath}
+    {(!props.cloudPrimary || conversationId) && <div className="hr-workspace-chat-panel" hidden={away}><WorkspaceErrorBoundary title="HR 智能工作台"><DirectAgentWorkspace
+      account={props.account} readOnlyReason={props.cloudPrimary?"历史对话仅供查看，请从主对话开始新的工作。":undefined} agentId="hr-bot" autoFocusComposer conversationId={conversationId} conversationPath={chatPath}
       createdConversationPath={chatPath} key={`hr-chat:${props.account.internal_user_id}`} layout="standard"
       workspaceLabel="HR 智能工作台" workspaceMark="HR" workspaceRootPath="/hr/" showTaskStarters={false} showWorkspaceBackLink={false}
       header={<>{position.status}{draftError&&<p role="alert">{draftError}</p>}{results.error&&<p role="alert">{results.error}</p>}</>} initialDraftSnapshot={draft.current} onDraftSnapshotChange={retainDraft} onConversationSettled={settled}
@@ -92,15 +102,15 @@ function HrWorkspaceSession(props:Parameters<typeof HrWorkspacePage>[0]){
         </>}
       newConversationHeader={<section className="hr-conversation-welcome"><span>AI 招聘协作</span><h1>{selectedPosition?.title??'今天想推进哪项招聘工作？'}</h1><p>搜索选择岗位，直接提出要求。切换岗位只影响下一轮，同一段对话可以一直使用。</p></section>}
       selectedKnowledgeResources={knowledge} onKnowledgeResourcesSubmitted={()=>setKnowledge([])} onRemoveKnowledgeResource={id=>setKnowledge(items=>items.filter(item=>item.id!==id))}
-      renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}
-    /></WorkspaceErrorBoundary></div>
-    {props.positionId?<HrPositionWorkflow key={props.positionId} account={props.account} positionId={props.positionId} section={props.section} draftError={draftError} api={api} r12={r12} onDraft={(value,id)=>void fill(value,id)}/>
-      :props.positions?<HrPositionIndex account={props.account} api={api} onSelect={value=>{choose(value);navigate(chatHref);}}/>:null}
+      renderTurnContext={turnId=><HrTurnResults turnId={turnId} data={results} readOnly={Boolean(props.cloudPrimary)||props.account.hard_stale_read_only} onDraft={(value,id)=>void fill(value,id)}/>}
+    /></WorkspaceErrorBoundary></div>}
+    {props.positionId && !(props.cloudPrimary && props.conversationId)?<HrPositionWorkflow key={props.positionId} account={props.account} positionId={props.positionId} section={props.section} draftError={draftError} api={api} r12={r12} onDraft={(value,id)=>void fill(value,id)}/>
+      :props.positions?<HrPositionIndex account={props.account} api={api} onSelect={value=>{if(props.cloudPrimary){openHrWork(props.account.internal_user_id,value.positionId);return;}choose(value);navigate(chatHref);}}/>:null}
     {panoramaVisited.current&&<div className="hr-workspace-panorama-panel" hidden={!panoramaActive} aria-hidden={!panoramaActive?"true":undefined}><WorkspaceErrorBoundary title="全景分析"><HrPanoramaWorkspace account={props.account} insightVersionId={props.panoramaReportId} onSelectReference={selectIntelligence}/>{intelligenceError&&<p role="alert">{intelligenceError}</p>}</WorkspaceErrorBoundary></div>}
     {selectedPosition&&<HrPositionDetailsDrawer key={selectedPosition.positionId} api={r12} csrfToken={props.account.csrf_token} detail={position.detail??selectedPosition} open={drawerOpen} onClose={()=>setDrawerOpen(false)} readOnly={props.account.hard_stale_read_only}
       currentContextVersionId={position.context?.contextVersionId??null} contextRefreshGeneration={position.refreshGeneration} resourceRefreshGeneration={position.refreshGeneration}
       activeTab={drawerTab} onActiveTabChange={setDrawerTab} onConfirmed={position.confirmContext}
       onCandidateDraft={(text,ids,attachments)=>{setInputResults([]);setCandidateIds(ids);setCandidateAttachments(attachments);setComposerDraft({id:crypto.randomUUID(),text});setDrawerOpen(false);}}/>}
-    {knowledgeOpen&&<HrKnowledgePanel onClose={()=>setKnowledgeOpen(false)} onSelect={selection=>{setKnowledge([selection]);setKnowledgeOpen(false);navigate(chatHref);}}/>}
+    {knowledgeOpen&&<HrKnowledgePanel onClose={()=>setKnowledgeOpen(false)} onSelect={selection=>{if(props.cloudPrimary){setKnowledgeOpen(false);openHrWork(props.account.internal_user_id,undefined,"",`请在专业方法中选择 ${selection.id} 的当前可用版本。`);return;}setKnowledge([selection]);setKnowledgeOpen(false);navigate(chatHref);}}/>}
   </HrWorkspaceShell>;
 }
