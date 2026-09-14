@@ -2,6 +2,8 @@
 
 ## 最新续接（覆盖下方旧版布局与版本描述）
 
+- **2026-09-14 18:55：云端同步再次过期已修复。** 后续发布 d9c3e8c6 覆盖了中午脚本热修；此前修复未进入远端 master 和实际发布来源。现同一修复已推送远端 master `f6bf68ee`，并补入当前来源 `feat/hr-cloud-loop-launch`（`4378ece2`）；云端脚本三方哈希一致。70 批积压 8633–8702 全部补齐，恢复原调度后的新批次 8703 于 18:55:08 入库，`freshness=current`、队列零、退出码 0。未重发页面或重启服务。详见 [复发修复记录](../reviews/2026-09-14-cloud-replica-recurrence.md)。后续发布必须包含此修复，不能用旧 release 覆盖；不重复此次检查。
+
 - **2026-09-09：补齐首次发起入口，已上线。** 用户反馈没有触发位置。主对话选中岗位后直接显示“梳理 JD / JR”“制定搜寻策略”“候选人 / 面试”；前两项携带具体岗位填入可编辑要求，后一项直接打开候选人页签。已有候选人的分析 / 面试入口移除旧的“必须先确认岗位标准”前端禁用条件，沿用 v7 非空基准和授权；新候选人确认仍受现有标准要求约束。本次仅前端：API `44de9209b77343facf3117fe3ab4d3450eaf2062`，资源 `index-CKvvUzmz.js` / `index-kGV1boCB.css`；HR Worker / Relay / MetaBot / Team 均维持下方 v7 版本。两项相关组件检查、TypeScript、构建及发布 health / 公网资源通过；未重复接口、故障、浏览器或模型验收。其他容器和 Nginx 未变。当前加两版保留，staging 和锁已清理。不要重复部署本修复。
 
 - **2026-09-09：场景成果与连续引用 v7 已实现并上线。** Platform API / 独立 HR Worker / 本地 Signed Worker `1a705ebb4b6598c61bc0d767ff44e2afc038a539`，MetaBot `672058ca5d316c9ada2a460e211f8ec5cca1b70a`，Team role/knowledge `a87500e2d0b4d35eb28713fb04b8274964e76d23`。新候选人成果类型、非空基准、本次参考与冻结输入引用、结果读取授权、用户正文复核已生效；候选人成果不能直接成岗位标准。Hannah 场景原位补交付声明，不恢复已删入口。页面 `index-K0JwF2ER.js` / `index-UreVbVab.css`。正式 095 与本地 callback v7 约束已应用，历史冻结命令不改写。详见 [v7 交付记录](../reviews/2026-09-09-hr-deliverables-v7-delivery.md)。

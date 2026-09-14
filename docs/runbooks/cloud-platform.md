@@ -703,6 +703,15 @@ dump file. Record `RESTORE_DRILL_OK=1` only after this succeeds.
 
 ## Enable five-minute sync
 
+For a synchronization hotfix, commit it to remote master and the actual active
+release source before closing recovery. The restricted SSH command follows
+`current/deploy/cloud/forced-import.sh`; an edit in an old release is overwritten
+when `current` changes. Before a later release, confirm its archived import script
+contains the verified running-image-ID fix (`f6bf68ee` or equivalent). After
+cutover, confirm a newly exported batch is imported by the normal scheduler,
+the source watermark advances, and the queue is empty. API health alone does
+not verify synchronization. See [the 2026-09-14 recurrence](../reviews/2026-09-14-cloud-replica-recurrence.md).
+
 After the backfill and restore drill pass:
 
 ```bash
