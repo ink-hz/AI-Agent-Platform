@@ -30,8 +30,8 @@ Files: webui/src/workspaces/hr/HrPositionWorkflow.tsx 与测试；必要时新�
 
 1. 先补失败组件回归：旧 context/current 与旧 results 返回非空，云端返回不同内容，当前栏只显示云端；历史栏包括旧 current 及 superseded，旧成果可读但不可确认或执行；云端成果须可准确下载。
 2. 使用 memoized createHrLoopApi(account.csrf_token)，岗位存在校验之后加载云端 current 与岗位范围成果全部分页。标准 404 not_found 表示尚无当前值；其他错误保留真实失败。维护状态隔离与失败关闭。
-3. 标准按 items 文本展示，标注 revision；不输出内部 ID。岗位总览同一数据来源。旧候选人组件依赖的 context 暂保留作为旧链数据，不用云端 revision 伪造 contextVersionId。
-4. 成果使用现有 SavedResult/ExactRef 协议，按准确 ref 打开正文与下载；验证读取 ref/岗位范围。页面类型分组：requirements=role_calibration,jd,requirements,standard_proposal；sourcing=sourcing；candidates=candidate_assessment；interviews=interview_plan,interview_record；review=retrospective；research 不混入五阶段。旧 analysis 共用提示退出当前栏。
+3. 标准按 items 文本展示，以 confirmed_at 表达确认时间；准确 revision 留在数据引用和测试中（它本身是 UUID，不直接展示）。岗位总览同一数据来源。旧候选人组件依赖的 context 暂保留作为旧链数据，不用云端 revision 伪造 contextVersionId。
+4. 成果使用现有 SavedResult/ExactRef 协议，按准确 ref 打开正文与下载；验证读取 ref 完整一致、请求绑定当前岗位范围。注意服务器按 result_links 纳入后来关联的成果，SavedResult.objects 保留保存时范围；不能要求正文 objects 含岗位而误拒绝合法后关联成果。页面类型分组：requirements=role_calibration,jd,requirements,standard_proposal；sourcing=sourcing；candidates=candidate_assessment；interviews=interview_plan,interview_record；review=retrospective；research 不混入五阶段。旧 analysis 共用提示退出当前栏。
 5. 岗位页保持阅读职责，已有普通“在主对话推进”入口保留。只在已存在的可靠云端 exact-ref 选择机制可复用时添加成果继续引用；不为 P1/P2 新建跨路由状态系统。所有提案确认仍由主对话已有标准提案 UI 和用户 HTTP 完成。
 6. 覆盖五阶段归属、分页/准确下载、404/503/403、岗位切换晚到响应、历史只读。运行相关组件/API 客户端测试，最后 build 与一次完整前端回归。
 7. 提交代码并报告测试证据与已知限制。
