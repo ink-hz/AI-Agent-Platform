@@ -20,4 +20,3 @@ export interface HrOfficialPositionVersion {
   consecutiveMisses: number; officialStatusCode: number; createdAt: string;
 }
 export interface HrOfficialPositionDownload { blob: Blob; filename: string; }
-

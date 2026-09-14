@@ -31,4 +31,3 @@ export interface PositionPage {
   items: HrPosition[];
   nextCursor: string | null;
 }
-
