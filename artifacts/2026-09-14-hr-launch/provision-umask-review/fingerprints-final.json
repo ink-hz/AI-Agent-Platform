@@ -1,0 +1,23 @@
+{
+  "changes.patch": "5839b6ccd76361c0ec015dda5c97c92ecfde3f46ac3534c62ba0c32636767fee",
+  "checks-1/commands.txt": "3ba3bbbfa05f9f6ab62c2c49797f54e62d0af63152776b1c06c9753a7df591b9",
+  "checks-1/diff-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "checks-1/ruff.log": "c184e29afa2ac38fd9cdfe1386db4332370df1690b3bc71f2755318b6d1215e7",
+  "fingerprints.json": "f307d599b3133c88e8d21aa1ddf7645bef0cccafff091ec662802c147130fde1",
+  "green-1/command.txt": "5c1352cb8de86d8e9307059d4f275a9181476b5aedefecdd912a4a14e62ab716",
+  "green-1/provision_hr_release.py": "2914d91033bf9ed38821801f0763823eaf05d157dc4c6c1d99da19f81e8beec3",
+  "green-1/raw.log": "f4c77b58e2280613a49ba18da1c4a02d440e862c49a6c8fe5daaf277333ff99d",
+  "green-1/test_provision_umask.py": "50831fe75c8daa28e1ab3165b21d5e65e3f1da8a8a0bf3bcb2f97e3159d66bb7",
+  "green-2/command.txt": "2f6c039df943e60237e2da8d2ea05ee87899505646ac29bfea1885dc2aad694d",
+  "green-2/provision_hr_release.py": "2914d91033bf9ed38821801f0763823eaf05d157dc4c6c1d99da19f81e8beec3",
+  "green-2/raw.log": "f4c77b58e2280613a49ba18da1c4a02d440e862c49a6c8fe5daaf277333ff99d",
+  "green-2/ruff.log": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+  "green-2/test_provision_umask.py": "9a40de38ecae1f46b4a700c561e404ef31f6c5752f1fc2b8d4adc811e9312041",
+  "red-1/command.txt": "fbfdc0bc896242d8092c4ec8029b4179e74a29d193791b6c1b807c88c3771a41",
+  "red-1/provision_hr_release.py": "b649b93987c7333d49e9927aa721321b60b28012561c40917cfd48ec8e87afcf",
+  "red-1/raw.log": "3adaaa814f4f4879ccd3cad213263bd52e11e280d1f13743980eb9da193aca79",
+  "red-1/test_provision_umask.py": "6ea52789f4707570484a41483b87c1e3c7cdcb3fbdadc66a5f3c4d106669c673",
+  "report.md": "7711b672a1b7ff9cbc3894b9c5c52deb43e700e9889ce3cf460a275b741f9f81",
+  "task-book-final.md": "19d971a13e0ff17b25477ff2f113d4319e4c97663698b446fba8e0f9508f6e58",
+  "test_provision_umask.py": "9a40de38ecae1f46b4a700c561e404ef31f6c5752f1fc2b8d4adc811e9312041"
+}

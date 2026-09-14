@@ -1,0 +1,70 @@
+diff --git a/artifacts/2026-09-13-hr-launch/production/provision_hr_release.py b/artifacts/2026-09-13-hr-launch/production/provision_hr_release.py
+index 6817bcec..5add9966 100644
+--- a/artifacts/2026-09-13-hr-launch/production/provision_hr_release.py
++++ b/artifacts/2026-09-13-hr-launch/production/provision_hr_release.py
+@@ -780,6 +780,7 @@ for name in {' '.join(CONFIG_FILES)} knowledge.tar.gz remote-job.sh; do /bin/mv
+ /bin/chmod 700 "$input_root/remote-job.sh"
+ /usr/bin/nohup /usr/bin/setsid /usr/bin/env -i \
+   PATH=/usr/bin:/bin LANG=C.UTF-8 DOCKER_HOST=unix:///var/run/docker.sock /bin/bash -c '
++  umask 077
+   job="$1"; metadata="$2"
+   /usr/bin/printf "%s\\n" "$$" > "$metadata/pid.part"
+   /bin/chmod 600 "$metadata/pid.part"; /bin/mv "$metadata/pid.part" "$metadata/pid"
+diff --git a/docs/superpowers/plans/2026-09-13-hr-launch.md b/docs/superpowers/plans/2026-09-13-hr-launch.md
+index 9a398854..ca6d081d 100644
+--- a/docs/superpowers/plans/2026-09-13-hr-launch.md
++++ b/docs/superpowers/plans/2026-09-13-hr-launch.md
+@@ -8,7 +8,7 @@
+ 
+ ## 设计及执行边界
+ 
+-- 当前架构继续采用独立云端Loop；先验证和修复附件擦除，再迁移和预检HR，排空旧链后切换。失败保持原执行归属，修复后恢复同一云端链；任何恢复路径必须有真实数据库并发与幂等证据。
++- 当前架构继续采用独立云端Loop；先验证和修复附件擦除，再迁移和预检HR，排空旧链后切换。106后的擦除保证要求所有合法写入方遵守条件PUT和永久fence；本次没有已验证兼容106的前代镜像，不能回退65e7/ce6等bare PUT版本。失败停止新受理及有问题的写入方、保留refs/锁/未知状态，修复前进后恢复同一云端链；不执行降级106或自动恢复旧写入方。
+ - 历史提取是获准的只读业务审计，按owner/session保留来源身份，不伪装成普通用户跨owner读取。原文仅进入本地0700私有目录，提取任务意图、连续追问、材料依赖和用户纠正；旧答案不作为标准答案。用于模型的回放样例须审阅去标识或明确获准，回放在独立测试owner/数据库中执行，绝不重放生产动作。
+ - 用户对候选人原始资料供应商授权的选择单独落实为服务端处理策略；未确定的处理规则不自行编造。公开/脱敏验证及其他工程工作可独立推进。
+ - HR指定Opus5网关及凭据沿用现有私有配置；研究候选配置300秒、16384输出、足量收尾预留、有限总预算，继续保守计量并披露估算。不得把供应商自报身份或估算扣记称为独立模型认证或实际账单。
+@@ -21,6 +21,25 @@
+ 
+ 2026-09-14 新只读核对确认：24 个既有容器身份、镜像、运行状态、启动时间、重启策略与上一份快照一致；current 仍指向65e7，新394镜像已存在；owner私有配置文件仍缺失。新执行证据位于 `artifacts/2026-09-14-hr-launch/`。
+ 
++## 2026-09-14 新审计：联合窗口暂停
++
++本轮用户新增审计要求尚未完成，联合停机/迁移窗口暂停。新配置安装器已本地测试及独立审读，但未在生产运行；仅私有输入已传输。最终持久激活助手只有测试草稿及真实collection RED，尚未实现，不可执行。下面事项分别关闭，不能凭过期`final`目录或绿色数量恢复窗口。
++
++| 审计项 | 当前事实及后续验收 |
++| --- | --- |
++| running HIGH / max_attempts | 运行时承重缺口交由运行时代理修复；须真实最小失败用例、相关数据库/Worker回归与独立复核，未完成前不称恢复可靠 |
++| 条件PUT | 须以实际S3/MinIO条件写、迟到写和并发擦除证明fence语义；mock收到IfNoneMatch参数不等于服务端正确执行条件写 |
++| 备份 | 已有备份/目录可读/校验值是归档证据；隔离恢复演练与异地备份尚未交付，新增未勾选清单，不把旧“备份完成”改写为“已恢复验证” |
++| 旧provision日志权限 | 活脚本detached shell缺少创建前umask；本轮追加umask077，并用真实本地shell在继承022下验证stdout/stderr创建时0600。旧0644日志及后续chmod补救证据保留，修源码不等于重跑旧安装 |
++| 公共health | 仅为共享服务基本存活。owner HR api_ready是装配快照且worker_checked=false；独立执行实时HR schema/权限/知识检查、真实Worker health及受认证业务验证，不将公共HTTP200当HR上线验收 |
++| H01/H06/H13 | 已有首轮真实模型输出及原RED；修订测试契约后尚未重新真实运行这三例。原H01/H13内容遗留仍在，H06首轮通过也不代表新契约或新role被再次验证 |
++| H03 | 保存类型/修订反馈及后续真实四轮有独立证据；“合并正文已走准确真实路径”的自动化断言尚未补齐，不能仅凭四轮完成或同resultID宣称该路径已验证 |
++| 22例与材料边界 | 22例是语料覆盖清单；完整回放、历史九图真实素材质量及H16/H17真实故障恢复不据问句/工程完成推定通过。追加完整回放未勾选项 |
++| 历史指纹未留存 | 对早期未保留准确源码字节/运行时指纹的记录，只保留当时可证明的命令/输出结论；当前补算SHA不能证明历史执行使用该字节，不能倒填日志或补造历史snapshot |
++| 过期final及审读 | final只是某次目录名称，不是持续有效的发布标签。旧ce6、旧H03、旧快照与修复前final全部保留；后续代码/配置变化以新的准确源码、真实运行和独立审读重新绑定，不沿用旧“通过”覆盖新增差异 |
++
++窗口恢复的具体责任：协调本次发布的根执行代理汇总准确修复源/镜像、独立审读、实际条件PUT、恢复演练与异地备份回执，逐项向用户报告后按已有授权执行；专业审读员只判定内容证据，不代替运维放行。只要这些新增窗口前要求有未通过或未知，根执行代理保持窗口暂停。106之后发生故障，由根执行代理先确认当前写入方与擦除状态，停用有问题的新写入方并保留未知回执/refs；只有独立复核确认修复版本仍满足106 fence、同桶、同密钥及当前schema权限，且必要数据库/存储验证通过，才可修复前进。没有兼容前代就没有“回退旧镜像”选项；缩小这些验收要求或扩大停机/数据处置范围须由用户明确决定，不能由脚本自动豁免。
++
+ ## 当前交付判定（2026-09-13，审核入口更新）
+ 
+ **设计文件已形成，任务书规定的交付与验收尚未全部完成。** 当前事实以[上线交接报告](../../reviews/2026-09-13-hr-launch-handoff.md)及其准确运行证据为准；下方11:50记录与最初S3阻断是历史时点，不作为当前执行命令。
+@@ -41,14 +60,16 @@
+ - [x] 承接生产`65e7fbd`及origin/master的新增能力；冲突保留现行云端总体设计及生产的岗位/成果读取能力。核查`backend/app/hr/tool_service.py`、`tool_routes.py`、`control_plane/authorization.py`和HR前端，运行对应v7 HTTP/岗位组件回归。
+ - [x] 私有只读提取历史HR会话与用户问题，登记总量/覆盖/排除原因；形成去标识场景集和来源映射。区分独立问题、跨轮纠正、材料依赖、成果阅读/修改及失败恢复，不按旧回答复制预期。
+ - [ ] 修订`backend/hr_agent_knowledge/role.md`的通用证据状态一致性要求；用`test_hr_agent_d_journey.py::test_fictional_d_real_model_evidence`及历史场景进行有限真实模型验证，原始成果与独立专业审读分离保存。
+-- [x] 补齐HR动态readiness与发布闸门：数据库迁移/权限、配置/知识身份、Worker实际存活分别验证；缺104/错误配置不得以公共health绿色上线。相关文件`config.py`、`worker.py`、`resources.py`、`tools/hr_agent/preflight.py`、`deploy/cloud/compose*.yaml`及新的定向测试。
++- [x] 已实现HR专用动态readiness与发布闸门及相关定向测试；生产数据库迁移/权限、配置/知识身份和Worker实际存活仍须分别实测。公共health仅证明共享API基本存活；owner health中的`dependencies.services.hr_agent.api_ready`是启动装配快照，`worker_checked=false`，不证明实时HR数据库/106能力或Worker健康。缺104/106、错误配置、Worker失活不得以公共health绿色放行。相关文件`config.py`、`readiness.py`、`worker.py`、`resources.py`、`tools/hr_agent/preflight.py`、`deploy/cloud/compose*.yaml`。
+ - [ ] 将已确认的材料处理范围装入`personal_processing.py`与`CandidateIntakeService`同一策略；服务端缺配置拒绝，正文/派生成果/附件边界不能由客户端字段自行批准。定向API/数据库验证允许与拒绝路径。
+ - [x] 设计并验证云端失败后的可达恢复入口，保留102/103/104原字节、必要时追加迁移；验证状态白名单、幂等回执、同锁顺序、其他Bot追加与原归属continuation。同步两份根HR文档及当前发布手册。
+ - [x] 构建准确修复镜像并核对构建后生产状态：394源镜像cbe282已实际构建；24个既有容器的ID、镜像、运行状态、启动时刻和重启策略无变化。此项不包括服务切换或生产业务验收。
+ - [x] 本地构建更新后的94资源知识包并核对来源、方法和角色字节；不将本地包称为已安装。
++- [ ] 在隔离数据库/存储执行备份恢复演练：恢复数据库、核准确ledger/约束及附件refs，验证必需对象版本/密钥可用；完成异地备份复制和可读性核验。现有dump/list、同机副本和hash相等都不替代恢复成功或异地副本。
++- [ ] 完成22场景逐例、逐轮真实回放并逐项专业审读，登记材料/图片/故障注入等未覆盖项；242条来源用户消息的语料覆盖不等于22场景全部运行，更不等于242条原问题逐条回放。
+ - [ ] 安装新知识与有效私有配置，重新验证API/Worker配置指纹、网络与数据库就绪；发布窗口前核对足够新的备份、磁盘、部署锁和实际进程身份。
+ - [ ] 完成联合发布执行器与因果失败测试：准确停止并禁止旧API与附件Worker自动重启，证明准确MinIO旧请求进程代际结束，在同镜像/同数据恢复存储后应用所需根迁移（含100、102–106），再启动兼容服务组合。保持非目标进程身份，披露共享API与附件读取影响。依据[三目标执行器设计](../../../artifacts/2026-09-13-hr-launch/production/attachment-fence-executor-design-review/design.md)与[回执契约补核](../../../artifacts/2026-09-13-hr-launch/production/attachment-fence-executor-design-review/receipt-contract-addendum.md)，不得运行旧的单Worker方案。
+-- [ ] 通过既有owner身份完成生产接口与版本擦除canary；将真实上传/删除回执、准确版本观察、106能力与本次服务组合关联，再完成联合窗口放行。缺少凭据、状态未知或验证失败均不能记为通过。
++- [ ] 通过既有owner身份完成生产接口与版本擦除canary；将真实上传/删除回执、准确版本观察、106能力与本次服务组合关联。按用户低流量范围，缺凭据不阻断独立部署准备，但受认证业务验收保持pending；状态未知或验证失败均不能记为通过。
+ - [ ] 应用HR迁移及最小权限；部署独立云端Worker，验证API/Worker配置指纹、数据库计数实际耗时、非HR接口连续性。以真实owner登录执行受认证的HR读取。
+ - [ ] 进入draining_legacy，按准确清单完成/取消旧工作；ready/failed草稿保留并登记处置，不能伪造零在途。确认旧网页/API执行停止与持久配置、本地平台在途无残留后进入cloud；独立飞书渠道不纳入停机，保留每步回执。
+ - [ ] 生产一次性公开/脱敏canary通过受理、附件、保存、幂等及自有Worker重启恢复；通过真实HTTP执行上传/续作/成果读取验收；本次浏览器按用户指令不作为前置。失败停新受理并按已验证恢复路径处理。

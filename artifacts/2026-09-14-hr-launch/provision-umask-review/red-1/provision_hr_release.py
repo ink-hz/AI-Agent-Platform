@@ -780,7 +780,6 @@ for name in {' '.join(CONFIG_FILES)} knowledge.tar.gz remote-job.sh; do /bin/mv 
 /bin/chmod 700 "$input_root/remote-job.sh"
 /usr/bin/nohup /usr/bin/setsid /usr/bin/env -i \
   PATH=/usr/bin:/bin LANG=C.UTF-8 DOCKER_HOST=unix:///var/run/docker.sock /bin/bash -c '
-  umask 077
   job="$1"; metadata="$2"
   /usr/bin/printf "%s\\n" "$$" > "$metadata/pid.part"
   /bin/chmod 600 "$metadata/pid.part"; /bin/mv "$metadata/pid.part" "$metadata/pid"

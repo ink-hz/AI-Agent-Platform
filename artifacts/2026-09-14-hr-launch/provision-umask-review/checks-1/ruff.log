@@ -1,0 +1,41 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> artifacts/2026-09-14-hr-launch/provision-umask-review/test_provision_umask.py:3:1
+   |
+ 1 |   """Real local shell redirection permissions; timeout binary is a local boundary stub."""
+ 2 |
+ 3 | / import importlib.util
+ 4 | | from pathlib import Path
+ 5 | | import shlex
+ 6 | | import stat
+ 7 | | import subprocess
+ 8 | | import sys
+   | |__________^
+ 9 |
+10 |   SCRIPT = (
+   |
+help: Organize imports
+  |
+3 | import importlib.util
+  - from pathlib import Path
+4 | import shlex
+5 | import stat
+6 | import subprocess
+7 | import sys
+8 + from pathlib import Path
+9 |
+  |
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> artifacts/2026-09-14-hr-launch/provision-umask-review/test_provision_umask.py:42:14
+   |
+40 |         + '\nprintf "synthetic stderr\\n" >&2\n'
+41 |     )
+42 |     result = subprocess.run(
+   |              ^^^^^^^^^^^^^^
+43 |         ["/bin/bash", "-c", "umask 022\n" + inner, "_", str(job), str(metadata)],
+44 |         capture_output=True,
+   |
+help: Add explicit `check=False`
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.

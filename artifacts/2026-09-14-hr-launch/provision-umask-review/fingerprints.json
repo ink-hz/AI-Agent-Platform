@@ -1,0 +1,14 @@
+{
+  "changes.patch": "5839b6ccd76361c0ec015dda5c97c92ecfde3f46ac3534c62ba0c32636767fee",
+  "green-1/command.txt": "5c1352cb8de86d8e9307059d4f275a9181476b5aedefecdd912a4a14e62ab716",
+  "green-1/provision_hr_release.py": "2914d91033bf9ed38821801f0763823eaf05d157dc4c6c1d99da19f81e8beec3",
+  "green-1/raw.log": "f4c77b58e2280613a49ba18da1c4a02d440e862c49a6c8fe5daaf277333ff99d",
+  "green-1/test_provision_umask.py": "50831fe75c8daa28e1ab3165b21d5e65e3f1da8a8a0bf3bcb2f97e3159d66bb7",
+  "red-1/command.txt": "fbfdc0bc896242d8092c4ec8029b4179e74a29d193791b6c1b807c88c3771a41",
+  "red-1/provision_hr_release.py": "b649b93987c7333d49e9927aa721321b60b28012561c40917cfd48ec8e87afcf",
+  "red-1/raw.log": "3adaaa814f4f4879ccd3cad213263bd52e11e280d1f13743980eb9da193aca79",
+  "red-1/test_provision_umask.py": "6ea52789f4707570484a41483b87c1e3c7cdcb3fbdadc66a5f3c4d106669c673",
+  "report.md": "7711b672a1b7ff9cbc3894b9c5c52deb43e700e9889ce3cf460a275b741f9f81",
+  "task-book-final.md": "19d971a13e0ff17b25477ff2f113d4319e4c97663698b446fba8e0f9508f6e58",
+  "test_provision_umask.py": "50831fe75c8daa28e1ab3165b21d5e65e3f1da8a8a0bf3bcb2f97e3159d66bb7"
+}

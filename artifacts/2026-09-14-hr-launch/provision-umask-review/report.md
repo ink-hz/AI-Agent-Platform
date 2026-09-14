@@ -1,0 +1,9 @@
+# Creation-time private log permissions and current task-book corrections
+
+The active historical provision entry point's detached bash now executes `umask 077` before writing pid.part or redirecting stdout/stderr. This is a one-line source fix, not authorization to rerun the ce6 installation flow. Existing archived copies and raw operational logs remain unchanged.
+
+A real local shell regression starts with umask022 and executes the exact detached shell body extracted from `_remote_launch`. Only Linux `/usr/bin/timeout ...` is replaced by `/bin/bash` because the test host is macOS; the redirection, file creation, child body and exit bookkeeping remain real. The synthetic job observes stdout.log's mode at its own startup. RED observed decimal420 (0644), failed against384 (0600); GREEN observed0600 and both final stdout/stderr files0600, with exit_code0. No Docker/SSH/production/model execution. Exact source/test bytes, command, exit and raw log are saved separately under red-1 and green-1.
+
+The current task book now separates public health / owner assembly snapshot / actual HR readiness; explicitly records the audit pause, no compatible pre106 rollback, responsible release decision and forward-only recovery criteria, unchecked restore/off-site and all22 replay items. It discloses H01/H06/H13 not rerun after contract revisions, H03 merged-body path missing exact assertion, missing historical source-fingerprint limitations and expired final evidence. These are current audit gaps, not rewritten historical verdicts. Root/launch retain ownership of running-HIGH/max_attempts, real conditionalPUT, restore/off-site work and the two root HR design documents.
+
+The final-activation draft is paused and not executable (`final-activation/PAUSED.md`). Configuration installer remains prepared and independently reviewed, but not run by this task. No commit performed.
