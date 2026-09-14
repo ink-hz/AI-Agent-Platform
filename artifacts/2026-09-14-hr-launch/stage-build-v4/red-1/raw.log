@@ -1,0 +1,97 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+_______ test_unbound_identity_fails_before_any_external_operation[path0] _______
+
+path = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/stage-build-v4/stage_build_v4.py')
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9681/test_unbound_identity_fails_be0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1039e7450>
+
+    @pytest.mark.parametrize('path',[BUILD,INSTALL])
+    def test_unbound_identity_fails_before_any_external_operation(path,tmp_path,monkeypatch):
+>       m=load(path)
+          ^^^^^^^^^^
+
+artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py:18: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py:14: in load
+    m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x1039e6ed0>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/stage-build-v4/stage_build_v4.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/stage-build-v4/stage_build_v4.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+_______ test_unbound_identity_fails_before_any_external_operation[path1] _______
+
+path = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/config-install-v107/incremental_install_v107.py')
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9681/test_unbound_identity_fails_be1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10399edd0>
+
+    @pytest.mark.parametrize('path',[BUILD,INSTALL])
+    def test_unbound_identity_fails_before_any_external_operation(path,tmp_path,monkeypatch):
+>       m=load(path)
+          ^^^^^^^^^^
+
+artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py:18: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py:14: in load
+    m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x1039bf490>
+path = '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/config-install-v107/incremental_install_v107.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/config-install-v107/incremental_install_v107.py'
+
+<frozen importlib._bootstrap_external>:1130: FileNotFoundError
+_________ test_normalized_successors_preserve_reviewed_implementation __________
+
+    def test_normalized_successors_preserve_reviewed_implementation():
+>       assert normalized(BUILD)==normalized(ROOT/'artifacts/2026-09-13-hr-launch/production/stage_build_v3.py')
+               ^^^^^^^^^^^^^^^^^
+
+artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py:32: in normalized
+    tree=ast.parse(path.read_text())
+                   ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1058: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/stage-build-v4/stage_build_v4.py')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/stage-build-v4/stage_build_v4.py'
+
+/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/lib/python3.11/pathlib.py:1044: FileNotFoundError
+=========================== short test summary info ============================
+FAILED artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py::test_unbound_identity_fails_before_any_external_operation[path0]
+FAILED artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py::test_unbound_identity_fails_before_any_external_operation[path1]
+FAILED artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py::test_normalized_successors_preserve_reviewed_implementation
+3 failed in 0.04s

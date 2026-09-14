@@ -1,0 +1,2 @@
+python3 artifacts/2026-09-14-hr-launch/stage-build-v4/stage_build_v4.py poll --run-dir artifacts/2026-09-14-hr-launch/stage-build-v4/stage-build-v4-runs/1f12b4294ea209a7ebc70d0a5428e74dd8181971-29a72213943717153a5aae260069a42b
+exit=0

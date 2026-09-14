@@ -1,0 +1,40 @@
+{
+  "deployment_id": "29a72213943717153a5aae260069a42b",
+  "exit_code": 0,
+  "local_archive_sha256": "bdbba8fe74372926e43e2678c7440057e504bf43bd7829b09ade4d9b9ef71370",
+  "local_manifest_sha256": "5918a623943842d9f1780a257a93ab6ad6bb3e931ae5ba2678e642850283744a",
+  "release_sha": "1f12b4294ea209a7ebc70d0a5428e74dd8181971",
+  "remote_result": {
+    "archive_sha256": "bdbba8fe74372926e43e2678c7440057e504bf43bd7829b09ade4d9b9ef71370",
+    "deployment_id": "29a72213943717153a5aae260069a42b",
+    "disk_after": {
+      "data_available_bytes": 67190587392,
+      "data_used_bytes": 32512176128,
+      "data_used_percent": 33,
+      "root_available_bytes": 37240602624,
+      "root_used_bytes": 63533002752,
+      "root_used_percent": 64
+    },
+    "disk_before": {
+      "data_available_bytes": 67190652928,
+      "data_used_bytes": 32512110592,
+      "data_used_percent": 33,
+      "root_available_bytes": 37424799744,
+      "root_used_bytes": 63348805632,
+      "root_used_percent": 63
+    },
+    "finished_at": "2026-09-14T02:48:22Z",
+    "image_id": "sha256:0327cc3a6259994b2546aaf3d3e3ca3fa13911e7d53afe7a78d4a9342a293213",
+    "image_tag": "orbbec-agent-platform:1f12b4294ea209a7ebc70d0a5428e74dd8181971",
+    "manifest_sha256": "5918a623943842d9f1780a257a93ab6ad6bb3e931ae5ba2678e642850283744a",
+    "release_path": "/opt/orbbec-agent-platform/releases/1f12b4294ea209a7ebc70d0a5428e74dd8181971",
+    "release_sha": "1f12b4294ea209a7ebc70d0a5428e74dd8181971",
+    "schema_version": 1,
+    "services_changed": false,
+    "source_tree": "e9a3aa95bffbf989ffeb05819d6f69b4a702181a",
+    "started_at": "2026-09-14T02:48:01Z"
+  },
+  "schema_version": 1,
+  "stderr_sha256": "d86cb49dd44ce17a9da506b4e732433d5755f98bac9a709da0462523638defc5",
+  "stdout_sha256": "7b6fc16c5ac5e4f30eee5e045a9a931eeba5137499893059ee6353f2f83d9446"
+}

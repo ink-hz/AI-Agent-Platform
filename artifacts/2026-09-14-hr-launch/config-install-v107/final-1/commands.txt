@@ -1,0 +1,4 @@
+backend/.venv/bin/python -m pytest -q artifacts/2026-09-14-hr-launch/config-install-v107/test_incremental_install_v107.py artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py
+exit=0
+backend/.venv/bin/ruff check artifacts/2026-09-14-hr-launch/config-install-v107/incremental_install_v107.py artifacts/2026-09-14-hr-launch/config-install-v107/test_incremental_install_v107.py artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py
+exit=0

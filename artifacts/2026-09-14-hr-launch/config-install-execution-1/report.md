@@ -1,0 +1,7 @@
+# Actual new-generation preparation
+
+The reviewed successor a056ecf4... executed on AI-agent01 as root with run8f0be0ee2470488e9d576d936259e1cf and exit0. It installed the same 94-resource ad5 knowledge generation and unchanged private provider/budget/policy/keys into a separate generation directory and secret volume. The actual new image0327cc3a... loaded the rendered API/worker configuration with network disabled and private-material processing disabled. It published prepared.json SHA a4cb495f9bc6e0446b7aeb300a4562b95a1f707d78a4636ad6593b540295a48e.
+
+This is preparation, not active production use: existing services were neither started nor stopped, migrations were not executed, and the gate was not switched. A subsequent read-only snapshot in ../config-install-peers-after independently found all24 preexisting container identities/states/starttimes/restartpolicies and current unchanged. The live old cohort still uses its prior configuration until the joint release.
+
+The prepared receipt explicitly does not verify schema106 and cannot imply107: database capability and actual runtime cohort require their own migration/readiness receipts. The new image is built from1f12b429. The immutable installer/runtime environment SHA and all knowledge/policy identities are in stdout.json; no private file contents are committed. Re-running this installer refuses the existing generation rather than overwriting it.

@@ -1,0 +1,22 @@
+I001 [*] Import block is un-sorted or un-formatted
+ --> artifacts/2026-09-14-hr-launch/stage-build-v4/test_successor_bindings.py:3:1
+  |
+1 |   """Successors remain inert until immutable identities are supplied by root."""
+2 |
+3 | / import ast
+4 | | import importlib.util
+5 | | from pathlib import Path
+6 | | import pytest
+  | |_____________^
+7 |
+8 |   HERE = Path(__file__).parent
+  |
+help: Organize imports
+  |
+5 | from pathlib import Path
+6 +
+7 | import pytest
+  |
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

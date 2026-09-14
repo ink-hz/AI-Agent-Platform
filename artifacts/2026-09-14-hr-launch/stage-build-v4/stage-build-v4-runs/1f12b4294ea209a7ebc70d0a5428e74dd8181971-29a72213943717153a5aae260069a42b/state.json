@@ -1,0 +1,22 @@
+{
+  "action_token": "c51b65e8-882a-4707-9e6d-25a6c08e783e",
+  "archive_sha256": "bdbba8fe74372926e43e2678c7440057e504bf43bd7829b09ade4d9b9ef71370",
+  "deployment_id": "29a72213943717153a5aae260069a42b",
+  "exit_code": 0,
+  "manifest_sha256": "5918a623943842d9f1780a257a93ab6ad6bb3e931ae5ba2678e642850283744a",
+  "release_sha": "1f12b4294ea209a7ebc70d0a5428e74dd8181971",
+  "remote": "root@47.106.112.69",
+  "remote_job_sha256": "e34c878cb094f1bc256283acd15be444e110c481fe3107e38bb29ba981076aff",
+  "remote_paths": {
+    "deploy_lock": "/opt/orbbec-agent-platform/private/stage-build-inputs/1f12b4294ea209a7ebc70d0a5428e74dd8181971-29a72213943717153a5aae260069a42b/deploy-input-lock.py",
+    "input_root": "/opt/orbbec-agent-platform/private/stage-build-inputs/1f12b4294ea209a7ebc70d0a5428e74dd8181971-29a72213943717153a5aae260069a42b",
+    "metadata_root": "/data/orbbec-agent-platform/release-metadata/1f12b4294ea209a7ebc70d0a5428e74dd8181971/stage-build-29a72213943717153a5aae260069a42b",
+    "release_root": "/opt/orbbec-agent-platform/releases/1f12b4294ea209a7ebc70d0a5428e74dd8181971",
+    "remote_job": "/opt/orbbec-agent-platform/private/stage-build-inputs/1f12b4294ea209a7ebc70d0a5428e74dd8181971-29a72213943717153a5aae260069a42b/remote-job.sh",
+    "source_archive": "/opt/orbbec-agent-platform/private/stage-build-inputs/1f12b4294ea209a7ebc70d0a5428e74dd8181971-29a72213943717153a5aae260069a42b/source.tar.gz",
+    "staging_root": "/data/staging/orbbec-agent-platform/29a72213943717153a5aae260069a42b"
+  },
+  "schema_version": 1,
+  "source_tree": "e9a3aa95bffbf989ffeb05819d6f69b4a702181a",
+  "status": "complete"
+}

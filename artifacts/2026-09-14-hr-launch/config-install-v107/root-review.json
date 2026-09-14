@@ -1,0 +1,7 @@
+{
+  "reviewer": "root",
+  "source_sha256": "a056ecf4bd1a41ab1f1096df632dd1fe655501505d3206adc067fa79efcfb9a4",
+  "decision": "approved_for_existing_authorized_incremental_installation",
+  "checked": "Exact diff from previously reviewed installer: release/image/runtime hashes, binding guards, OLD_RUNTIME expected UID0. Actual root-owned metadata supports owner correction. All19 prior cases plus2owner/3binding cases24passed; image built from1f12 and24existing peers unchanged.",
+  "boundary": "Only additive generation/secret volume preparation and actual network-none new-image config load; no service stop/start, migration, owner identity or business acceptance. Existing targets refuse."
+}

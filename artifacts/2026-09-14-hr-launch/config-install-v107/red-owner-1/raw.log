@@ -1,0 +1,39 @@
+...................F.                                                    [100%]
+=================================== FAILURES ===================================
+_________________ test_host_runtime_requires_actual_root_owner _________________
+
+disk_host = (<incremental_install.Host object at 0x107c52710>, PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T...ate/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9684/test_host_runtime_requires_act0/volume'))
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107c51f90>
+
+    def test_host_runtime_requires_actual_root_owner(disk_host, monkeypatch):
+        h, *_ = disk_host
+        original = m.protected
+        seen = []
+        def protected(path, uid, directory=False):
+            if path == m.OLD_RUNTIME:
+                seen.append(uid)
+                assert uid == 0
+            return original(path, uid, directory)
+        monkeypatch.setattr(m, "protected", protected)
+>       h.call("verify_inputs")
+
+artifacts/2026-09-14-hr-launch/config-install-v107/test_incremental_install_v107.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+artifacts/2026-09-14-hr-launch/config-install-v107/incremental_install_v107.py:295: in call
+    self.runtime = protected(OLD_RUNTIME, 10001)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9684/test_host_runtime_requires_act0/runtime.env')
+uid = 10001, directory = False
+
+    def protected(path, uid, directory=False):
+        if path == m.OLD_RUNTIME:
+            seen.append(uid)
+>           assert uid == 0
+E           assert 10001 == 0
+
+artifacts/2026-09-14-hr-launch/config-install-v107/test_incremental_install_v107.py:417: AssertionError
+=========================== short test summary info ============================
+FAILED artifacts/2026-09-14-hr-launch/config-install-v107/test_incremental_install_v107.py::test_host_runtime_requires_actual_root_owner
+1 failed, 20 passed in 0.09s
