@@ -1,63 +1,38 @@
-# Task 1 report: 候选人成果可发现与准确续作
+# Task 1 report: HR 岗位云端读取 API/DB 闭环
 
-## Outcome
+## 结论
 
-- `save_result` now inserts `result_links` in the same transaction for the object set already verified and frozen by the work. The model still cannot add an object outside the current work scope.
-- Candidate confirmation adds a candidate link for the exact draft only after the intake item, source, result reference, and explicit create/link-existing choice have passed the existing checks. The public `link_result` candidate guard is unchanged.
-- Candidate result discovery includes historical `candidate_documents` that predate candidate links. The generic result list continues to show the result's current revision. `read_candidate.documents[*].result_ref` remains the immutable confirmed revision and is re-authorized/read exactly, so a later revision does not replace the confirmed draft.
-- `read_candidate` returns sorted `position_ids` after re-authorizing every position. Revoked position access therefore blocks the candidate response.
+新增 `backend/tests/test_hr_position_cloud_reading.py`，在 `cloud` 切换阶段以本地一次性 PostgreSQL 验证岗位标准、成果及旧岗位 context 的读取闭环。未改业务后端，未调用生产，未发送业务消息。
 
-## Tests and evidence
+## 设施与边界
 
-TDD red run before production edits:
+- 数据库：`hr_agent_database(cutover_phase="cloud")` 启动一次性 PostgreSQL，运行正式 control/HR web/HR agent migrations，并显式进入 `cloud`。
+- 身份：使用 `DingTalkWebAuth`、`WebSessionRepository`、`IdentitySecurityMiddleware`、`AuthorizationRepository` 与数据库中的真实 HR grant/session。外部钉钉 code exchange 由本地函数返回测试 owner UUID；会话签发、cookie 校验、CSRF digest、当前目录身份和授权判断未替换。
+- 岗位范围：通过 `HrPositionRepository.position_for_owner` 校验真实岗位归属；另建有真实目录外键的其他 owner 岗位，当前 owner 的读取返回 404。
+- 成果引用：准确旧 revision 通过 repository 的 owner/对象校验；成果由模型工具生命周期 `prepare_model -> commit_model -> execute_local_tool(save_result)` 保存和修订，未直接向成果/标准表插入成功数据。
+- 模型：没有调用真实模型。测试直接构造 `ModelReply/ToolCall`，只替代模型提供方边界；工具事务、权限和持久化仍为生产代码。
+- HTTP：FastAPI `TestClient`，属于进程内 ASGI HTTP 请求，不是 TCP 网络验收。没有把它称作真实 TCP canary；现有 TCP canary 面向完整 Worker/模型流程，本任务未重复启动。
 
-```text
-backend/.venv/bin/pytest -q \
-  backend/tests/test_hr_agent_repository_views.py::test_save_result_automatically_links_server_verified_work_objects \
-  backend/tests/test_hr_agent_candidate_intake.py::test_loop_narrative_human_confirm_and_encrypted_replay \
-  backend/tests/test_hr_agent_candidate_intake.py::test_optional_owned_position_relation_is_persisted
+## 覆盖
 
-3 failed in 4.00s
-```
+- 标准：缺 CSRF 的确认 403；选择一项后 current 与确认结果同 revision；未选项没有进入 current；相同旧提案用新幂等键再次确认返回 409，并携带准确 current revision。
+- 成果：正常保存第一版，再在同一 work 内用准确 expected revision 修订；岗位过滤目录只返回同 result id 的最新 revision；准确读取第一版仍返回原正文和旧 revision。
+- 旧读取：`/api/hr/positions/{id}/context` 在 `cloud` 阶段继续返回此前通过正式 repository create/confirm 保存的 context；准确旧成果 revision 同样可读。它们只证明历史读取可用，不代表前端可将其当作新云端授权。
+- 范围：其他 owner 岗位的 current 标准和岗位成果列表均返回 404。
 
-The failures were the missing position/candidate result projections and missing `position_ids`. A second red test updated a result after intake and initially observed the newer revision where the confirmed exact reference was expected; the final policy was clarified so generic lists use current while candidate documents stay pinned.
+## TDD/命令结果
 
-Focused green checks:
+1. `.venv/bin/python -m pytest -q tests/test_hr_position_cloud_reading.py`
+   - 首轮：2 errors；其他 owner 未建立真实目录身份，岗位外键拒绝夹具创建。
+   - 接入真实身份后：1 failure；成果 kind/basis 合约拒绝无效测试输入。
+   - 修订阶段：1 failure；不同 work 修订被真实 origin-work 范围返回 `scope_denied`。
+   - 最终：`2 passed in 1.58s`。
+2. `.venv/bin/python -m pytest -q tests/test_hr_position_cloud_reading.py tests/test_hr_agent_b_routes.py tests/test_hr_agent_standards.py tests/test_hr_position_intelligence_api.py`
+   - `16 passed, 1 failed`。失败为既有 `test_context_api_creates_and_human_confirms_selected_modules` 对已退休 POST context 路由仍期望 200，实际 404；新增测试及标准/成果回归均已通过，本任务未恢复旧写接口。
 
-```text
-backend/.venv/bin/pytest -q \
-  backend/tests/test_hr_agent_candidate_intake.py::test_confirmed_candidate_discovers_exact_draft_after_later_revision \
-  backend/tests/test_hr_agent_candidate_routes.py::test_batch_http_confirmed_candidate_and_scope \
-  backend/tests/test_hr_agent_repository_views.py::test_save_result_automatically_links_server_verified_work_objects \
-  backend/tests/test_hr_agent_repository_views.py::test_link_rejects_unrelated_candidate_and_rolls_back
+## 未覆盖
 
-4 passed in 4.86s
-```
-
-Relevant real disposable PostgreSQL and HTTP/database regression:
-
-```text
-backend/.venv/bin/pytest -q \
-  backend/tests/test_hr_agent_repository_views.py \
-  backend/tests/test_hr_agent_candidate_intake.py \
-  backend/tests/test_hr_agent_candidate_routes.py \
-  backend/tests/test_hr_agent_candidate_erasure.py \
-  backend/tests/test_hr_agent_routes.py \
-  backend/tests/test_hr_agent_research_result.py \
-  backend/tests/test_hr_task_result_projection_database.py
-
-48 passed in 25.91s
-```
-
-The regression covers thread/position/candidate discovery, exact confirmed document references after a later revision, pre-link historical candidate documents, create and link-existing confirmation, idempotent replay without duplicate links, foreign-owner rejection, arbitrary cross-candidate link rejection, source erasure, and position revocation.
-
-## Design tradeoffs
-
-- Result links store result identity rather than revision. Consequently generic object lists follow `results.current_revision`, matching the existing list contract. Candidate confirmation precision lives in `candidate_documents.result_ref`; callers use that exact reference for continuation.
-- Historical confirmed documents are included in candidate result discovery through an owner/candidate-scoped `EXISTS` fallback. This avoids rewriting old rows or backfilling mutable links during reads.
-- Link insertion is centralized in a small repository helper. Candidate confirmation may use it only after its stronger intake checks, while general `link_result` keeps its original restriction that a candidate must already occur in the result document objects.
-
-## Boundaries and incomplete items
-
-- Backend repository, candidate service, and focused tests only. No UI, root architecture documents, migration, production, deployment, or model calls were changed or run.
-- Browser and production acceptance were not applicable to this backend task and were not run.
+- 未运行真实 TCP HTTP、独立 API 进程、Worker 故障恢复或浏览器验收。
+- 未调用真实模型，因此不构成模型业务质量验收。
+- 未覆盖生产写入或生产授权业务验收；生产状态只由主任务的只读核对记录。
+- 未补测“后来通过 link API 关联到岗位但结果正文 objects 不含岗位”的合法目录语义；本次保存的成果原生绑定岗位。
