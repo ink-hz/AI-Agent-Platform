@@ -1,5 +1,7 @@
 # HR 工作台收敛方案（任务 B，待用户确认）
 
+> 最新用户裁定：先维护干净的主线，再考虑工作台重新设计。本文保持方案状态，暂停实施；先完成[主线整合](2026-09-14-mainline-reconciliation.md)。
+
 日期：2026-09-14。依据：[用户任务书](2026-09-14-hr-workbench-consolidation-brief.md)、根目录两份 HR 设计入口及用户“岗位做列表”的裁定。
 
 代码基线：`feat/hr-cloud-loop-launch`，工作树 `.worktrees/hr-cloud-loop-e-release`，`859480b9544b8c5cd3122c909df138f7a6d5d496`。此处是承接生产的分支，不表示该 tip 的全部提交都已部署。本文不采用 master 的旧诊断。
