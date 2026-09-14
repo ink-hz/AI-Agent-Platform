@@ -1,0 +1,8 @@
+{
+  "recorded_after_failure_at": 1789352134.139803,
+  "status": "timeout",
+  "timeout_seconds": 240,
+  "partial_bytes_observed_after_failure": 82804736,
+  "completed": false,
+  "evidence_limitation": "First transfer runner did not persist its execution receipt on TimeoutExpired; timeout and argv were visible in tool output. This is a post-failure record, not an original saved run receipt."
+}

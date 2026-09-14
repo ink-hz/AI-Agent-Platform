@@ -1,0 +1,194 @@
+{
+  "run_id": "d3d39337bb8e4057b47571519e9e0884",
+  "started_at": 1789353636.14038,
+  "status": "restored",
+  "production_database_changed": false,
+  "source_backup_run": "dc4b996ae61b4390aab3dc1e70ba6228",
+  "scope": "actual encrypted off-host snapshot, complete globals/ownership/ACL and control DB restore; local Unix socket only",
+  "steps": [
+    {
+      "name": "initdb",
+      "argv": [
+        "/opt/homebrew/bin/initdb",
+        "-D",
+        "/private/tmp/hrrestore-snkw9o2k/data",
+        "--username=platform_owner",
+        "--auth-local=trust",
+        "--auth-host=reject",
+        "--encoding=UTF8",
+        "--no-locale"
+      ],
+      "started_at": 1789353636.495806,
+      "finished_at": 1789353636.885658,
+      "exit_code": 0
+    },
+    {
+      "name": "start",
+      "argv": [
+        "/opt/homebrew/bin/pg_ctl",
+        "-D",
+        "/private/tmp/hrrestore-snkw9o2k/data",
+        "-l",
+        "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-launch-2026-09-14-backup/restore-2/postgres.log",
+        "-o",
+        "-c listen_addresses= -c unix_socket_directories=/private/tmp/hrrestore-snkw9o2k -c fsync=on -c log_statement=none",
+        "-w",
+        "start"
+      ],
+      "started_at": 1789353636.8860328,
+      "finished_at": 1789353637.01895,
+      "exit_code": 0
+    },
+    {
+      "name": "globals",
+      "argv": [
+        "/opt/homebrew/bin/psql",
+        "-X",
+        "-qAt",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-h",
+        "/private/tmp/hrrestore-snkw9o2k",
+        "-U",
+        "platform_owner",
+        "-d",
+        "postgres",
+        "-f",
+        "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-launch-2026-09-14-backup/restore-2/globals-restore.sql"
+      ],
+      "started_at": 1789353637.019681,
+      "finished_at": 1789353637.097169,
+      "exit_code": 0
+    },
+    {
+      "name": "network",
+      "argv": [
+        "/opt/homebrew/bin/psql",
+        "-X",
+        "-qAt",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-h",
+        "/private/tmp/hrrestore-snkw9o2k",
+        "-U",
+        "platform_owner",
+        "-d",
+        "postgres",
+        "-c",
+        "show listen_addresses"
+      ],
+      "started_at": 1789353637.097562,
+      "finished_at": 1789353637.107428,
+      "exit_code": 0
+    },
+    {
+      "name": "database",
+      "argv": [
+        "/opt/homebrew/bin/createdb",
+        "-h",
+        "/private/tmp/hrrestore-snkw9o2k",
+        "-U",
+        "platform_owner",
+        "-O",
+        "platform_control_owner",
+        "agent_platform_control"
+      ],
+      "started_at": 1789353637.107726,
+      "finished_at": 1789353637.148913,
+      "exit_code": 0
+    },
+    {
+      "name": "restore",
+      "argv": [
+        "/opt/homebrew/bin/pg_restore",
+        "--exit-on-error",
+        "-h",
+        "/private/tmp/hrrestore-snkw9o2k",
+        "-U",
+        "platform_owner",
+        "-d",
+        "agent_platform_control",
+        "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-launch-2026-09-14-backup/restore-2/production.dump"
+      ],
+      "started_at": 1789353637.149334,
+      "finished_at": 1789353646.4252338,
+      "exit_code": 0
+    },
+    {
+      "name": "ledger",
+      "argv": [
+        "/opt/homebrew/bin/psql",
+        "-X",
+        "-qAt",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-h",
+        "/private/tmp/hrrestore-snkw9o2k",
+        "-U",
+        "platform_owner",
+        "-d",
+        "agent_platform_control",
+        "-c",
+        "select json_agg(json_build_object('version',version,'sha256',sha256) order by version) from platform_control.schema_migrations"
+      ],
+      "started_at": 1789353646.425762,
+      "finished_at": 1789353646.446232,
+      "exit_code": 0
+    },
+    {
+      "name": "summary",
+      "argv": [
+        "/opt/homebrew/bin/psql",
+        "-X",
+        "-qAt",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-h",
+        "/private/tmp/hrrestore-snkw9o2k",
+        "-U",
+        "platform_owner",
+        "-d",
+        "agent_platform_control",
+        "-c",
+        "select json_build_object('tables',(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind='r' and n.nspname like 'platform_%'),'conversations',(select count(*) from platform_control.conversations),'erasure_jobs',(select count(*) from platform_attachments.erasure_jobs),'identity_boundary',(select current_database()))"
+      ],
+      "started_at": 1789353646.446831,
+      "finished_at": 1789353646.4568808,
+      "exit_code": 0
+    },
+    {
+      "name": "stop",
+      "argv": [
+        "/opt/homebrew/bin/pg_ctl",
+        "-D",
+        "/private/tmp/hrrestore-snkw9o2k/data",
+        "-m",
+        "fast",
+        "-w",
+        "stop"
+      ],
+      "started_at": 1789353646.457222,
+      "finished_at": 1789353646.5882869,
+      "exit_code": 0
+    }
+  ],
+  "decryption_authenticated": true,
+  "plaintext_bytes": 294451200,
+  "all_four_source_files_sha256_match": true,
+  "local_postgres_pid": 99826,
+  "tcp_listen_addresses": "",
+  "bootstrap_restore_adjustment": "same platform_owner bootstrap identity; omit only its one redundant CREATE ROLE statement",
+  "tcp_listen_verified": true,
+  "ledger_exact_match": true,
+  "ledger_count": 95,
+  "restored_summary": {
+    "tables": 140,
+    "conversations": 26,
+    "erasure_jobs": 0,
+    "identity_boundary": "agent_platform_control"
+  },
+  "owned_postgres_stopped": true,
+  "owned_data_directory_removed": true,
+  "finished_at": 1789353646.682116,
+  "limitation": "Point-in-time prepare snapshot; this is not a database rollback instruction after erasure fences, nor a restore of MinIO payloads or a zero-RPO claim."
+}

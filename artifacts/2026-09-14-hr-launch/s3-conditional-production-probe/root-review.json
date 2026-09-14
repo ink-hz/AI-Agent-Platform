@@ -1,0 +1,11 @@
+{
+  "reviewer": "root",
+  "source_sha256": "dab63e4ca9b3f3c53e31e8e105b19fa7931853cde2dc9283ce8ce5575d69187b",
+  "scope": "Review exact synthetic-key writes, must-observe412, explicit immutable-version-only deletes, no retry after unknown and private ledger. Existing deployment identity is supplied by inspected root wrapper.",
+  "result": "approved_for_actual_synthetic_preflight",
+  "limitations": [
+    "Does not create an authenticated business attachment or prove database erasure completion.",
+    "Must run again after MinIO process generation change; present run binds current actual generation.",
+    "Probe failure leaves private exact references and cannot be converted to passed by blind cleanup."
+  ]
+}

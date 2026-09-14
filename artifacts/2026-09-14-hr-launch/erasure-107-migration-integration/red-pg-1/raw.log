@@ -1,0 +1,46 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_hr_production_requires_exact_107_before_grant[missing] __________
+
+root_deployment = (HrTestDatabase(), PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9671/test_...equires_ex0/private', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'test-postgres', ...])
+fault = 'missing'
+
+    @pytest.mark.parametrize("fault", ["missing", "checksum_mismatch"])
+    def test_hr_production_requires_exact_107_before_grant(root_deployment, fault):
+        db, _, tmp, _, args = root_deployment
+        args[args.index("--migration-set") + 1] = "hr"
+        with db.admin_connection() as connection:
+            if fault == "missing":
+                connection.execute("delete from platform_control.schema_migrations where version=107")
+            else:
+                connection.execute("update platform_control.schema_migrations set sha256=%s where version=107", ("0" * 64,))
+        result = invoke(root_deployment)
+>       assert result.returncode != 0 and not (tmp / "calls").exists()
+E       AssertionError: assert (0 != 0)
+E        +  where 0 = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python', '/Users/neo/Developer/w...nvironment', 'production'], returncode=0, stdout='HR_AGENT_MIGRATIONS_OK environments=1 cleanup=verified\n', stderr='').returncode
+
+backend/tests/test_hr_root_migration_deployment.py:218: AssertionError
+____ test_hr_production_requires_exact_107_before_grant[checksum_mismatch] _____
+
+root_deployment = (HrTestDatabase(), PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9671/test_...equires_ex1/private', 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'test-postgres', ...])
+fault = 'checksum_mismatch'
+
+    @pytest.mark.parametrize("fault", ["missing", "checksum_mismatch"])
+    def test_hr_production_requires_exact_107_before_grant(root_deployment, fault):
+        db, _, tmp, _, args = root_deployment
+        args[args.index("--migration-set") + 1] = "hr"
+        with db.admin_connection() as connection:
+            if fault == "missing":
+                connection.execute("delete from platform_control.schema_migrations where version=107")
+            else:
+                connection.execute("update platform_control.schema_migrations set sha256=%s where version=107", ("0" * 64,))
+        result = invoke(root_deployment)
+>       assert result.returncode != 0 and not (tmp / "calls").exists()
+E       AssertionError: assert (0 != 0)
+E        +  where 0 = CompletedProcess(args=['/Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python', '/Users/neo/Developer/w...nvironment', 'production'], returncode=0, stdout='HR_AGENT_MIGRATIONS_OK environments=1 cleanup=verified\n', stderr='').returncode
+
+backend/tests/test_hr_root_migration_deployment.py:218: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_hr_production_requires_exact_107_before_grant[missing]
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_hr_production_requires_exact_107_before_grant[checksum_mismatch]
+2 failed, 21 deselected in 5.76s

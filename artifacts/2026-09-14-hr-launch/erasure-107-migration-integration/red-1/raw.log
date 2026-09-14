@@ -1,0 +1,30 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+______ test_root_checksum_inventory_rejects_missing_attachment_floor[107] ______
+
+tmp_path = PosixPath('/private/var/folders/f2/_6ql657j53ddvq65fsm6m_tw0000gn/T/pytest-of-neo/pytest-9670/test_root_checksum_inventory_r1')
+missing_version = 107
+
+    @pytest.mark.parametrize("missing_version", [106, 107])
+    def test_root_checksum_inventory_rejects_missing_attachment_floor(tmp_path, missing_version):
+        import importlib.util
+        from types import SimpleNamespace
+    
+        release = tmp_path / "release"
+        shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
+        for path in (release / "backend/control_migrations").glob(f"{missing_version}_*.sql"):
+            path.unlink()
+        spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        supervisor = module.Supervisor(SimpleNamespace(
+            release=str(release), private=str(tmp_path / "private"),
+            migration_set="root", environment="production",
+        ))
+>       with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
+E       Failed: DID NOT RAISE DeploymentFailure
+
+backend/tests/test_hr_root_migration_deployment.py:204: Failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_hr_root_migration_deployment.py::test_root_checksum_inventory_rejects_missing_attachment_floor[107]
+1 failed, 1 passed, 19 deselected in 0.13s

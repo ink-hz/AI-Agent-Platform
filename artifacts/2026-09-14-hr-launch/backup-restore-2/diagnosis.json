@@ -1,0 +1,9 @@
+{
+  "prior_attempt": "../backup-restore/receipt.json",
+  "observed_error": "grantor platform_owner must have ADMIN option on platform_replica_import",
+  "cause": "The isolated cluster used a different bootstrap superuser, whereas restored role grants name the source bootstrap role as grantor.",
+  "fix": "Use the source bootstrap identity platform_owner and omit only its redundant CREATE ROLE. Preserve ALTER roles, GRANTED BY, ownership and ACL.",
+  "original_globals_bytes_retained": true,
+  "source_sha256": "cacb81dbd6c6a3aaa4d421df5d0c5e1d1d8e896163ac1e2aa5153ed9a0dd9668",
+  "reference": "https://www.postgresql.org/docs/17/app-pg-dumpall.html"
+}

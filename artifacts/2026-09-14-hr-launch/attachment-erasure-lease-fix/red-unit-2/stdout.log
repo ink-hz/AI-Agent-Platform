@@ -1,0 +1,24 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+__________ test_service_records_exact_claim_token_after_final_renewal __________
+
+    def test_service_records_exact_claim_token_after_final_renewal():
+        token = uuid4()
+>       job = ErasureJob(uuid4(), uuid4(), token, ("one", "two"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ErasureJob.__init__() takes 4 positional arguments but 5 were given
+
+backend/tests/test_attachment_erasure_lease.py:47: TypeError
+_______ test_heartbeat_renewal_loss_during_delete_forbids_result_commit ________
+
+    def test_heartbeat_renewal_loss_during_delete_forbids_result_commit():
+        token = uuid4()
+>       job = ErasureJob(uuid4(), uuid4(), token, ("one", "two"))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: ErasureJob.__init__() takes 4 positional arguments but 5 were given
+
+backend/tests/test_attachment_erasure_lease.py:59: TypeError
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_lease.py::test_service_records_exact_claim_token_after_final_renewal
+FAILED backend/tests/test_attachment_erasure_lease.py::test_heartbeat_renewal_loss_during_delete_forbids_result_commit
+2 failed in 0.13s

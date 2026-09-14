@@ -1,0 +1,1 @@
+Snapshot capture stopped: current test_attachment_erasure_lease_database.py SHA289a1990... differs from green-core-1 SHA8d26419d.... No final review conclusion is issued from this directory. Awaiting exact final validation receipt. Partial captured source bytes are preserved.

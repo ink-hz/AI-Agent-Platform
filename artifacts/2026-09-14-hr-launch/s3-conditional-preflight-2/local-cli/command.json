@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "artifacts/2026-09-14-hr-launch/s3-conditional-preflight-2/test_cli_boundary.py",
+    "artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/test_probe.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 0,
+  "boundary": "local real temporary private files; SDK/hostname/secret stat UID simulated; wrapper source checked"
+}

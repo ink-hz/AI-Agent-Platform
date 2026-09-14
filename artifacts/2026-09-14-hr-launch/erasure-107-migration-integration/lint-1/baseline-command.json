@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "backend/.venv/bin/ruff",
+    "check",
+    "--output-format",
+    "json",
+    "artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/deploy/cloud/hr_agent_migrate.py",
+    "artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_hr_agent_migration_deployment.py",
+    "artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_hr_root_migration_deployment.py"
+  ],
+  "exit": 1
+}

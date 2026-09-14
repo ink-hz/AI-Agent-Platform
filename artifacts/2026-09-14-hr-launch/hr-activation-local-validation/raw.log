@@ -1,0 +1,148 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_exact_psql_activation_transactions_and_readback _____________
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:61769/postgres', 'port': 61769, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:61769/agent_platform_control_preview', ...}}}
+
+    def test_exact_psql_activation_transactions_and_readback(control_database):
+        dsn = control_database["environments"]["production"]["admin"]
+        outputs = {}
+        for name in ("initialize", "counts-under-lock", "draining-legacy", "cloud", "readback"):
+            raw = (SQL / (name + ".sql")).read_bytes()
+            result = subprocess.run(["psql", "-X", "-qAt", "-v", "ON_ERROR_STOP=1", dsn],
+                                    input=raw, capture_output=True, timeout=15)
+>           assert result.returncode == 0, result.stderr.decode()
+E           AssertionError: ERROR:  hr execution inventory unavailable
+E             CONTEXT:  PL/pgSQL function hr_execution_cutover_counts_v102() line 17 at RAISE
+E             SQL statement "SELECT *             FROM platform_control.hr_execution_cutover_counts_v102()"
+E             PL/pgSQL function initialize_hr_execution_cutover_v102(uuid) line 22 at SQL statement
+E             
+E           assert 3 == 0
+E            +  where 3 = CompletedProcess(args=['psql', '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', 'postgresql://control_test_admin@127.0.0.1:61769...ution_cutover_counts_v102()"\nPL/pgSQL function initialize_hr_execution_cutover_v102(uuid) line 22 at SQL statement\n').returncode
+
+artifacts/2026-09-14-hr-launch/hr-activation-local-validation/test_activation_sql.py:18: AssertionError
+=============================== warnings summary ===============================
+backend/tests/test_control_plane_migration.py:370
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:370: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:439
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:439: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:482
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:482: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:722
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:722: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:809
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:809: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1091
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1091: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1150
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1150: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1189
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1189: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1216
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1216: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1401
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1401: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1511
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1511: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1570
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1570: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1628
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1628: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1665
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1665: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1713
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1713: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1819
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1819: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1874
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1874: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:1989
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:1989: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2083
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2083: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2377
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2377: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2410
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2410: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2483
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2483: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2561
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2561: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2670
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2670: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2738
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2738: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2859
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2859: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:2953
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:2953: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:3073
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:3073: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:3144
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:3144: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+backend/tests/test_control_plane_migration.py:3184
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_control_plane_migration.py:3184: PytestUnknownMarkWarning: Unknown pytest.mark.postgres - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.postgres
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED artifacts/2026-09-14-hr-launch/hr-activation-local-validation/test_activation_sql.py::test_exact_psql_activation_transactions_and_readback
+1 failed, 30 warnings in 1.46s

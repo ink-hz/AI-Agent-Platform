@@ -1,0 +1,260 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+___ test_killed_claim_is_recovered_with_new_token_and_old_results_are_fenced ___
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:61205/postgres', 'port': 61205, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:61205/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_killed_claim_is_recovered_with_new_token_and_old_results_are_fenced(
+        control_database,
+    ):
+        environment = control_database["environments"]["production"]
+        with psycopg.connect(environment["admin"]) as admin:
+            context = _seed_task(admin)
+            attachment_id = _insert_attachment(admin, context)
+>           job_id = _job(admin, context, attachment_id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_lease_database.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_lease_database.py:29: in _job
+    connection.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x103310690>
+query = 'insert into platform_attachments.erasure_jobs (erasure_job_id,attachment_id,requested_by_internal_user_id,reason_ciphertext,reason_key_version,reason_sha256,max_attempts) values (%s,%s,%s,%s,1,%s,%s)'
+params = (UUID('174d3f3f-fabe-4709-bee3-74ecd1f68098'), UUID('6592686e-50fb-4cc1-8a22-5122e2f641d6'), UUID('edb60ef5-cfeb-4490-9fe0-3fcdb7d2543c'), b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrr', b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr', 5)
+prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.UndefinedColumn: column "max_attempts" of relation "erasure_jobs" does not exist
+E           LINE 1: ...eason_ciphertext,reason_key_version,reason_sha256,max_attemp...
+E                                                                        ^
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: UndefinedColumn
+__ test_expired_last_crashed_attempt_becomes_visible_exhausted_and_keeps_refs __
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:61205/postgres', 'port': 61205, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:61205/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_expired_last_crashed_attempt_becomes_visible_exhausted_and_keeps_refs(
+        control_database,
+    ):
+        environment = control_database["environments"]["production"]
+        with psycopg.connect(environment["admin"]) as admin:
+            context = _seed_task(admin)
+            attachment_id = _insert_attachment(admin, context)
+            original = admin.execute(
+                "select object_ref_ciphertext from platform_attachments.attachments "
+                "where attachment_id=%s",
+                (attachment_id,),
+            ).fetchone()[0]
+>           job_id = _job(admin, context, attachment_id, max_attempts=1)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_lease_database.py:122: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_lease_database.py:29: in _job
+    connection.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x1047c1210>
+query = 'insert into platform_attachments.erasure_jobs (erasure_job_id,attachment_id,requested_by_internal_user_id,reason_ciphertext,reason_key_version,reason_sha256,max_attempts) values (%s,%s,%s,%s,1,%s,%s)'
+params = (UUID('d4d6c1ab-1ed4-4751-8408-753c6091d6e5'), UUID('be326a69-e76b-4359-82cc-aaa0b9f99e2f'), UUID('ea75cbaf-b657-4455-8a69-e288b53c7a5c'), b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrr', b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr', 1)
+prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.UndefinedColumn: column "max_attempts" of relation "erasure_jobs" does not exist
+E           LINE 1: ...eason_ciphertext,reason_key_version,reason_sha256,max_attemp...
+E                                                                        ^
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: UndefinedColumn
+___ test_only_exhausted_job_has_idempotent_explicit_recovery_and_fresh_token ___
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:61205/postgres', 'port': 61205, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:61205/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_only_exhausted_job_has_idempotent_explicit_recovery_and_fresh_token(
+        control_database,
+    ):
+        environment = control_database["environments"]["production"]
+        recovery_id = uuid4()
+        with psycopg.connect(environment["admin"]) as admin:
+            context = _seed_task(admin)
+            attachment_id = _insert_attachment(admin, context)
+>           job_id = _job(admin, context, attachment_id, max_attempts=1)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_lease_database.py:158: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_lease_database.py:29: in _job
+    connection.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x1043dfb50>
+query = 'insert into platform_attachments.erasure_jobs (erasure_job_id,attachment_id,requested_by_internal_user_id,reason_ciphertext,reason_key_version,reason_sha256,max_attempts) values (%s,%s,%s,%s,1,%s,%s)'
+params = (UUID('6df2c3e9-4f96-4b99-9ddc-4e1f28b02bc1'), UUID('cba6c992-5f69-45c6-b1be-dfa8a4e6fd5c'), UUID('a722ce8d-9060-486c-a946-2e5f2e1b3966'), b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrr', b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr', 1)
+prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.UndefinedColumn: column "max_attempts" of relation "erasure_jobs" does not exist
+E           LINE 1: ...eason_ciphertext,reason_key_version,reason_sha256,max_attemp...
+E                                                                        ^
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: UndefinedColumn
+_ test_reference_decryption_failure_consumes_bounded_attempt_and_keeps_evidence _
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:61205/postgres', 'port': 61205, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:61205/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_reference_decryption_failure_consumes_bounded_attempt_and_keeps_evidence(
+        control_database,
+    ):
+        environment = control_database["environments"]["production"]
+        with psycopg.connect(environment["admin"]) as admin:
+            context = _seed_task(admin)
+            attachment_id = _insert_attachment(admin, context)
+            original = admin.execute(
+                "select object_ref_ciphertext from platform_attachments.attachments "
+                "where attachment_id=%s",
+                (attachment_id,),
+            ).fetchone()[0]
+>           job_id = _job(admin, context, attachment_id, max_attempts=1)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/test_attachment_erasure_lease_database.py:194: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/tests/test_attachment_erasure_lease_database.py:29: in _job
+    connection.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x104784d10>
+query = 'insert into platform_attachments.erasure_jobs (erasure_job_id,attachment_id,requested_by_internal_user_id,reason_ciphertext,reason_key_version,reason_sha256,max_attempts) values (%s,%s,%s,%s,1,%s,%s)'
+params = (UUID('93978fac-afa6-4437-8d14-694b2aae9039'), UUID('8819e2a8-8360-4737-b081-3019c8345bd1'), UUID('d028f9e6-6016-4c14-9d83-059d12ad89d3'), b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrr', b'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr', 1)
+prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.UndefinedColumn: column "max_attempts" of relation "erasure_jobs" does not exist
+E           LINE 1: ...eason_ciphertext,reason_key_version,reason_sha256,max_attemp...
+E                                                                        ^
+
+../../backend/.venv/lib/python3.11/site-packages/psycopg/connection.py:300: UndefinedColumn
+_____________ test_legacy_v64_claim_and_record_are_not_executable ______________
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:61205/postgres', 'port': 61205, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:61205/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_legacy_v64_claim_and_record_are_not_executable(control_database):
+        environment = control_database["environments"]["production"]
+        with psycopg.connect(environment["urls"]["platform_control_maintenance"]) as maintenance:
+            for query, params in (
+                ("select platform_attachments.claim_attachment_erasure_job_v64(%s)", ("legacy",)),
+                (
+                    "select platform_attachments.record_attachment_erasure_result_v64("
+                    "%s,'partial','legacy','{}'::jsonb)",
+                    (uuid4(),),
+                ),
+            ):
+>               with pytest.raises(psycopg.errors.InsufficientPrivilege):
+E               Failed: DID NOT RAISE InsufficientPrivilege
+
+backend/tests/test_attachment_erasure_lease_database.py:223: Failed
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_lease_database.py::test_killed_claim_is_recovered_with_new_token_and_old_results_are_fenced
+FAILED backend/tests/test_attachment_erasure_lease_database.py::test_expired_last_crashed_attempt_becomes_visible_exhausted_and_keeps_refs
+FAILED backend/tests/test_attachment_erasure_lease_database.py::test_only_exhausted_job_has_idempotent_explicit_recovery_and_fresh_token
+FAILED backend/tests/test_attachment_erasure_lease_database.py::test_reference_decryption_failure_consumes_bounded_attempt_and_keeps_evidence
+FAILED backend/tests/test_attachment_erasure_lease_database.py::test_legacy_v64_claim_and_record_are_not_executable
+5 failed in 1.47s

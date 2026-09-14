@@ -1,0 +1,5 @@
+{
+  "exit_code": 1,
+  "classification": "local fixture omitted hr_web/hr_agent migrations; actual SQL failed closed at hr execution inventory unavailable",
+  "production_execution": false
+}

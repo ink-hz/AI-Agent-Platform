@@ -1,0 +1,2 @@
+PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_control_plane_migration.py::test_control_migration_versions_are_unique_and_contiguous
+exit=0

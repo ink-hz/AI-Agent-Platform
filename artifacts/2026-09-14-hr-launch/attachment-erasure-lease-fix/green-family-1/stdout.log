@@ -1,0 +1,121 @@
+........................................................................ [ 20%]
+........................................................................ [ 40%]
+........................................................................ [ 60%]
+........................................................................ [ 81%]
+......................................................F............      [100%]
+=================================== FAILURES ===================================
+____ test_service_releases_failed_object_write_for_immediate_real_db_retry _____
+
+attachment_database = ({'database': 'agent_platform_control', 'owner': 'platform_control_owner', 'roles': ('platform_control_migrator', 'pla...6-4e72-8ebf-38b23f8eb769'), UUID('6f49debd-d364-40a5-8694-14e04e3577ca'), UUID('6936c56f-f309-4d46-8db4-ed6f7eb655d9'))
+repository = ConversationAttachmentRepository(control_database_url=<redacted>, content_codec=<redacted>, environment='production')
+
+    @pytest.mark.postgres
+    def test_service_releases_failed_object_write_for_immediate_real_db_retry(
+        attachment_database,
+        repository,
+    ) -> None:
+        environment, owner_id, _other_owner_id, conversation_id = attachment_database
+        upload = repository.create_upload(
+            owner_id, conversation_id, "retry-now.pdf", "application/pdf", 7
+        )
+    
+        class FailOnceS3:
+            def __init__(self) -> None:
+                self.fail_once = True
+                self.keys = []
+                self.deletes = []
+    
+            def put_object(self, *, Bucket, Key, Body, ContentLength):
+                self.keys.append(Key)
+                while Body.read(1024 * 1024):
+                    if self.fail_once:
+                        self.fail_once = False
+                        raise OSError("definite object write failure")
+                return {"ETag": "opaque"}
+    
+            def delete_object(self, *, Bucket, Key):
+                self.deletes.append(Key)
+    
+        s3 = FailOnceS3()
+        service = AttachmentUploadService(
+            repository, AttachmentObjectWriter(s3, "private-attachments")
+        )
+    
+        with pytest.raises(AttachmentUploadConflict, match="object write failed"):
+            service.write(owner_id, upload.upload_id, io.BytesIO(b"payload"), 7)
+>       completed = service.write(
+            owner_id, upload.upload_id, io.BytesIO(b"payload"), 7
+        )
+
+backend/tests/test_conversation_attachment_repository.py:305: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.attachments.upload_service.AttachmentUploadService object at 0x10d4c0ed0>
+owner_id = UUID('2d9fc31c-70d6-4e72-8ebf-38b23f8eb769')
+upload_id = UUID('767eda21-4ace-4464-a051-1413ff23f370')
+body = <_io.BytesIO object at 0x10c8226b0>, content_length = 7
+
+    def write(
+        self,
+        owner_id: UUID,
+        upload_id: UUID,
+        body: BinaryIO,
+        content_length: int,
+    ) -> UploadRecord:
+        try:
+            upload = self._repository.upload_for_owner(owner_id, upload_id)
+        except Exception:  # noqa: BLE001 - repository boundary is intentionally opaque
+            raise AttachmentUploadConflict("attachment upload unavailable") from None
+        if upload.state != "uploading":
+            return upload
+        if upload.expires_at <= datetime.now(UTC):
+            raise AttachmentUploadConflict("attachment upload expired")
+        if (
+            isinstance(content_length, bool)
+            or not isinstance(content_length, int)
+            or content_length != upload.declared_size
+            or content_length > self._max_file_bytes
+        ):
+            raise AttachmentUploadConflict(
+                "attachment content length mismatch"
+            )
+        try:
+            attempt = self._repository.claim_write(owner_id, upload_id)
+        except Exception:  # noqa: BLE001 - repository boundary is intentionally opaque
+            raise AttachmentUploadConflict(
+                "attachment upload write lease unavailable"
+            ) from None
+        try:
+            receipt = self._object_writer.put_stream(
+                attempt.object_ref, body, content_length
+            )
+        except (AttachmentObjectWriterError, ValueError):
+            try:
+                self._repository.abandon_write(
+                    owner_id, upload_id, attempt.attempt_id
+                )
+            except Exception:  # noqa: BLE001 - keep uncertain attempt protected
+                raise AttachmentUploadConflict(
+                    "attachment object write failed; retry pending"
+                ) from None
+>           raise AttachmentUploadConflict("attachment object write failed") from None
+E           app.attachments.upload_service.AttachmentUploadConflict: attachment object write failed
+
+backend/app/attachments/upload_service.py:109: AttachmentUploadConflict
+=============================== warnings summary ===============================
+tests/test_attachment_erasure_observer.py::test_real_owner_pg_readonly_snapshot_and_terminal_gate
+tests/test_attachment_erasure_production_canary.py::test_prepare_erase_only_owned_attachment_and_http_absence_is_not_object_erasure
+tests/test_attachment_erasure_production_canary.py::test_expired_mutation_deadline_allows_only_bounded_observation
+tests/test_attachment_erasure_production_canary.py::test_lost_delete_reply_stops_without_reissuing_delete
+tests/test_attachment_erasure_production_canary.py::test_unknown_initial_upload_and_wrong_owner_never_create_a_replacement
+  /Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_production_canary.py:148: StarletteDeprecationWarning: You should not use the 'timeout' argument with the TestClient. See https://github.com/Kludex/starlette/issues/1108 for more information.
+    result = client.request(method, url, **kwargs)
+
+tests/test_conversation_attachment_binding.py: 10 warnings
+  /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/lib/python3.11/site-packages/starlette/testclient.py:454: DeprecationWarning: Setting per-request cookies=<...> is being deprecated, because the expected behaviour on cookie persistence is ambiguous. Set cookies directly on the client instance instead.
+    return super().request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/test_conversation_attachment_repository.py::test_service_releases_failed_object_write_for_immediate_real_db_retry
+1 failed, 354 passed, 15 warnings in 44.01s

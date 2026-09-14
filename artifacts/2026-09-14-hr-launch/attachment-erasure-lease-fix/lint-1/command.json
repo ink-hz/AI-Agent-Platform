@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "backend/.venv/bin/python",
+    "-m",
+    "ruff",
+    "check",
+    "backend/app/attachments/erasure.py",
+    "backend/app/attachments/fence_capability.py",
+    "backend/tests/test_attachment_erasure_lease.py",
+    "backend/tests/test_attachment_erasure_lease_database.py",
+    "backend/tests/test_attachment_erasure.py",
+    "backend/tests/test_attachment_erasure_hotfix_database.py",
+    "backend/tests/test_attachment_fence_capability.py",
+    "backend/tests/test_attachment_s3_version_erasure.py",
+    "backend/tests/test_attachment_write_fence_database.py",
+    "backend/tests/test_conversation_attachment_migration.py"
+  ],
+  "boundary": "local static lint only",
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 0,
+  "head": "3d2c5d910fa047fab0ae2a340cd99431bf2b7b6e"
+}

@@ -1,0 +1,23 @@
+{
+  "exit_code": 0,
+  "result": "1 passed in 1.15s",
+  "argv": [
+    "PYTHONPATH=backend:backend/tests",
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "artifacts/2026-09-14-hr-launch/hr-activation-local-validation-2/test_activation_sql.py"
+  ],
+  "boundary": "Actual local PostgreSQL, complete root+hr_web+hr_agent migrations, migrator owner membership revoked; exact psql transactions and readback. No production execution.",
+  "known_initial_failure": "../hr-activation-local-validation omitted HR migration families, so initialize correctly failed closed. SQL operational bytes unchanged except newly added readback never executed in production.",
+  "fingerprints": {
+    "artifacts/2026-09-14-hr-launch/hr-activation-local-validation-2/test_activation_sql.py": "3ddd855d50c7ad3f65b92f2f347b8f51e911d1bf1cd8d97a06f4149f8bbf8dd6",
+    "artifacts/2026-09-14-hr-launch/hr-activation-local-validation-2/raw.log": "2ab5bf1c418c4b50a82bb6d168950ab377ab0a377e4d5187213d9b176905f856",
+    "artifacts/2026-09-14-hr-launch/hr-activation/cloud.sql": "373ba8ee71110e2d971f80115f31df4d24e7e0e0f1f2f8ff4bece9a5c6150122",
+    "artifacts/2026-09-14-hr-launch/hr-activation/counts-under-lock.sql": "476cd68cfadf4a9ab1814bad6a967390cd1a458212e0f8719fd72f4fe80c743a",
+    "artifacts/2026-09-14-hr-launch/hr-activation/draining-legacy.sql": "985518cb36ec92d378e0dbc0745dccbc1c02dfb43438ce7562049c442b9a2fb9",
+    "artifacts/2026-09-14-hr-launch/hr-activation/initialize.sql": "4c68609fc87a48cea0d0aa9735b38a613ac65017032a0c2fa8610a8420d49c3d",
+    "artifacts/2026-09-14-hr-launch/hr-activation/readback.sql": "f33e70fa020ad1afef3f68d69434f1bb20e99a7ba3168e27afed618837e51700"
+  }
+}

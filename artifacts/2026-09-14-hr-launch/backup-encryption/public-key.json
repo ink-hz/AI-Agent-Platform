@@ -1,0 +1,5 @@
+{
+  "algorithm": "X25519 + HKDF-SHA256 + chunked AES-GCM (existing platform backup format)",
+  "recovery_public_key_hex": "e3a7fe5485ff216fc03679a1842ff29c05e065dc7f84a5dcbf780fb0ff137c4d",
+  "private_key_boundary": "local user-owned0700 directory/0600 key; never sent to production or artifacts"
+}

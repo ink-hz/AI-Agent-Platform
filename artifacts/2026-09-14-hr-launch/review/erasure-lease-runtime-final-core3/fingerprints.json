@@ -1,0 +1,17 @@
+{
+  "head": "3d2c5d910fa047fab0ae2a340cd99431bf2b7b6e",
+  "target": "exact worktree SHA; HEAD alone does not describe uncommitted source",
+  "files": {
+    "backend/app/attachments/erasure.py": "194222dea0cf6925f253fa1e768996b206d9af203ec35f107cd998aea28e08ce",
+    "backend/app/attachments/fence_capability.py": "b0b345634f38e2cf7fd3a912d278598aa4e5f607c22c5a0250da0dd5f546f5bb",
+    "backend/control_migrations/107_attachment_erasure_attempt_leases.sql": "d0405bdb767d2cc74efae79b566fab9380432d277c57d59589569a5e31687170",
+    "backend/tests/test_attachment_erasure.py": "104165c32198591aa02833d43a6c1721f45d3dc8cbc523f699227bb4b0dd465e",
+    "backend/tests/test_attachment_erasure_hotfix_database.py": "e925498c57ef27f267aa32759a69a87a7e6b341333f82a7d5f895f973313bfb4",
+    "backend/tests/test_attachment_erasure_lease.py": "b711eccc932e5b62ef89edded11e9217a772a50bc7df0c5328bbc39503b2dffe",
+    "backend/tests/test_attachment_erasure_lease_database.py": "040c72de826a71084b6d4b9af54a1e3b4f57fe5fa3dcc5ffd6c9e8925a210954",
+    "backend/tests/test_attachment_fence_capability.py": "65f625ffb9da0ff847079ba42567df51706946d5b9cdb71c38e78f1ae583b897",
+    "backend/tests/test_attachment_s3_version_erasure.py": "2a58fac2cc3fa0366d434df610f17afc8135f16c1f78c1a3a4a7871f31b195fb",
+    "backend/tests/test_attachment_write_fence_database.py": "96eea295fb4b06f537565689fd5872e46461f793f6a79398ef77797bcf4d99f4",
+    "backend/tests/test_conversation_attachment_migration.py": "8043a7ffcfd2a554fa4a13fc0ce6602b0cb01901deb5de34b50ca1c24cbdd6ee"
+  }
+}

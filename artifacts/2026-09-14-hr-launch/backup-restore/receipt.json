@@ -1,0 +1,88 @@
+{
+  "run_id": "6865b5c45c45447db845432118284437",
+  "started_at": 1789353107.195403,
+  "status": "failed",
+  "production_database_changed": false,
+  "source_backup_run": "dc4b996ae61b4390aab3dc1e70ba6228",
+  "scope": "actual encrypted off-host snapshot, complete globals/ownership/ACL and control DB restore; local Unix socket only",
+  "steps": [
+    {
+      "name": "initdb",
+      "argv": [
+        "/opt/homebrew/bin/initdb",
+        "-D",
+        "/private/tmp/hrrestore-obwmzfka/data",
+        "--username=hr_restore_6865b5c45c45447d",
+        "--auth-local=trust",
+        "--auth-host=reject",
+        "--encoding=UTF8",
+        "--no-locale"
+      ],
+      "started_at": 1789353107.781208,
+      "finished_at": 1789353108.286685,
+      "exit_code": 0
+    },
+    {
+      "name": "start",
+      "argv": [
+        "/opt/homebrew/bin/pg_ctl",
+        "-D",
+        "/private/tmp/hrrestore-obwmzfka/data",
+        "-l",
+        "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-launch-2026-09-14-backup/restore-1/postgres.log",
+        "-o",
+        "-c listen_addresses= -c unix_socket_directories=/private/tmp/hrrestore-obwmzfka -c fsync=on -c log_statement=none",
+        "-w",
+        "start"
+      ],
+      "started_at": 1789353108.287243,
+      "finished_at": 1789353108.4118211,
+      "exit_code": 0
+    },
+    {
+      "name": "globals",
+      "argv": [
+        "/opt/homebrew/bin/psql",
+        "-X",
+        "-qAt",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-h",
+        "/private/tmp/hrrestore-obwmzfka",
+        "-U",
+        "hr_restore_6865b5c45c45447d",
+        "-d",
+        "postgres",
+        "-f",
+        "/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/hr-launch-2026-09-14-backup/restore-1/globals.sql"
+      ],
+      "started_at": 1789353108.4127731,
+      "finished_at": 1789353108.4892879,
+      "exit_code": 3
+    },
+    {
+      "name": "stop",
+      "argv": [
+        "/opt/homebrew/bin/pg_ctl",
+        "-D",
+        "/private/tmp/hrrestore-obwmzfka/data",
+        "-m",
+        "fast",
+        "-w",
+        "stop"
+      ],
+      "started_at": 1789353108.4897778,
+      "finished_at": 1789353108.617286,
+      "exit_code": 0
+    }
+  ],
+  "decryption_authenticated": true,
+  "plaintext_bytes": 294451200,
+  "all_four_source_files_sha256_match": true,
+  "local_postgres_pid": 93860,
+  "tcp_listen_addresses": "",
+  "failure_type": "RuntimeError",
+  "owned_postgres_stopped": true,
+  "finished_at": 1789353108.617634,
+  "limitation": "Point-in-time prepare snapshot; this is not a database rollback instruction after erasure fences, nor a restore of MinIO payloads or a zero-RPO claim."
+}

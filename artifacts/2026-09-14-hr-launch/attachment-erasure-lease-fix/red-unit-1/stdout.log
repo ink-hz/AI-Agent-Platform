@@ -1,0 +1,21 @@
+
+==================================== ERRORS ====================================
+___________ ERROR collecting tests/test_attachment_erasure_lease.py ____________
+ImportError while importing test module '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/backend/tests/test_attachment_erasure_lease.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/importlib/__init__.py:127: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+backend/tests/test_attachment_erasure_lease.py:8: in <module>
+    from app.attachments.erasure import (
+backend/app/attachments/erasure.py:12: in <module>
+    from app.control_plane.dsn import validate_control_dsn
+backend/app/control_plane/__init__.py:3: in <module>
+    from .models import (
+backend/app/control_plane/models.py:3: in <module>
+    from enum import StrEnum
+E   ImportError: cannot import name 'StrEnum' from 'enum' (/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/enum.py)
+=========================== short test summary info ============================
+ERROR backend/tests/test_attachment_erasure_lease.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.17s

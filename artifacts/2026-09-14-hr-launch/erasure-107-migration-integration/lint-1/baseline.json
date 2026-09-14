@@ -1,0 +1,1060 @@
+[
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 984
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 983
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 983,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 52,
+      "row": 1072
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 1071
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1071,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1100
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1099
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1099,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 44,
+      "row": 1123
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    with psycopg.connect(\n        control_database[\"cluster_admin\"], autocommit=True\n    ) as connection, connection.cursor() as cursor:\n        cursor.execute(\n            psycopg.sql.SQL(\"grant {} to {}\").format(\n                psycopg.sql.Identifier(environment[\"owner\"]),\n                psycopg.sql.Identifier(environment[\"roles\"][0]),\n            )\n        )",
+          "end_location": {
+            "column": 14,
+            "row": 1129
+          },
+          "location": {
+            "column": 1,
+            "row": 1120
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 5,
+      "row": 1120
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1120,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1141
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "        with psycopg.connect(\n            control_database[\"cluster_admin\"], autocommit=True\n        ) as connection, connection.cursor() as cursor:\n            cursor.execute(\n                psycopg.sql.SQL(\"revoke {} from {}\").format(\n                    psycopg.sql.Identifier(environment[\"owner\"]),\n                    psycopg.sql.Identifier(environment[\"roles\"][0]),\n                )\n            )",
+          "end_location": {
+            "column": 18,
+            "row": 1147
+          },
+          "location": {
+            "column": 1,
+            "row": 1138
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 9,
+      "row": 1138
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1138,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1258
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1257
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1257,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1288
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1287
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1287,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1311
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1310
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1310,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1347
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1346
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1346,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1371
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1370
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1370,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1405
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1404
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1404,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 44,
+      "row": 1565
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    with psycopg.connect(database_url) as connection, connection.cursor() as cursor:\n        with pytest.raises(psycopg.errors.InsufficientPrivilege):\n            cursor.execute(statement)",
+          "end_location": {
+            "column": 42,
+            "row": 1567
+          },
+          "location": {
+            "column": 1,
+            "row": 1564
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 5,
+      "row": 1564
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1564,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "ISC004",
+    "end_location": {
+      "column": 50,
+      "row": 1604
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "(",
+          "end_location": {
+            "column": 9,
+            "row": 1602
+          },
+          "location": {
+            "column": 9,
+            "row": 1602
+          }
+        },
+        {
+          "content": ")",
+          "end_location": {
+            "column": 50,
+            "row": 1604
+          },
+          "location": {
+            "column": 50,
+            "row": 1604
+          }
+        }
+      ],
+      "message": "Did you forget a comma?"
+    },
+    "location": {
+      "column": 9,
+      "row": 1602
+    },
+    "message": "Unparenthesized implicit string concatenation in collection",
+    "name": "implicit-string-concatenation-in-collection-literal",
+    "noqa_row": 1602,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/implicit-string-concatenation-in-collection-literal"
+  },
+  {
+    "cell": null,
+    "code": "ISC004",
+    "end_location": {
+      "column": 50,
+      "row": 1606
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "(",
+          "end_location": {
+            "column": 9,
+            "row": 1605
+          },
+          "location": {
+            "column": 9,
+            "row": 1605
+          }
+        },
+        {
+          "content": ")",
+          "end_location": {
+            "column": 50,
+            "row": 1606
+          },
+          "location": {
+            "column": 50,
+            "row": 1606
+          }
+        }
+      ],
+      "message": "Did you forget a comma?"
+    },
+    "location": {
+      "column": 9,
+      "row": 1605
+    },
+    "message": "Unparenthesized implicit string concatenation in collection",
+    "name": "implicit-string-concatenation-in-collection-literal",
+    "noqa_row": 1605,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/implicit-string-concatenation-in-collection-literal"
+  },
+  {
+    "cell": null,
+    "code": "ISC004",
+    "end_location": {
+      "column": 49,
+      "row": 1608
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "(",
+          "end_location": {
+            "column": 9,
+            "row": 1607
+          },
+          "location": {
+            "column": 9,
+            "row": 1607
+          }
+        },
+        {
+          "content": ")",
+          "end_location": {
+            "column": 49,
+            "row": 1608
+          },
+          "location": {
+            "column": 49,
+            "row": 1608
+          }
+        }
+      ],
+      "message": "Did you forget a comma?"
+    },
+    "location": {
+      "column": 9,
+      "row": 1607
+    },
+    "message": "Unparenthesized implicit string concatenation in collection",
+    "name": "implicit-string-concatenation-in-collection-literal",
+    "noqa_row": 1607,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/implicit-string-concatenation-in-collection-literal"
+  },
+  {
+    "cell": null,
+    "code": "ISC004",
+    "end_location": {
+      "column": 63,
+      "row": 1610
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "(",
+          "end_location": {
+            "column": 9,
+            "row": 1609
+          },
+          "location": {
+            "column": 9,
+            "row": 1609
+          }
+        },
+        {
+          "content": ")",
+          "end_location": {
+            "column": 63,
+            "row": 1610
+          },
+          "location": {
+            "column": 63,
+            "row": 1610
+          }
+        }
+      ],
+      "message": "Did you forget a comma?"
+    },
+    "location": {
+      "column": 9,
+      "row": 1609
+    },
+    "message": "Unparenthesized implicit string concatenation in collection",
+    "name": "implicit-string-concatenation-in-collection-literal",
+    "noqa_row": 1609,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/implicit-string-concatenation-in-collection-literal"
+  },
+  {
+    "cell": null,
+    "code": "ISC004",
+    "end_location": {
+      "column": 83,
+      "row": 1613
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "(",
+          "end_location": {
+            "column": 9,
+            "row": 1611
+          },
+          "location": {
+            "column": 9,
+            "row": 1611
+          }
+        },
+        {
+          "content": ")",
+          "end_location": {
+            "column": 83,
+            "row": 1613
+          },
+          "location": {
+            "column": 83,
+            "row": 1613
+          }
+        }
+      ],
+      "message": "Did you forget a comma?"
+    },
+    "location": {
+      "column": 9,
+      "row": 1611
+    },
+    "message": "Unparenthesized implicit string concatenation in collection",
+    "name": "implicit-string-concatenation-in-collection-literal",
+    "noqa_row": 1611,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/implicit-string-concatenation-in-collection-literal"
+  },
+  {
+    "cell": null,
+    "code": "ISC004",
+    "end_location": {
+      "column": 53,
+      "row": 1615
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "(",
+          "end_location": {
+            "column": 9,
+            "row": 1614
+          },
+          "location": {
+            "column": 9,
+            "row": 1614
+          }
+        },
+        {
+          "content": ")",
+          "end_location": {
+            "column": 53,
+            "row": 1615
+          },
+          "location": {
+            "column": 53,
+            "row": 1615
+          }
+        }
+      ],
+      "message": "Did you forget a comma?"
+    },
+    "location": {
+      "column": 9,
+      "row": 1614
+    },
+    "message": "Unparenthesized implicit string concatenation in collection",
+    "name": "implicit-string-concatenation-in-collection-literal",
+    "noqa_row": 1614,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/implicit-string-concatenation-in-collection-literal"
+  },
+  {
+    "cell": null,
+    "code": "ISC004",
+    "end_location": {
+      "column": 53,
+      "row": 1617
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "unsafe",
+      "edits": [
+        {
+          "content": "(",
+          "end_location": {
+            "column": 9,
+            "row": 1616
+          },
+          "location": {
+            "column": 9,
+            "row": 1616
+          }
+        },
+        {
+          "content": ")",
+          "end_location": {
+            "column": 53,
+            "row": 1617
+          },
+          "location": {
+            "column": 53,
+            "row": 1617
+          }
+        }
+      ],
+      "message": "Did you forget a comma?"
+    },
+    "location": {
+      "column": 9,
+      "row": 1616
+    },
+    "message": "Unparenthesized implicit string concatenation in collection",
+    "name": "implicit-string-concatenation-in-collection-literal",
+    "noqa_row": 1616,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/implicit-string-concatenation-in-collection-literal"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1670
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1669
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1669,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1728
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1727
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1727,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1788
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1787
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1787,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1803
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1802
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1802,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 52,
+      "row": 1840
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 1839
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1839,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 44,
+      "row": 1886
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 1885
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1885,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 44,
+      "row": 1900
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    with psycopg.connect(app_url) as connection, connection.cursor() as cursor:\n        cursor.execute(\n            \"insert into platform_control.provider_identity_key_policies \"\n            \"(provider, lookup_transition_versions) \"\n            \"values ('dingtalk', array[null]::integer[])\"\n        )",
+          "end_location": {
+            "column": 14,
+            "row": 1905
+          },
+          "location": {
+            "column": 1,
+            "row": 1899
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 5,
+      "row": 1899
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1899,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 44,
+      "row": 1910
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    with psycopg.connect(\n        control_database[\"cluster_admin\"], autocommit=True\n    ) as connection, connection.cursor() as cursor:\n        cursor.execute(\n            psycopg.sql.SQL(\"grant {} to {}\").format(\n                psycopg.sql.Identifier(environment[\"owner\"]),\n                psycopg.sql.Identifier(migrator_role),\n            )\n        )",
+          "end_location": {
+            "column": 14,
+            "row": 1916
+          },
+          "location": {
+            "column": 1,
+            "row": 1907
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 5,
+      "row": 1907
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1907,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1929
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1928
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1928,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1957
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1956
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1956,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1970
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 1969
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1969,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 1980
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "        with psycopg.connect(\n            control_database[\"cluster_admin\"], autocommit=True\n        ) as connection, connection.cursor() as cursor:\n            cursor.execute(\n                psycopg.sql.SQL(\"revoke {} from {}\").format(\n                    psycopg.sql.Identifier(environment[\"owner\"]),\n                    psycopg.sql.Identifier(migrator_role),\n                )\n            )",
+          "end_location": {
+            "column": 18,
+            "row": 1986
+          },
+          "location": {
+            "column": 1,
+            "row": 1977
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 9,
+      "row": 1977
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1977,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 44,
+      "row": 1994
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 1993
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 1993,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 2043
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2042
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 2042,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 2120
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2119
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 2119,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 67,
+      "row": 2154
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 13,
+      "row": 2153
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 2153,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 48,
+      "row": 2168
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2167
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 2167,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 81,
+      "row": 2542
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 2541
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 2541,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 11,
+      "row": 2777
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    with psycopg.connect(app_url) as connection, pytest.raises(\n        psycopg.errors.CheckViolation, match=\"fae_workbench_already_granted\"\n    ):\n        connection.execute(\n            \"select platform_control.grant_fae_workbench_access_v63(\"\n            + \",\".join((\"%s\",) * 9)\n            + \")\",\n            (\n                duplicate_operation_id,\n                owner_id,\n                member[2],\n                member[0],\n                member[1],\n                duplicate_new_user_id,\n                uuid.uuid4(),\n                uuid.uuid4(),\n                duplicate_audit_id,\n            ),\n        )",
+          "end_location": {
+            "column": 14,
+            "row": 2793
+          },
+          "location": {
+            "column": 1,
+            "row": 2774
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 5,
+      "row": 2774
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 2774,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  },
+  {
+    "cell": null,
+    "code": "SIM117",
+    "end_location": {
+      "column": 11,
+      "row": 2845
+    },
+    "filename": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/erasure-107-migration-integration/lint-1/baseline/backend/tests/test_control_plane_migration.py",
+    "fix": {
+      "applicability": "safe",
+      "edits": [
+        {
+          "content": "    with psycopg.connect(app_url) as connection, pytest.raises(\n        psycopg.errors.CheckViolation, match=\"fae_workbench_not_granted\"\n    ):\n        connection.execute(\n            \"select platform_control.revoke_fae_workbench_access_v63(\"\n            \"%s,%s,%s,%s,%s)\",\n            (\n                new_revoke_operation_id,\n                owner_id,\n                grant_row[1],\n                revoked[\"row_version\"],\n                new_revoke_audit_id,\n            ),\n        )",
+          "end_location": {
+            "column": 14,
+            "row": 2856
+          },
+          "location": {
+            "column": 1,
+            "row": 2842
+          }
+        }
+      ],
+      "message": "Combine `with` statements"
+    },
+    "location": {
+      "column": 5,
+      "row": 2842
+    },
+    "message": "Use a single `with` statement with multiple contexts instead of nested `with` statements",
+    "name": "multiple-with-statements",
+    "noqa_row": 2842,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/multiple-with-statements"
+  }
+]

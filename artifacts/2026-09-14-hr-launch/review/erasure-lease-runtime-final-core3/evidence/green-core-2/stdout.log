@@ -1,0 +1,44 @@
+..............F......................................................... [ 86%]
+...........                                                              [100%]
+=================================== FAILURES ===================================
+_ test_reference_decryption_failure_consumes_bounded_attempt_and_keeps_evidence _
+
+control_database = {'cluster_admin': 'postgresql://control_test_admin@127.0.0.1:54641/postgres', 'port': 54641, 'environments': {'product...nance_preview', ...), 'admin': 'postgresql://control_test_admin@127.0.0.1:54641/agent_platform_control_preview', ...}}}
+
+    @pytest.mark.postgres
+    def test_reference_decryption_failure_consumes_bounded_attempt_and_keeps_evidence(
+        control_database,
+    ):
+        environment = control_database["environments"]["production"]
+        with psycopg.connect(environment["admin"]) as admin:
+            context = _seed_task(admin)
+            attachment_id = _insert_attachment(admin, context)
+            original = admin.execute(
+                "select object_ref_ciphertext from platform_attachments.attachments "
+                "where attachment_id=%s",
+                (attachment_id,),
+            ).fetchone()[0]
+            job_id = _job(admin, context, attachment_id, max_attempts=1)
+        repository = AttachmentErasureRepository(
+            environment["urls"]["platform_control_maintenance"],
+            content_codec=_codec(b"x"),
+        )
+        with pytest.raises(AttachmentErasureError):
+            repository.claim("bad-keyring")
+        with psycopg.connect(environment["admin"]) as admin:
+>           assert admin.execute(
+                "select erasure.state,erasure.state_reason,erasure.attempt_count,"
+                "attachment.object_ref_ciphertext from platform_attachments.erasure_jobs erasure "
+                "join platform_attachments.attachments attachment using (attachment_id) "
+                "where erasure_job_id=%s",
+                (job_id,),
+            ).fetchone() == ("failed", "erasure_attempts_exhausted", 1, original)
+E           AssertionError: assert ('queued', No...rrrrrrrrrrrr') == ('failed', 'e...rrrrrrrrrrrr')
+E             
+E             At index 0 diff: 'queued' != 'failed'
+E             Use -v to get more diff
+
+backend/tests/test_attachment_erasure_lease_database.py:259: AssertionError
+=========================== short test summary info ============================
+FAILED backend/tests/test_attachment_erasure_lease_database.py::test_reference_decryption_failure_consumes_bounded_attempt_and_keeps_evidence
+1 failed, 82 passed in 6.98s

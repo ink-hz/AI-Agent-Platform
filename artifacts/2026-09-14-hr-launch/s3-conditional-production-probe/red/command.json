@@ -1,0 +1,12 @@
+{
+  "command": [
+    "backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/test_probe.py"
+  ],
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "exit_code": 2,
+  "boundary": "new module absent collection failure; not semantic old-runtime test"
+}

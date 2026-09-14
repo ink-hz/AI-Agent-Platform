@@ -1,0 +1,17 @@
+{
+  "ledger-redacted.json": "ef8ff8ddfaf6fd1eae758e5c8db0a3b7e205c98d118c8ad5614b07817dd16fe1",
+  "inspect-receipt.py": "20e22b3ba2e45d129e120cc0a69436159d4a1b92c6b98973191b3faa2d0d2698",
+  "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "test_cli_boundary.py": "d40dbbf7dccf0a049329051fb35f1c579813d91ea9dd8546e14bd37a8588979b",
+  "report.md": "2528c884b4cb8c78b34a31dfd03a4351ba1fc0f59d54680436e313afc4be0b46",
+  "host.py": "7652a37ce661300dbc84a94de2d663cb6f6fae1a240873f7838db1543531db28",
+  "inspect-stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "probe.py": "dab63e4ca9b3f3c53e31e8e105b19fa7931853cde2dc9283ce8ce5575d69187b",
+  "inspect-execution.json": "03d86b02b039a2dc2cba8c50bccf75c42c156186b97ed5e3fac9d6ebf213ee18",
+  "stdout.json": "316eebbb0df9cc3185e18e3708d1782d3ea5d466c78149a01cb41c1399923992",
+  "execution.json": "7c73b4affb6cd6a3913107829b8c3b21768d8490a8de90877373cd91e0532f98",
+  "local-cli/test_cli_boundary.py": "d40dbbf7dccf0a049329051fb35f1c579813d91ea9dd8546e14bd37a8588979b",
+  "local-cli/output.log": "c3acbaab2306c0dae714d40da745b876663bee5998bb7d04a92961f01cca2cec",
+  "local-cli/command.json": "b99dd515842cd662fbcbc2548b8d07fa8699c368ac97c9d6aa6d98c5dc8a5806",
+  "local-cli/exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+}

@@ -1,0 +1,183 @@
+diff --git "a/HR_Agent\345\267\245\344\275\234\346\265\201.md" "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+index 2c9d2765..f897e5b3 100644
+--- "a/HR_Agent\345\267\245\344\275\234\346\265\201.md"
++++ "b/HR_Agent\345\267\245\344\275\234\346\265\201.md"
+@@ -237,7 +237,9 @@ C评审后发现未消费工具批次的硬窗口死锁，进入D前按[修订
+ 
+ 附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；暂停桶中，只有从完整清单取得 `VersionId=null` 后显式按该值 HEAD 的响应可以省略版本回显，零长度与专用元数据仍须完全匹配，其他版本缺少或错报版本回显一律失败；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传正文先在有界、可 seek 的临时文件中流式完成长度与 SHA 校验，再允许对象客户端做完整性预读和重试；长度错误不会先写远端。上传失败的清理只删除成功响应证明属于本次写入的准确不可变版本；`VersionId=null` 或响应不确定时保留引用，不能删除整个 key 或现有 fence。
+ 
+-106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、106 固定校验和与维护角色四列权限。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。当前 running 领取没有自动 lease/reaper，进程领取后崩溃需由发布监督器明确发现并处置。
++106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、107固定校验和、106保留的维护四列读取权限及107租约字段和函数权限；维护角色不得继续执行旧v64领取/记录。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。
++
++擦除Worker领取后崩溃由107租约回收：过期running可以重新领取，新token隔离旧尝试；过期或过时token均不得续租、记录成功或覆盖新状态。5分钟租约由独立30秒心跳在S3调用期间续租，任一次续租失败或异常会永久阻止该尝试记录结果。默认5次、范围1–10的次数耗尽后转failed并保留refs，不能无上限将partial重新入队。维护人员修复原因后，用明确recovery_id和有限新额度恢复；同ID由持久恢复回执去重，即使又耗尽也不重复重置，参数改变拒绝。业务状态须区分自动等待过期回收、耗尽需人工处置和实际擦除完成；token仅约束DB归属，不能把仍在对象存储执行的旧请求说成已取消，永久fence与条件PUT仍必需。107迁移、真实故障和存储回归、新镜像发布分别留证，不用旧健康快照或旧工程绿色替代。
+ 
+ 
+ C再次评审的单条读取保护与准入判断见[本轮收尾](docs/reviews/2026-09-11-hr-c-followup.md)：read_resource成功回执提交前，用实际完整条目和更新后的checkpoint逐条检查同批读取能否进入摘要；超窗整笔回滚，本次正文过大指引缩小limit，新来源令旧读取失配则指引先处理已有内容，失败范围不算已读，不要求用户新建任务。旧不可拆历史与用户固定超大输入仍保留原blocked边界。平台附件独立状态普查发现2条uploading、无deleted标记，100未发布；研究计数探针标准路径404，配置与计量前置未因此关闭。
+@@ -263,6 +265,6 @@ E恢复与诊断补充：用户resume_search_turn创建新轮次，drain后作
+ 
+ 本轮新增 105，只为同一云端执行链增加 `draining_cloud -> cloud` 恢复入口；102/103/104 不改字节。使用原独占切换锁、原 request UUID 幂等规则和旧链零占用约束，允许云端原工作继续执行，既有 work/租约/成果不迁移。切换仍使用显式事务、2 秒 lock_timeout 与 3 秒 statement_timeout。旧执行器恢复不在本轮承诺内。
+ 
+-HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，实时核验迁移/权限、已装载配置和知识身份；公共 API health 不代表 HR 可用。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
++HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，分别实时核验迁移/权限、已装载配置和知识身份。公共 API health 只证明共享服务基本存活；owner health 中的 `dependencies.services.hr_agent.api_ready` 是启动装配快照，`worker_checked=false`，不证明实时 HR 数据库或 Worker 健康。附件写入能力还须独立核验当前迁移校验和、准确角色及必要权限；HR 预检中的附件配置指纹不代替这项数据库能力检查。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
+ 
+ 专业角色补充逐事项、时间、来源和覆盖范围的证据一致性核对，区分明确未做、未记录、自述及独立验证；不把记录片段的问题数当整场总量，不把缺少独立经历直接当能力上限。历史语料提取只读保存私有原文，公开回放使用经审读改写和明确标记的新合成材料，旧答案不作金标；场景来源覆盖与 API/模型/故障实际执行结果分别披露。
+diff --git "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md" "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+index 04918cb1..f4e641d3 100644
+--- "a/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
++++ "b/HR\346\200\273\344\275\223\346\236\266\346\236\204\350\256\276\350\256\241.md"
+@@ -242,7 +242,9 @@ D候选入口、原始记录、准确来源续作及评估/面试/复盘的当
+ 
+ 附件对象擦除还必须覆盖对象存储的版本语义。生产只读证据确认附件桶已启用版本控制；不带 `VersionId` 的删除只产生 delete marker，不能作为物理擦除完成。106 将合法写入与擦除闭合为同一协议：所有业务 payload 使用 `If-None-Match: *`；擦除对每个准确 key 先无条件写入零字节普通对象，并只接受准确元数据 `platform-erasure-fence=v1` 的 fence。版本已启用或暂停时，维护端有界分页枚举该 key 的所有普通版本与 delete marker，以版本级 HEAD 核实 fence 身份，只保留 fence 并删除 payload/marker；暂停桶中，只有从完整清单取得 `VersionId=null` 后显式按该值 HEAD 的响应可以省略版本回显，零长度与专用元数据仍须完全匹配，其他版本缺少或错报版本回显一律失败。未启用版本控制时也保留零字节 fence，不再裸删 key。权限、网络、分页、版本身份或最终当前对象不确定时保持失败/可重试，不能抹除数据库引用或确认孤儿已清理。业务流先在有界、可 seek 的临时文件中流式核实长度与 SHA，再交给对象客户端做完整性预读和网络重试；本地长度失败不产生远端 PUT。上传请求结果不确定时不得删除整个 key；成功响应返回准确 `VersionId` 时只能清理本次版本，`null` 不视为不可变版本身份。
+ 
+-106 的领取事务先锁附件并将其置为 `deleted/erasure_pending`、保留全部引用，再读取所有状态的 derive job，用与 Worker 相同的确定性算法补齐尚未登记的衍生 key。处理结果函数原有的 job→attachment 锁顺序与 deleted 检查会拒绝晚到的衍生登记；已经在外部存储进行的上传或衍生写仍只能命中已建立的 fence 并收到 412，不得删除既有 canonical 或 fence。该保证要求 API 与附件 Worker 同批切换，排除旧无条件写者；两个 payload 运行端及维护 healthcheck 在首次 PUT/claim 前只读核实准确数据库身份、106 固定校验和及维护角色四列权限。启动检查不等于权限永久不变，运行时数据库错误仍须保持 partial/引用。现行领取只选择 queued/partial，进程在领取后崩溃会留下无法自动重领的 running job；发布监督器必须显式发现并处置，不能把它伪装成普通 partial 重试。
++106 的领取事务先锁附件并将其置为 `deleted/erasure_pending`、保留全部引用，再读取所有状态的 derive job，用与 Worker 相同的确定性算法补齐尚未登记的衍生 key。处理结果函数原有的 job→attachment 锁顺序与 deleted 检查会拒绝晚到的衍生登记；已经在外部存储进行的上传或衍生写仍只能命中已建立的 fence 并收到 412，不得删除既有 canonical 或 fence。该保证要求 API 与附件 Worker 同批切换，排除旧无条件写者；两个 payload 运行端及维护 healthcheck 在首次 PUT/claim 前只读核实准确数据库身份、107固定校验和、106保留的维护四列读取权限及107租约字段和函数权限；维护角色不得继续执行旧v64领取/记录。启动检查不等于权限永久不变，运行时数据库错误仍须保持引用，不伪造擦除完成。
++
++107为擦除尝试增加token、租约和有界次数。领取可回收租约已过期的running并重新生成attempt_token；只有准确当前token且租约未过期的尝试才能续租或记录结果，旧进程晚到不能覆盖新领取。5分钟租约由独立30秒心跳在S3调用期间续租；任一次续租失败或异常会永久阻止该尝试记录结果，不能因随后数据库恢复而补写成功。默认最多5次、范围1–10；最后一次崩溃或partial耗尽转为failed/erasure_attempts_exhausted，保留引用和诊断，不无限重试。维护人员须先修复原因，再用准确job、显式recovery_id和有限新额度申请恢复；独立持久恢复表保证同ID跨再次耗尽也不重复重置，换job或max_attempts的重放被拒绝。DB token不撤销已进入对象存储的请求；外部I/O安全仍依赖条件PUT与永久fence。root清单和HR迁移前置须包含准确107，001–106保持不可变；新增能力须经真实进程/数据库及存储验证后绑定新镜像发布，不沿用旧106镜像或旧final记录。
+ 
+ 旧 `tool_operations_v6` 的敏感 payload 已有加密存储及服务端归属校验；新实现必须满足 §5–6 的同等目标，不能因更换结构移除保护。通用“dangerously-skip-permissions”姿态不进入新工具环境。
+ 
+@@ -331,6 +333,6 @@ E恢复与诊断补充：用户resume_search_turn创建新轮次，drain后作
+ 
+ 本轮新增 105，只为同一云端执行链增加 `draining_cloud -> cloud` 恢复入口；102/103/104 不改字节。使用原独占切换锁、原 request UUID 幂等规则和旧链零占用约束，允许云端原工作继续执行，既有 work/租约/成果不迁移。切换仍使用显式事务、2 秒 lock_timeout 与 3 秒 statement_timeout。旧执行器恢复不在本轮承诺内。
+ 
+-HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，实时核验迁移/权限、已装载配置和知识身份；公共 API health 不代表 HR 可用。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
++HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，分别实时核验迁移/权限、已装载配置和知识身份。公共 API health 只证明共享服务基本存活；owner health 中的 `dependencies.services.hr_agent.api_ready` 是启动装配快照，`worker_checked=false`，不证明实时 HR 数据库或 Worker 健康。附件写入能力还须独立核验当前迁移校验和、准确角色及必要权限；HR 预检中的附件配置指纹不代替这项数据库能力检查。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
+ 
+ 专业角色补充逐事项、时间、来源和覆盖范围的证据一致性核对，区分明确未做、未记录、自述及独立验证；不把记录片段的问题数当整场总量，不把缺少独立经历直接当能力上限。历史语料提取只读保存私有原文，公开回放使用经审读改写和明确标记的新合成材料，旧答案不作金标；场景来源覆盖与 API/模型/故障实际执行结果分别披露。
+diff --git a/backend/tests/test_control_plane_migration.py b/backend/tests/test_control_plane_migration.py
+index baffc01e..a9f60e6b 100644
+--- a/backend/tests/test_control_plane_migration.py
++++ b/backend/tests/test_control_plane_migration.py
+@@ -240,7 +240,7 @@ PUBLISHED_MIGRATION_SHA256 = {
+ def test_control_migration_versions_are_unique_and_contiguous() -> None:
+     # HR migrations have independent deployment scopes; root must not absorb them.
+     expected_by_scope = {
+-        MIGRATIONS: [*range(1, 89), 100, *range(102, 107)],
++        MIGRATIONS: [*range(1, 89), 100, *range(102, 108)],
+         MIGRATIONS / "hr_web": list(range(89, 96)),
+         MIGRATIONS / "hr_agent": [*range(96, 100), 101],
+     }
+@@ -251,7 +251,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
+         all_versions.extend(versions)
+ 
+     assert len(all_versions) == len(set(all_versions))
+-    assert sorted(all_versions) == list(range(1, 107))
++    assert sorted(all_versions) == list(range(1, 108))
+ 
+ 
+ def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
+diff --git a/backend/tests/test_hr_agent_migration_deployment.py b/backend/tests/test_hr_agent_migration_deployment.py
+index 1bd357c1..72fef177 100644
+--- a/backend/tests/test_hr_agent_migration_deployment.py
++++ b/backend/tests/test_hr_agent_migration_deployment.py
+@@ -224,6 +224,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
+             "104_hr_execution_drain_terminal_contract.sql",
+             "105_hr_cloud_resume.sql",
+             "106_attachment_erasure_write_fence.sql",
++            "107_attachment_erasure_attempt_leases.sql",
+         ):
+             target = broken_release / "backend/control_migrations" / name
+             target.write_bytes(
+diff --git a/backend/tests/test_hr_root_migration_deployment.py b/backend/tests/test_hr_root_migration_deployment.py
+index 9d581561..b7ce7a35 100644
+--- a/backend/tests/test_hr_root_migration_deployment.py
++++ b/backend/tests/test_hr_root_migration_deployment.py
+@@ -60,18 +60,18 @@ def invoke(case):
+     return subprocess.run(case[-1], env=case[-2], capture_output=True, text=True, timeout=30, check=False)
+ 
+ 
+-@pytest.mark.parametrize("root_deployment", [95, 106], indirect=True)
++@pytest.mark.parametrize("root_deployment", [95, 107], indirect=True)
+ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
+     db, release, tmp, _, _ = root_deployment
+-    (release / 'backend/control_migrations/107_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
++    (release / 'backend/control_migrations/108_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+     # This HR migration must never execute in root mode.
+-    (release / 'backend/control_migrations/hr_agent/108_invalid.sql').write_text('invalid SQL must not run;')
++    (release / 'backend/control_migrations/hr_agent/109_invalid.sql').write_text('invalid SQL must not run;')
+     for _ in range(2):
+         result = invoke(root_deployment)
+         assert result.returncode == 0, result.stderr
+     with db.admin_connection() as connection:
+         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
+-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,108)').fetchone()[0] == 0
++        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,109)').fetchone()[0] == 0
+     calls = (tmp / 'calls').read_text()
+     assert calls.count('create ') == 2 and 'preview' not in calls
+     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
+@@ -87,12 +87,13 @@ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_de
+         assert len(data['job_kind_preflight']['script_sha256']) == 64
+ 
+ 
+-@pytest.mark.parametrize('fault', ['missing95', 'mismatch95', 'mismatch100', 'unknown_version', 'hr_already_applied', 'missing_root_file', 'job_kind_schema'])
++@pytest.mark.parametrize('fault', ['missing95', 'mismatch95', 'mismatch100', 'mismatch107', 'unknown_version', 'hr_already_applied', 'missing_root_file', 'job_kind_schema'])
+ def test_root_rejects_before_container_or_grant(root_deployment, fault):
+     db, release, tmp, _, _ = root_deployment
+     with db.admin_connection() as c:
+         if fault == 'missing95': c.execute('delete from platform_control.schema_migrations where version=95')
+         elif fault == 'mismatch95': c.execute("update platform_control.schema_migrations set sha256=repeat('a',64) where version=95")
++        elif fault == 'mismatch107': c.execute("update platform_control.schema_migrations set sha256=repeat('a',64) where version=107")
+         elif fault == 'mismatch100': c.execute("update platform_control.schema_migrations set sha256=repeat('a',64) where version=100")
+         elif fault in ('unknown_version', 'hr_already_applied'):
+             c.execute("insert into platform_control.schema_migrations(version,sha256,applied_at) values (%s,repeat('a',64),now())", (999 if fault == 'unknown_version' else 96,))
+@@ -185,13 +186,14 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
+     assert not (tmp / 'calls').exists()
+ 
+ 
+-def test_root_checksum_inventory_rejects_missing_attachment_106(tmp_path):
++@pytest.mark.parametrize("missing_version", [106, 107])
++def test_root_checksum_inventory_rejects_missing_attachment_floor(tmp_path, missing_version):
+     import importlib.util
+     from types import SimpleNamespace
+ 
+     release = tmp_path / "release"
+     shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
+-    for path in (release / "backend/control_migrations").glob("106_*.sql"):
++    for path in (release / "backend/control_migrations").glob(f"{missing_version}_*.sql"):
+         path.unlink()
+     spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
+     module = importlib.util.module_from_spec(spec)
+@@ -202,3 +204,22 @@ def test_root_checksum_inventory_rejects_missing_attachment_106(tmp_path):
+     ))
+     with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
+         supervisor.root_checksums()
++
++
++@pytest.mark.parametrize("fault", ["missing", "checksum_mismatch"])
++def test_hr_production_requires_exact_107_before_grant(root_deployment, fault):
++    db, _, tmp, _, args = root_deployment
++    args[args.index("--migration-set") + 1] = "hr"
++    with db.admin_connection() as connection:
++        if fault == "missing":
++            connection.execute("delete from platform_control.schema_migrations where version=107")
++        else:
++            connection.execute("update platform_control.schema_migrations set sha256=%s where version=107", ("0" * 64,))
++    result = invoke(root_deployment)
++    assert result.returncode != 0 and not (tmp / "calls").exists()
++    receipt = json.loads(next((tmp / "receipts").glob("*.json")).read_text())
++    assert receipt["failure_code"] == "root_migration_gate_failed"
++    assert receipt["cleanup_verified"] is True
++    assert _memberships(db) == 0
++    statements = [json.loads(line) for line in (tmp / "sql.log").read_text().splitlines()]
++    assert not any("preview" in row["database"] for row in statements)
+diff --git a/deploy/cloud/hr_agent_migrate.py b/deploy/cloud/hr_agent_migrate.py
+index d366fc58..e264ef3a 100755
+--- a/deploy/cloud/hr_agent_migrate.py
++++ b/deploy/cloud/hr_agent_migrate.py
+@@ -200,6 +200,7 @@ class Supervisor:
+             (104, "104_hr_execution_drain_terminal_contract.sql"),
+             (105, "105_hr_cloud_resume.sql"),
+             (106, "106_attachment_erasure_write_fence.sql"),
++            (107, "107_attachment_erasure_attempt_leases.sql"),
+         ):
+             path = root / name
+             if path.is_symlink() or not path.is_file():
+@@ -234,7 +235,7 @@ class Supervisor:
+                         or (baseline_only and not 89 <= version <= 95)):
+                     raise DeploymentFailure("root_ledger_invalid")
+                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
+-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106}).issubset(expected):
++        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106, 107}).issubset(expected):
+             raise DeploymentFailure("root_baseline_invalid")
+         return expected
+ 

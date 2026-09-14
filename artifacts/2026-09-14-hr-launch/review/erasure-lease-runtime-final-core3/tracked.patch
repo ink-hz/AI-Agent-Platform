@@ -1,0 +1,954 @@
+diff --git a/backend/app/attachments/erasure.py b/backend/app/attachments/erasure.py
+index b7c852b9..3b58a7c0 100644
+--- a/backend/app/attachments/erasure.py
++++ b/backend/app/attachments/erasure.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import json
++import threading
+ from collections.abc import Callable
+ from dataclasses import dataclass, field
+ from typing import Any
+@@ -24,6 +25,7 @@ class AttachmentErasureError(RuntimeError):
+ class ErasureJob:
+     erasure_job_id: UUID
+     attachment_id: UUID
++    attempt_token: UUID = field(repr=False)
+     object_refs: tuple[str, ...] = field(repr=False)
+ 
+ 
+@@ -58,74 +60,139 @@ class AttachmentErasureRepository:
+             raise AttachmentErasureError()
+         return document["object_ref"]
+ 
++    def _load_object_refs(self, attachment_id: UUID) -> tuple[str, ...]:
++        with self._connection() as connection:
++            base = connection.execute(
++                "select attachment.object_ref_ciphertext,attachment.object_ref_key_version,"
++                "upload.write_attempt_id from platform_attachments.attachments attachment "
++                "left join platform_attachments.uploads upload using (attachment_id) "
++                "where attachment.attachment_id=%s",
++                (attachment_id,),
++            ).fetchone()
++            attempts = connection.execute(
++                "select attempt_id,object_ref_ciphertext,object_ref_key_version from "
++                "platform_attachments.upload_write_attempts where attachment_id=%s",
++                (attachment_id,),
++            ).fetchall()
++            derivatives = connection.execute(
++                "select derivative_id,object_ref_ciphertext,object_ref_key_version from "
++                "platform_attachments.derivatives where attachment_id=%s",
++                (attachment_id,),
++            ).fetchall()
++            derive_jobs = connection.execute(
++                "select processing_job_id,derivative_kind from "
++                "platform_attachments.processing_jobs where attachment_id=%s "
++                "and job_kind='derive' order by processing_job_id",
++                (attachment_id,),
++            ).fetchall()
++            if base is None:
++                raise AttachmentErasureError()
++            refs = [
++                self._object_ref(
++                    attachment_object_subject(attachment_id, base["write_attempt_id"]),
++                    base["object_ref_ciphertext"],
++                    base["object_ref_key_version"],
++                )
++            ]
++            refs.extend(
++                self._object_ref(
++                    attachment_object_subject(attachment_id, row["attempt_id"]),
++                    row["object_ref_ciphertext"],
++                    row["object_ref_key_version"],
++                )
++                for row in attempts
++            )
++            refs.extend(
++                self._object_ref(
++                    f"attachment:{attachment_id}:derivative:"
++                    f"{row['derivative_id']}:object-ref",
++                    row["object_ref_ciphertext"],
++                    row["object_ref_key_version"],
++                )
++                for row in derivatives
++            )
++            refs.extend(
++                derivative_object_key(row["processing_job_id"], row["derivative_kind"])
++                for row in derive_jobs
++            )
++            return tuple(dict.fromkeys(refs))
++
+     def claim(self, worker_id: str) -> ErasureJob | None:
+         if not isinstance(worker_id, str) or not 1 <= len(worker_id) <= 128:
+             raise ValueError("erasure worker invalid")
+         try:
++            # Commit the claim before reading encrypted references. A process exit or
++            # bad keyring therefore consumes a bounded attempt and remains recoverable.
+             with self._connection() as connection:
+-                job = connection.execute(
+-                    "select * from platform_attachments.claim_attachment_erasure_job_v64(%s)",
++                row = connection.execute(
++                    "select * from platform_attachments."
++                    "claim_attachment_erasure_job_v107(%s)",
+                     (worker_id,),
+                 ).fetchone()
+-                if job is None or job["erasure_job_id"] is None:
+-                    return None
+-                base = connection.execute(
+-                    "select attachment.object_ref_ciphertext,attachment.object_ref_key_version,"
+-                    "upload.write_attempt_id from platform_attachments.attachments attachment "
+-                    "left join platform_attachments.uploads upload using (attachment_id) "
+-                    "where attachment.attachment_id=%s",
+-                    (job["attachment_id"],),
+-                ).fetchone()
+-                attempts = connection.execute(
+-                    "select attempt_id,object_ref_ciphertext,object_ref_key_version from "
+-                    "platform_attachments.upload_write_attempts where attachment_id=%s",
+-                    (job["attachment_id"],),
+-                ).fetchall()
+-                derivatives = connection.execute(
+-                    "select derivative_id,object_ref_ciphertext,object_ref_key_version from "
+-                    "platform_attachments.derivatives where attachment_id=%s",
+-                    (job["attachment_id"],),
+-                ).fetchall()
+-                derive_jobs = connection.execute(
+-                    "select processing_job_id,derivative_kind from "
+-                    "platform_attachments.processing_jobs where attachment_id=%s "
+-                    "and job_kind='derive' order by processing_job_id",
+-                    (job["attachment_id"],),
+-                ).fetchall()
+-                if base is None:
+-                    raise AttachmentErasureError()
+-                refs = [self._object_ref(
+-                    attachment_object_subject(
+-                        job["attachment_id"], base["write_attempt_id"]
+-                    ),
+-                    base["object_ref_ciphertext"], base["object_ref_key_version"],
+-                )]
+-                refs.extend(self._object_ref(
+-                    attachment_object_subject(
+-                        job["attachment_id"], row["attempt_id"]
+-                    ),
+-                    row["object_ref_ciphertext"], row["object_ref_key_version"],
+-                ) for row in attempts)
+-                refs.extend(self._object_ref(
+-                    f"attachment:{job['attachment_id']}:derivative:"
+-                    f"{row['derivative_id']}:object-ref",
+-                    row["object_ref_ciphertext"], row["object_ref_key_version"],
+-                ) for row in derivatives)
+-                refs.extend(
+-                    derivative_object_key(
+-                        row["processing_job_id"], row["derivative_kind"]
+-                    )
+-                    for row in derive_jobs
+-                )
+-                return ErasureJob(
+-                    job["erasure_job_id"], job["attachment_id"],
+-                    tuple(dict.fromkeys(refs)),
++            if row is None or row["erasure_job_id"] is None:
++                return None
++            claimed = ErasureJob(
++                row["erasure_job_id"], row["attachment_id"], row["attempt_token"], ()
++            )
++            try:
++                refs = self._load_object_refs(claimed.attachment_id)
++            except Exception as error:
++                self._record_state(
++                    claimed,
++                    state="partial",
++                    reason="reference_load_failed",
++                    status={
++                        "object_count": 0,
++                        "deleted_count": 0,
++                        "failed_count": 1,
++                        "reference_load_failed": True,
++                    },
+                 )
++                raise AttachmentErasureError() from error
++            return ErasureJob(
++                claimed.erasure_job_id,
++                claimed.attachment_id,
++                claimed.attempt_token,
++                refs,
++            )
+         except AttachmentErasureError:
+             raise
+         except Exception as error:
+             raise AttachmentErasureError() from error
+ 
++    def renew(self, job: ErasureJob) -> bool:
++        try:
++            with self._connection() as connection:
++                row = connection.execute(
++                    "select platform_attachments."
++                    "renew_attachment_erasure_lease_v107(%s,%s) as renewed",
++                    (job.erasure_job_id, job.attempt_token),
++                ).fetchone()
++            return bool(row and row["renewed"] is True)
++        except Exception as error:
++            raise AttachmentErasureError() from error
++
++    def _record_state(
++        self,
++        job: ErasureJob,
++        *,
++        state: str,
++        reason: str,
++        status: dict[str, Any],
++    ) -> None:
++        with self._connection() as connection:
++            connection.execute(
++                "select platform_attachments.record_attachment_erasure_result_v107("
++                "%s,%s,%s,%s,%s::jsonb)",
++                (
++                    job.erasure_job_id,
++                    job.attempt_token,
++                    state,
++                    reason,
++                    json.dumps(status, sort_keys=True, separators=(",", ":")),
++                ),
++            )
++
+     def record(self, job: ErasureJob, *, failed: int) -> None:
+         state = "partial" if failed else "completed"
+         status = {
+@@ -134,35 +201,90 @@ class AttachmentErasureRepository:
+             "failed_count": failed,
+         }
+         try:
+-            with self._connection() as connection:
+-                connection.execute(
+-                    "select platform_attachments.record_attachment_erasure_result_v64("
+-                    "%s,%s,%s,%s::jsonb)",
+-                    (
+-                        job.erasure_job_id,
+-                        state,
+-                        "object_delete_incomplete" if failed else "erased",
+-                        json.dumps(status, sort_keys=True, separators=(",", ":")),
+-                    ),
+-                )
++            self._record_state(
++                job,
++                state=state,
++                reason="object_delete_incomplete" if failed else "erased",
++                status=status,
++            )
+         except Exception as error:
+             raise AttachmentErasureError() from error
+ 
+ 
++class _LeaseHeartbeat:
++    def __init__(self, repository, job: ErasureJob, interval: float) -> None:
++        if not isinstance(interval, (int, float)) or not 0 < interval <= 60:
++            raise ValueError("erasure heartbeat interval invalid")
++        self._repository = repository
++        self._job = job
++        self._interval = float(interval)
++        self._stop = threading.Event()
++        self._lost = threading.Event()
++        self._thread = threading.Thread(
++            target=self._run,
++            name=f"attachment-erasure-lease-{job.erasure_job_id}",
++            daemon=True,
++        )
++
++    def _run(self) -> None:
++        while not self._stop.wait(self._interval):
++            try:
++                if not self._repository.renew(self._job):
++                    self._lost.set()
++                    return
++            except Exception:  # noqa: BLE001 - lease loss is reported to owner thread
++                self._lost.set()
++                return
++
++    def start(self) -> None:
++        self._thread.start()
++
++    def require_current(self) -> None:
++        if self._lost.is_set():
++            raise AttachmentErasureError("attachment erasure lease lost")
++
++    def stop(self) -> None:
++        self._stop.set()
++        self._thread.join(timeout=15)
++        if self._thread.is_alive():
++            self._lost.set()
++        self.require_current()
++
++
+ class AttachmentErasureService:
+-    def __init__(self, repository: AttachmentErasureRepository, object_store) -> None:
++    def __init__(
++        self,
++        repository: AttachmentErasureRepository,
++        object_store,
++        *,
++        heartbeat_interval: float = 30.0,
++    ) -> None:
+         self._repository = repository
+         self._object_store = object_store
++        self._heartbeat_interval = heartbeat_interval
+ 
+     def process_next(self, worker_id: str) -> bool:
+         job = self._repository.claim(worker_id)
+         if job is None:
+             return False
++        heartbeat = _LeaseHeartbeat(
++            self._repository, job, self._heartbeat_interval
++        )
++        heartbeat.start()
+         failed = 0
+-        for object_ref in job.object_refs:
+-            try:
+-                self._object_store.delete(object_ref)
+-            except Exception:  # noqa: BLE001 - every failed object stays retryable
+-                failed += 1
++        try:
++            for object_ref in job.object_refs:
++                heartbeat.require_current()
++                try:
++                    self._object_store.delete(object_ref)
++                except Exception:  # noqa: BLE001 - failed object stays retryable
++                    failed += 1
++                heartbeat.require_current()
++        finally:
++            heartbeat.stop()
++        # The final synchronous renewal closes the gap between heartbeat shutdown
++        # and the token-checked record transaction.
++        if not self._repository.renew(job):
++            raise AttachmentErasureError("attachment erasure lease lost")
+         self._repository.record(job, failed=failed)
+         return True
+diff --git a/backend/app/attachments/fence_capability.py b/backend/app/attachments/fence_capability.py
+index a9e28d4f..1994247c 100644
+--- a/backend/app/attachments/fence_capability.py
++++ b/backend/app/attachments/fence_capability.py
+@@ -8,8 +8,9 @@ import psycopg
+ from app.control_plane.dsn import validate_control_dsn
+ 
+ ATTACHMENT_FENCE_MIGRATION_SHA256 = (
+-    "7c4ae854dccb96292d33ed66af2070d8f555fcdf5539150fd7a592fedcd0cabb"
++    "d0405bdb767d2cc74efae79b566fab9380432d277c57d59589569a5e31687170"
+ )
++ATTACHMENT_FENCE_MIGRATION_VERSION = 107
+ _PURPOSE_ROLES = {
+     "app": "platform_control_app",
+     "brain": "platform_brain_worker",
+@@ -48,7 +49,7 @@ def require_attachment_fence_capability(
+             ledger = connection.execute(
+                 "select sha256 from platform_control.schema_migrations "
+                 "where version=%s",
+-                (106,),
++                (ATTACHMENT_FENCE_MIGRATION_VERSION,),
+             ).fetchone()
+             if ledger != (ATTACHMENT_FENCE_MIGRATION_SHA256,):
+                 raise AttachmentFenceCapabilityError()
+@@ -66,6 +67,37 @@ def require_attachment_fence_capability(
+             ).fetchone()
+             if grants != (True, True, True, True):
+                 raise AttachmentFenceCapabilityError()
++            columns = connection.execute(
++                "select attname,format_type(atttypid,atttypmod),attnotnull "
++                "from pg_attribute where "
++                "attrelid='platform_attachments.erasure_jobs'::regclass "
++                "and attname in ('attempt_token','lease_expires_at','max_attempts') "
++                "and attnum>0 and not attisdropped order by attname"
++            ).fetchall()
++            if columns != [
++                ("attempt_token", "uuid", True),
++                ("lease_expires_at", "timestamp with time zone", False),
++                ("max_attempts", "integer", True),
++            ]:
++                raise AttachmentFenceCapabilityError()
++            function_grants = connection.execute(
++                "select "
++                "has_function_privilege(%s,'platform_attachments."
++                "claim_attachment_erasure_job_v107(text)','EXECUTE'),"
++                "has_function_privilege(%s,'platform_attachments."
++                "renew_attachment_erasure_lease_v107(uuid,uuid)','EXECUTE'),"
++                "has_function_privilege(%s,'platform_attachments."
++                "record_attachment_erasure_result_v107(uuid,uuid,text,text,jsonb)','EXECUTE'),"
++                "has_function_privilege(%s,'platform_attachments."
++                "recover_attachment_erasure_job_v107(uuid,uuid,integer)','EXECUTE'),"
++                "has_function_privilege(%s,'platform_attachments."
++                "claim_attachment_erasure_job_v64(text)','EXECUTE'),"
++                "has_function_privilege(%s,'platform_attachments."
++                "record_attachment_erasure_result_v64(uuid,text,text,jsonb)','EXECUTE')",
++                (maintenance_role,) * 6,
++            ).fetchone()
++            if function_grants != (True, True, True, True, False, False):
++                raise AttachmentFenceCapabilityError()
+     except AttachmentFenceCapabilityError:
+         raise
+     except Exception:  # noqa: BLE001 - database clients are an opaque boundary
+diff --git a/backend/tests/test_attachment_erasure.py b/backend/tests/test_attachment_erasure.py
+index 1dd18f73..4286d1bf 100644
+--- a/backend/tests/test_attachment_erasure.py
++++ b/backend/tests/test_attachment_erasure.py
+@@ -15,6 +15,9 @@ class Repository:
+     def record(self, job, *, failed):
+         self.records.append((job.erasure_job_id, failed))
+ 
++    def renew(self, job):
++        return job.attempt_token is not None
++
+ 
+ class Store:
+     def __init__(self, failing=()):
+@@ -28,7 +31,9 @@ class Store:
+ 
+ 
+ def test_erasure_deletes_original_derivatives_and_version_object_refs():
+-    job = ErasureJob(uuid4(), uuid4(), ("original", "preview", "version-2"))
++    job = ErasureJob(
++        uuid4(), uuid4(), uuid4(), ("original", "preview", "version-2")
++    )
+     repository = Repository(job)
+     store = Store()
+ 
+@@ -39,7 +44,7 @@ def test_erasure_deletes_original_derivatives_and_version_object_refs():
+ 
+ 
+ def test_partial_object_failure_is_recorded_for_retry_without_false_success():
+-    job = ErasureJob(uuid4(), uuid4(), ("original", "preview"))
++    job = ErasureJob(uuid4(), uuid4(), uuid4(), ("original", "preview"))
+     repository = Repository(job)
+     store = Store(("preview",))
+ 
+diff --git a/backend/tests/test_attachment_erasure_hotfix_database.py b/backend/tests/test_attachment_erasure_hotfix_database.py
+index 4e92b8c0..1a82ce17 100644
+--- a/backend/tests/test_attachment_erasure_hotfix_database.py
++++ b/backend/tests/test_attachment_erasure_hotfix_database.py
+@@ -6,9 +6,6 @@ from uuid import uuid4
+ 
+ import psycopg
+ import pytest
+-from test_control_plane_migration import control_database
+-from test_conversation_attachment_migration import _insert_attachment, _seed_task
+-
+ from app.attachments.conversation_repository import attachment_object_subject
+ from app.attachments.erasure import (
+     AttachmentErasureRepository,
+@@ -17,6 +14,8 @@ from app.attachments.erasure import (
+ from app.attachments.object_writer import AttachmentObjectWriter
+ from app.control_plane.crypto import IdentityKeyring
+ from app.execution_relay.content_crypto import ContentCodec
++from test_control_plane_migration import control_database
++from test_conversation_attachment_migration import _insert_attachment, _seed_task
+ 
+ 
+ def _codec() -> ContentCodec:
+@@ -160,53 +159,28 @@ class _ObjectClient:
+ 
+ 
+ @pytest.mark.postgres
+-def test_legacy_composite_single_claim_loses_attachment_id(control_database):
++def test_legacy_v64_single_claim_is_blocked_after_attempt_fencing(control_database):
+     environment = control_database["environments"]["production"]
+-    with psycopg.connect(environment["admin"]) as admin:
+-        context = _seed_task(admin)
+-        attachment_id = _insert_attachment(admin, context)
+-        job_id = _insert_erasure_job(admin, context, attachment_id)
+     with psycopg.connect(
+         environment["urls"]["platform_control_maintenance"]
+-    ) as maintenance:
+-        row = maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('legacy-single')).*"
+-        ).fetchone()
+-        maintenance.commit()
+-    assert row is not None
+-    assert row[0] == job_id
+-    assert row[1] is None
++    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
++        maintenance.execute(
++            "select platform_attachments.claim_attachment_erasure_job_v64(%s)",
++            ("legacy-single",),
++        )
+ 
+ 
+ @pytest.mark.postgres
+-def test_legacy_composite_multi_claim_splices_two_jobs(control_database):
++def test_legacy_v64_result_is_blocked_after_attempt_fencing(control_database):
+     environment = control_database["environments"]["production"]
+-    with psycopg.connect(environment["admin"]) as admin:
+-        context = _seed_task(admin)
+-        first_attachment = _insert_attachment(admin, context)
+-        second_attachment = _insert_attachment(admin, context)
+-        expected = {
+-            _insert_erasure_job(admin, context, first_attachment): first_attachment,
+-            _insert_erasure_job(admin, context, second_attachment): second_attachment,
+-        }
+     with psycopg.connect(
+         environment["urls"]["platform_control_maintenance"]
+-    ) as maintenance:
+-        row = maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('legacy-multiple')).*"
+-        ).fetchone()
+-        maintenance.commit()
+-    assert row is not None
+-    assert row[0] in expected
+-    assert row[1] in expected.values()
+-    assert expected[row[0]] != row[1]
+-    with psycopg.connect(environment["admin"]) as admin:
+-        assert admin.execute(
+-            "select count(*) from platform_attachments.erasure_jobs "
+-            "where state='running' and claimed_by='legacy-multiple'"
+-        ).fetchone() == (2,)
++    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
++        maintenance.execute(
++            "select platform_attachments.record_attachment_erasure_result_v64("
++            "%s,'partial','legacy','{}'::jsonb)",
++            (uuid4(),),
++        )
+ 
+ 
+ @pytest.mark.postgres
+diff --git a/backend/tests/test_attachment_fence_capability.py b/backend/tests/test_attachment_fence_capability.py
+index 8184f589..b1b654c4 100644
+--- a/backend/tests/test_attachment_fence_capability.py
++++ b/backend/tests/test_attachment_fence_capability.py
+@@ -5,7 +5,6 @@ from pathlib import Path
+ from types import SimpleNamespace
+ 
+ import pytest
+-
+ from app.attachments.fence_capability import (
+     ATTACHMENT_FENCE_MIGRATION_SHA256,
+     AttachmentFenceCapabilityError,
+@@ -20,6 +19,9 @@ class _Result:
+     def fetchone(self):
+         return self._row
+ 
++    def fetchall(self):
++        return self._row
++
+ 
+ class _Connection:
+     def __init__(self, rows):
+@@ -39,7 +41,7 @@ def _connect(rows):
+     return lambda *_args, **_kwargs: _Connection(rows)
+ 
+ 
+-def test_capability_accepts_exact_106_identity_ledger_and_grants():
++def test_capability_accepts_exact_107_identity_ledger_and_grants():
+     require_attachment_fence_capability(
+         "postgresql://platform_control_app@localhost/agent_platform_control",
+         purpose="app",
+@@ -52,16 +54,22 @@ def test_capability_accepts_exact_106_identity_ledger_and_grants():
+                 ),
+                 (ATTACHMENT_FENCE_MIGRATION_SHA256,),
+                 (True, True, True, True),
++                [
++                    ("attempt_token", "uuid", True),
++                    ("lease_expires_at", "timestamp with time zone", False),
++                    ("max_attempts", "integer", True),
++                ],
++                (True, True, True, True, False, False),
+             )
+         ),
+     )
+ 
+ 
+-def test_capability_checksum_is_the_exact_106_source():
++def test_capability_checksum_is_the_exact_107_source():
+     migration = (
+         Path(__file__).parents[1]
+         / "control_migrations"
+-        / "106_attachment_erasure_write_fence.sql"
++        / "107_attachment_erasure_attempt_leases.sql"
+     )
+ 
+     assert hashlib.sha256(migration.read_bytes()).hexdigest() == (
+diff --git a/backend/tests/test_attachment_s3_version_erasure.py b/backend/tests/test_attachment_s3_version_erasure.py
+index 66edcfc0..652d2df7 100644
+--- a/backend/tests/test_attachment_s3_version_erasure.py
++++ b/backend/tests/test_attachment_s3_version_erasure.py
+@@ -399,7 +399,10 @@ def test_continuous_concurrent_versions_hit_bound_and_fail_closed():
+ 
+ def test_erasure_service_records_partial_when_version_inventory_fails():
+     job = ErasureJob(
+-        SimpleNamespace(hex="job"), SimpleNamespace(hex="attachment"), ("owned",)
++        SimpleNamespace(hex="job"),
++        SimpleNamespace(hex="attachment"),
++        SimpleNamespace(hex="token"),
++        ("owned",),
+     )
+ 
+     class Repository:
+@@ -412,6 +415,9 @@ def test_erasure_service_records_partial_when_version_inventory_fails():
+         def record(self, selected, *, failed):
+             self.records.append((selected, failed))
+ 
++        def renew(self, selected):
++            return selected is job
++
+     repository = Repository()
+     store = S3ProcessingObjectStore(
+         VersionedS3(
+diff --git a/backend/tests/test_attachment_write_fence_database.py b/backend/tests/test_attachment_write_fence_database.py
+index 31da2e59..08726ca2 100644
+--- a/backend/tests/test_attachment_write_fence_database.py
++++ b/backend/tests/test_attachment_write_fence_database.py
+@@ -9,6 +9,11 @@ from uuid import uuid4
+ 
+ import psycopg
+ import pytest
++from app.attachments.erasure import AttachmentErasureError, AttachmentErasureRepository
++from app.attachments.fence_capability import (
++    AttachmentFenceCapabilityError,
++    require_attachment_fence_capability,
++)
+ from test_attachment_erasure_hotfix_database import (
+     _codec,
+     _insert_erasure_job,
+@@ -17,12 +22,6 @@ from test_attachment_erasure_hotfix_database import (
+ from test_control_plane_migration import control_database
+ from test_conversation_attachment_migration import _insert_attachment, _seed_task
+ 
+-from app.attachments.erasure import AttachmentErasureError, AttachmentErasureRepository
+-from app.attachments.fence_capability import (
+-    AttachmentFenceCapabilityError,
+-    require_attachment_fence_capability,
+-)
+-
+ MIGRATION = (
+     Path(__file__).parents[1]
+     / "control_migrations"
+@@ -31,7 +30,7 @@ MIGRATION = (
+ 
+ 
+ @pytest.mark.postgres
+-def test_106_capability_is_readable_by_both_payload_runtimes(control_database):
++def test_107_capability_is_readable_by_both_payload_runtimes(control_database):
+     for environment in control_database["environments"].values():
+         suffix = "_preview" if environment["database"].endswith("_preview") else ""
+         for purpose, role in (
+@@ -45,7 +44,7 @@ def test_106_capability_is_readable_by_both_payload_runtimes(control_database):
+ 
+ 
+ @pytest.mark.postgres
+-def test_106_capability_rejects_revoked_maintenance_column(control_database):
++def test_107_capability_rejects_revoked_maintenance_column(control_database):
+     environment = control_database["environments"]["production"]
+     with psycopg.connect(environment["admin"]) as admin:
+         admin.execute(
+@@ -159,7 +158,7 @@ def test_claim_logically_deletes_but_retains_refs_and_unrecorded_derive_key(
+ 
+ 
+ @pytest.mark.postgres
+-def test_runtime_permission_loss_rolls_back_claim_and_logical_delete(control_database):
++def test_runtime_permission_loss_consumes_attempt_and_preserves_references(control_database):
+     environment = control_database["environments"]["production"]
+     codec = _codec()
+     with psycopg.connect(environment["admin"]) as admin:
+@@ -192,12 +191,12 @@ def test_runtime_permission_loss_rolls_back_claim_and_logical_delete(control_dat
+             "select state,claimed_by,attempt_count from "
+             "platform_attachments.erasure_jobs where erasure_job_id=%s",
+             (erasure_job_id,),
+-        ).fetchone() == ("queued", None, 0)
++        ).fetchone() == ("partial", None, 1)
+         assert admin.execute(
+             "select state,state_reason,deleted_at from "
+             "platform_attachments.attachments where attachment_id=%s",
+             (attachment_id,),
+-        ).fetchone() == ("ready", None, None)
++        ).fetchone()[:2] == ("deleted", "erasure_pending")
+         admin.execute(
+             "delete from platform_attachments.erasure_jobs where erasure_job_id=%s",
+             (erasure_job_id,),
+@@ -236,7 +235,7 @@ def test_scan_commit_first_closes_job_set_before_erasure_claim(control_database)
+         ) as maintenance:
+             row = maintenance.execute(
+                 "select * from platform_attachments."
+-                "claim_attachment_erasure_job_v64('after-scan')"
++                "claim_attachment_erasure_job_v107('after-scan')"
+             ).fetchone()
+             maintenance.commit()
+             return row[0]
+@@ -298,7 +297,7 @@ def test_erasure_claim_first_rejects_scan_completion_without_new_derive(
+     ) as maintenance:
+         row = maintenance.execute(
+             "select * from platform_attachments."
+-            "claim_attachment_erasure_job_v64('before-scan')"
++            "claim_attachment_erasure_job_v107('before-scan')"
+         ).fetchone()
+         assert row[0] == erasure_job_id
+         with ThreadPoolExecutor(max_workers=1) as executor:
+diff --git a/backend/tests/test_conversation_attachment_migration.py b/backend/tests/test_conversation_attachment_migration.py
+index b9613391..78d4b42b 100644
+--- a/backend/tests/test_conversation_attachment_migration.py
++++ b/backend/tests/test_conversation_attachment_migration.py
+@@ -169,6 +169,28 @@ def _insert_erasure_job(
+     return erasure_job_id
+ 
+ 
++def _claim_erasure_v107(connection: psycopg.Connection, worker_id: str):
++    return connection.execute(
++        "select erasure_job_id,attempt_token from "
++        "platform_attachments.claim_attachment_erasure_job_v107(%s)",
++        (worker_id,),
++    ).fetchone()
++
++
++def _record_erasure_v107(
++    connection: psycopg.Connection,
++    erasure_job_id,
++    attempt_token,
++    *,
++    reason="owner_erased",
++):
++    connection.execute(
++        "select platform_attachments.record_attachment_erasure_result_v107("
++        "%s,%s,'completed',%s,'{}'::jsonb)",
++        (erasure_job_id, attempt_token, reason),
++    )
++
++
+ def _insert_task_input_binding(
+     connection: psycopg.Connection,
+     context: dict[str, object],
+@@ -529,11 +551,17 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
+         "control_maintenance": {
+             "expire_task_grants_v64",
+             "schedule_attachment_retention_v64",
+-            "claim_attachment_erasure_job_v64",
+-            "record_attachment_erasure_result_v64",
++            "claim_attachment_erasure_job_v107",
++            "renew_attachment_erasure_lease_v107",
++            "record_attachment_erasure_result_v107",
++            "recover_attachment_erasure_job_v107",
+         },
+     }
+-    owner_only_functions = {"claim_conversation_attachment_v64"}
++    owner_only_functions = {
++        "claim_conversation_attachment_v64",
++        "claim_attachment_erasure_job_v64",
++        "record_attachment_erasure_result_v64",
++    }
+     all_functions = set().union(*role_functions.values(), owner_only_functions)
+     for environment in control_database["environments"].values():
+         with psycopg.connect(environment["admin"]) as connection:
+@@ -1758,66 +1786,32 @@ def test_v64_processing_rejection_determines_bound_artifact_version(
+ 
+ 
+ @pytest.mark.postgres
+-def test_v64_legacy_composite_expansion_claims_single_job_with_null_attachment(
++def test_v64_legacy_claim_is_blocked_after_v107_attempt_fence(
+     control_database,
+ ) -> None:
+     environment = control_database["environments"]["production"]
+-    with psycopg.connect(environment["admin"]) as admin:
+-        context = _seed_task(admin)
+-        attachment_id = _insert_attachment(admin, context)
+-        erasure_job_id = _insert_erasure_job(admin, context, attachment_id)
+-
+     with psycopg.connect(
+         environment["urls"]["platform_control_maintenance"]
+-    ) as maintenance:
+-        legacy_row = maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('legacy-single')).*"
+-        ).fetchone()
+-        maintenance.commit()
+-
+-    assert legacy_row is not None
+-    assert legacy_row[0] == erasure_job_id
+-    assert legacy_row[1] is None
+-    with psycopg.connect(environment["admin"]) as admin:
+-        assert admin.execute(
+-            "select state,claimed_by from platform_attachments.erasure_jobs "
+-            "where erasure_job_id=%s",
+-            (erasure_job_id,),
+-        ).fetchone() == ("running", "legacy-single")
++    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
++        maintenance.execute(
++            "select platform_attachments.claim_attachment_erasure_job_v64(%s)",
++            ("legacy-single",),
++        )
+ 
+ 
+ @pytest.mark.postgres
+-def test_v64_legacy_composite_expansion_claims_and_splices_two_jobs(
++def test_v64_legacy_result_is_blocked_after_v107_attempt_fence(
+     control_database,
+ ) -> None:
+     environment = control_database["environments"]["production"]
+-    with psycopg.connect(environment["admin"]) as admin:
+-        context = _seed_task(admin)
+-        first_attachment = _insert_attachment(admin, context)
+-        second_attachment = _insert_attachment(admin, context)
+-        first_job = _insert_erasure_job(admin, context, first_attachment)
+-        second_job = _insert_erasure_job(admin, context, second_attachment)
+-        expected = {first_job: first_attachment, second_job: second_attachment}
+-
+     with psycopg.connect(
+         environment["urls"]["platform_control_maintenance"]
+-    ) as maintenance:
+-        legacy_row = maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('legacy-multiple')).*"
+-        ).fetchone()
+-        maintenance.commit()
+-
+-    assert legacy_row is not None
+-    assert legacy_row[0] in expected
+-    assert legacy_row[1] in expected.values()
+-    assert expected[legacy_row[0]] != legacy_row[1]
+-    with psycopg.connect(environment["admin"]) as admin:
+-        assert admin.execute(
+-            "select state,count(*) from platform_attachments.erasure_jobs "
+-            "where claimed_by='legacy-multiple' group by state"
+-        ).fetchall() == [("running", 2)]
++    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
++        maintenance.execute(
++            "select platform_attachments.record_attachment_erasure_result_v64("
++            "%s,'partial','legacy','{}'::jsonb)",
++            (uuid4(),),
++        )
+ 
+ 
+ @pytest.mark.postgres
+@@ -1855,16 +1849,11 @@ def test_v64_deleted_attachment_is_terminal_for_stale_processing_results(
+     with psycopg.connect(
+         environment["urls"]["platform_control_maintenance"]
+     ) as maintenance:
+-        claimed_id = maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('terminal-worker')).erasure_job_id"
+-        ).fetchone()[0]
+-        assert claimed_id == erasure_job_id
+-        maintenance.execute(
+-            "select platform_attachments.record_attachment_erasure_result_v64("
+-            "%s,'completed','owner_erased','{}'::jsonb)",
+-            (erasure_job_id,),
++        claimed_id, erasure_attempt = _claim_erasure_v107(
++            maintenance, "terminal-worker"
+         )
++        assert claimed_id == erasure_job_id
++        _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
+         maintenance.commit()
+ 
+     with (
+@@ -1937,16 +1926,11 @@ def test_v64_erasure_serializes_against_inflight_derivative_persistence(
+         with psycopg.connect(
+             environment["urls"]["platform_control_maintenance"]
+         ) as maintenance:
+-            assert maintenance.execute(
+-                "select (platform_attachments."
+-                "claim_attachment_erasure_job_v64('derivative-eraser'))."
+-                "erasure_job_id"
+-            ).fetchone() == (erasure_job_id,)
+-            maintenance.execute(
+-                "select platform_attachments.record_attachment_erasure_result_v64("
+-                "%s,'completed','owner_erased','{}'::jsonb)",
+-                (erasure_job_id,),
++            claimed_id, erasure_attempt = _claim_erasure_v107(
++                maintenance, "derivative-eraser"
+             )
++            assert claimed_id == erasure_job_id
++            _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
+             maintenance.commit()
+ 
+         with pytest.raises(
+@@ -2003,21 +1987,17 @@ def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
+ 
+     maintenance_url = environment["urls"]["platform_control_maintenance"]
+     with psycopg.connect(maintenance_url) as maintenance:
+-        assert maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('lock-order-eraser')).erasure_job_id"
+-        ).fetchone() == (erasure_job_id,)
++        claimed_id, erasure_attempt = _claim_erasure_v107(
++            maintenance, "lock-order-eraser"
++        )
++        assert claimed_id == erasure_job_id
+         maintenance.commit()
+ 
+     marker = f"attachment-erasure-{uuid4()}"
+ 
+     def erase_attachment() -> None:
+         with psycopg.connect(maintenance_url, application_name=marker) as maintenance:
+-            maintenance.execute(
+-                "select platform_attachments.record_attachment_erasure_result_v64("
+-                "%s,'completed','owner_erased','{}'::jsonb)",
+-                (erasure_job_id,),
+-            )
++            _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
+             maintenance.commit()
+ 
+     brain_url = environment["urls"]["platform_brain_worker"]
+@@ -2044,12 +2024,13 @@ def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
+                 else:
+                     pytest.fail("erasure did not block on the claimed processing job")
+ 
+-            brain.execute(
+-                "select platform_attachments.record_attachment_processing_result_v64("
+-                "%s,%s,'ready',null)",
+-                (processing_job_id, processing_attempt),
+-            )
+-            brain.commit()
++            with pytest.raises(psycopg.errors.CheckViolation, match="deleted"):
++                brain.execute(
++                    "select platform_attachments.record_attachment_processing_result_v64("
++                    "%s,%s,'ready',null)",
++                    (processing_job_id, processing_attempt),
++                )
++            brain.rollback()
+             erasure_future.result(timeout=3)
+ 
+     with psycopg.connect(environment["admin"]) as admin:
+@@ -2240,14 +2221,12 @@ def test_v64_erasure_removes_deleted_version_from_current_view(
+ 
+     maintenance_url = environment["urls"]["platform_control_maintenance"]
+     with psycopg.connect(maintenance_url) as maintenance:
+-        assert maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('erase-worker')).erasure_job_id"
+-        ).fetchone() == (erasure_job_id,)
+-        maintenance.execute(
+-            "select platform_attachments.record_attachment_erasure_result_v64("
+-            "%s,'completed',null,'{}'::jsonb)",
+-            (erasure_job_id,),
++        claimed_id, erasure_attempt = _claim_erasure_v107(
++            maintenance, "erase-worker"
++        )
++        assert claimed_id == erasure_job_id
++        _record_erasure_v107(
++            maintenance, erasure_job_id, erasure_attempt, reason="owner_erased"
+         )
+         maintenance.commit()
+     with psycopg.connect(environment["admin"]) as admin:
+@@ -2274,7 +2253,7 @@ def test_v64_erasure_removes_deleted_version_from_current_view(
+             "select state,state_reason from platform_attachments.uploads "
+             "where upload_id=%s",
+             (upload_id,),
+-        ).fetchone() == ("deleted", None)
++        ).fetchone() == ("deleted", "owner_erased")
+ 
+ 
+ @pytest.mark.postgres
+@@ -2319,16 +2298,11 @@ def test_v64_erasure_determines_pending_artifact_version_as_failed(
+     with psycopg.connect(
+         environment["urls"]["platform_control_maintenance"]
+     ) as maintenance:
+-        assert maintenance.execute(
+-            "select (platform_attachments."
+-            "claim_attachment_erasure_job_v64('pending-version-eraser'))."
+-            "erasure_job_id"
+-        ).fetchone() == (erasure_job_id,)
+-        maintenance.execute(
+-            "select platform_attachments.record_attachment_erasure_result_v64("
+-            "%s,'completed','owner_erased','{}'::jsonb)",
+-            (erasure_job_id,),
++        claimed_id, erasure_attempt = _claim_erasure_v107(
++            maintenance, "pending-version-eraser"
+         )
++        assert claimed_id == erasure_job_id
++        _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
+         maintenance.commit()
+ 
+     with psycopg.connect(environment["admin"]) as admin:

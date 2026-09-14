@@ -1,0 +1,4 @@
+{
+  "diagnostic_sha256": "6c2b93b5b3f11a8f35940f0063f56f6b09a70ef3c7bb764d5cfe1b8c0ebd7253",
+  "validation": "local compile only; no host/network execution"
+}

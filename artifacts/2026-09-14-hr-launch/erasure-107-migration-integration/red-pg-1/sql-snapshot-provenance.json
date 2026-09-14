@@ -1,0 +1,4 @@
+{
+  "source_paths": [],
+  "note": "Actual pytest-9671 temporary release SQL bytes retained after run; absent files are not reconstructed"
+}

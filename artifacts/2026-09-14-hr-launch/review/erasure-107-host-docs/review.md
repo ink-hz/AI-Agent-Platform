@@ -1,0 +1,11 @@
+# Independent 107 host-helper and documentation appendix
+
+No important issue found. Exact helper SHA4a612094ac74ce689dfa945677ebd0e57b962ea451c56a08097c525acad9ceb2 adds107 only to required root-file inventory and HR pre-migration checksum prerequisites. Existing production-only root execution, ledger validation, role grant/revoke supervision, container cleanup and environment boundaries are unchanged. No new permission or preview operation is introduced.
+
+Static scope remains root1–88+100+102–107, HR web89–95, HR agent96–99+101; combined1–107 uniquely continuous. Synthetic test probes move to108/forbiddenHR109 to retain their original scope assertions. Missing/checksum107 negative tests exercise real local PostgreSQL through the existing Docker double. The failing-HR fixture includes107 so it still tests actual invalid HR SQL rather than accidentally passing by rejecting an unrelated missing floor.
+
+Final-1 records44passed87.72s/exit0 for the two full helper files plus static inventory. The four helper/test current files exactly match saved final-1 snapshots. Earlier RED and SQL-snapshot provenance limitations are explicitly disclosed in the implementation report; no missing intermediate bytes were fabricated. 001–106 unchanged-file evidence and lint baseline39/current39 are preserved; this is not a claim that repository-wide lint is green or real production Docker was exercised.
+
+Both root HR document deltas explain expired-running token replacement, unexpired renewal/record CAS, permanent lease-loss refusal, finite attempts, durable explicit recovery replay and retained references. They distinguish database attempt fencing from still-in-flight object I/O, which remains subject to S3 conditional PUT/permanent fence. They also distinguish public health, startup owner assembly snapshot and live HR readiness. These descriptions match the reviewed107 implementation. The documents do not claim a deployed107 image or completed owner/model/browser acceptance.
+
+Old394 image and old fixed installer/joint constants must be rebound to a rebuilt107 runtime. This reviewer made no source edit, suite rerun, SSH/production/model call or commit. Runtime review is separately frozen in ../erasure-lease-runtime-final-core3/.

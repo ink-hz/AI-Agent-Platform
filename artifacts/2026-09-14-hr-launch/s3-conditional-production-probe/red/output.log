@@ -1,0 +1,16 @@
+
+==================================== ERRORS ====================================
+_ ERROR collecting artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/test_probe.py _
+artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/test_probe.py:12: in <module>
+    spec.loader.exec_module(m)
+<frozen importlib._bootstrap_external>:936: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_code
+    ???
+<frozen importlib._bootstrap_external>:1130: in get_data
+    ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release/artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/probe.py'
+=========================== short test summary info ============================
+ERROR artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/test_probe.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.05s

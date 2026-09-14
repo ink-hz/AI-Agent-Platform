@@ -1,0 +1,24 @@
+{
+  "cwd": "/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/hr-cloud-loop-e-release",
+  "commands": [
+    [
+      "backend/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/test_probe.py"
+    ],
+    [
+      "backend/.venv/bin/ruff",
+      "check",
+      "artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/probe.py",
+      "artifacts/2026-09-14-hr-launch/s3-conditional-production-probe/test_probe.py"
+    ]
+  ],
+  "exit_codes": [
+    0,
+    0
+  ],
+  "boundary": "local fake SDK and real private ledger files; no network/production/model",
+  "recorded_at": "2026-09-14T02:09:11.799463+00:00"
+}

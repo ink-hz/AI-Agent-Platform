@@ -1,0 +1,2 @@
+PYTHONPATH=backend backend/.venv/bin/python -m pytest -q backend/tests/test_hr_root_migration_deployment.py -k "requires_exact_107 or root_checksum_inventory" backend/tests/test_control_plane_migration.py::test_control_migration_versions_are_unique_and_contiguous
+exit=0

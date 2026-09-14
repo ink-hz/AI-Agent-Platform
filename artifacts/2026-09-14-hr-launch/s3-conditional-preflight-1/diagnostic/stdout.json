@@ -1,0 +1,1 @@
+{"client_stdout": "{\"status\":\"unknown\",\"failure\":\"probe_failed_private_ledger_requires_inspection\"}\n", "client_stderr": "", "worker_mounts": [{"Type": "volume", "Name": "orbbec-agent-platform-attachment-worker-secrets", "Source": "/var/lib/docker/volumes/orbbec-agent-platform-attachment-worker-secrets/_data", "Destination": "/run/secrets", "RW": false}]}
