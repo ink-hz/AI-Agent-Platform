@@ -399,7 +399,10 @@ def test_continuous_concurrent_versions_hit_bound_and_fail_closed():
 
 def test_erasure_service_records_partial_when_version_inventory_fails():
     job = ErasureJob(
-        SimpleNamespace(hex="job"), SimpleNamespace(hex="attachment"), ("owned",)
+        SimpleNamespace(hex="job"),
+        SimpleNamespace(hex="attachment"),
+        SimpleNamespace(hex="token"),
+        ("owned",),
     )
 
     class Repository:
@@ -411,6 +414,9 @@ def test_erasure_service_records_partial_when_version_inventory_fails():
 
         def record(self, selected, *, failed):
             self.records.append((selected, failed))
+
+        def renew(self, selected):
+            return selected is job
 
     repository = Repository()
     store = S3ProcessingObjectStore(

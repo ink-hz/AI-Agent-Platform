@@ -8,8 +8,9 @@ import psycopg
 from app.control_plane.dsn import validate_control_dsn
 
 ATTACHMENT_FENCE_MIGRATION_SHA256 = (
-    "7c4ae854dccb96292d33ed66af2070d8f555fcdf5539150fd7a592fedcd0cabb"
+    "d0405bdb767d2cc74efae79b566fab9380432d277c57d59589569a5e31687170"
 )
+ATTACHMENT_FENCE_MIGRATION_VERSION = 107
 _PURPOSE_ROLES = {
     "app": "platform_control_app",
     "brain": "platform_brain_worker",
@@ -48,7 +49,7 @@ def require_attachment_fence_capability(
             ledger = connection.execute(
                 "select sha256 from platform_control.schema_migrations "
                 "where version=%s",
-                (106,),
+                (ATTACHMENT_FENCE_MIGRATION_VERSION,),
             ).fetchone()
             if ledger != (ATTACHMENT_FENCE_MIGRATION_SHA256,):
                 raise AttachmentFenceCapabilityError()
@@ -65,6 +66,37 @@ def require_attachment_fence_capability(
                 (maintenance_role,) * 4,
             ).fetchone()
             if grants != (True, True, True, True):
+                raise AttachmentFenceCapabilityError()
+            columns = connection.execute(
+                "select attname,format_type(atttypid,atttypmod),attnotnull "
+                "from pg_attribute where "
+                "attrelid='platform_attachments.erasure_jobs'::regclass "
+                "and attname in ('attempt_token','lease_expires_at','max_attempts') "
+                "and attnum>0 and not attisdropped order by attname"
+            ).fetchall()
+            if columns != [
+                ("attempt_token", "uuid", True),
+                ("lease_expires_at", "timestamp with time zone", False),
+                ("max_attempts", "integer", True),
+            ]:
+                raise AttachmentFenceCapabilityError()
+            function_grants = connection.execute(
+                "select "
+                "has_function_privilege(%s,'platform_attachments."
+                "claim_attachment_erasure_job_v107(text)','EXECUTE'),"
+                "has_function_privilege(%s,'platform_attachments."
+                "renew_attachment_erasure_lease_v107(uuid,uuid)','EXECUTE'),"
+                "has_function_privilege(%s,'platform_attachments."
+                "record_attachment_erasure_result_v107(uuid,uuid,text,text,jsonb)','EXECUTE'),"
+                "has_function_privilege(%s,'platform_attachments."
+                "recover_attachment_erasure_job_v107(uuid,uuid,integer)','EXECUTE'),"
+                "has_function_privilege(%s,'platform_attachments."
+                "claim_attachment_erasure_job_v64(text)','EXECUTE'),"
+                "has_function_privilege(%s,'platform_attachments."
+                "record_attachment_erasure_result_v64(uuid,text,text,jsonb)','EXECUTE')",
+                (maintenance_role,) * 6,
+            ).fetchone()
+            if function_grants != (True, True, True, True, False, False):
                 raise AttachmentFenceCapabilityError()
     except AttachmentFenceCapabilityError:
         raise

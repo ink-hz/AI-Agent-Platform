@@ -240,7 +240,7 @@ PUBLISHED_MIGRATION_SHA256 = {
 def test_control_migration_versions_are_unique_and_contiguous() -> None:
     # HR migrations have independent deployment scopes; root must not absorb them.
     expected_by_scope = {
-        MIGRATIONS: [*range(1, 89), 100, *range(102, 107)],
+        MIGRATIONS: [*range(1, 89), 100, *range(102, 108)],
         MIGRATIONS / "hr_web": list(range(89, 96)),
         MIGRATIONS / "hr_agent": [*range(96, 100), 101],
     }
@@ -251,7 +251,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
         all_versions.extend(versions)
 
     assert len(all_versions) == len(set(all_versions))
-    assert sorted(all_versions) == list(range(1, 107))
+    assert sorted(all_versions) == list(range(1, 108))
 
 
 def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:

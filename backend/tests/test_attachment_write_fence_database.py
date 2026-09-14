@@ -9,6 +9,11 @@ from uuid import uuid4
 
 import psycopg
 import pytest
+from app.attachments.erasure import AttachmentErasureError, AttachmentErasureRepository
+from app.attachments.fence_capability import (
+    AttachmentFenceCapabilityError,
+    require_attachment_fence_capability,
+)
 from test_attachment_erasure_hotfix_database import (
     _codec,
     _insert_erasure_job,
@@ -16,12 +21,6 @@ from test_attachment_erasure_hotfix_database import (
 )
 from test_control_plane_migration import control_database
 from test_conversation_attachment_migration import _insert_attachment, _seed_task
-
-from app.attachments.erasure import AttachmentErasureError, AttachmentErasureRepository
-from app.attachments.fence_capability import (
-    AttachmentFenceCapabilityError,
-    require_attachment_fence_capability,
-)
 
 MIGRATION = (
     Path(__file__).parents[1]
@@ -31,7 +30,7 @@ MIGRATION = (
 
 
 @pytest.mark.postgres
-def test_106_capability_is_readable_by_both_payload_runtimes(control_database):
+def test_107_capability_is_readable_by_both_payload_runtimes(control_database):
     for environment in control_database["environments"].values():
         suffix = "_preview" if environment["database"].endswith("_preview") else ""
         for purpose, role in (
@@ -45,7 +44,7 @@ def test_106_capability_is_readable_by_both_payload_runtimes(control_database):
 
 
 @pytest.mark.postgres
-def test_106_capability_rejects_revoked_maintenance_column(control_database):
+def test_107_capability_rejects_revoked_maintenance_column(control_database):
     environment = control_database["environments"]["production"]
     with psycopg.connect(environment["admin"]) as admin:
         admin.execute(
@@ -159,7 +158,7 @@ def test_claim_logically_deletes_but_retains_refs_and_unrecorded_derive_key(
 
 
 @pytest.mark.postgres
-def test_runtime_permission_loss_rolls_back_claim_and_logical_delete(control_database):
+def test_runtime_permission_loss_consumes_attempt_and_preserves_references(control_database):
     environment = control_database["environments"]["production"]
     codec = _codec()
     with psycopg.connect(environment["admin"]) as admin:
@@ -192,12 +191,12 @@ def test_runtime_permission_loss_rolls_back_claim_and_logical_delete(control_dat
             "select state,claimed_by,attempt_count from "
             "platform_attachments.erasure_jobs where erasure_job_id=%s",
             (erasure_job_id,),
-        ).fetchone() == ("queued", None, 0)
+        ).fetchone() == ("partial", None, 1)
         assert admin.execute(
             "select state,state_reason,deleted_at from "
             "platform_attachments.attachments where attachment_id=%s",
             (attachment_id,),
-        ).fetchone() == ("ready", None, None)
+        ).fetchone()[:2] == ("deleted", "erasure_pending")
         admin.execute(
             "delete from platform_attachments.erasure_jobs where erasure_job_id=%s",
             (erasure_job_id,),
@@ -236,7 +235,7 @@ def test_scan_commit_first_closes_job_set_before_erasure_claim(control_database)
         ) as maintenance:
             row = maintenance.execute(
                 "select * from platform_attachments."
-                "claim_attachment_erasure_job_v64('after-scan')"
+                "claim_attachment_erasure_job_v107('after-scan')"
             ).fetchone()
             maintenance.commit()
             return row[0]
@@ -298,7 +297,7 @@ def test_erasure_claim_first_rejects_scan_completion_without_new_derive(
     ) as maintenance:
         row = maintenance.execute(
             "select * from platform_attachments."
-            "claim_attachment_erasure_job_v64('before-scan')"
+            "claim_attachment_erasure_job_v107('before-scan')"
         ).fetchone()
         assert row[0] == erasure_job_id
         with ThreadPoolExecutor(max_workers=1) as executor:

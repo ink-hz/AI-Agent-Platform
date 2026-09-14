@@ -237,7 +237,9 @@ C评审后发现未消费工具批次的硬窗口死锁，进入D前按[修订�
 
 附件维护的“删除成功”以对象存储 fence 与实际版本边界共同判定。所有业务 payload PUT 使用 `If-None-Match: *`；擦除先对准确 key 无条件写入零字节、准确元数据 `platform-erasure-fence=v1` 的普通对象。对已启用或暂停版本控制的桶，普通版本和 delete marker 都须有界分页列全，以准确 VersionId HEAD 验明 fence，只保留 fence 并逐版本删除 payload/marker；暂停桶中，只有从完整清单取得 `VersionId=null` 后显式按该值 HEAD 的响应可以省略版本回显，零长度与专用元数据仍须完全匹配，其他版本缺少或错报版本回显一律失败；同前缀其他 key 不得受影响。未启用版本控制时也保留 fence，不执行裸 key 删除。版本状态、列举、HEAD、分页、删除或最终当前 fence 核验遇到权限、网络或未知响应时，本对象计为失败，擦除任务保持 partial，孤儿写不得确认 cleaned。上传正文先在有界、可 seek 的临时文件中流式完成长度与 SHA 校验，再允许对象客户端做完整性预读和重试；长度错误不会先写远端。上传失败的清理只删除成功响应证明属于本次写入的准确不可变版本；`VersionId=null` 或响应不确定时保留引用，不能删除整个 key 或现有 fence。
 
-106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、106 固定校验和与维护角色四列权限。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。当前 running 领取没有自动 lease/reaper，进程领取后崩溃需由发布监督器明确发现并处置。
+106 在擦除领取事务中先锁附件并写 `deleted/erasure_pending`，保留上传尝试与其他对象引用，再读取全部 derive job，并按 Worker 共用的确定性 key 算法补齐尚未登记的衍生对象。先完成扫描的一侧会先登记 derive job；擦除先领取的一侧会使晚到处理结果因 deleted 检查失败，而其在途条件 PUT 只能在 fence 前成功并被本次枚举删除，或在 fence 后收到 412。API、附件处理 Worker 与维护 Worker 必须同批使用该协议并排除旧无条件写者；附件 API 构建、两类 Worker 构建和 healthcheck 在任何 payload PUT 或擦除 claim 前只读核实准确角色、107固定校验和、106保留的维护四列读取权限及107租约字段和函数权限；维护角色不得继续执行旧v64领取/记录。运行中撤权仍按实际数据库错误保持引用，不能由启动检查宣称永久安全。
+
+擦除Worker领取后崩溃由107租约回收：过期running可以重新领取，新token隔离旧尝试；过期或过时token均不得续租、记录成功或覆盖新状态。5分钟租约由独立30秒心跳在S3调用期间续租，任一次续租失败或异常会永久阻止该尝试记录结果。默认5次、范围1–10的次数耗尽后转failed并保留refs，不能无上限将partial重新入队。维护人员修复原因后，用明确recovery_id和有限新额度恢复；同ID由持久恢复回执去重，即使又耗尽也不重复重置，参数改变拒绝。业务状态须区分自动等待过期回收、耗尽需人工处置和实际擦除完成；token仅约束DB归属，不能把仍在对象存储执行的旧请求说成已取消，永久fence与条件PUT仍必需。107迁移、真实故障和存储回归、新镜像发布分别留证，不用旧健康快照或旧工程绿色替代。
 
 
 C再次评审的单条读取保护与准入判断见[本轮收尾](docs/reviews/2026-09-11-hr-c-followup.md)：read_resource成功回执提交前，用实际完整条目和更新后的checkpoint逐条检查同批读取能否进入摘要；超窗整笔回滚，本次正文过大指引缩小limit，新来源令旧读取失配则指引先处理已有内容，失败范围不算已读，不要求用户新建任务。旧不可拆历史与用户固定超大输入仍保留原blocked边界。平台附件独立状态普查发现2条uploading、无deleted标记，100未发布；研究计数探针标准路径404，配置与计量前置未因此关闭。
@@ -263,6 +265,6 @@ E恢复与诊断补充：用户resume_search_turn创建新轮次，drain后作�
 
 本轮新增 105，只为同一云端执行链增加 `draining_cloud -> cloud` 恢复入口；102/103/104 不改字节。使用原独占切换锁、原 request UUID 幂等规则和旧链零占用约束，允许云端原工作继续执行，既有 work/租约/成果不迁移。切换仍使用显式事务、2 秒 lock_timeout 与 3 秒 statement_timeout。旧执行器恢复不在本轮承诺内。
 
-HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，实时核验迁移/权限、已装载配置和知识身份；公共 API health 不代表 HR 可用。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
+HR readiness 分为 owner 审计接口 `/api/v1/manage/hr-readiness` 和常驻 Worker 的私有进程探针，分别实时核验迁移/权限、已装载配置和知识身份。公共 API health 只证明共享服务基本存活；owner health 中的 `dependencies.services.hr_agent.api_ready` 是启动装配快照，`worker_checked=false`，不证明实时 HR 数据库或 Worker 健康。附件写入能力还须独立核验当前迁移校验和、准确角色及必要权限；HR 预检中的附件配置指纹不代替这项数据库能力检查。可选的 0600 发布评审文件绑定 provider、budget、diagnostic 的准确内容，当前只支持 public-only，按保守估算扣记而不称实际费用；该文件不授予真实个人材料处理权限。
 
 专业角色补充逐事项、时间、来源和覆盖范围的证据一致性核对，区分明确未做、未记录、自述及独立验证；不把记录片段的问题数当整场总量，不把缺少独立经历直接当能力上限。历史语料提取只读保存私有原文，公开回放使用经审读改写和明确标记的新合成材料，旧答案不作金标；场景来源覆盖与 API/模型/故障实际执行结果分别披露。

@@ -15,6 +15,9 @@ class Repository:
     def record(self, job, *, failed):
         self.records.append((job.erasure_job_id, failed))
 
+    def renew(self, job):
+        return job.attempt_token is not None
+
 
 class Store:
     def __init__(self, failing=()):
@@ -28,7 +31,9 @@ class Store:
 
 
 def test_erasure_deletes_original_derivatives_and_version_object_refs():
-    job = ErasureJob(uuid4(), uuid4(), ("original", "preview", "version-2"))
+    job = ErasureJob(
+        uuid4(), uuid4(), uuid4(), ("original", "preview", "version-2")
+    )
     repository = Repository(job)
     store = Store()
 
@@ -39,7 +44,7 @@ def test_erasure_deletes_original_derivatives_and_version_object_refs():
 
 
 def test_partial_object_failure_is_recorded_for_retry_without_false_success():
-    job = ErasureJob(uuid4(), uuid4(), ("original", "preview"))
+    job = ErasureJob(uuid4(), uuid4(), uuid4(), ("original", "preview"))
     repository = Repository(job)
     store = Store(("preview",))
 

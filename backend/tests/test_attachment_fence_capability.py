@@ -5,7 +5,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from app.attachments.fence_capability import (
     ATTACHMENT_FENCE_MIGRATION_SHA256,
     AttachmentFenceCapabilityError,
@@ -18,6 +17,9 @@ class _Result:
         self._row = row
 
     def fetchone(self):
+        return self._row
+
+    def fetchall(self):
         return self._row
 
 
@@ -39,7 +41,7 @@ def _connect(rows):
     return lambda *_args, **_kwargs: _Connection(rows)
 
 
-def test_capability_accepts_exact_106_identity_ledger_and_grants():
+def test_capability_accepts_exact_107_identity_ledger_and_grants():
     require_attachment_fence_capability(
         "postgresql://platform_control_app@localhost/agent_platform_control",
         purpose="app",
@@ -52,16 +54,22 @@ def test_capability_accepts_exact_106_identity_ledger_and_grants():
                 ),
                 (ATTACHMENT_FENCE_MIGRATION_SHA256,),
                 (True, True, True, True),
+                [
+                    ("attempt_token", "uuid", True),
+                    ("lease_expires_at", "timestamp with time zone", False),
+                    ("max_attempts", "integer", True),
+                ],
+                (True, True, True, True, False, False),
             )
         ),
     )
 
 
-def test_capability_checksum_is_the_exact_106_source():
+def test_capability_checksum_is_the_exact_107_source():
     migration = (
         Path(__file__).parents[1]
         / "control_migrations"
-        / "106_attachment_erasure_write_fence.sql"
+        / "107_attachment_erasure_attempt_leases.sql"
     )
 
     assert hashlib.sha256(migration.read_bytes()).hexdigest() == (

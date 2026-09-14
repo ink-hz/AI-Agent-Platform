@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,6 +25,7 @@ class AttachmentErasureError(RuntimeError):
 class ErasureJob:
     erasure_job_id: UUID
     attachment_id: UUID
+    attempt_token: UUID = field(repr=False)
     object_refs: tuple[str, ...] = field(repr=False)
 
 
@@ -58,73 +60,138 @@ class AttachmentErasureRepository:
             raise AttachmentErasureError()
         return document["object_ref"]
 
+    def _load_object_refs(self, attachment_id: UUID) -> tuple[str, ...]:
+        with self._connection() as connection:
+            base = connection.execute(
+                "select attachment.object_ref_ciphertext,attachment.object_ref_key_version,"
+                "upload.write_attempt_id from platform_attachments.attachments attachment "
+                "left join platform_attachments.uploads upload using (attachment_id) "
+                "where attachment.attachment_id=%s",
+                (attachment_id,),
+            ).fetchone()
+            attempts = connection.execute(
+                "select attempt_id,object_ref_ciphertext,object_ref_key_version from "
+                "platform_attachments.upload_write_attempts where attachment_id=%s",
+                (attachment_id,),
+            ).fetchall()
+            derivatives = connection.execute(
+                "select derivative_id,object_ref_ciphertext,object_ref_key_version from "
+                "platform_attachments.derivatives where attachment_id=%s",
+                (attachment_id,),
+            ).fetchall()
+            derive_jobs = connection.execute(
+                "select processing_job_id,derivative_kind from "
+                "platform_attachments.processing_jobs where attachment_id=%s "
+                "and job_kind='derive' order by processing_job_id",
+                (attachment_id,),
+            ).fetchall()
+            if base is None:
+                raise AttachmentErasureError()
+            refs = [
+                self._object_ref(
+                    attachment_object_subject(attachment_id, base["write_attempt_id"]),
+                    base["object_ref_ciphertext"],
+                    base["object_ref_key_version"],
+                )
+            ]
+            refs.extend(
+                self._object_ref(
+                    attachment_object_subject(attachment_id, row["attempt_id"]),
+                    row["object_ref_ciphertext"],
+                    row["object_ref_key_version"],
+                )
+                for row in attempts
+            )
+            refs.extend(
+                self._object_ref(
+                    f"attachment:{attachment_id}:derivative:"
+                    f"{row['derivative_id']}:object-ref",
+                    row["object_ref_ciphertext"],
+                    row["object_ref_key_version"],
+                )
+                for row in derivatives
+            )
+            refs.extend(
+                derivative_object_key(row["processing_job_id"], row["derivative_kind"])
+                for row in derive_jobs
+            )
+            return tuple(dict.fromkeys(refs))
+
     def claim(self, worker_id: str) -> ErasureJob | None:
         if not isinstance(worker_id, str) or not 1 <= len(worker_id) <= 128:
             raise ValueError("erasure worker invalid")
         try:
+            # Commit the claim before reading encrypted references. A process exit or
+            # bad keyring therefore consumes a bounded attempt and remains recoverable.
             with self._connection() as connection:
-                job = connection.execute(
-                    "select * from platform_attachments.claim_attachment_erasure_job_v64(%s)",
+                row = connection.execute(
+                    "select * from platform_attachments."
+                    "claim_attachment_erasure_job_v107(%s)",
                     (worker_id,),
                 ).fetchone()
-                if job is None or job["erasure_job_id"] is None:
-                    return None
-                base = connection.execute(
-                    "select attachment.object_ref_ciphertext,attachment.object_ref_key_version,"
-                    "upload.write_attempt_id from platform_attachments.attachments attachment "
-                    "left join platform_attachments.uploads upload using (attachment_id) "
-                    "where attachment.attachment_id=%s",
-                    (job["attachment_id"],),
-                ).fetchone()
-                attempts = connection.execute(
-                    "select attempt_id,object_ref_ciphertext,object_ref_key_version from "
-                    "platform_attachments.upload_write_attempts where attachment_id=%s",
-                    (job["attachment_id"],),
-                ).fetchall()
-                derivatives = connection.execute(
-                    "select derivative_id,object_ref_ciphertext,object_ref_key_version from "
-                    "platform_attachments.derivatives where attachment_id=%s",
-                    (job["attachment_id"],),
-                ).fetchall()
-                derive_jobs = connection.execute(
-                    "select processing_job_id,derivative_kind from "
-                    "platform_attachments.processing_jobs where attachment_id=%s "
-                    "and job_kind='derive' order by processing_job_id",
-                    (job["attachment_id"],),
-                ).fetchall()
-                if base is None:
-                    raise AttachmentErasureError()
-                refs = [self._object_ref(
-                    attachment_object_subject(
-                        job["attachment_id"], base["write_attempt_id"]
-                    ),
-                    base["object_ref_ciphertext"], base["object_ref_key_version"],
-                )]
-                refs.extend(self._object_ref(
-                    attachment_object_subject(
-                        job["attachment_id"], row["attempt_id"]
-                    ),
-                    row["object_ref_ciphertext"], row["object_ref_key_version"],
-                ) for row in attempts)
-                refs.extend(self._object_ref(
-                    f"attachment:{job['attachment_id']}:derivative:"
-                    f"{row['derivative_id']}:object-ref",
-                    row["object_ref_ciphertext"], row["object_ref_key_version"],
-                ) for row in derivatives)
-                refs.extend(
-                    derivative_object_key(
-                        row["processing_job_id"], row["derivative_kind"]
-                    )
-                    for row in derive_jobs
+            if row is None or row["erasure_job_id"] is None:
+                return None
+            claimed = ErasureJob(
+                row["erasure_job_id"], row["attachment_id"], row["attempt_token"], ()
+            )
+            try:
+                refs = self._load_object_refs(claimed.attachment_id)
+            except Exception as error:
+                self._record_state(
+                    claimed,
+                    state="partial",
+                    reason="reference_load_failed",
+                    status={
+                        "object_count": 0,
+                        "deleted_count": 0,
+                        "failed_count": 1,
+                        "reference_load_failed": True,
+                    },
                 )
-                return ErasureJob(
-                    job["erasure_job_id"], job["attachment_id"],
-                    tuple(dict.fromkeys(refs)),
-                )
+                raise AttachmentErasureError() from error
+            return ErasureJob(
+                claimed.erasure_job_id,
+                claimed.attachment_id,
+                claimed.attempt_token,
+                refs,
+            )
         except AttachmentErasureError:
             raise
         except Exception as error:
             raise AttachmentErasureError() from error
+
+    def renew(self, job: ErasureJob) -> bool:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select platform_attachments."
+                    "renew_attachment_erasure_lease_v107(%s,%s) as renewed",
+                    (job.erasure_job_id, job.attempt_token),
+                ).fetchone()
+            return bool(row and row["renewed"] is True)
+        except Exception as error:
+            raise AttachmentErasureError() from error
+
+    def _record_state(
+        self,
+        job: ErasureJob,
+        *,
+        state: str,
+        reason: str,
+        status: dict[str, Any],
+    ) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                "select platform_attachments.record_attachment_erasure_result_v107("
+                "%s,%s,%s,%s,%s::jsonb)",
+                (
+                    job.erasure_job_id,
+                    job.attempt_token,
+                    state,
+                    reason,
+                    json.dumps(status, sort_keys=True, separators=(",", ":")),
+                ),
+            )
 
     def record(self, job: ErasureJob, *, failed: int) -> None:
         state = "partial" if failed else "completed"
@@ -134,35 +201,90 @@ class AttachmentErasureRepository:
             "failed_count": failed,
         }
         try:
-            with self._connection() as connection:
-                connection.execute(
-                    "select platform_attachments.record_attachment_erasure_result_v64("
-                    "%s,%s,%s,%s::jsonb)",
-                    (
-                        job.erasure_job_id,
-                        state,
-                        "object_delete_incomplete" if failed else "erased",
-                        json.dumps(status, sort_keys=True, separators=(",", ":")),
-                    ),
-                )
+            self._record_state(
+                job,
+                state=state,
+                reason="object_delete_incomplete" if failed else "erased",
+                status=status,
+            )
         except Exception as error:
             raise AttachmentErasureError() from error
 
 
+class _LeaseHeartbeat:
+    def __init__(self, repository, job: ErasureJob, interval: float) -> None:
+        if not isinstance(interval, (int, float)) or not 0 < interval <= 60:
+            raise ValueError("erasure heartbeat interval invalid")
+        self._repository = repository
+        self._job = job
+        self._interval = float(interval)
+        self._stop = threading.Event()
+        self._lost = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"attachment-erasure-lease-{job.erasure_job_id}",
+            daemon=True,
+        )
+
+    def _run(self) -> None:
+        while not self._stop.wait(self._interval):
+            try:
+                if not self._repository.renew(self._job):
+                    self._lost.set()
+                    return
+            except Exception:  # noqa: BLE001 - lease loss is reported to owner thread
+                self._lost.set()
+                return
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def require_current(self) -> None:
+        if self._lost.is_set():
+            raise AttachmentErasureError("attachment erasure lease lost")
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=15)
+        if self._thread.is_alive():
+            self._lost.set()
+        self.require_current()
+
+
 class AttachmentErasureService:
-    def __init__(self, repository: AttachmentErasureRepository, object_store) -> None:
+    def __init__(
+        self,
+        repository: AttachmentErasureRepository,
+        object_store,
+        *,
+        heartbeat_interval: float = 30.0,
+    ) -> None:
         self._repository = repository
         self._object_store = object_store
+        self._heartbeat_interval = heartbeat_interval
 
     def process_next(self, worker_id: str) -> bool:
         job = self._repository.claim(worker_id)
         if job is None:
             return False
+        heartbeat = _LeaseHeartbeat(
+            self._repository, job, self._heartbeat_interval
+        )
+        heartbeat.start()
         failed = 0
-        for object_ref in job.object_refs:
-            try:
-                self._object_store.delete(object_ref)
-            except Exception:  # noqa: BLE001 - every failed object stays retryable
-                failed += 1
+        try:
+            for object_ref in job.object_refs:
+                heartbeat.require_current()
+                try:
+                    self._object_store.delete(object_ref)
+                except Exception:  # noqa: BLE001 - failed object stays retryable
+                    failed += 1
+                heartbeat.require_current()
+        finally:
+            heartbeat.stop()
+        # The final synchronous renewal closes the gap between heartbeat shutdown
+        # and the token-checked record transaction.
+        if not self._repository.renew(job):
+            raise AttachmentErasureError("attachment erasure lease lost")
         self._repository.record(job, failed=failed)
         return True

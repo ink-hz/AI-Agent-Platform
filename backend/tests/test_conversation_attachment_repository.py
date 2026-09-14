@@ -282,10 +282,14 @@ def test_service_releases_failed_object_write_for_immediate_real_db_retry(
         def __init__(self) -> None:
             self.fail_once = True
             self.keys = []
+            self.conditions = []
             self.deletes = []
 
-        def put_object(self, *, Bucket, Key, Body, ContentLength):
+        def put_object(
+            self, *, Bucket, Key, Body, ContentLength, IfNoneMatch
+        ):
             self.keys.append(Key)
+            self.conditions.append(IfNoneMatch)
             while Body.read(1024 * 1024):
                 if self.fail_once:
                     self.fail_once = False
@@ -308,6 +312,7 @@ def test_service_releases_failed_object_write_for_immediate_real_db_retry(
 
     assert completed.state == "validating"
     assert len(s3.keys) == 2
+    assert s3.conditions == ["*", "*"]
     assert s3.keys[0] != s3.keys[1]
     with psycopg.connect(environment["admin"]) as admin:
         assert admin.execute(

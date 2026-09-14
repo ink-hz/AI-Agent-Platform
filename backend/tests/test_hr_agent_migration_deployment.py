@@ -224,6 +224,7 @@ def test_helper_revokes_owner_membership_when_hr_migration_fails(tmp_path):
             "104_hr_execution_drain_terminal_contract.sql",
             "105_hr_cloud_resume.sql",
             "106_attachment_erasure_write_fence.sql",
+            "107_attachment_erasure_attempt_leases.sql",
         ):
             target = broken_release / "backend/control_migrations" / name
             target.write_bytes(

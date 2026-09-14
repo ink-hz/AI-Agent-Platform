@@ -6,9 +6,6 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from test_control_plane_migration import control_database
-from test_conversation_attachment_migration import _insert_attachment, _seed_task
-
 from app.attachments.conversation_repository import attachment_object_subject
 from app.attachments.erasure import (
     AttachmentErasureRepository,
@@ -17,6 +14,8 @@ from app.attachments.erasure import (
 from app.attachments.object_writer import AttachmentObjectWriter
 from app.control_plane.crypto import IdentityKeyring
 from app.execution_relay.content_crypto import ContentCodec
+from test_control_plane_migration import control_database
+from test_conversation_attachment_migration import _insert_attachment, _seed_task
 
 
 def _codec() -> ContentCodec:
@@ -160,53 +159,28 @@ class _ObjectClient:
 
 
 @pytest.mark.postgres
-def test_legacy_composite_single_claim_loses_attachment_id(control_database):
+def test_legacy_v64_single_claim_is_blocked_after_attempt_fencing(control_database):
     environment = control_database["environments"]["production"]
-    with psycopg.connect(environment["admin"]) as admin:
-        context = _seed_task(admin)
-        attachment_id = _insert_attachment(admin, context)
-        job_id = _insert_erasure_job(admin, context, attachment_id)
     with psycopg.connect(
         environment["urls"]["platform_control_maintenance"]
-    ) as maintenance:
-        row = maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('legacy-single')).*"
-        ).fetchone()
-        maintenance.commit()
-    assert row is not None
-    assert row[0] == job_id
-    assert row[1] is None
+    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
+        maintenance.execute(
+            "select platform_attachments.claim_attachment_erasure_job_v64(%s)",
+            ("legacy-single",),
+        )
 
 
 @pytest.mark.postgres
-def test_legacy_composite_multi_claim_splices_two_jobs(control_database):
+def test_legacy_v64_result_is_blocked_after_attempt_fencing(control_database):
     environment = control_database["environments"]["production"]
-    with psycopg.connect(environment["admin"]) as admin:
-        context = _seed_task(admin)
-        first_attachment = _insert_attachment(admin, context)
-        second_attachment = _insert_attachment(admin, context)
-        expected = {
-            _insert_erasure_job(admin, context, first_attachment): first_attachment,
-            _insert_erasure_job(admin, context, second_attachment): second_attachment,
-        }
     with psycopg.connect(
         environment["urls"]["platform_control_maintenance"]
-    ) as maintenance:
-        row = maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('legacy-multiple')).*"
-        ).fetchone()
-        maintenance.commit()
-    assert row is not None
-    assert row[0] in expected
-    assert row[1] in expected.values()
-    assert expected[row[0]] != row[1]
-    with psycopg.connect(environment["admin"]) as admin:
-        assert admin.execute(
-            "select count(*) from platform_attachments.erasure_jobs "
-            "where state='running' and claimed_by='legacy-multiple'"
-        ).fetchone() == (2,)
+    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
+        maintenance.execute(
+            "select platform_attachments.record_attachment_erasure_result_v64("
+            "%s,'partial','legacy','{}'::jsonb)",
+            (uuid4(),),
+        )
 
 
 @pytest.mark.postgres

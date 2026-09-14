@@ -60,18 +60,18 @@ def invoke(case):
     return subprocess.run(case[-1], env=case[-2], capture_output=True, text=True, timeout=30, check=False)
 
 
-@pytest.mark.parametrize("root_deployment", [95, 106], indirect=True)
+@pytest.mark.parametrize("root_deployment", [95, 107], indirect=True)
 def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
     db, release, tmp, _, _ = root_deployment
-    (release / 'backend/control_migrations/107_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+    (release / 'backend/control_migrations/108_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
     # This HR migration must never execute in root mode.
-    (release / 'backend/control_migrations/hr_agent/108_invalid.sql').write_text('invalid SQL must not run;')
+    (release / 'backend/control_migrations/hr_agent/109_invalid.sql').write_text('invalid SQL must not run;')
     for _ in range(2):
         result = invoke(root_deployment)
         assert result.returncode == 0, result.stderr
     with db.admin_connection() as connection:
         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,108)').fetchone()[0] == 0
+        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,109)').fetchone()[0] == 0
     calls = (tmp / 'calls').read_text()
     assert calls.count('create ') == 2 and 'preview' not in calls
     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
@@ -87,12 +87,13 @@ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_de
         assert len(data['job_kind_preflight']['script_sha256']) == 64
 
 
-@pytest.mark.parametrize('fault', ['missing95', 'mismatch95', 'mismatch100', 'unknown_version', 'hr_already_applied', 'missing_root_file', 'job_kind_schema'])
+@pytest.mark.parametrize('fault', ['missing95', 'mismatch95', 'mismatch100', 'mismatch107', 'unknown_version', 'hr_already_applied', 'missing_root_file', 'job_kind_schema'])
 def test_root_rejects_before_container_or_grant(root_deployment, fault):
     db, release, tmp, _, _ = root_deployment
     with db.admin_connection() as c:
         if fault == 'missing95': c.execute('delete from platform_control.schema_migrations where version=95')
         elif fault == 'mismatch95': c.execute("update platform_control.schema_migrations set sha256=repeat('a',64) where version=95")
+        elif fault == 'mismatch107': c.execute("update platform_control.schema_migrations set sha256=repeat('a',64) where version=107")
         elif fault == 'mismatch100': c.execute("update platform_control.schema_migrations set sha256=repeat('a',64) where version=100")
         elif fault in ('unknown_version', 'hr_already_applied'):
             c.execute("insert into platform_control.schema_migrations(version,sha256,applied_at) values (%s,repeat('a',64),now())", (999 if fault == 'unknown_version' else 96,))
@@ -185,13 +186,14 @@ def test_root_requires_complete_105_target_from_95_baseline(root_deployment):
     assert not (tmp / 'calls').exists()
 
 
-def test_root_checksum_inventory_rejects_missing_attachment_106(tmp_path):
+@pytest.mark.parametrize("missing_version", [106, 107])
+def test_root_checksum_inventory_rejects_missing_attachment_floor(tmp_path, missing_version):
     import importlib.util
     from types import SimpleNamespace
 
     release = tmp_path / "release"
     shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
-    for path in (release / "backend/control_migrations").glob("106_*.sql"):
+    for path in (release / "backend/control_migrations").glob(f"{missing_version}_*.sql"):
         path.unlink()
     spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
     module = importlib.util.module_from_spec(spec)
@@ -202,3 +204,22 @@ def test_root_checksum_inventory_rejects_missing_attachment_106(tmp_path):
     ))
     with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
         supervisor.root_checksums()
+
+
+@pytest.mark.parametrize("fault", ["missing", "checksum_mismatch"])
+def test_hr_production_requires_exact_107_before_grant(root_deployment, fault):
+    db, _, tmp, _, args = root_deployment
+    args[args.index("--migration-set") + 1] = "hr"
+    with db.admin_connection() as connection:
+        if fault == "missing":
+            connection.execute("delete from platform_control.schema_migrations where version=107")
+        else:
+            connection.execute("update platform_control.schema_migrations set sha256=%s where version=107", ("0" * 64,))
+    result = invoke(root_deployment)
+    assert result.returncode != 0 and not (tmp / "calls").exists()
+    receipt = json.loads(next((tmp / "receipts").glob("*.json")).read_text())
+    assert receipt["failure_code"] == "root_migration_gate_failed"
+    assert receipt["cleanup_verified"] is True
+    assert _memberships(db) == 0
+    statements = [json.loads(line) for line in (tmp / "sql.log").read_text().splitlines()]
+    assert not any("preview" in row["database"] for row in statements)

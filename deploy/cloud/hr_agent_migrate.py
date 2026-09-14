@@ -200,6 +200,7 @@ class Supervisor:
             (104, "104_hr_execution_drain_terminal_contract.sql"),
             (105, "105_hr_cloud_resume.sql"),
             (106, "106_attachment_erasure_write_fence.sql"),
+            (107, "107_attachment_erasure_attempt_leases.sql"),
         ):
             path = root / name
             if path.is_symlink() or not path.is_file():
@@ -234,7 +235,7 @@ class Supervisor:
                         or (baseline_only and not 89 <= version <= 95)):
                     raise DeploymentFailure("root_ledger_invalid")
                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
-        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106}).issubset(expected):
+        if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106, 107}).issubset(expected):
             raise DeploymentFailure("root_baseline_invalid")
         return expected
 

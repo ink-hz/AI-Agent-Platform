@@ -169,6 +169,28 @@ def _insert_erasure_job(
     return erasure_job_id
 
 
+def _claim_erasure_v107(connection: psycopg.Connection, worker_id: str):
+    return connection.execute(
+        "select erasure_job_id,attempt_token from "
+        "platform_attachments.claim_attachment_erasure_job_v107(%s)",
+        (worker_id,),
+    ).fetchone()
+
+
+def _record_erasure_v107(
+    connection: psycopg.Connection,
+    erasure_job_id,
+    attempt_token,
+    *,
+    reason="owner_erased",
+):
+    connection.execute(
+        "select platform_attachments.record_attachment_erasure_result_v107("
+        "%s,%s,'completed',%s,'{}'::jsonb)",
+        (erasure_job_id, attempt_token, reason),
+    )
+
+
 def _insert_task_input_binding(
     connection: psycopg.Connection,
     context: dict[str, object],
@@ -529,11 +551,17 @@ def test_v64_security_definer_functions_and_roles_are_least_privilege(
         "control_maintenance": {
             "expire_task_grants_v64",
             "schedule_attachment_retention_v64",
-            "claim_attachment_erasure_job_v64",
-            "record_attachment_erasure_result_v64",
+            "claim_attachment_erasure_job_v107",
+            "renew_attachment_erasure_lease_v107",
+            "record_attachment_erasure_result_v107",
+            "recover_attachment_erasure_job_v107",
         },
     }
-    owner_only_functions = {"claim_conversation_attachment_v64"}
+    owner_only_functions = {
+        "claim_conversation_attachment_v64",
+        "claim_attachment_erasure_job_v64",
+        "record_attachment_erasure_result_v64",
+    }
     all_functions = set().union(*role_functions.values(), owner_only_functions)
     for environment in control_database["environments"].values():
         with psycopg.connect(environment["admin"]) as connection:
@@ -1758,66 +1786,32 @@ def test_v64_processing_rejection_determines_bound_artifact_version(
 
 
 @pytest.mark.postgres
-def test_v64_legacy_composite_expansion_claims_single_job_with_null_attachment(
+def test_v64_legacy_claim_is_blocked_after_v107_attempt_fence(
     control_database,
 ) -> None:
     environment = control_database["environments"]["production"]
-    with psycopg.connect(environment["admin"]) as admin:
-        context = _seed_task(admin)
-        attachment_id = _insert_attachment(admin, context)
-        erasure_job_id = _insert_erasure_job(admin, context, attachment_id)
-
     with psycopg.connect(
         environment["urls"]["platform_control_maintenance"]
-    ) as maintenance:
-        legacy_row = maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('legacy-single')).*"
-        ).fetchone()
-        maintenance.commit()
-
-    assert legacy_row is not None
-    assert legacy_row[0] == erasure_job_id
-    assert legacy_row[1] is None
-    with psycopg.connect(environment["admin"]) as admin:
-        assert admin.execute(
-            "select state,claimed_by from platform_attachments.erasure_jobs "
-            "where erasure_job_id=%s",
-            (erasure_job_id,),
-        ).fetchone() == ("running", "legacy-single")
+    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
+        maintenance.execute(
+            "select platform_attachments.claim_attachment_erasure_job_v64(%s)",
+            ("legacy-single",),
+        )
 
 
 @pytest.mark.postgres
-def test_v64_legacy_composite_expansion_claims_and_splices_two_jobs(
+def test_v64_legacy_result_is_blocked_after_v107_attempt_fence(
     control_database,
 ) -> None:
     environment = control_database["environments"]["production"]
-    with psycopg.connect(environment["admin"]) as admin:
-        context = _seed_task(admin)
-        first_attachment = _insert_attachment(admin, context)
-        second_attachment = _insert_attachment(admin, context)
-        first_job = _insert_erasure_job(admin, context, first_attachment)
-        second_job = _insert_erasure_job(admin, context, second_attachment)
-        expected = {first_job: first_attachment, second_job: second_attachment}
-
     with psycopg.connect(
         environment["urls"]["platform_control_maintenance"]
-    ) as maintenance:
-        legacy_row = maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('legacy-multiple')).*"
-        ).fetchone()
-        maintenance.commit()
-
-    assert legacy_row is not None
-    assert legacy_row[0] in expected
-    assert legacy_row[1] in expected.values()
-    assert expected[legacy_row[0]] != legacy_row[1]
-    with psycopg.connect(environment["admin"]) as admin:
-        assert admin.execute(
-            "select state,count(*) from platform_attachments.erasure_jobs "
-            "where claimed_by='legacy-multiple' group by state"
-        ).fetchall() == [("running", 2)]
+    ) as maintenance, pytest.raises(psycopg.errors.InsufficientPrivilege):
+        maintenance.execute(
+            "select platform_attachments.record_attachment_erasure_result_v64("
+            "%s,'partial','legacy','{}'::jsonb)",
+            (uuid4(),),
+        )
 
 
 @pytest.mark.postgres
@@ -1855,16 +1849,11 @@ def test_v64_deleted_attachment_is_terminal_for_stale_processing_results(
     with psycopg.connect(
         environment["urls"]["platform_control_maintenance"]
     ) as maintenance:
-        claimed_id = maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('terminal-worker')).erasure_job_id"
-        ).fetchone()[0]
-        assert claimed_id == erasure_job_id
-        maintenance.execute(
-            "select platform_attachments.record_attachment_erasure_result_v64("
-            "%s,'completed','owner_erased','{}'::jsonb)",
-            (erasure_job_id,),
+        claimed_id, erasure_attempt = _claim_erasure_v107(
+            maintenance, "terminal-worker"
         )
+        assert claimed_id == erasure_job_id
+        _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
         maintenance.commit()
 
     with (
@@ -1937,16 +1926,11 @@ def test_v64_erasure_serializes_against_inflight_derivative_persistence(
         with psycopg.connect(
             environment["urls"]["platform_control_maintenance"]
         ) as maintenance:
-            assert maintenance.execute(
-                "select (platform_attachments."
-                "claim_attachment_erasure_job_v64('derivative-eraser'))."
-                "erasure_job_id"
-            ).fetchone() == (erasure_job_id,)
-            maintenance.execute(
-                "select platform_attachments.record_attachment_erasure_result_v64("
-                "%s,'completed','owner_erased','{}'::jsonb)",
-                (erasure_job_id,),
+            claimed_id, erasure_attempt = _claim_erasure_v107(
+                maintenance, "derivative-eraser"
             )
+            assert claimed_id == erasure_job_id
+            _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
             maintenance.commit()
 
         with pytest.raises(
@@ -2003,21 +1987,17 @@ def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
 
     maintenance_url = environment["urls"]["platform_control_maintenance"]
     with psycopg.connect(maintenance_url) as maintenance:
-        assert maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('lock-order-eraser')).erasure_job_id"
-        ).fetchone() == (erasure_job_id,)
+        claimed_id, erasure_attempt = _claim_erasure_v107(
+            maintenance, "lock-order-eraser"
+        )
+        assert claimed_id == erasure_job_id
         maintenance.commit()
 
     marker = f"attachment-erasure-{uuid4()}"
 
     def erase_attachment() -> None:
         with psycopg.connect(maintenance_url, application_name=marker) as maintenance:
-            maintenance.execute(
-                "select platform_attachments.record_attachment_erasure_result_v64("
-                "%s,'completed','owner_erased','{}'::jsonb)",
-                (erasure_job_id,),
-            )
+            _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
             maintenance.commit()
 
     brain_url = environment["urls"]["platform_brain_worker"]
@@ -2044,12 +2024,13 @@ def test_v64_claim_result_and_erasure_use_deadlock_free_lock_order(
                 else:
                     pytest.fail("erasure did not block on the claimed processing job")
 
-            brain.execute(
-                "select platform_attachments.record_attachment_processing_result_v64("
-                "%s,%s,'ready',null)",
-                (processing_job_id, processing_attempt),
-            )
-            brain.commit()
+            with pytest.raises(psycopg.errors.CheckViolation, match="deleted"):
+                brain.execute(
+                    "select platform_attachments.record_attachment_processing_result_v64("
+                    "%s,%s,'ready',null)",
+                    (processing_job_id, processing_attempt),
+                )
+            brain.rollback()
             erasure_future.result(timeout=3)
 
     with psycopg.connect(environment["admin"]) as admin:
@@ -2240,14 +2221,12 @@ def test_v64_erasure_removes_deleted_version_from_current_view(
 
     maintenance_url = environment["urls"]["platform_control_maintenance"]
     with psycopg.connect(maintenance_url) as maintenance:
-        assert maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('erase-worker')).erasure_job_id"
-        ).fetchone() == (erasure_job_id,)
-        maintenance.execute(
-            "select platform_attachments.record_attachment_erasure_result_v64("
-            "%s,'completed',null,'{}'::jsonb)",
-            (erasure_job_id,),
+        claimed_id, erasure_attempt = _claim_erasure_v107(
+            maintenance, "erase-worker"
+        )
+        assert claimed_id == erasure_job_id
+        _record_erasure_v107(
+            maintenance, erasure_job_id, erasure_attempt, reason="owner_erased"
         )
         maintenance.commit()
     with psycopg.connect(environment["admin"]) as admin:
@@ -2274,7 +2253,7 @@ def test_v64_erasure_removes_deleted_version_from_current_view(
             "select state,state_reason from platform_attachments.uploads "
             "where upload_id=%s",
             (upload_id,),
-        ).fetchone() == ("deleted", None)
+        ).fetchone() == ("deleted", "owner_erased")
 
 
 @pytest.mark.postgres
@@ -2319,16 +2298,11 @@ def test_v64_erasure_determines_pending_artifact_version_as_failed(
     with psycopg.connect(
         environment["urls"]["platform_control_maintenance"]
     ) as maintenance:
-        assert maintenance.execute(
-            "select (platform_attachments."
-            "claim_attachment_erasure_job_v64('pending-version-eraser'))."
-            "erasure_job_id"
-        ).fetchone() == (erasure_job_id,)
-        maintenance.execute(
-            "select platform_attachments.record_attachment_erasure_result_v64("
-            "%s,'completed','owner_erased','{}'::jsonb)",
-            (erasure_job_id,),
+        claimed_id, erasure_attempt = _claim_erasure_v107(
+            maintenance, "pending-version-eraser"
         )
+        assert claimed_id == erasure_job_id
+        _record_erasure_v107(maintenance, erasure_job_id, erasure_attempt)
         maintenance.commit()
 
     with psycopg.connect(environment["admin"]) as admin:
