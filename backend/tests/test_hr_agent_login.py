@@ -12,9 +12,12 @@ def test_new_hr_shell_is_public_but_apis_are_not():
 
 
 @pytest.mark.parametrize("prefix", ["/", "/_preview/dingtalk-r1/"])
-def test_hr_login_preserves_exact_work_and_position(prefix):
-    path = prefix.rstrip("/") + "/hr/agent"
+@pytest.mark.parametrize("local_path", ["/hr/", "/hr/agent"])
+def test_hr_login_preserves_exact_work_and_position(prefix, local_path):
+    path = prefix.rstrip("/") + local_path
     assert validate_return_path(path, route_prefix=prefix) == path
+    work_query = f"?work={uuid4()}"
+    assert validate_return_path(path + work_query, route_prefix=prefix) == path + work_query
     query = f"?position={uuid4()}&work={uuid4()}"
     assert validate_return_path(path + query, route_prefix=prefix) == path + query
 
@@ -30,6 +33,7 @@ def test_hr_login_preserves_exact_work_and_position(prefix):
         "?position=" + str(uuid4()) + "#bad",
     ],
 )
-def test_hr_login_rejects_unsafe_or_ambiguous_query(query):
+@pytest.mark.parametrize("local_path", ["/hr/", "/hr/agent"])
+def test_hr_login_rejects_unsafe_or_ambiguous_query(query, local_path):
     with pytest.raises(ValueError):
-        validate_return_path("/hr/agent" + query, route_prefix="/")
+        validate_return_path(local_path + query, route_prefix="/")

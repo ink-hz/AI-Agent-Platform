@@ -44,7 +44,8 @@ _SAFE_RETURN_EXACT = frozenset(
         "/", "/account", "/missions", "/conversations", "/agents",
         "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
         "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
-        "/hr/chat", "/hr/agent", "/hr/panorama", "/marketing/", "/admin", "/admin/",
+        "/hr/chat", "/hr/agent", "/hr/panorama", "/hr/positions",
+        "/marketing/", "/admin", "/admin/",
     }
 )
 _SAFE_RETURN_PATTERNS = tuple(
@@ -59,7 +60,8 @@ _SAFE_RETURN_PATTERNS = tuple(
         rf"/voc/(?:records|manage/records)(?:/{_SAFE_RETURN_ID})?",
         rf"/hr/conversations/{_SAFE_RETURN_ID}",
         rf"/hr/positions/[0-9a-fA-F-]{{36}}"
-        rf"(?:/conversations/{_SAFE_RETURN_ID})?",
+        rf"(?:/(?:chat|context|candidates|artifacts)"
+        rf"|/conversations/{_SAFE_RETURN_ID})?",
         rf"/marketing/(?:prospecting|inbound|voice|intelligence|gtm)"
         rf"(?:/conversations/{_SAFE_RETURN_ID})?",
         rf"/admin/fae(?:/(?:sessions(?:/{_SAFE_RETURN_ID})?"
@@ -311,14 +313,15 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
     selected = route_prefix if value is None else value
     if not isinstance(selected, str) or not selected.startswith("/"):
         raise ValueError("return path invalid")
-    # Only the new HR workspace carries exact work/position IDs through login.
+    # Only the current HR workspace carries exact work/position IDs through login.
     # Validate the raw query: no aliases, encoding, repeated keys or other routes.
     if "?" in selected:
         base, query = selected.split("?", 1)
-        expected = route_prefix.rstrip("/") + "/hr/agent"
+        prefix = route_prefix.rstrip("/")
+        expected = {prefix + path for path in ("/hr", "/hr/", "/hr/agent")}
         pairs = query.split("&")
         seen = set()
-        if base != expected or not query:
+        if base not in expected or not query:
             raise ValueError("return path invalid")
         for pair in pairs:
             key, separator, identifier = pair.partition("=")

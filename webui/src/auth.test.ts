@@ -88,6 +88,7 @@ describe("login return path", () => {
     "/hr",
     "/hr/",
     "/hr/chat",
+    "/hr/positions",
     "/hr/positions/11111111-1111-4111-8111-111111111111",
     "/hr/positions/11111111-1111-4111-8111-111111111111/candidates",
     "/hr/positions/11111111-1111-4111-8111-111111111111/conversations/hr:one",
@@ -519,4 +520,5 @@ it('preserves cloud home context through login',()=>{
  const work='11111111-1111-4111-8111-111111111111';const path=`/hr/?work=${work}`;
  expect(loginReturnPath(`?${new URLSearchParams({return_path:path})}`)).toBe(path);
  expect(loginReturnPath(`?${new URLSearchParams({return_path:path+'&work='+work})}`)).toBe('/');
+ expect(loginReturnPath(`?${new URLSearchParams({return_path:'/hr/?redirect=https://evil.test'})}`)).toBe('/');
 });
