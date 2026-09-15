@@ -1,0 +1,115 @@
+{
+  "format_version": 1,
+  "source_commit": "638047e3b84618a728ae30bbcddebebf9cb92696",
+  "notice": "PUBLIC SYNTHETIC TEST KEYS; NEVER USE IN DEPLOYMENTS",
+  "keys_hex": {
+    "1": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "7": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+  },
+  "vectors": [
+    {
+      "key_version": 1,
+      "subject": "content-key-canary:1",
+      "aad_hex": "6f72626265632d706c6174666f726d3a636f6e74656e742d6b65792d63616e6172793a313a7631",
+      "nonce_hex": "010000010203040506070809",
+      "ciphertext_hex": "010000010203040506070809515da22850655d4a597b51ddae96daf1591fa0810a00194336fe55ef71d906485ff28a7d398ede683af1de48efbc8b5105872913fb84136114a9a2",
+      "plaintext": {
+        "canary": "orbbec-platform-content-key-v1"
+      },
+      "plaintext_utf8_hex": "7b2263616e617279223a226f72626265632d706c6174666f726d2d636f6e74656e742d6b65792d7631227d"
+    },
+    {
+      "key_version": 1,
+      "subject": "hr-agent:standard_revisions:11111111-1111-1111-1111-111111111111:sealed_items",
+      "aad_hex": "6f72626265632d706c6174666f726d3a68722d6167656e743a7374616e646172645f7265766973696f6e733a31313131313131312d313131312d313131312d313131312d3131313131313131313131313a7365616c65645f6974656d733a7631",
+      "nonce_hex": "010100010203040506070809",
+      "ciphertext_hex": "0101000102030405060708097a562e751f64a5c8fab97cc2201a2e77864a59c1f7c3c88eb09a1d97da2a3549e8b6f9eda81476923247bd217a3a2f11c62294943f40f5b3af60260acb3d8cc6ac24599b857ee5dccc4632f39850087d8477db236a1e84a2a8326f043722f22f09313deed4b1ab8dfbdd208a5a0d3d157d93247ef48dd6",
+      "plaintext": {
+        "items": [
+          {
+            "id": "标准一",
+            "text": "中文 é 😀",
+            "nested": {
+              "enabled": true,
+              "empty": null,
+              "count": 7
+            }
+          }
+        ]
+      },
+      "plaintext_utf8_hex": "7b226974656d73223a5b7b226964223a22e6a087e58786e4b880222c226e6573746564223a7b22636f756e74223a372c22656d707479223a6e756c6c2c22656e61626c6564223a747275657d2c2274657874223a22e4b8ade6968720c3a920f09f9880227d5d7d"
+    },
+    {
+      "key_version": 1,
+      "subject": "hr-agent:inputs:22222222-2222-2222-2222-222222222222:sealed_input",
+      "aad_hex": "6f72626265632d706c6174666f726d3a68722d6167656e743a696e707574733a32323232323232322d323232322d323232322d323232322d3232323232323232323232323a7365616c65645f696e7075743a7631",
+      "nonce_hex": "010200010203040506070809",
+      "ciphertext_hex": "010200010203040506070809933163a0abd48628e9c5d5c36beff4a0c30c86a5ad61c52653c606403ee9e083fc148d15c1e9a55742fe976c6f3e5bf9cf41532064c644dac23e9bc895db14a64f27",
+      "plaintext": {
+        "z": "最后",
+        "a": {
+          "array": [
+            1,
+            false,
+            {
+              "β": "λ"
+            }
+          ]
+        }
+      },
+      "plaintext_utf8_hex": "7b2261223a7b226172726179223a5b312c66616c73652c7b22ceb2223a22cebb227d5d7d2c227a223a22e69c80e5908e227d"
+    },
+    {
+      "key_version": 7,
+      "subject": "content-key-canary:7",
+      "aad_hex": "6f72626265632d706c6174666f726d3a636f6e74656e742d6b65792d63616e6172793a373a7637",
+      "nonce_hex": "070000010203040506070809",
+      "ciphertext_hex": "0700000102030405060708090be7c14dd6adbe6330ba366072a1c7abb7b6d8019207fae9b2963285d3e1256734e54c49ffd5a71dc1ef93ba71ee7fcbe62153849f81a8a4cc9623",
+      "plaintext": {
+        "canary": "orbbec-platform-content-key-v1"
+      },
+      "plaintext_utf8_hex": "7b2263616e617279223a226f72626265632d706c6174666f726d2d636f6e74656e742d6b65792d7631227d"
+    },
+    {
+      "key_version": 7,
+      "subject": "hr-agent:standard_revisions:11111111-1111-1111-1111-111111111111:sealed_items",
+      "aad_hex": "6f72626265632d706c6174666f726d3a68722d6167656e743a7374616e646172645f7265766973696f6e733a31313131313131312d313131312d313131312d313131312d3131313131313131313131313a7365616c65645f6974656d733a7637",
+      "nonce_hex": "070100010203040506070809",
+      "ciphertext_hex": "070100010203040506070809df074cfd5fd053b83f936a727a25944386aa1f894ba8d11fa394a4ab03ba790eb2b9ef2470c1fd708a064d38e21397519996a93f4ffd565940189b53525998fca5596a9e4f2ca8150ce4610912a95750fc51396f1cd55fb5531bde4bed73e7378cba210339441a8460df4b42a7a0e179336a4c2dd5c7d1",
+      "plaintext": {
+        "items": [
+          {
+            "id": "标准一",
+            "text": "中文 é 😀",
+            "nested": {
+              "enabled": true,
+              "empty": null,
+              "count": 7
+            }
+          }
+        ]
+      },
+      "plaintext_utf8_hex": "7b226974656d73223a5b7b226964223a22e6a087e58786e4b880222c226e6573746564223a7b22636f756e74223a372c22656d707479223a6e756c6c2c22656e61626c6564223a747275657d2c2274657874223a22e4b8ade6968720c3a920f09f9880227d5d7d"
+    },
+    {
+      "key_version": 7,
+      "subject": "hr-agent:inputs:22222222-2222-2222-2222-222222222222:sealed_input",
+      "aad_hex": "6f72626265632d706c6174666f726d3a68722d6167656e743a696e707574733a32323232323232322d323232322d323232322d323232322d3232323232323232323232323a7365616c65645f696e7075743a7637",
+      "nonce_hex": "070200010203040506070809",
+      "ciphertext_hex": "070200010203040506070809e184c8b3334117603eb91d2a76d9375b048b4563489173bc540672c0741bfad0f22419623bf339569d68c7815e42b02a46b1327d68352f4a42403854e1c7e9adf2bc",
+      "plaintext": {
+        "z": "最后",
+        "a": {
+          "array": [
+            1,
+            false,
+            {
+              "β": "λ"
+            }
+          ]
+        }
+      },
+      "plaintext_utf8_hex": "7b2261223a7b226172726179223a5b312c66616c73652c7b22ceb2223a22cebb227d5d7d2c227a223a22e69c80e5908e227d"
+    }
+  ]
+}
