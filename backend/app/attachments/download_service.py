@@ -68,7 +68,7 @@ class DownloadRangeError(DownloadError):
 class DownloadAsset:
     attachment_id: UUID
     owner_id: UUID
-    conversation_id: UUID
+    conversation_id: UUID | None
     display_name: str = field(repr=False)
     media_type: str
     size_bytes: int
@@ -84,8 +84,9 @@ class DownloadAsset:
         if (
             not all(
                 isinstance(value, UUID)
-                for value in (self.attachment_id, self.owner_id, self.conversation_id)
+                for value in (self.attachment_id, self.owner_id)
             )
+            or (self.conversation_id is not None and not isinstance(self.conversation_id, UUID))
             or not isinstance(self.display_name, str)
             or not self.display_name
             or not isinstance(self.media_type, str)
@@ -247,7 +248,7 @@ class ConversationAttachmentAccessRepository:
             raise DownloadNotFound()
         sha256 = row["sha256"]
         conversation_id = row["conversation_id"]
-        if sha256 is None or not isinstance(conversation_id, UUID):
+        if sha256 is None or (conversation_id is not None and not isinstance(conversation_id, UUID)):
             raise DownloadNotFound()
         return DownloadAsset(
             attachment_id=attachment_id,
