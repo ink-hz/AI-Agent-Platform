@@ -1017,3 +1017,26 @@ def test_cancel_upload_linearizes_against_claim_with_an_older_snapshot(
         finally:
             blocker.rollback()
             blocker.close()
+
+
+def test_unbound_download_ticket_preserves_owner_and_verified_bytes() -> None:
+    asset = download_asset(conversation_id=None)
+    service, _, store = service_for(asset)
+    ticket = service.issue_ticket(OWNER_ID, ATTACHMENT_ID, "download")
+    with pytest.raises(DownloadNotFound):
+        service.open_content(OTHER_ID, ticket.ticket, None)
+    opened = service.open_content(OWNER_ID, ticket.ticket, None)
+    assert b"".join(opened.stream) == b"payload"
+    assert store.opens == [(asset.object_ref, asset.immutable_locator)]
+
+
+@pytest.mark.parametrize("invalid", ["", str(CONVERSATION_ID), 0, False])
+def test_download_asset_rejects_non_uuid_conversation_value(invalid) -> None:
+    with pytest.raises(ValueError, match="download asset invalid"):
+        download_asset(conversation_id=invalid)
+
+
+@pytest.mark.parametrize("field", ["owner_id", "attachment_id"])
+def test_unbound_download_still_requires_owner_and_attachment_ids(field) -> None:
+    with pytest.raises(ValueError, match="download asset invalid"):
+        download_asset(conversation_id=None, **{field: None})
