@@ -1,5 +1,5 @@
 export type WorkspaceId = "office" | "fae" | "voc" | "hr" | "marketing";
-export type RouteOwner = "platform" | "ai-admin" | "ai-fae" | "voc";
+export type RouteOwner = "platform" | "ai-admin" | "ai-fae" | "voc" | "hr";
 export type ManagementScope = "fae_workbench" | "voc_management";
 
 export const FAE_DIRECT_PATH = "/fae/";
@@ -32,7 +32,7 @@ export const WORKSPACES: readonly WorkspaceRoute[] = Object.freeze([
   { workspaceId: "office", basePath: "/office/", routeOwner: "ai-admin", directAgentIds: ["ai-admin-agent"], agentSlugById: {}, availability: "catalog", management: null },
   { workspaceId: "fae", basePath: FAE_DIRECT_PATH, routeOwner: "ai-fae", directAgentIds: ["ai-fae-agent"], agentSlugById: {}, availability: "catalog", management: { basePath: `${FAE_MANAGEMENT_PATH}/`, routeOwner: "platform", scope: "fae_workbench" } },
   { workspaceId: "voc", basePath: "/voc/", routeOwner: "voc", directAgentIds: ["voc"], agentSlugById: {}, availability: "catalog", management: { basePath: "/voc/manage/", routeOwner: "voc", scope: "voc_management" } },
-  { workspaceId: "hr", basePath: "/hr/", routeOwner: "platform", directAgentIds: ["hr-bot"], agentSlugById: {}, availability: "catalog", management: null },
+  { workspaceId: "hr", basePath: "/hr/", routeOwner: "hr", directAgentIds: ["hr-bot"], agentSlugById: {}, availability: "catalog", management: null },
   { workspaceId: "marketing", basePath: "/marketing/", routeOwner: "platform", directAgentIds: Object.values(MARKETING_AGENT_ID_BY_SLUG), agentSlugById: Object.fromEntries(Object.entries(MARKETING_AGENT_ID_BY_SLUG).map(([slug, id]) => [id, slug])), availability: "catalog", management: null },
 ]);
 

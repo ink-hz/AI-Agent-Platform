@@ -16,6 +16,10 @@ describe("workspace route registry", () => {
     expect(FAE_WORKBENCH_API_PATH).toBe("/api/fae");
   });
 
+  it("assigns the HR document to the independent HR route owner", () => {
+    expect(workspaceForAgent("hr-bot")?.routeOwner).toBe("hr");
+  });
+
   it.each([
     ["ai-admin-agent", "/office/?view=services"],
     ["ai-fae-agent", "/fae/"],

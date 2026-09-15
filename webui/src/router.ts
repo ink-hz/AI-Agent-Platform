@@ -78,9 +78,6 @@ function encodedRedirect(prefix: string, encodedValue: string): Route {
 
 const MARKETING_SLUGS = new Set(Object.keys(MARKETING_AGENT_ID_BY_SLUG));
 const SAFE_WORKSPACE_ID = /^[A-Za-z0-9:._-]+$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-
 function marketingSlug(value: string): value is MarketingAgentSlug {
   return MARKETING_SLUGS.has(value);
 }
@@ -167,6 +164,8 @@ export function selectedReportVersion(search: string): number | undefined | null
 
 
 export function safeLegacyWorkspaceSearch(targetPath: string, sourceSearch: string): string {
+  if (/^\/hr(?:\/|$)/.test(targetPath)) return sourceSearch;
+
   const raw = new URLSearchParams(sourceSearch);
   const safe = new URLSearchParams();
 
@@ -225,7 +224,7 @@ export function parseRoute(pathname: string, search = ""): Route {
     return { name: "legacy-redirect", to: "/office/?view=services", navigation: "document" };
   }
   if (clean === "/agents/hr-bot") {
-    return { name: "legacy-redirect", to: "/hr/", navigation: "spa" };
+    return { name: "legacy-redirect", to: "/hr/", navigation: "document" };
   }
   const legacyMarketing = Object.entries(MARKETING_AGENT_ID_BY_SLUG).find(([, id]) => clean === `/agents/${id}`);
   if (legacyMarketing) {
@@ -250,29 +249,12 @@ export function parseRoute(pathname: string, search = ""): Route {
     }
   }
 
-  const hrPositionSection = /^\/hr\/positions\/([^/]+)\/(chat|context|candidates|artifacts)$/.exec(clean);
-  if (hrPositionSection) {
-    const positionId = safeDecodedValue(hrPositionSection[1], /^[0-9a-fA-F-]{36}$/);
-    return positionId
-      ? { name: "hr-position-section", positionId, section: hrPositionSection[2] as import("./hrR12Types").HrPositionSection }
-      : { name: "not-found" };
+  if (clean === "/hr") {
+    return { name: "legacy-redirect", to: local === "/hr" ? "/hr/" : local, navigation: "document" };
   }
-  if (clean === "/hr/panorama") return { name: "hr-panorama" };
-  if (clean === "/hr/positions") return { name: "hr-positions" };
-  const hrPosition = /^\/hr\/positions\/([^/]+)$/.exec(clean);
-  if (hrPosition) {
-    const positionId = safeDecodedValue(hrPosition[1], /^[0-9a-fA-F-]{36}$/);
-    return positionId ? { name: "hr-position", positionId } : { name: "not-found" };
+  if (clean.startsWith("/hr/")) {
+    return { name: "legacy-redirect", to: local, navigation: "document" };
   }
-  if (clean === "/hr" || clean === "/hr/agent") {
-    const params = new URLSearchParams(search);
-    const positionId = params.get("position") ?? undefined;
-    const workId = params.get("work") ?? undefined;
-    if ([...params].some(([key, value]) => !["position", "work"].includes(key) || params.getAll(key).length !== 1 || !UUID.test(value))) return { name: "not-found" };
-    if (local === "/hr") return { name: "legacy-redirect", to: `/hr/${params.size ? `?${params}` : ""}`, navigation: "spa" };
-    return { name: clean === "/hr" ? "hr" : "hr-agent", ...(positionId ? { positionId } : {}), ...(workId ? { workId } : {}) };
-  }
-  if (clean === "/hr/chat") return { name: "hr-chat" };
 
   const marketingConversation = /^\/marketing\/([^/]+)\/conversations\/([^/]+)$/.exec(clean);
   if (marketingConversation) {

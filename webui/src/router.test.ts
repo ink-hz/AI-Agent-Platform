@@ -19,26 +19,33 @@ afterEach(() => {
 
 
 describe("Platform router", () => {
-  it("round-trips every HR position section", () => {
+  it.each([
+    ["/hr/", ""],
+    ["/hr/chat", "?conversation=one&source=directory"],
+    ["/hr/positions/00000000-0000-4000-8000-000000000001/candidates", "?view=current"],
+    ["/hr/future/deep-link", "?keep=this%20value"],
+  ])("hands off %s to the HR document while preserving its deep path", (path, search) => {
+    expect(parseRoute(path, search)).toEqual({
+      name: "legacy-redirect",
+      to: path,
+      navigation: "document",
+    });
+    expect(safeLegacyWorkspaceSearch(path, search)).toBe(search);
+  });
+
+  it("keeps stable HR position links for callers before document handoff", () => {
     const positionId = "00000000-0000-4000-8000-000000000001";
     for (const section of ["chat", "context", "candidates", "artifacts"] as const) {
-      expect(parseRoute(routePath({ name: "hr-position-section", positionId, section }))).toEqual(
-        { name: "hr-position-section", positionId, section },
-      );
+      expect(routePath({ name: "hr-position-section", positionId, section }))
+        .toBe(`/hr/positions/${positionId}/${section}`);
     }
   });
 
-  it("round-trips the independent HR panorama routes", () => {
-    const insightVersionId = "00000000-0000-4000-8000-000000000009";
-    expect(parseRoute("/hr/panorama")).toEqual({ name: "hr-panorama" });
-    expect(parseRoute(`/hr/panorama/reports/${insightVersionId}`)).toEqual({name:'not-found'});
+  it("keeps the stable HR panorama link for callers before document handoff", () => {
     expect(routePath({name:'hr-panorama'})).toBe('/hr/panorama');
-    expect(parseRoute("/hr/panorama/reports/not-a-uuid")).toEqual({ name: "not-found" });
-    expect(parseRoute("/hr/panorama/reports/------------------------------------")).toEqual({ name: "not-found" });
   });
 
   const compatibilityRoutes = [
-    ["/agents/hr-bot", "/hr/", "spa"],
     ["/agents/marketing-prospecting-bot", "/marketing/prospecting", "spa"],
     ["/agents/marketing-prospecting-bot/conversations/mkt%3Aone", "/marketing/prospecting/conversations/mkt%3Aone", "spa"],
     ["/agents/marketing-inbound-bot", "/marketing/inbound", "spa"],
@@ -79,11 +86,11 @@ describe("Platform router", () => {
   });
 
   it.each([
-    ["/hr", { name: "legacy-redirect", to: "/hr/", navigation: "spa" }],
-    ["/hr/", { name: "hr" }],
-    ["/hr/chat", { name: "hr-chat" }],
-    ["/hr/positions", { name: "hr-positions" }],
-    ["/hr/positions/00000000-0000-4000-8000-000000000001", { name: "hr-position", positionId: "00000000-0000-4000-8000-000000000001" }],
+    ["/hr", { name: "legacy-redirect", to: "/hr/", navigation: "document" }],
+    ["/hr/", { name: "legacy-redirect", to: "/hr/", navigation: "document" }],
+    ["/hr/chat", { name: "legacy-redirect", to: "/hr/chat", navigation: "document" }],
+    ["/hr/positions", { name: "legacy-redirect", to: "/hr/positions", navigation: "document" }],
+    ["/hr/positions/00000000-0000-4000-8000-000000000001", { name: "legacy-redirect", to: "/hr/positions/00000000-0000-4000-8000-000000000001", navigation: "document" }],
     ["/marketing", { name: "legacy-redirect", to: "/marketing/prospecting", navigation: "spa" }],
     ["/marketing/", { name: "legacy-redirect", to: "/marketing/prospecting", navigation: "spa" }],
     ["/marketing/inbound", { name: "marketing", agentSlug: "inbound" }],
@@ -91,7 +98,7 @@ describe("Platform router", () => {
     ["/fae/manage/", { name: "fae-manage-overview" }],
     ["/fae/manage/sessions/s%3A1", { name: "fae-manage-session", sessionKey: "s:1" }],
     ["/fae/manage/issues/00000000-0000-4000-8000-000000000001", { name: "fae-manage-issue", issueId: "00000000-0000-4000-8000-000000000001" }],
-    ["/agents/hr-bot", { name: "legacy-redirect", to: "/hr/", navigation: "spa" }],
+    ["/agents/hr-bot", { name: "legacy-redirect", to: "/hr/", navigation: "document" }],
     ["/agents/ai-fae-agent", { name: "legacy-redirect", to: "/fae/", navigation: "document" }],
     ["/admin/fae/reports", { name: "legacy-redirect", to: "/fae/manage/reports", navigation: "spa" }],
     ["/admin/voc", { name: "legacy-redirect", to: "/voc/manage/", navigation: "document" }],
@@ -234,20 +241,20 @@ describe("Platform router", () => {
   });
 });
 
-it('routes the opt in cloud HR workbench with resumable context', () => {
+it('hands the cloud HR workbench context to its document unchanged', () => {
   const position='11111111-1111-4111-8111-111111111111';
   const work='22222222-2222-4222-8222-222222222222';
-  expect(parseRoute('/hr/agent',`?position=${position}&work=${work}`)).toEqual({name:'hr-agent',positionId:position,workId:work});
-  expect(parseRoute('/hr/agent','?work=unsafe')).toEqual({name:'not-found'});
+  const search=`?position=${position}&work=${work}`;
+  expect(parseRoute('/hr/agent',search)).toEqual({name:'legacy-redirect',to:'/hr/agent',navigation:'document'});
+  expect(safeLegacyWorkspaceSearch('/hr/agent',search)).toBe(search);
 });
 
-it('opens the cloud HR home with bound work and position context', () => {
+it('keeps HR home context in the document URL', () => {
  const position='11111111-1111-4111-8111-111111111111'; const work='22222222-2222-4222-8222-222222222222';
- expect(parseRoute('/hr/',`?position=${position}&work=${work}`)).toEqual({name:'hr',positionId:position,workId:work});
  expect(routePath({name:'hr',positionId:position,workId:work})).toBe(`/hr/?position=${position}&work=${work}`);
  for(const path of ['/hr/','/hr/agent']) {
-  expect(parseRoute(path,'?work=unsafe')).toEqual({name:'not-found'});
-  expect(parseRoute(path,`?work=${work}&work=${work}`)).toEqual({name:'not-found'});
+  expect(parseRoute(path,'?work=unsafe')).toEqual({name:'legacy-redirect',to:path,navigation:'document'});
+  expect(safeLegacyWorkspaceSearch(path,`?work=${work}&work=${work}`)).toBe(`?work=${work}&work=${work}`);
  }
- expect(parseRoute('/hr',`?work=${work}`)).toEqual({name:'legacy-redirect',to:`/hr/?work=${work}`,navigation:'spa'});
+ expect(parseRoute('/hr',`?work=${work}`)).toEqual({name:'legacy-redirect',to:'/hr/',navigation:'document'});
 });
