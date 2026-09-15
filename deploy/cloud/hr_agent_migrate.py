@@ -23,6 +23,15 @@ from pathlib import Path
 from uuid import uuid4
 
 
+HR_AGENT_LEDGER_FILES = (
+    (96, "096_hr_agent_runtime.sql"),
+    (97, "097_hr_agent_material_parses.sql"),
+    (98, "098_hr_agent_material_authority.sql"),
+    (99, "099_hr_agent_candidate_intake.sql"),
+    (101, "101_hr_agent_interview_records.sql"),
+)
+
+
 class DeploymentFailure(Exception):
     pass
 
@@ -235,6 +244,14 @@ class Supervisor:
                         or (baseline_only and not 89 <= version <= 95)):
                     raise DeploymentFailure("root_ledger_invalid")
                 expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
+        hr_agent = root / "hr_agent"
+        if hr_agent.is_symlink() or not hr_agent.is_dir():
+            raise DeploymentFailure("root_ledger_invalid")
+        for version, name in HR_AGENT_LEDGER_FILES:
+            path = hr_agent / name
+            if path.is_symlink() or not path.is_file() or version in expected:
+                raise DeploymentFailure("root_ledger_invalid")
+            expected[version] = hashlib.sha256(path.read_bytes()).hexdigest()
         if not (set(range(1, 96)) | {100, 102, 103, 104, 105, 106, 107}).issubset(expected):
             raise DeploymentFailure("root_baseline_invalid")
         return expected
@@ -262,8 +279,27 @@ class Supervisor:
             raise DeploymentFailure("root_ledger_invalid") from None
         if not set(range(1, 96)).issubset(actual):
             raise DeploymentFailure("root_baseline_invalid")
-        if field == "ledger_after" and actual != expected:
+        hr_agent_versions = {version for version, _ in HR_AGENT_LEDGER_FILES}
+        actual_hr_agent = set(actual) & hr_agent_versions
+        if actual_hr_agent not in (set(), hr_agent_versions):
             raise DeploymentFailure("root_ledger_invalid")
+        expected_without_hr_agent = {
+            version: checksum for version, checksum in expected.items()
+            if version not in hr_agent_versions
+        }
+        if field == "ledger_after":
+            try:
+                before_versions = {
+                    row["version"] for row in self.receipt["ledger_before"]
+                }
+            except (KeyError, TypeError):
+                raise DeploymentFailure("root_ledger_invalid") from None
+            after_expected = (
+                expected if hr_agent_versions.issubset(before_versions)
+                else expected_without_hr_agent
+            )
+            if actual != after_expected:
+                raise DeploymentFailure("root_ledger_invalid")
         self.record(field, **{field: rows}, root_file_checksums=expected)
 
     def job_kind_preflight(self):

@@ -63,15 +63,15 @@ def invoke(case):
 @pytest.mark.parametrize("root_deployment", [95, 107], indirect=True)
 def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_deployment):
     db, release, tmp, _, _ = root_deployment
-    (release / 'backend/control_migrations/108_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
+    (release / 'backend/control_migrations/109_test_root.sql').write_text('create table platform_control.root_scope_probe (id integer primary key);')
     # This HR migration must never execute in root mode.
-    (release / 'backend/control_migrations/hr_agent/109_invalid.sql').write_text('invalid SQL must not run;')
+    (release / 'backend/control_migrations/hr_agent/110_invalid.sql').write_text('invalid SQL must not run;')
     for _ in range(2):
         result = invoke(root_deployment)
         assert result.returncode == 0, result.stderr
     with db.admin_connection() as connection:
         assert connection.execute("select to_regclass('platform_control.root_scope_probe') is not null").fetchone()[0]
-        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,109)').fetchone()[0] == 0
+        assert connection.execute('select count(*) from platform_control.schema_migrations where version in (96,97,98,99,101,110)').fetchone()[0] == 0
     calls = (tmp / 'calls').read_text()
     assert calls.count('create ') == 2 and 'preview' not in calls
     statements = [json.loads(line) for line in (tmp / 'sql.log').read_text().splitlines()]
@@ -87,7 +87,31 @@ def test_root_production_applies_only_root_and_reruns_with_exact_ledgers(root_de
         assert len(data['job_kind_preflight']['script_sha256']) == 64
 
 
-@pytest.mark.parametrize('fault', ['missing95', 'mismatch95', 'mismatch100', 'mismatch107', 'unknown_version', 'hr_already_applied', 'missing_root_file', 'job_kind_schema'])
+def test_root_accepts_existing_exact_hr_agent_ledger(root_deployment):
+    db, release, _, _, _ = root_deployment
+    with db.admin_connection() as connection:
+        connection.execute('grant platform_control_owner to platform_control_migrator')
+    try:
+        migrate_control_database(
+            db.migrator_dsn,
+            release / 'backend/control_migrations/hr_agent',
+            owner_role='platform_control_owner',
+        )
+    finally:
+        with db.admin_connection() as connection:
+            connection.execute('revoke platform_control_owner from platform_control_migrator')
+
+    result = invoke(root_deployment)
+
+    assert result.returncode == 0, result.stderr
+    with db.admin_connection() as connection:
+        assert connection.execute(
+            'select count(*) from platform_control.schema_migrations '
+            'where version in (96,97,98,99,101)'
+        ).fetchone()[0] == 5
+
+
+@pytest.mark.parametrize('fault', ['missing95', 'mismatch95', 'mismatch100', 'mismatch107', 'unknown_version', 'hr_already_applied', 'partial_hr_ledger', 'missing_root_file', 'job_kind_schema'])
 def test_root_rejects_before_container_or_grant(root_deployment, fault):
     db, release, tmp, _, _ = root_deployment
     with db.admin_connection() as c:
@@ -97,6 +121,10 @@ def test_root_rejects_before_container_or_grant(root_deployment, fault):
         elif fault == 'mismatch100': c.execute("update platform_control.schema_migrations set sha256=repeat('a',64) where version=100")
         elif fault in ('unknown_version', 'hr_already_applied'):
             c.execute("insert into platform_control.schema_migrations(version,sha256,applied_at) values (%s,repeat('a',64),now())", (999 if fault == 'unknown_version' else 96,))
+        elif fault == 'partial_hr_ledger':
+            path = next((release / 'backend/control_migrations/hr_agent').glob('096_*.sql'))
+            checksum = __import__('hashlib').sha256(path.read_bytes()).hexdigest()
+            c.execute("insert into platform_control.schema_migrations(version,sha256,applied_at) values (96,%s,now())", (checksum,))
         elif fault == 'job_kind_schema': c.execute('alter table platform_control.execution_jobs rename column job_kind to invalid_job_kind')
     if fault == 'missing_root_file': next((release / 'backend/control_migrations').glob('100_*.sql')).unlink()
     result = invoke(root_deployment)
@@ -204,6 +232,91 @@ def test_root_checksum_inventory_rejects_missing_attachment_floor(tmp_path, miss
     ))
     with pytest.raises(module.DeploymentFailure, match="root_baseline_invalid"):
         supervisor.root_checksums()
+
+
+def test_root_checksum_inventory_includes_exact_hr_agent_ledger(tmp_path):
+    import hashlib
+    import importlib.util
+    from types import SimpleNamespace
+
+    release = tmp_path / "release"
+    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
+    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    supervisor = module.Supervisor(SimpleNamespace(
+        release=str(release), private=str(tmp_path / "private"),
+        migration_set="root", environment="production",
+    ))
+
+    checksums = supervisor.root_checksums()
+
+    assert {
+        version: checksums[version]
+        for version in (96, 97, 98, 99, 101)
+    } == {
+        int(path.name[:3]): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in (release / "backend/control_migrations/hr_agent").glob("[0-9][0-9][0-9]_*.sql")
+    }
+
+
+@pytest.mark.parametrize("fault", ["missing", "symlink"])
+def test_root_checksum_inventory_rejects_invalid_hr_agent_files(tmp_path, fault):
+    import importlib.util
+    from types import SimpleNamespace
+
+    release = tmp_path / "release"
+    migrations = release / "backend/control_migrations"
+    shutil.copytree(ROOT / "backend/control_migrations", migrations)
+    hr_agent = migrations / "hr_agent"
+    if fault == "missing":
+        next(hr_agent.glob("096_*.sql")).unlink()
+    else:
+        path = next(hr_agent.glob("096_*.sql"))
+        path.unlink()
+        path.symlink_to(ROOT / "backend/control_migrations/hr_agent/096_hr_agent_runtime.sql")
+    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    supervisor = module.Supervisor(SimpleNamespace(
+        release=str(release), private=str(tmp_path / "private"),
+        migration_set="root", environment="production",
+    ))
+
+    with pytest.raises(module.DeploymentFailure, match="root_ledger_invalid"):
+        supervisor.root_checksums()
+
+
+@pytest.mark.parametrize(("before_hr", "after_hr"), [(True, False), (False, True)])
+def test_root_ledger_rejects_hr_group_change_during_run(tmp_path, before_hr, after_hr):
+    import importlib.util
+    from types import SimpleNamespace
+
+    release = tmp_path / "release"
+    shutil.copytree(ROOT / "backend/control_migrations", release / "backend/control_migrations")
+    spec = importlib.util.spec_from_file_location("fenced_root_supervisor", SUPERVISOR)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    supervisor = module.Supervisor(SimpleNamespace(
+        release=str(release), private=str(tmp_path / "private"), image="sha256:" + "a" * 64,
+        migration_set="root", environment="production",
+    ))
+    expected = supervisor.root_checksums()
+    hr_versions = {96, 97, 98, 99, 101}
+
+    def ledger(include_hr):
+        return json.dumps([
+            {"version": version, "sha256": checksum}
+            for version, checksum in expected.items()
+            if include_hr or version not in hr_versions
+        ])
+
+    supervisor.admin = lambda *_: ledger(before_hr)
+    supervisor.verify_root_ledger("ledger_before")
+    supervisor.admin = lambda *_: ledger(after_hr)
+
+    with pytest.raises(module.DeploymentFailure, match="root_ledger_invalid"):
+        supervisor.verify_root_ledger("ledger_after")
 
 
 @pytest.mark.parametrize("fault", ["missing", "checksum_mismatch"])
