@@ -60,8 +60,9 @@ _SAFE_RETURN_PATTERNS = tuple(
         rf"/voc/(?:records|manage/records)(?:/{_SAFE_RETURN_ID})?",
         rf"/hr/conversations/{_SAFE_RETURN_ID}",
         rf"/hr/positions/[0-9a-fA-F-]{{36}}"
-        rf"(?:/(?:chat|context|candidates|artifacts)"
-        rf"|/conversations/{_SAFE_RETURN_ID})?",
+        rf"(?:/conversations/{_SAFE_RETURN_ID})?",
+        rf"/hr/positions/[0-9a-fA-F]{{8}}(?:-[0-9a-fA-F]{{4}}){{3}}"
+        rf"-[0-9a-fA-F]{{12}}/(?:chat|context|candidates|artifacts)",
         rf"/marketing/(?:prospecting|inbound|voice|intelligence|gtm)"
         rf"(?:/conversations/{_SAFE_RETURN_ID})?",
         rf"/admin/fae(?:/(?:sessions(?:/{_SAFE_RETURN_ID})?"

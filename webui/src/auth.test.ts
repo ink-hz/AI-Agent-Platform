@@ -106,6 +106,8 @@ describe("login return path", () => {
     "/voc/unknown",
     "/hr/conversations/unsafe/path",
     "/hr/positions/not-a-uuid",
+    "/hr/positions/------------------------------------/context",
+    "/hr/positions/111111111111111111111111111111111111/context",
     "/hr/positions/11111111-1111-4111-8111-111111111111/unknown",
     "/marketing/unknown",
     "/marketing/voice/conversations/unsafe/path",
