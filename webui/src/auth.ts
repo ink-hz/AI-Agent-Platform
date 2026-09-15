@@ -350,6 +350,13 @@ export async function loadAccount(prefix = routePrefix()): Promise<Account> {
 
 
 export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<string> {
+  // SPA navigation does not visit the server login route, and its HttpOnly
+  // challenge expires while the page is idle. Obtain it before QR admission.
+  const challenge = await fetch(platformPath("/login"), {
+    credentials: "include",
+    cache: "no-store",
+  });
+  await checked(challenge);
   const response = await fetch(platformPath("/api/v1/auth/dingtalk/start"), {
     method: "POST",
     credentials: "include",
