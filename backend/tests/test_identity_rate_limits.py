@@ -22,7 +22,7 @@ def _limiter(environment, **overrides):
     from app.control_plane.rate_limit import ControlRateLimiter
 
     values = {
-        "control_database_url": environment["urls"]["platform_control_app"],
+        "control_database_url": environment["urls"][environment["roles"][1]],
         "secrets": AuthSecrets(b"r" * 32, key_version=11),
         "login_starts_per_challenge": 5,
         "challenge_window_seconds": 600,
@@ -39,7 +39,13 @@ def _limiter(environment, **overrides):
     return ControlRateLimiter(**values)
 
 
-def _attempt(limiter, *, challenge: str, suffix: int = 0) -> LoginAttempt:
+def _attempt(
+    limiter,
+    *,
+    challenge: str,
+    suffix: int = 0,
+    return_path: str = "/",
+) -> LoginAttempt:
     verifier = limiter.secrets.random_token()
     return LoginAttempt(
         attempt_id=uuid4(),
@@ -51,14 +57,131 @@ def _attempt(limiter, *, challenge: str, suffix: int = 0) -> LoginAttempt:
         challenge_digest=limiter.secrets.digest("pkce-verifier", verifier),
         challenge_key_version=limiter.secrets.key_version,
         verifier_ciphertext=limiter.secrets.seal_verifier(verifier),
-        return_path="/",
-        environment="production",
+        return_path=return_path,
+        environment=limiter.environment,
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
         browser_challenge_digest=limiter.secrets.digest(
             "browser-challenge", challenge
         ),
         browser_challenge_key_version=limiter.secrets.key_version,
     )
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("environment_name", "return_path"),
+    [
+        (
+            "production",
+            "/hr?work=11111111-1111-4111-8111-111111111111",
+        ),
+        (
+            "production",
+            "/hr/?position=11111111-1111-4111-8111-111111111111",
+        ),
+        (
+            "production",
+            "/hr/agent?position=11111111-1111-4111-8111-111111111111"
+            "&work=22222222-2222-4222-8222-222222222222",
+        ),
+        (
+            "production",
+            "/hr/agent?work=22222222-2222-4222-8222-222222222222"
+            "&position=11111111-1111-4111-8111-111111111111",
+        ),
+        (
+            "preview",
+            "/_preview/dingtalk-r1/hr/?work="
+            "11111111-1111-4111-8111-111111111111",
+        ),
+        (
+            "preview",
+            "/_preview/dingtalk-r1/hr/agent?position="
+            "11111111-1111-4111-8111-111111111111",
+        ),
+    ],
+)
+def test_login_security_definer_accepts_current_hr_return_context(
+    control_database,
+    environment_name: str,
+    return_path: str,
+) -> None:
+    environment = control_database["environments"][environment_name]
+    limiter = _limiter(environment)
+    challenge = limiter.issue_browser_challenge()
+    record = _attempt(
+        limiter,
+        challenge=challenge,
+        return_path=return_path,
+    )
+
+    assert limiter.create_login_attempt(
+        record,
+        edge_ip="203.0.113.210",
+    ) == record.attempt_id
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select return_path from platform_control.login_attempts "
+            "where login_attempt_id=%s",
+            (record.attempt_id,),
+        ).fetchone() == (return_path,)
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    ("environment_name", "return_path"),
+    [
+        ("production", "/hr/?"),
+        ("production", "/hr/?work=unsafe"),
+        (
+            "production",
+            "/hr/?work=11111111-1111-4111-8111-111111111111"
+            "&work=22222222-2222-4222-8222-222222222222",
+        ),
+        ("production", "/hr/?next=https://evil.test"),
+        (
+            "production",
+            "/hr/?work=11111111-1111-4111-8111-111111111111%2Fescape",
+        ),
+        (
+            "production",
+            "/hr/?work=11111111-1111-4111-8111-111111111111#fragment",
+        ),
+        (
+            "production",
+            "/hr/positions?work=11111111-1111-4111-8111-111111111111",
+        ),
+        ("production", "https://evil.test/"),
+        ("production", "//evil.test/"),
+        (
+            "preview",
+            "/hr/?work=11111111-1111-4111-8111-111111111111",
+        ),
+    ],
+)
+def test_login_security_definer_rejects_unsafe_hr_return_context_without_mutation(
+    control_database,
+    environment_name: str,
+    return_path: str,
+) -> None:
+    from app.control_plane.rate_limit import RateLimitUnavailable
+
+    environment = control_database["environments"][environment_name]
+    limiter = _limiter(environment)
+    record = _attempt(
+        limiter,
+        challenge=limiter.issue_browser_challenge(),
+        return_path=return_path,
+    )
+
+    with pytest.raises(RateLimitUnavailable):
+        limiter.create_login_attempt(record, edge_ip="203.0.113.211")
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from platform_control.login_attempts "
+            "where login_attempt_id=%s",
+            (record.attempt_id,),
+        ).fetchone() == (0,)
 
 
 @pytest.mark.postgres
@@ -156,6 +279,41 @@ def test_migration_017_is_additive_narrow_versioned_and_revokes_legacy_functions
             "and contype='p'"
         ).fetchone()[0]
         assert "bucket_key_version" in primary
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize("environment_name", ["production", "preview"])
+def test_migration_108_preserves_login_function_owner_acl_and_security_boundary(
+    control_database,
+    environment_name: str,
+) -> None:
+    environment = control_database["environments"][environment_name]
+    app_role = environment["roles"][1]
+    other_app_role = (
+        "platform_control_app_preview"
+        if environment_name == "production"
+        else "platform_control_app"
+    )
+    signature = (
+        "platform_control.create_rate_limited_web_login_attempt_v2("
+        "uuid,text,bytea,integer,bytea,integer,bytea,text,text,integer,bytea,"
+        "integer,bytea,integer,integer,integer,integer,integer,integer)"
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select pg_get_userbyid(proowner),prosecdef,proconfig "
+            "from pg_proc where oid=%s::regprocedure",
+            (signature,),
+        ).fetchone() == (
+            environment["owner"],
+            True,
+            ["search_path=pg_catalog, platform_control"],
+        )
+        assert connection.execute(
+            "select has_function_privilege(%s,%s,'execute'),"
+            "has_function_privilege(%s,%s,'execute')",
+            (app_role, signature, other_app_role, signature),
+        ).fetchone() == (True, False)
 
 
 @pytest.mark.postgres

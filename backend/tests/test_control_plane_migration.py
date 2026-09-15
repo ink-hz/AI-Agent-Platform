@@ -240,7 +240,7 @@ PUBLISHED_MIGRATION_SHA256 = {
 def test_control_migration_versions_are_unique_and_contiguous() -> None:
     # HR migrations have independent deployment scopes; root must not absorb them.
     expected_by_scope = {
-        MIGRATIONS: [*range(1, 89), 100, *range(102, 108)],
+        MIGRATIONS: [*range(1, 89), 100, *range(102, 109)],
         MIGRATIONS / "hr_web": list(range(89, 96)),
         MIGRATIONS / "hr_agent": [*range(96, 100), 101],
     }
@@ -251,7 +251,35 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
         all_versions.extend(versions)
 
     assert len(all_versions) == len(set(all_versions))
-    assert sorted(all_versions) == list(range(1, 108))
+    assert sorted(all_versions) == list(range(1, 109))
+
+
+def test_hr_login_return_context_migration_changes_only_the_v2_path_guard() -> None:
+    original_sql = migration_sql("017_rate_limit_hardening.sql")
+    replacement = migration_sql("108_hr_login_return_context.sql").rstrip()
+    function_header = (
+        "create function "
+        "platform_control.create_rate_limited_web_login_attempt_v2("
+    )
+    original = function_header + original_sql.split(function_header, 1)[1]
+    original = original.split("$function$;", 1)[0] + "$function$;"
+    old_guard = r"     or selected_return_path ~ '[\\\\%?#]'"
+    tail_marker = r"     or selected_return_path ~ '(^|/)\\.{1,2}(/|$)'"
+    unchanged_prefix = original.split(old_guard, 1)[0].replace(
+        "create function ",
+        "create or replace function ",
+        1,
+    )
+    unchanged_tail = tail_marker + original.split(tail_marker, 1)[1]
+
+    assert replacement.startswith(unchanged_prefix)
+    assert replacement.endswith(unchanged_tail)
+    changed_guard = replacement[len(unchanged_prefix):-len(unchanged_tail)]
+    assert r"selected_return_path ~ '[\\\\%#]'" in changed_guard
+    assert "selected_return_path ~ '[?]'" in changed_guard
+    assert "create " not in changed_guard
+    assert "grant " not in replacement.lower()
+    assert "revoke " not in replacement.lower()
 
 
 def test_access_history_subject_index_migration_adds_modules_departments_and_owner_projections() -> None:
