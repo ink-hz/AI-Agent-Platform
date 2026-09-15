@@ -2,6 +2,8 @@
 
 > 按 subagent-driven-development 分工实施、审查；当前用户已授权迁移，不重复审批。
 
+状态：本清单已按用户后续明确授权完成生产安装、Worker 与 Nginx 切换；准确运行版本和验证边界见[同机切换发布记录](../../releases/2026-09-15-hr-same-host-cutover.md)。下列生产前措辞保留其历史时点。
+
 目标：参照 Admin 搬代码与进程，保留原数据库/附件行为；平台主线基线 ab6fd352，HR 实验基线 d509543。旧平台实验未提交材料保留原目录，HR 旧材料完整转存至 AI-HR-Agent-stopped-experiment 并保留 stash，新分支从已提交基线整理。
 
 - [x] 补齐 G1/G2、S1–S3、准确基线与 DirectAgentWorkspace 死 prop 清单。

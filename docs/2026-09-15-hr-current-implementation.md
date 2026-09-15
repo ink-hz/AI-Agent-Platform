@@ -6,18 +6,18 @@
 
 | 项目 | 本次核实结果 |
 | --- | --- |
-| 实现调查基线 | 初次调查 `master` / `origin/master` 均为 `5482a04b17d8b06d801f60eb384947687cc0deac`；后续主线发布 `570ea625` 另加入扫码入口修复与发布文档 |
-| 主线最近交付 | 当前岗位标准与成果接云端、岗位改单列列表、删除旧前端路由/页面/客户端及专用测试；临时实施分支已合并并删除 |
-| 当前生产版本 | 2026-09-15 已部署主线 `570ea62547a6955dbf146b53e2a8eef5a5adfbf5`，API healthy；24 个其他容器保持发布基线 |
-| 最近一次门禁核实 | 2026-09-15 发布核验 schema107、phase = cloud、旧链非终态计数 0 |
-| 已发布范围 | 岗位阅读闭环、单列列表、旧前端删除及扫码入口修复已部署；页面交互由用户验收 |
-| 操作范围 | 初次文档调查后按用户授权完成两次 API 发布；未执行模型调用、生产业务写入或数据库删除 |
+| 实现调查基线 | 初次调查基线为 `5482a04b17d8b06d801f60eb384947687cc0deac`；本表当前生产事实以 2026-09-15 同机切换最终回执为准 |
+| 当前代码归属 | HR 前端、API、Worker 和知识运行于独立 `AI-HR-Agent`；平台保留身份、账号、共享附件、公共迁移、Nginx 分流和旧源码残留 |
+| 当前生产版本 | HR `f99707bea834ed00e64f9c8b468c2ed879e7493f`；平台 `041495e04b35749272ecbcec53ab27a490023f16`，镜像 `sha256:f8dca12079413baf4525fc2435b8db5e942a96688b1649d30d5b0f0708c1a38d` |
+| 最近一次门禁核实 | schema 108，phase = cloud；work queued/running、material parse queued/processing 与活租约均为 0，candidate states 为 null；独立 API/Worker ready 且 new admission 开启 |
+| 已发布范围 | Nginx 将 `/hr/`、`/hr/assets/`、`/api/hr/` 直达独立服务；旧平台 Worker 停止并在 11 个有序 Compose 配置文件（包含 base）中固定 `scale=0` |
+| 操作范围 | 已执行授权的迁移、进程与路由切换；未迁移或重写业务数据、密文、附件对象和数据库角色，未执行真实模型、真实候选人或用户 OAuth callback 验收 |
 
-当前实现是一套以云端 Hannah 对话为工作入口、以岗位和 HR 情报为阅读入口的产品。执行状态、回答结束、成果保存、标准确认分别存在；页面显示回答不代表成果已保存，更不代表标准已生效。
+当前实现是一套由独立 HR 服务承载、仍使用平台共享底座的 Hannah 产品。执行状态、回答结束、成果保存、标准确认分别存在；页面显示回答不代表成果已保存，更不代表标准已生效。
 
 **旧前端删除已完成，旧后端完整清除尚未完成。** 上轮删除 31 个文件，整体差异为新增 1371 行、删除 9988 行，净减少 8617 行（含文档和测试）。旧接口、旧后端类和表仍有残留，详见 §9；其中部分 `backend/app/hr` 模块仍服务当前岗位与情报，不能把整个目录视为废代码。
 
-证据：[最近验收](reviews/2026-09-14-hr-position-cloud-reading.md)、[最终审查](../.superpowers/sdd/legacy-exit-final-review.md)、[最新发布记录](releases/2026-09-15-mainline.md)。
+证据：[最近验收](reviews/2026-09-14-hr-position-cloud-reading.md)、[迁移记录](reviews/2026-09-15-hr-same-host-migration.md)、[最新发布记录](releases/2026-09-15-hr-same-host-cutover.md)。
 
 ## 2. 用户入口与实际页面
 
@@ -38,13 +38,13 @@
 
 从岗位进入主对话，只带当前用户、岗位和未发送草稿；候选人入口可指定打开当前材料/工作面板。草稿存在模块内存中，不把私人正文放进 URL 或持久浏览器存储；领取时核对用户与岗位。打开入口本身不提交工作、不调用模型。刷新或离开进程后的这类临时草稿不能视为已持久保存。
 
-源码：[路由](../webui/src/router.ts)、[装载](../webui/src/App.tsx)、[页面宿主](../webui/src/workspaces/hr/HrWorkspacePage.tsx)、[入口传递](../webui/src/workspaces/hr/hrCloudLaunch.ts)。
+生产源码位于独立 `AI-HR-Agent` 仓的 `webui/src/router.ts`、`webui/src/App.tsx` 和 `webui/src/workspaces/hr/`。平台同名组件仍是待清理残留；平台路由只把 HR 路径交给浏览器整页导航，不再装载正式 HR 页面。
 
 ## 3. 主对话与执行闭环
 
 ```mermaid
 flowchart LR
-  Chat[主对话] --> Cloud[HR Agent API]
+  Chat[独立 HR 前端] --> Cloud[独立 HR API :8012]
   Cloud --> DB[(platform_hr_agent)]
   Worker[独立 HR Worker] <--> DB
   Worker --> Model[配置的模型服务]
@@ -83,7 +83,7 @@ flowchart LR
 
 工具操作先登记，提交结果受事务、幂等和租约约束。恢复会重新校验权限、依赖、冻结输入与配置，不能把技术重试等同于业务成功；取消回执也不表示删除已有材料或成果。
 
-源码：[服务](../backend/app/hr_agent/service.py)、[运行时](../backend/app/hr_agent/runtime.py)、[Worker](../backend/app/hr_agent/worker.py)、[上下文](../backend/app/hr_agent/context.py)、[模型边界](../backend/app/hr_agent/model.py)、[契约](../backend/app/hr_agent/contracts.schema.json)。
+生产源码位于独立 `AI-HR-Agent` 仓的 `backend/app/hr_agent/`，包括 `service.py`、`runtime.py`、`worker.py`、`context.py`、`model.py` 与 `contracts.schema.json`。
 
 ### 3.3 模型实际拥有的五个工具
 
@@ -130,7 +130,7 @@ flowchart LR
 
 **材料与文件仍是独立资源视图**：`HrPositionResourcesPanel` 读 `/positions/{id}/resources` 中的 materials/artifacts，以附件票据预览、下载或批量下载；它不是当前云端成果的另一权威，也没有把所有云端 Markdown 自动生成旧 position_artifacts。该页面仍显示部分来源对话/轮次 ID 前 8 位，术语整理并未完全结束。
 
-源码：[岗位页](../webui/src/workspaces/hr/HrPositionWorkflow.tsx)、[标准事务](../backend/app/hr_agent/standards.py)、[成果](../backend/app/hr_agent/results.py)、[资源文件](../webui/src/workspaces/hr/HrPositionResourcesPanel.tsx)。
+生产源码位于独立 `AI-HR-Agent` 仓的 `webui/src/workspaces/hr/HrPositionWorkflow.tsx`、`HrPositionResourcesPanel.tsx` 及 `backend/app/hr_agent/standards.py`、`results.py`。
 
 ## 5. 候选人、材料与面试记录
 
@@ -154,7 +154,7 @@ flowchart LR
 
 个人材料进入批次即登记 personal 来源；发送给模型前递归检查材料及派生成果的处理授权，缺少授权明确拒绝。最近发布记录中真实个人材料处理保持关闭，本次未读取或修改供应商许可。**功能代码存在不等于线上已允许处理真实简历。**
 
-源码：[材料面板](../webui/src/workspaces/hr/HrLoopCandidatesPanel.tsx)、[核对表单](../webui/src/workspaces/hr/HrLoopCandidateReview.tsx)、[候选人工作](../webui/src/workspaces/hr/HrLoopCandidateWorkspace.tsx)、[建档服务](../backend/app/hr_agent/candidates.py)、[面试登记](../backend/app/hr_agent/interview_records.py)、[个人来源授权](../backend/app/hr_agent/personal_processing.py)。
+生产源码位于独立 `AI-HR-Agent` 仓的 `webui/src/workspaces/hr/HrLoopCandidatesPanel.tsx`、`HrLoopCandidateReview.tsx`、`HrLoopCandidateWorkspace.tsx` 及 `backend/app/hr_agent/candidates.py`、`interview_records.py`、`personal_processing.py`。
 
 ## 6. HR 情报与专业方法
 
@@ -173,13 +173,13 @@ flowchart LR
 
 不可变知识发布目录提供角色、方法清单与正文，工作冻结知识身份。用户可在主对话预览方法并明确带入，模型也可自主发现/阅读；没有按关键词强制套模板的产品工作流。用途、来源、适配边界与案例仍属于专业内容质量，不以成功读取文件代替专业验收。
 
-源码：[两层情报](../webui/src/workspaces/hr/HrPanoramaWorkspace.tsx)、[资料库](../backend/app/hr/source_library.py)、[研究库](../backend/app/hr/research_library.py)、[知识发布读取](../backend/app/hr_agent/knowledge.py)、[情报选择](../webui/src/workspaces/hr/HrLoopIntelligencePicker.tsx)。
+生产源码位于独立 `AI-HR-Agent` 仓的 `webui/src/workspaces/hr/HrPanoramaWorkspace.tsx`、`HrLoopIntelligencePicker.tsx`、`backend/app/hr/source_library.py`、`research_library.py` 及 `backend/app/hr_agent/knowledge.py`。
 
 ## 7. 后端 API 与数据地图
 
 ### 7.1 当前云端 API
 
-下列路径统一前缀 `/api/hr/agent`，在 [routes.py](../backend/app/hr_agent/routes.py) 装载。写动作使用正式身份、CSRF 与 UUID 幂等键；具体读取还校验 owner/对象/材料权限。路由存在不代表服务配置不完整时仍能受理，未就绪时拒绝。
+下列路径统一前缀 `/api/hr/agent`，由独立 `AI-HR-Agent/backend/app/hr_agent/routes.py` 装载。写动作使用正式身份、CSRF 与 UUID 幂等键；具体读取还校验 owner/对象/材料权限。路由存在不代表服务配置不完整时仍能受理，未就绪时拒绝。
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -237,13 +237,13 @@ flowchart LR
 - 复用平台企业会话、HR 使用授权、目录新鲜度与 CSRF。用户是默认数据边界；缺少授权器不放行空范围，跨用户请求不能因知道 UUID 而读取数据。
 - 材料/成果读取和发送前分别检查当前权限与来源；内容撤权后不能靠旧列表或缓存继续读取。共享团队标准、面试官独立协作和组织级共享尚未成为当前权限模型。
 - `HrAgentSettings.enabled` 默认 false。开启要求 provider、budget、diagnostic 配置文件，内容密钥、知识目录、工作目录，以及可选发布评审文件。配置路径/内容/版本校验失败则拒绝装配。
-- 模型请求默认超时 120 秒、配置最大 600 秒；实际模型、网关、输出上限和预算必须读部署配置。本次不读取密钥文件，不把仓库默认值当生产值。历史 HR 指定 Opus 5 配置及公开样例证据保留原记录，不由名称认证底层模型。
+- 模型请求默认超时 120 秒、配置最大 600 秒；实际模型、网关、输出上限和预算必须读部署配置。初次文档调查未读取密钥；生产切换通过受保护配置安装，但公开记录不保存秘密路径内容或值，也不把仓库默认值当生产值。历史 HR 指定 Opus 5 配置及公开样例证据保留原记录，不由名称认证底层模型。
 - 云端 API 总会装载路由，但服务未就绪时不能执行；Worker 独立进程，处理解析、候选条目推进和模型工作。当前 HR 不经旧 MetaBot/PTY/Claude Code 执行。
 - 门禁有 `legacy`、`draining_legacy`、`cloud`、`draining_cloud`；105 已实现 `draining_cloud → cloud` 原链恢复。恢复旧执行器并非当前承诺，不提供自动回退旧链入口。
-- 公共 health 仅证明共享 API 存活。owner `/api/v1/manage/hr-readiness` 与 Worker 私有探针分别核验；API 装配快照不证明 Worker 实时健康。
+- 独立 HR API 由回环地址 `127.0.0.1:8012/health/ready` 核验；Worker 探针必须进入其 systemd `PrivateTmp` 挂载命名空间执行。平台 `/api/v1/manage/hr-readiness` 只反映平台残留装配快照，不能证明独立 HR API 或 Worker 实时健康。
 - 平台附件已有条件写入、永久擦除 fence、版本级清理、租约和有界重试；这些是共享底座，旧 HR 页面删除不删除它们。代码协议和现有测试不等于本次重新跑了生产擦除演练。
 
-2026-09-15 已部署主线 570ea625，包含登录页 SPA 导航缺失/过期 challenge 的扫码入口修复；未核验用户实际扫码、受认证模型请求、全文输出质量或最新出站配置。后续维护必须使用[最新发布记录](releases/2026-09-15-mainline.md)所指完整有序 Compose 覆盖；仅基础 Compose 会漏掉实际镜像/配置覆盖。
+2026-09-15 已完成同机独立服务切换。`ai-hr-agent` 与 `ai-hr-worker` 均 enabled/active、`NRestarts=0`；旧容器 Worker 已停止、`restart=no`，未来维护固定 `scale=0`。平台 API 使用提交 `041495e0` 的准确镜像并 healthy。后续维护必须使用[最新发布记录](releases/2026-09-15-hr-same-host-cutover.md)所指 11 个有序 Compose 配置文件（包含 base）；仅基础 Compose 会漏掉实际镜像、HR 退役和配置覆盖。
 
 ## 9. 已删除、仍残留与未完成
 
@@ -272,7 +272,7 @@ flowchart LR
 
 | 项目 | 当前结论 |
 | --- | --- |
-| 最新主线部署 | 已完成，生产 570ea625；详见最新发布记录 |
+| 最新生产部署 | 已完成；HR `f99707b`、平台 `041495e0`，详见最新发布记录 |
 | 建岗闭环 | 未实现；只能选已有岗位，不能承诺确认后自动进入岗位库 |
 | 旧后端整体退役 | 未完成，具体残留如上 |
 | 逐字输出 | 未实现；目前完整回复提交后轮询展示 |
@@ -296,6 +296,7 @@ flowchart LR
 | 浏览器 | 当前真实组件配本地 API 夹具，验证导航、单列岗位、滚动容器、工作流滚动与 Markdown 下载 | 不是受认证生产浏览器或真实后端端到端验收 |
 | 历史真实模型 | B/C/D 公开/合成材料记录分别保留 | 不把某个样例通过扩为 W1–W12 全部通过或人类专业签收 |
 | 初次文档调查 | 代码/路由/配置/迁移静态核对、远端主线与生产 current/容器只读核对、文档链接检查 | 没有重跑业务测试、浏览器或进程故障演练 |
+| 同机生产切换 | 两个 systemd unit active/ready；外网 HR 页面/深链/静态资源 200，缺失资源与未知 API 404，匿名 API 401；三条登录 start 200 | 未执行用户扫码/OAuth callback、受认证浏览器、真实模型、真实候选人或真实 S3 验收 |
 
 详细证据：[最近闭环验收](reviews/2026-09-14-hr-position-cloud-reading.md)、[B](reviews/2026-09-10-hr-cloud-loop-b.md)、[C](reviews/2026-09-11-hr-cloud-loop-c.md)、[D](reviews/2026-09-11-hr-cloud-loop-d.md)、[当前实现最终审查](../.superpowers/sdd/legacy-exit-final-review.md)。
 

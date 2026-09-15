@@ -38,3 +38,18 @@
 用户已指定 HR 远端 `git@github.com:ink-hz/AI-HR-Agent.git` 并授权推送 master。旧平台实验工作树保持原状；HR 旧实验四份未提交文件已逐字节校验后完整保留到 `AI-HR-Agent-stopped-experiment` 的 `archive/hr-extraction-stopped` 工作树，并保留具名 Git stash，未合并到当前实现。
 
 两仓已快进归并本地 master。归并后在主目录验证：HR 依赖完整性检查、32 项装配/身份/静态/加密测试及前端构建通过；平台 44 项附件/加密测试通过，使用 HR 主目录独立进程的 4 项真实同机回归再次通过。独立审查发现的问题已修复并复核，无剩余阻断项。生产安装、路由切换、切换后平台业务删除仍未执行。
+
+上句是生产切换前的本地阶段记录；当前生产状态以下节为准。
+
+## 生产切换（2026-09-15）
+
+- **发布身份**：HR 运行提交 `f99707bea834ed00e64f9c8b468c2ed879e7493f`；平台运行提交 `041495e04b35749272ecbcec53ab27a490023f16`，API 镜像 `sha256:f8dca12079413baf4525fc2435b8db5e942a96688b1649d30d5b0f0708c1a38d`、容器 `0aff6a5d5cccc1f419db8907150a5f01da6851a3515be88b0a920a86f291032b`，healthy 且 Docker `RestartCount=0`。
+- **数据库**：公共迁移 108 的 SHA-256 为 `89f448a20b7958357459af6d1fc6e6e519815229df98a063d599482fd5483832`，由原 migrator/owner 路径应用，回执 `completed` 且 `cleanup_verified=true`，结束时 owner membership 与 migrator session 均为 0。它只 `CREATE OR REPLACE` 既有 `create_rate_limited_web_login_attempt_v2`，保留 `SECURITY DEFINER` 和固定 `search_path`；旧实验 HR 108 没有恢复。
+- **执行切换**：切换时 lane 在 `2026-09-15T04:10:42.194835Z` 进入 `cloud`；work queued/running、material parse queued/processing 与活租约均为 0，candidate states 为 null。`ai-hr-agent` 与 `ai-hr-worker` 均 enabled/active、`NRestarts=0`，HR API/Worker ready 且 new admission 开启；旧 Docker Worker `9024561b…` 已停止、`restart=no`，未来 Compose 固定 `scale=0`。
+- **路由**：Nginx 已将 `/hr/`、`/hr/assets/` 与 `/api/hr/` 直达 `127.0.0.1:8012`。外网 `/hr/`、`/hr/positions`、`/hr/panorama` 和岗位 context 深链均返回同一独立 index（SHA-256 `621bb9d931ff492f40472a0ff866422bba40984f92bab602fcff40b108a81685`）；入口 JS 返回 200，缺失 asset 返回 404，匿名岗位 API 返回 401，未知 API 返回 404。
+- **登录边界**：`/hr/positions`、`/hr/?work=<UUID>`、`/hr/?position=<UUID>&work=<UUID>` 的真实 Cookie/challenge start 均返回 200，授权主机仍为 `login.dingtalk.com`。迁移前本地真实 PostgreSQL 已覆盖非法查询、重复键、跨域和限流拒绝。本轮没有执行用户扫码或 OAuth callback。
+- **平台最终状态**：`/login` 与平台静态资源返回 200，current 指向 `041495e0`；最终 24 个 peer 检查通过，action/deploy 锁和 failclosed 标记均释放。切换期间 FAE 的另一次维护更换过容器，因此不把“整个切换期间 24 个 peer 从未变化”作为结论。
+- **维护与回退**：后续唯一 Compose 入口为 `/opt/orbbec-agent-platform/private/hr-same-host-platform-final-2fcebd1606892d01c359d48f126db9bc/execution/future-maintenance.json`，列出 11 个有序 Compose 配置文件（包含 base）并固定旧 Worker `scale=0`。旧 Nginx、旧 Worker 和原镜像材料仍保留供受控回退；本轮没有迁移、删除或重加密业务数据、密文、附件对象或数据库角色。
+- **验收边界**：没有执行真实模型、真实候选人、真实 S3、用户扫码/OAuth callback 或受认证浏览器页面验收。页面继续由用户验收；进程 healthy、公开路由正确和登录 start 成功不能替代专业质量或真实个人材料处理验收。
+
+平台后续提交 `a0f383663c4a5a9ad5002645451354f9ca29e53a` 修正迁移 supervisor 对既有 HR 96/97/98/99/101 账本的完整校验；该提交与本次文档提交均发生在运行镜像构建后，没有重建或替换上述生产镜像。
