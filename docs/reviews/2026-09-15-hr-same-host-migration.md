@@ -35,4 +35,6 @@
 
 安装遵循 HR `deploy/README.md`，只将现有配置地址/文件路径映射到宿主可达位置；102–105 lane/drain 与 schema 升级继续由平台管理。Worker 的 PrivateTmp 健康检查使用服务挂载命名空间。独立代码/进程仍共用原数据库角色，已接受数据库可达范围相同。
 
-HR 没有配置远端；本轮不创建或猜测远端。旧平台实验工作树保持原状；HR 旧实验四份未提交文件已逐字节校验后完整保留到 `AI-HR-Agent-stopped-experiment` 的 `archive/hr-extraction-stopped` 工作树，并保留具名 Git stash，未合并到当前实现。
+用户已指定 HR 远端 `git@github.com:ink-hz/AI-HR-Agent.git` 并授权推送 master。旧平台实验工作树保持原状；HR 旧实验四份未提交文件已逐字节校验后完整保留到 `AI-HR-Agent-stopped-experiment` 的 `archive/hr-extraction-stopped` 工作树，并保留具名 Git stash，未合并到当前实现。
+
+两仓已快进归并本地 master。归并后在主目录验证：HR 依赖完整性检查、32 项装配/身份/静态/加密测试及前端构建通过；平台 44 项附件/加密测试通过，使用 HR 主目录独立进程的 4 项真实同机回归再次通过。独立审查发现的问题已修复并复核，无剩余阻断项。生产安装、路由切换、切换后平台业务删除仍未执行。
