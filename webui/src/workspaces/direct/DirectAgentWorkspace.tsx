@@ -44,11 +44,6 @@ export interface DirectAgentWorkspaceProps {
   autoFocusComposer?: boolean;
   showWorkspaceBackLink?: boolean;
   newConversationHeader?: ReactNode;
-  positionMaterialIds?: readonly string[];
-  positionArtifactAttachmentIds?: readonly string[];
-  onPositionMaterialChange?: (attachment: ConversationAttachment, active: boolean) => void | Promise<void>;
-  materialsOpen?: boolean;
-  onMaterialsOpenChange?: (open: boolean) => void;
   showMaterialsTrigger?: boolean;
   showTaskStarters?: boolean;
   layout?: "standard" | "focused";
@@ -115,11 +110,6 @@ export function DirectAgentWorkspace({
   autoFocusComposer = false,
   showWorkspaceBackLink = true,
   newConversationHeader,
-  positionMaterialIds,
-  positionArtifactAttachmentIds,
-  onPositionMaterialChange,
-  materialsOpen,
-  onMaterialsOpenChange,
   showMaterialsTrigger = true,
   showTaskStarters = true,
   layout = "standard",
@@ -352,11 +342,6 @@ export function DirectAgentWorkspace({
           conversationId={conversationId}
           expectedAgentId={agentId}
           attachmentLimits={card.attachment_limits}
-          positionMaterialIds={positionMaterialIds}
-          positionArtifactAttachmentIds={positionArtifactAttachmentIds}
-          onPositionMaterialChange={onPositionMaterialChange}
-          materialsOpen={materialsOpen}
-          onMaterialsOpenChange={onMaterialsOpenChange}
           showMaterialsTrigger={showMaterialsTrigger}
           onConversationSettled={onConversationSettled}
           onConversationUpdated={upsertConversation}
