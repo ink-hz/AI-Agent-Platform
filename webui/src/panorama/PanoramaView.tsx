@@ -95,11 +95,12 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
       <div><p className="panorama-eyebrow">AI ENGINEERING PANORAMA · {data.version}</p><h1>{data.title}</h1><p>{data.context.observation}</p></div>
       <div className="panorama-toolbar">
         <label className="panorama-search"><span>搜索全景</span><input ref={queryRef} type="search" value={query} placeholder="产品、能力或状态…" onInput={(event) => setQuery(event.currentTarget.value)} /></label>
-        <button type="button" onClick={() => setPresenting((value) => !value)}>{presenting ? "退出展示" : "展示模式"}</button>
+        <button type="button" onClick={() => setPresenting(true)}>展示模式</button>
         <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.svg?version=${encodeURIComponent(data.version)}`)} download title="导出文件为离线副本，导出后无法在线撤回">导出 SVG</a>
         <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.png?version=${encodeURIComponent(data.version)}`)} download title="导出文件为离线副本，导出后无法在线撤回">导出 PNG</a>
       </div>
     </header>
+    {presenting && <button type="button" className="panorama-presentation-exit" onClick={() => setPresenting(false)}>退出展示</button>}
 
     <section className="panorama-topline" aria-label="经营背景与收入构成">
       <article className="panorama-context">

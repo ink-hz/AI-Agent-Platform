@@ -97,6 +97,18 @@ describe("PanoramaView", () => {
     expect(document.activeElement).toBe(editor);
   });
 
+  it("enters and exits presentation mode with visible buttons", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    await act(async () => [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "展示模式")!.click());
+    expect(container.querySelector(".panorama")?.classList.contains("panorama--presenting")).toBe(true);
+    const exit = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "退出展示");
+    expect(exit).not.toBeUndefined();
+    expect(exit?.closest(".panorama-toolbar")).toBeNull();
+
+    await act(async () => exit!.click());
+    expect(container.querySelector(".panorama")?.classList.contains("panorama--presenting")).toBe(false);
+  });
+
   it("expands domains, highlights relationships, and returns with Escape", async () => {
     await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
     const market = container.querySelector<HTMLElement>('[data-domain-id="market"]')!;
