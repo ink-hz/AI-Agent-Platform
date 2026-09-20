@@ -13,10 +13,11 @@ import {
 import { platformPath, type Account } from "../auth";
 import { PLATFORM_TITLE, useDocumentTitle } from "../documentTitle";
 import { navigate, currentLocationPath, type Route } from "../router";
+import { PlatformFunctions } from "../panorama/PlatformFunctions";
 import { PanoramaView } from "../panorama/PanoramaView";
 import { fetchPanorama } from "../panorama/panoramaApi";
 import type { PanoramaData, PanoramaActionId } from "../panoramaTypes";
-import { actionPath, workspaceGroup, registerPanoramaLeaveGuard } from "../panoramaNavigation";
+import { actionPath, workspaceGroup, registerPanoramaLeaveGuard, allowPanoramaNavigation } from "../panoramaNavigation";
 import { PanoramaWorkArea } from "../PanoramaWorkArea";
 import "../panoramaWorkspace.css";
 
@@ -362,12 +363,17 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
     }
     onNavigate(previous?.group === action ? previous.path : target.path);
   };
+  const openPlatformPath = (path: string, external: boolean) => {
+    if (external) {
+      if (allowPanoramaNavigation(path)) window.location.assign(platformPath(path));
+    } else onNavigate(path); // The existing SPA router applies the leave guard once.
+  };
   if (access === "denied") return direct ? pageState("无权访问 AI 工程全景", "请重新登录或由管理员确认权限。", "alert") : <>{fallback}</>;
   if (access === "checking") return pageState("正在确认访问权限", "正在确认企业账号。");
-  if (!data) return error ? <section role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。");
   return <article className="panorama-home">
     <div ref={graph} tabIndex={-1} hidden={!!workspaceRoute} inert={!!evidence}>
-      <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} onDataChange={setData} onAuthorizationFailure={authorizationFailure} onDirtyChange={onLayoutDirty} />
+      <PlatformFunctions account={account} onAction={openAction} onOpenPath={openPlatformPath} />
+      {data ? <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} onDataChange={setData} onAuthorizationFailure={authorizationFailure} onDirtyChange={onLayoutDirty} /> : error ? <section className="panorama" role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。")}
     </div>
     {renderWorkspace && <div ref={workspaceHeading} tabIndex={-1} inert={!!evidence}><PanoramaWorkArea route={workspaceRoute} renderWorkspace={renderWorkspace} onClose={closeWorkspace} onDirty={value => { dirty.current = value; }} /></div>}
     {evidence && <section ref={evidencePanel} className="panorama-evidence" role="dialog" aria-modal="true" aria-label="事实依据" onKeyDown={event => {

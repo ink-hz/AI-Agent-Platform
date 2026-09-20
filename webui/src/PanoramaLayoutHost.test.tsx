@@ -5,8 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AiEngineeringLanding } from './pages/AiEngineeringPage';
 import { AiEngineeringApiError } from './aiEngineeringApi';
 import { allowPanoramaNavigation } from './panoramaNavigation';
+import { fetchPanorama } from './panorama/panoramaApi';
 import { panoramaTestData } from './panoramaTestData';
-vi.mock('./panorama/panoramaApi', () => ({fetchPanorama: async () => panoramaTestData()}));
+vi.mock('./panorama/panoramaApi', () => ({fetchPanorama: vi.fn(async () => panoramaTestData())}));
 // Test the session boundary; the editor has its own API and component tests.
 vi.mock('./panorama/PanoramaView', () => ({PanoramaView: (props:any) => <section>
   <h1>{props.data.title}</h1>
@@ -21,6 +22,7 @@ beforeEach(() => {
  (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
  box=document.createElement('div');document.body.append(box);root=createRoot(box);
  window.history.replaceState({},'', '/');
+ vi.mocked(fetchPanorama).mockReset().mockResolvedValue(panoramaTestData());
 });
 afterEach(async () => {await act(async()=>root.unmount());box.remove();vi.restoreAllMocks();});
 async function setup(){
@@ -44,4 +46,23 @@ it('removes protected graph and starts existing login on editor authorization fa
  const navigate=await setup();await click('会话失效');
  expect(box.textContent).not.toContain('测试全景');expect(box.textContent).toContain('无权访问');
  expect(navigate).toHaveBeenCalledWith('/login?return_path=%2F');
+ expect(box.querySelector('nav[aria-label="平台功能"]')).toBeNull();
+});
+it('places fixed platform functions before the panorama without a node selection',async()=>{
+ const navigate=await setup();const nav=box.querySelector('nav[aria-label="平台功能"]')!;
+ expect(nav).not.toBeNull();expect(nav.compareDocumentPosition(box.querySelector('h1')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ await act(async()=>nav.querySelector<HTMLAnchorElement>('a[href="/admin/identity"]')!.click());
+ expect(navigate).toHaveBeenCalledWith('/admin/identity');
+});
+it('preserves unsaved layout protection when leaving through a business management shortcut',async()=>{
+ const navigate=await setup();await click('本地修改');vi.spyOn(window,'confirm').mockReturnValue(false);
+ await act(async()=>box.querySelector<HTMLAnchorElement>('a[href="/voc/manage/"]')!.click());
+ expect(window.confirm).toHaveBeenCalled();expect(navigate).not.toHaveBeenCalled();
+});
+
+it('keeps platform entry points available if only the panorama data request fails',async()=>{
+ vi.mocked(fetchPanorama).mockRejectedValue(new Error('panorama unavailable'));
+ const navigate=await setup();expect(box.textContent).toContain('AI 工程全景暂时不可用');
+ await act(async()=>box.querySelector<HTMLAnchorElement>('a[href="/admin/identity"]')!.click());
+ expect(navigate).toHaveBeenCalledWith('/admin/identity');
 });
