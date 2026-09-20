@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from ..control_plane.models import Role
+from .panorama import PANORAMA, content_hash, render_png, render_svg
 
 _PRIVATE = {'Cache-Control': 'private, no-store', 'Pragma': 'no-cache', 'X-Content-Type-Options': 'nosniff'}
 _CONTENT = Path(__file__).parent / 'content'
@@ -68,6 +69,32 @@ def build_ai_engineering_router() -> APIRouter:
             raise _failure(404, 'document not found')
         return JSONResponse({'slug': slug, 'title': _DOCUMENTS[slug],
                              'markdown': _read(slug + '.md').decode('utf-8')}, headers=_PRIVATE)
+
+    @router.get('/panorama')
+    def panorama(request: Request):
+        allowed(request)
+        return JSONResponse(PANORAMA, headers={
+            **_PRIVATE, 'X-Panorama-Content-SHA256': content_hash(),
+        })
+
+    @router.get('/export.svg')
+    def export_svg(request: Request):
+        allowed(request)
+        return Response(render_svg(), media_type='image/svg+xml', headers={
+            **_PRIVATE,
+            'Content-Disposition': 'attachment; filename="orbbec-ai-panorama.svg"',
+            'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            'X-Panorama-Content-SHA256': content_hash(),
+        })
+
+    @router.get('/export.png')
+    def export_png(request: Request):
+        allowed(request)
+        return Response(render_png(), media_type='image/png', headers={
+            **_PRIVATE,
+            'Content-Disposition': 'attachment; filename="orbbec-ai-panorama.png"',
+            'X-Panorama-Content-SHA256': content_hash(),
+        })
 
     @router.get('/assets/{filename}')
     def asset(filename: str, request: Request):

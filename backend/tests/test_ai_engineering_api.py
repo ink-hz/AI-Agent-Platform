@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.control_plane.models import AuthContext, Role
 from test_dingtalk_auth_api import FakeAuth, _app
 
 PREFIX = '/api/v1/ai-engineering'
-CONTENT = ['', '/documents/overview', '/assets/panorama.svg', '/assets/panorama.png']
+CONTENT = [
+    '', '/panorama', '/export.svg', '/export.png',
+    '/documents/overview', '/assets/panorama.svg', '/assets/panorama.png',
+]
 
 
 def client_for(tmp_path, monkeypatch, role=Role.PLATFORM_ADMIN):
@@ -81,6 +86,71 @@ def test_fixed_content_paths_and_sources(tmp_path, monkeypatch):
         assert_private(response)
     assert client.get('/ai-engineering').status_code == 200
     assert client.get('/assets/panorama.svg').status_code != 200
+
+
+def test_panorama_contract_uses_verified_amounts_and_fixed_ids(tmp_path, monkeypatch):
+    client, auth = client_for(tmp_path, monkeypatch)
+    client.cookies.set(auth.cookie_name, 'valid-cookie')
+
+    response = client.get(PREFIX + '/panorama')
+    assert response.status_code == 200
+    assert_private(response)
+    payload = response.json()
+    assert set(payload) == {
+        'version', 'updated_at', 'title', 'context', 'revenue', 'domains',
+        'support', 'shared', 'asks', 'sources',
+    }
+    assert payload['updated_at'] == '2026-09-20'
+    assert payload['revenue']['denominator_cents'] == 93_504_482_249
+    assert [segment['amount_cents'] for segment in payload['revenue']['segments']] == [
+        58_372_580_971, 29_093_471_169, 2_554_096_095, 3_484_334_014,
+    ]
+    assert sum(segment['amount_cents'] for segment in payload['revenue']['segments']) == payload['revenue']['denominator_cents']
+    assert {domain['id'] for domain in payload['domains']} == {
+        'market', 'products', 'technology', 'supply', 'delivery',
+    }
+    assert {domain['id'] for domain in payload['support']} == {
+        'hr', 'office', 'finance', 'quality', 'legal', 'organization',
+    }
+    known_actions = {
+        'brain', 'agents', 'missions', 'sessions', 'operations', 'review',
+        'activity', 'identity', 'governance', 'access', 'account',
+        'agent-admin', 'notes', 'hr', 'office', 'voc', 'fae',
+    }
+    actual_actions = set(payload['shared']['actions'])
+    actual_actions.update(action for group in ('domains', 'support') for item in payload[group] for action in item['actions'])
+    assert actual_actions <= known_actions
+    source_ids = {source['id'] for source in payload['sources']}
+    assert source_ids
+    assert all(source['document'] in {'overview', 'reading', 'domains', 'finance', 'products', 'assets'} for source in payload['sources'])
+    referenced = set(payload['context']['source_ids']) | set(payload['revenue']['source_ids'])
+    referenced.update(source_id for group in ('domains', 'support') for item in payload[group] for source_id in item['source_ids'])
+    assert referenced <= source_ids
+    serialized = json.dumps(payload, ensure_ascii=False).lower()
+    for forbidden in ('internal_user_id', 'session_id', 'workspace', 'employee', '手机号', '员工姓名'):
+        assert forbidden not in serialized
+
+
+def test_panorama_exports_are_same_version_private_and_1920_by_1080(tmp_path, monkeypatch):
+    client, auth = client_for(tmp_path, monkeypatch)
+    client.cookies.set(auth.cookie_name, 'valid-cookie')
+    data_response = client.get(PREFIX + '/panorama')
+    svg_response = client.get(PREFIX + '/export.svg')
+    png_response = client.get(PREFIX + '/export.png')
+
+    for response in (svg_response, png_response):
+        assert response.status_code == 200
+        assert_private(response)
+        assert response.headers['x-panorama-content-sha256'] == data_response.headers['x-panorama-content-sha256']
+        assert response.headers['content-disposition'].startswith('attachment; filename=')
+    assert svg_response.headers['content-type'].startswith('image/svg+xml')
+    svg = svg_response.text
+    assert '<svg' in svg and 'width="1920"' in svg and 'height="1080"' in svg
+    assert data_response.json()['version'] in svg
+    assert '生成时间' in svg and '数据时间' in svg and '来源编号' in svg
+    with Image.open(BytesIO(png_response.content)) as image:
+        assert image.size == (1920, 1080)
+        assert image.format == 'PNG'
 
 
 @pytest.mark.parametrize('prefix', ['/', '/_preview/dingtalk-r1/'])
