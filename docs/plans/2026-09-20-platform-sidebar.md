@@ -40,3 +40,12 @@
 - 独立应用使用原生链接和既有 beforeunload；SPA 使用既有 navigate guard，避免双重提示。
 
 发布完成：应用 `5e9420d9c43a7e5f92dfc00ea50ac2af03d670e5`，见 `docs/operations/2026-09-20-platform-sidebar-release.md`。浏览器及真实业务验收仍由用户进行。
+
+## 页面底色收尾（2026-09-20 用户反馈）
+
+当前页面的白色/近白底面层次过弱，调整为深蓝平台导航、蓝灰工作区和彩色业务节点。
+- [x] 仅修改 platform/platformShell.css、panorama/panorama.css、panoramaWorkspace.css 的表面色、文字色、焦点色和边界色；保留布局、权限、交互与节点语义颜色。
+- [x] 检查文字对比度；运行既有侧栏/全景组件回归和构建，不为纯色值写镜像测试。
+- [ ] 独立静态审查，归并主线，按既有准确 Compose 维护链发布，核验线上 CSS 摘要与色值，记录实际发布版本。
+
+底色验证：相关组件 30 项通过，npm build 通过；主要文字最低对比度 4.86:1；独立 CSS 审查未见阻断。浏览器视觉仍由用户验收。
