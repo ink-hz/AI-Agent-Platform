@@ -30,4 +30,10 @@ describe('panorama is the homepage',()=>{
   await act(async()=>root.render(<AiEngineeringLanding account={account} client={client} direct fallback={null}/>));
   expect(fetchPanorama).not.toHaveBeenCalled();
  });
+ it('clears an expired session and uses the existing login return path',async()=>{
+  client.fetchAccess.mockRejectedValue(new AiEngineeringApiError(401)); const go=vi.fn();
+  await act(async()=>root.render(<AiEngineeringLanding account={account} client={client} direct fallback={null} onNavigate={go}/>));
+  expect(fetchPanorama).not.toHaveBeenCalled(); expect(go).toHaveBeenCalledWith('/login?return_path=%2F');
+ });
+
 });

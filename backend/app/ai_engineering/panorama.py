@@ -48,7 +48,7 @@ PANORAMA: dict[str, Any] = {
             "id": "market", "title": "市场与客户", "subtitle": "客户形态与反馈入口",
             "items": ["机器人", "三维扫描", "生物识别", "AIoT", "工业三维测量"],
             "detail": ["官网方案分类不是收入结构或内部事业部。", "VOC 已有草稿、确认与查询能力；最新发布证据仍待补齐。"],
-            "status": "已有 VOC 资产；效果基线未建立", "source_ids": ["PROD-SOLUTIONS", "ASSET-VOC"],
+            "status": "VOC 历史运行｜健康未核｜成效基线待补", "source_ids": ["PROD-SOLUTIONS", "ASSET-VOC"],
             "related_ids": ["products", "delivery"], "actions": ["voc"],
         },
         {
@@ -76,13 +76,13 @@ PANORAMA: dict[str, Any] = {
             "id": "delivery", "title": "交付与服务", "subtitle": "设计导入到问题闭环",
             "items": ["设计导入", "系统集成", "测量验收", "技术支持", "问题反馈"],
             "detail": ["FAE 回答、VOC 入库和客户问题解决是不同结果。", "现有证据不证明两套系统已形成完整闭环。"],
-            "status": "已有 FAE／VOC 资产；当前健康本轮未检查", "source_ids": ["ASSET-FAE", "ASSET-VOC"],
+            "status": "FAE／VOC 历史运行｜健康未核｜成效基线待补", "source_ids": ["ASSET-FAE", "ASSET-VOC"],
             "related_ids": ["market", "products", "technology"], "actions": ["fae", "voc"],
         },
     ],
     "support": [
-        {"id": "hr", "title": "人才／HR", "subtitle": "岗位与人才工作流", "items": ["岗位", "资源", "候选批次", "面试记录"], "detail": ["已有历史部署与任务记录；不等于成功交付。"], "status": "已有应用｜当前健康本轮未检查", "source_ids": ["ASSET-HR"], "related_ids": ["organization"], "actions": ["hr"]},
-        {"id": "office", "title": "行政／ADMIN", "subtitle": "问答与事务流程", "items": ["制度问答", "班车", "住宿", "车辆", "通知"], "detail": ["AI 问答与事务流程分别记账。"], "status": "已有应用｜效果基线未建立", "source_ids": ["ASSET-ADMIN"], "related_ids": ["organization"], "actions": ["office"]},
+        {"id": "hr", "title": "人才／HR", "subtitle": "岗位与人才工作流", "items": ["岗位", "资源", "候选批次", "面试记录"], "detail": ["已有历史部署与任务记录；不等于成功交付。"], "status": "历史运行｜健康未核｜成效基线待补", "source_ids": ["ASSET-HR"], "related_ids": ["organization"], "actions": ["hr"]},
+        {"id": "office", "title": "行政／ADMIN", "subtitle": "问答与事务流程", "items": ["制度问答", "班车", "住宿", "车辆", "通知"], "detail": ["AI 问答与事务流程分别记账。"], "status": "历史运行｜健康未核｜成效基线待补", "source_ids": ["ASSET-ADMIN"], "related_ids": ["organization"], "actions": ["office"]},
         {"id": "finance", "title": "财务", "subtitle": "口径、成本与收益核定", "items": ["经营口径", "投入成本", "收益归因"], "detail": ["经营数据不是 AI 成效或可支配预算。"], "status": "公开经营口径已核；内部系统待确认", "source_ids": ["FIN-2025-P49", "PAN-DOMAINS"], "related_ids": ["quality"], "actions": []},
         {"id": "quality", "title": "质量", "subtitle": "基线、复核与结果", "items": ["验收规范", "问题复核", "效果基线"], "detail": ["建设阶段、运行状态和业务成效分别表达。"], "status": "业务效果基线未建立", "source_ids": ["ASSET-FAE", "PAN-DOMAINS"], "related_ids": ["technology", "supply", "delivery"], "actions": ["review"]},
         {"id": "legal", "title": "法务", "subtitle": "数据用途与授权边界", "items": ["资料用途", "保存范围", "授权记录"], "detail": ["未取得内部职责与系统授权材料。"], "status": "待确认", "source_ids": ["ORG-SCOPE"], "related_ids": ["organization"], "actions": ["governance"]},
@@ -195,7 +195,7 @@ def export_layout(generated_at: str | None = None) -> tuple[ExportPrimitive, ...
         row_y = 215 + (index // 2) * 23
         rect(col_x, row_y + 4, 9, 9, color, radius=2)
         text(col_x + 17, row_y, f"{segment['label']}  {_percent(segment['amount_cents'])}", size=12, bold=True)
-    text(812, 261, "主营业务收入分母 935,044,822.49 元｜工业级毛利率 66.79%（非收入占比或投资优先级）",
+    text(812, 261, f"主营业务收入分母 {PANORAMA['revenue']['denominator_cents'] / 100:,.2f} 元｜" + PANORAMA["revenue"]["note"],
          size=11, color="#63748b", wrap_units=94)
 
     text(60, 324, "03", size=11, bold=True, color="#1767d2")

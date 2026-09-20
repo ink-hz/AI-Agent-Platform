@@ -16,7 +16,7 @@ import { navigate, currentLocationPath, type Route } from "../router";
 import { PanoramaView } from "../panorama/PanoramaView";
 import { fetchPanorama } from "../panorama/panoramaApi";
 import type { PanoramaData, PanoramaActionId } from "../panoramaTypes";
-import { actionPath, workspaceGroup } from "../panoramaNavigation";
+import { actionPath, workspaceGroup, registerPanoramaLeaveGuard } from "../panoramaNavigation";
 import { PanoramaWorkArea } from "../PanoramaWorkArea";
 import "../panoramaWorkspace.css";
 
@@ -269,6 +269,12 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   const evidencePanel = useRef<HTMLElement>(null);
   useDocumentTitle(data ? `${data.title} · ${PLATFORM_TITLE}` : PLATFORM_TITLE);
   const deny = useCallback(() => { setData(null); setDocument(null); setEvidence(null); setAccess("denied"); dirty.current = false; }, []);
+  const authorizationFailure = useCallback((failure: unknown) => {
+    deny();
+    if (failure instanceof AiEngineeringApiError && failure.status === 401) {
+      onNavigate(`/login?return_path=${encodeURIComponent(currentLocationPath())}`);
+    }
+  }, [deny, onNavigate]);
   useEffect(() => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => { controller.abort(); deny(); }, ACCESS_PROBE_TIMEOUT_MS);
@@ -276,19 +282,19 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
       if (controller.signal.aborted) return;
       window.clearTimeout(timeout);
       if (allowed) setAccess("allowed"); else deny();
-    }).catch(() => { if (!controller.signal.aborted) { window.clearTimeout(timeout); deny(); } });
+    }).catch(failure => { if (!controller.signal.aborted) { window.clearTimeout(timeout); authorizationFailure(failure); } });
     return () => { window.clearTimeout(timeout); controller.abort(); };
-  }, [client, deny]);
+  }, [client, deny, authorizationFailure]);
   useEffect(() => {
     if (access !== "allowed") return;
     const controller = new AbortController();
     setError(false);
     void fetchPanorama(controller.signal).then(value => { if (!controller.signal.aborted) setData(value); }).catch(failure => {
       if (controller.signal.aborted) return;
-      if (isAuthorizationFailure(failure)) deny(); else setError(true);
+      if (isAuthorizationFailure(failure)) authorizationFailure(failure); else setError(true);
     });
     return () => controller.abort();
-  }, [access, attempt, deny]);
+  }, [access, attempt, deny, authorizationFailure]);
   useEffect(() => {
     if (access !== "allowed") return;
     let pending: {controller: AbortController; timeout: number} | null = null;
@@ -299,21 +305,21 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
       pending = {controller, timeout};
       void client.fetchAccess(controller.signal).then(result => {
         if (!controller.signal.aborted && !result.allowed) deny();
-      }).catch(() => { if (!controller.signal.aborted) deny(); }).finally(() => window.clearTimeout(timeout));
+      }).catch(failure => { if (!controller.signal.aborted) authorizationFailure(failure); }).finally(() => window.clearTimeout(timeout));
     };
     const timer = window.setInterval(check, 60_000);
     window.addEventListener("focus", check);
     return () => { if (pending) { pending.controller.abort(); window.clearTimeout(pending.timeout); } window.clearInterval(timer); window.removeEventListener("focus", check); };
-  }, [access, client, deny]);
+  }, [access, client, deny, authorizationFailure]);
   useEffect(() => {
     if (access !== "allowed" || !evidence) return;
     const controller = new AbortController(); setDocument(null); setDocumentError(false);
     void client.fetchDocument(evidence, controller.signal).then(value => { if (!controller.signal.aborted) setDocument(value); }).catch(failure => {
       if (controller.signal.aborted) return;
-      if (isAuthorizationFailure(failure)) deny(); else setDocumentError(true);
+      if (isAuthorizationFailure(failure)) authorizationFailure(failure); else setDocumentError(true);
     });
     return () => controller.abort();
-  }, [access, client, evidence, deny]);
+  }, [access, client, evidence, deny, authorizationFailure]);
   useEffect(() => {
     if (!workspaceRoute) return;
     const group = workspaceGroup(workspaceRoute);
@@ -330,6 +336,13 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
     evidencePanel.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => previous?.focus();
   }, [evidence]);
+  useEffect(() => registerPanoramaLeaveGuard(path => {
+    // Returning to the graph keeps the current business component mounted.
+    if (!dirty.current || path === "/" || path === "/ai-engineering" || path === lastWorkspace.current?.path) return true;
+    if (!window.confirm("当前工作区有未保存输入或未确认的提交结果。确定离开？取消可保留原输入和重试请求。")) return false;
+    dirty.current = false;
+    return true;
+  }), []);
   const closeWorkspace = useCallback(() => { onNavigate("/"); window.requestAnimationFrame(() => graph.current?.focus()); }, [onNavigate]);
   const openAction = (action: PanoramaActionId) => {
     if (action === "access" && account.role !== "platform_owner") return;
@@ -373,10 +386,12 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   </article>;
 }
 
+const navigateFromPanorama = (path: string) => navigate(path, {state: {panorama: true}});
+
 export function AiEngineeringLanding({
   account,
   client = aiEngineeringClient,
-  onNavigate = (path: string) => navigate(path, {state: {panorama: true}}),
+  onNavigate = navigateFromPanorama,
   ...props
 }: LandingProps) {
   const Session = props.selectedDocument ? AiEngineeringSession : PanoramaSession;

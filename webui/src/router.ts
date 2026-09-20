@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { workspaceGroup } from "./panoramaNavigation";
+import { workspaceGroup, allowPanoramaNavigation } from "./panoramaNavigation";
 
 import { localPathname, platformPath } from "./auth";
 import { STATUS_LABELS } from "./components/review/IssueList";
@@ -468,7 +468,7 @@ export function currentLocationPath(): string {
 
 
 export function navigate(path: string, options: NavigateOptions = {}): void {
-  if (currentLocationPath() === path) return;
+  if (currentLocationPath() === path || !allowPanoramaNavigation(path)) return;
   const target = platformPath(path);
   const destination = new URL(target, window.location.origin);
   const nextRoute = parseRoute(destination.pathname, destination.search);
@@ -489,7 +489,18 @@ export function navigate(path: string, options: NavigateOptions = {}): void {
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.pathname, window.location.search));
   useEffect(() => {
-    const update = () => setRoute(parseRoute(window.location.pathname, window.location.search));
+    let previousPath = currentLocationPath();
+    let previousState: unknown = window.history.state;
+    const update = (event: Event) => {
+      const path = currentLocationPath();
+      if (event.type === "popstate" && path !== previousPath && !allowPanoramaNavigation(path)) {
+        window.history.pushState(previousState, "", platformPath(previousPath));
+        return;
+      }
+      previousPath = path;
+      previousState = window.history.state;
+      setRoute(parseRoute(window.location.pathname, window.location.search));
+    };
     window.addEventListener("popstate", update);
     window.addEventListener("platform:navigate", update);
     return () => {

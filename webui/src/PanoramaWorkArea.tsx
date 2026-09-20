@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ReactNode } from 'react';
 import type { Route } from './router';
 import { workspaceGroup } from './panoramaNavigation';
+import { WorkspaceDraftCommit } from "./workspaceDraft";
 import { routeDocumentTitle } from './documentTitle';
 
 class WorkspaceBoundary extends Component<{children: ReactNode}, {failed: boolean}> {
@@ -20,8 +21,8 @@ export function PanoramaWorkArea({route,renderWorkspace,onClose,onDirty}: {
  },[route,onClose]);
  const retained=route??saved;
  if(!retained) return null;
- return <section className="panorama-work-area" hidden={!route} aria-label="图内工作区" onInputCapture={()=>onDirty(true)} onSubmitCapture={()=>onDirty(false)}>
+ return <section className="panorama-work-area" hidden={!route} aria-label="图内工作区" onInputCapture={()=>onDirty(true)}>
    <header className="panorama-work-area-heading"><div><span>AI 工程全景 / 共用能力</span><h2>{routeDocumentTitle(retained).split(' · ')[0]}</h2></div><button type="button" onClick={onClose}>回到全景</button></header>
-   <div className="panorama-work-area-body"><WorkspaceBoundary key={workspaceGroup(retained)}>{renderWorkspace(retained)}</WorkspaceBoundary></div>
+   <div className="panorama-work-area-body"><WorkspaceBoundary key={workspaceGroup(retained)}><WorkspaceDraftCommit.Provider value={() => onDirty(false)}>{renderWorkspace(retained)}</WorkspaceDraftCommit.Provider></WorkspaceBoundary></div>
  </section>;
 }

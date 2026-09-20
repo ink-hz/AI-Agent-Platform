@@ -33,3 +33,10 @@ export function isPanoramaLocation(route: Route): boolean {
  return route.name === 'home' || route.name === 'ai-engineering'
    || (window.history.state?.panorama === true && workspaceGroup(route) !== null);
 }
+
+let leaveGuard: ((path: string) => boolean) | undefined;
+export function registerPanoramaLeaveGuard(guard: (path: string) => boolean): () => void {
+ leaveGuard = guard;
+ return () => { if (leaveGuard === guard) leaveGuard = undefined; };
+}
+export function allowPanoramaNavigation(path: string): boolean { return leaveGuard?.(path) ?? true; }

@@ -4,6 +4,7 @@ import { platformPath, type Account } from "../auth";
 import { ConversationApiError, conversationInputTooLarge, startConversation, type ConversationSubmission } from "../conversationApi";
 import type { Conversation } from "../conversationTypes";
 import { navigate } from "../router";
+import { useWorkspaceDraftCommit } from "../workspaceDraft";
 
 export interface BrainPageClient {
   createSubmission(text: string, csrfToken: string): ConversationSubmission;
@@ -31,6 +32,7 @@ export function BrainPage({
   onOpenAiNotes?: (path: string) => void;
   onOpenConversation?: (path: string) => void;
 }) {
+  const commitDraft = useWorkspaceDraftCommit();
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<"unavailable" | "other" | null>(null);
@@ -59,6 +61,7 @@ export function BrainPage({
       const result = await selected.submission.send(controller.signal);
       retained.current = null;
       onConversationCreated?.(result.conversation);
+      commitDraft();
       onOpenConversation(`/conversations/${encodeURIComponent(result.conversation.conversation_id)}`);
     } catch (error) {
       if (!controller.signal.aborted) {
