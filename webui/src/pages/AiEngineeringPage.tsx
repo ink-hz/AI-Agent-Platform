@@ -111,6 +111,7 @@ interface LandingProps {
   fallback: ReactNode;
   selectedDocument?: AiEngineeringDocumentSlug;
   onNavigate?: (path: string) => void;
+  onAccessDenied?: () => void;
   workspaceRoute?: Route;
   renderWorkspace?: (route: Route) => ReactNode;
 }
@@ -120,8 +121,9 @@ interface SessionProps extends LandingProps {
   onNavigate: (path: string) => void;
 }
 
-function AiEngineeringSession({ account, client, direct = false, fallback, selectedDocument, onNavigate }: SessionProps) {
+function AiEngineeringSession({ account, client, direct = false, fallback, selectedDocument, onNavigate, onAccessDenied }: SessionProps) {
   const [access, setAccess] = useState<"checking" | "allowed" | "fallback" | "denied">("checking");
+  useEffect(() => { if (access === "denied") onAccessDenied?.(); }, [access, onAccessDenied]);
   const [index, setIndex] = useState<AiEngineeringIndex | null>(null);
   const [document, setDocument] = useState<AiEngineeringDocument | null>(null);
   const [contentError, setContentError] = useState(false);
@@ -207,7 +209,7 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
   }, [access, client, direct, index, selected]);
 
   if (access === "fallback") return <>{fallback}</>;
-  if (access === "denied") return pageState("无权访问 AI 工程全景", "当前账号不在该内部资料的授权范围内。", "alert");
+  if (access === "denied") return pageState("无权限", "请联系苍渊。", "alert");
   if (access === "checking") return pageState("正在确认访问权限", "正在安全地检查该账号的阅读权限。");
   if (contentError) return pageState("AI 工程全景暂时不可用", "受保护内容暂时无法读取，请稍后再试。", "alert");
   if (!index || !document) return pageState("正在打开 AI 工程全景", "正在读取受保护的最新版本。");
@@ -254,8 +256,9 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
 
 function documentActiveElement(): HTMLElement | null { return window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null; }
 
-function PanoramaSession({ account, client, direct = false, fallback, onNavigate, workspaceRoute, renderWorkspace }: SessionProps) {
+function PanoramaSession({ account, client, direct = false, fallback, onNavigate, onAccessDenied, workspaceRoute, renderWorkspace }: SessionProps) {
   const [access, setAccess] = useState<"checking" | "allowed" | "denied">("checking");
+  useEffect(() => { if (access === "denied") onAccessDenied?.(); }, [access, onAccessDenied]);
   const [data, setData] = useState<PanoramaData | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -362,7 +365,7 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
     }
     onNavigate(previous?.group === action ? previous.path : target.path);
   };
-  if (access === "denied") return direct ? pageState("无权访问 AI 工程全景", "请重新登录或由管理员确认权限。", "alert") : <>{fallback}</>;
+  if (access === "denied") return direct ? pageState("无权限", "请联系苍渊。", "alert") : <>{fallback}</>;
   if (access === "checking") return pageState("正在确认访问权限", "正在确认企业账号。");
   return <article className="panorama-home">
     <div ref={graph} tabIndex={-1} hidden={!!workspaceRoute} inert={!!evidence}>
@@ -400,6 +403,9 @@ export function AiEngineeringLanding({
   onNavigate = navigateFromPanorama,
   ...props
 }: LandingProps) {
+  if (account.role !== "platform_admin" && account.role !== "platform_owner") {
+    return pageState("无权限", "请联系苍渊。", "alert");
+  }
   const Session = props.selectedDocument ? AiEngineeringSession : PanoramaSession;
   return <Session {...props} account={account} client={client}
     key={`${account.internal_user_id}:${account.role}`} onNavigate={onNavigate} />;

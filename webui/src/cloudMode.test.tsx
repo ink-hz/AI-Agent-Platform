@@ -69,16 +69,16 @@ describe("cloud replica mode", () => {
     });
   });
 
-  it("keeps the admin homepage separate from member service subpaths", async () => {
+  it.each(["member", "management_viewer"].flatMap(role => ["/", "/ai-engineering?document=products", "/brain"].map(path => ({ role, path }))))("denies $role on panorama entry $path without loading private content", async ({ role, path }) => {
     const meta = document.createElement("meta");
     meta.name = "platform-identity-mode";
     meta.content = "enabled";
     document.head.append(meta);
-    window.history.replaceState({}, "", "/");
+    window.history.replaceState({ panorama: true }, "", path);
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const path = String(input);
       if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify({
-        internal_user_id: "member", display_name: "成员", role: "member",
+        internal_user_id: "member", display_name: "成员", role,
         departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [],
         directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -86,7 +86,11 @@ describe("cloud replica mode", () => {
       return new Response("{}", { status: 404 });
     });
     await act(async () => root.render(<App />));
-    expect(container.textContent).toContain("无权访问 AI 工程全景");
+    expect(container.textContent).toContain("无权限");
+    expect(container.textContent).toContain("请联系苍渊");
+    expect(container.querySelector(".platform-sidebar")).toBeNull();
+    expect(container.querySelector(".topbar")).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/ai-engineering"))).toBe(false);
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/conversations"))).toBe(false);
     expect(parseRoute("/hr/")).toEqual({ name: "legacy-redirect", to: "/hr/", navigation: "document" });
   });

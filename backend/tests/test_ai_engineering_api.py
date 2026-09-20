@@ -347,3 +347,34 @@ def test_deep_link_shared_shell_reaches_login_without_private_content(tmp_path, 
         assert 'no-store' in response.headers['cache-control']
     for suffix in CONTENT:
         assert client.get(prefix.rstrip('/') + PREFIX + suffix).status_code == 401
+
+
+@pytest.mark.parametrize('role', list(Role))
+@pytest.mark.parametrize('prefix', ['/', '/_preview/dingtalk-r1/'])
+@pytest.mark.parametrize('path', ['', 'ai-engineering', 'ai-engineering?document=products'])
+def test_home_shell_is_admin_only_with_contact_notice(tmp_path, monkeypatch, role, prefix, path):
+    from app.control_plane.models import IdentityMode
+    auth = FakeAuth(mode=IdentityMode.PREVIEW if prefix != '/' else IdentityMode.PRODUCTION, prefix=prefix)
+    auth.context = AuthContext(uuid4(), role, uuid4(), False)
+    client = TestClient(_app(tmp_path, monkeypatch, auth), base_url='https://agent.example.test')
+    client.cookies.set(auth.cookie_name, 'valid-cookie')
+    response = client.get(prefix + path, headers={'X-Role': 'platform_admin'})
+    if role in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:
+        assert response.status_code == 200
+        assert 'LOGIN SHELL' in response.text
+    else:
+        assert response.status_code == 403
+        assert '无权限' in response.text and '请联系苍渊' in response.text
+        assert 'LOGIN SHELL' not in response.text
+        assert '<script' not in response.text
+        assert_private(response)
+
+
+def test_home_shell_rechecks_revoked_role_on_the_same_session(tmp_path, monkeypatch):
+    client, auth = client_for(tmp_path, monkeypatch)
+    client.cookies.set(auth.cookie_name, 'valid-cookie')
+    assert client.get('/').status_code == 200
+    auth.context = AuthContext(auth.context.internal_user_id, Role.MEMBER, auth.context.session_id, False)
+    assert client.get('/').status_code == 403
+    assert client.get('/ai-engineering').status_code == 403
+    assert client.get('/hr/').status_code == 200

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from ipaddress import ip_address
 from typing import Any
@@ -28,6 +30,29 @@ from .models import AuthContext, IssuedWebSession, Role
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+
+
+def _home_access_denied() -> HTMLResponse:
+    # Standalone denial: no platform shell, script, business content, or user data.
+    style = """body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#e2eaf3;color:#172f4a;font-family:system-ui,'PingFang SC','Microsoft YaHei',sans-serif}main{margin:24px;padding:40px 56px;border:1px solid #bacadc;border-radius:16px;background:#fff;text-align:center}h1{margin:0 0 14px;font-size:28px}p{margin:0;color:#52667e;font-size:16px}"""
+    style_hash = base64.b64encode(hashlib.sha256(style.encode()).digest()).decode()
+    return HTMLResponse(
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>无权限 · Orbbec Agent Platform</title>'
+        f'<style>{style}</style></head><body><main role="alert">'
+        '<h1>无权限</h1><p>请联系苍渊。</p></main></body></html>',
+        status_code=403,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": (
+                "default-src 'none'; base-uri 'none'; object-src 'none'; "
+                f"frame-ancestors 'none'; style-src 'sha256-{style_hash}'"
+            ),
+        },
+    )
 
 
 def _login_csp(auth) -> str:
@@ -192,7 +217,10 @@ def build_auth_router(
     @router.get("/", include_in_schema=False)
     async def root(request: Request):
         token = request.cookies.get(auth.cookie_name)
-        if token and auth.authenticate(token) is not None:
+        session = auth.authenticate(token) if token else None
+        if session is not None:
+            if session[0].role not in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:
+                return _home_access_denied()
             return application_shell()
         return RedirectResponse(_local_path(auth, "/login"), status_code=302, headers=_NO_STORE)
 
@@ -220,8 +248,16 @@ def build_auth_router(
             )
         return response
 
-    @router.get("/brain", include_in_schema=False)
     @router.get("/ai-engineering", include_in_schema=False)
+    async def ai_engineering_shell(request: Request):
+        token = request.cookies.get(auth.cookie_name)
+        session = auth.authenticate(token) if token else None
+        if session is not None and session[0].role not in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:
+            return _home_access_denied()
+        # A missing/expired identity still boots the existing login flow.
+        return application_shell()
+
+    @router.get("/brain", include_in_schema=False)
     @router.get("/account", include_in_schema=False)
     @router.get("/agents", include_in_schema=False)
     @router.get("/agents/{client_path:path}", include_in_schema=False)

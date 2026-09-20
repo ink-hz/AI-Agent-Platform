@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "./AppShell";
 import { isPanoramaLocation, workspaceGroup } from "./panoramaNavigation";
@@ -162,6 +162,8 @@ export default function App() {
   const [failure, setFailure] = useState<"permission" | "directory" | "unavailable" | null>(null);
   const [loading, setLoading] = useState(identityMode && route.name !== "login");
   const [accountAttempt, setAccountAttempt] = useState(0);
+  const [panoramaAccessDenied, setPanoramaAccessDenied] = useState(false);
+  const denyPanoramaAccess = useCallback(() => setPanoramaAccessDenied(true), []);
   const loginRoute = route.name === "login";
   useDocumentTitle(routeDocumentTitle(route));
   useEffect(() => {
@@ -189,9 +191,14 @@ export default function App() {
 
   if (loginRoute) return <LoginPage />;
   if (loading) return <AccessState title="正在进入 Agent Platform" description="正在确认您的企业账号，通常只需片刻。" />;
-  if (failure === "permission") return <AccessState title="无权访问" description="当前账号没有该入口的访问权限。" />;
+  if (failure === "permission") return isPanoramaLocation(route)
+    ? <AccessState title="无权限" description="请联系苍渊。" />
+    : <AccessState title="无权访问" description="当前账号没有该入口的访问权限。" />;
   if (failure === "directory") return <AccessState title="暂时无法确认企业账号" description="企业通讯录同步可能延迟，请稍后重试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
+  if (isPanoramaLocation(route) && (panoramaAccessDenied || !account || (account.role !== "platform_admin" && account.role !== "platform_owner"))) {
+    return <AccessState title="无权限" description="请联系苍渊。" />;
+  }
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
   if (!legacyMode && account) {
     const usageRoute = ["home", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
@@ -207,6 +214,7 @@ export default function App() {
   return <AppShell route={route} account={account} panorama={panorama}>
     {account && <AccessEventReporter account={account} route={route} />}
     {panorama && account ? <AiEngineeringLanding account={account} direct fallback={null}
+      onAccessDenied={denyPanoramaAccess}
       selectedDocument={route.name === "ai-engineering" ? route.documentSlug : undefined}
       workspaceRoute={workspaceGroup(route) ? route : undefined}
       renderWorkspace={selected => productPage(selected, account)} /> : productPage(route, account ?? undefined)}

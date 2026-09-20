@@ -74,7 +74,7 @@ describe("AiEngineeringLanding", () => {
       <AiEngineeringLanding account={owner} client={client} direct selectedDocument="overview" fallback={null} />,
     ));
 
-    expect(container.textContent).toContain("无权访问 AI 工程全景");
+    expect(container.textContent).toContain("无权限");
     expect(client.fetchIndex).not.toHaveBeenCalled();
   });
 
@@ -138,7 +138,7 @@ describe("AiEngineeringLanding", () => {
       <AiEngineeringLanding account={owner} client={client} direct selectedDocument="reading" fallback={<div>旧 AI 助手</div>} />,
     ));
 
-    expect(container.textContent).toContain("无权访问 AI 工程全景");
+    expect(container.textContent).toContain("无权限");
     expect(container.querySelector(".ai-engineering-markdown")).toBeNull();
   });
 

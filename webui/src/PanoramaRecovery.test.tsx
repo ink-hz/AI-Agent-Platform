@@ -56,5 +56,9 @@ it('revocation on focus removes both the panorama and retained private workspace
  await act(async()=>[...box.querySelectorAll('button')].find(b=>b.textContent==='回到全景')!.click());
  expect(box.querySelector('#brain-request')).not.toBeNull();permitted=false;
  await act(async()=>window.dispatchEvent(new Event('focus')));
- expect(box.querySelector('#brain-request')).toBeNull();expect(box.textContent).not.toContain('测试全景');expect(box.textContent).toContain('无权访问');
+ expect(box.querySelector('#brain-request')).toBeNull();expect(box.textContent).not.toContain('测试全景');expect(box.textContent).toContain('无权限');expect(box.textContent).toContain('请联系苍渊');
+ expect(box.querySelector('.platform-sidebar')).toBeNull();expect(box.querySelector('.topbar')).toBeNull();
+ // The denied panorama must not poison independently authorized member pages.
+ await act(async()=>{window.history.replaceState({},'', '/brain');window.dispatchEvent(new PopStateEvent('popstate'));});
+ expect(box.querySelector('#brain-request')).not.toBeNull();expect(box.textContent).not.toContain('请联系苍渊');
 });

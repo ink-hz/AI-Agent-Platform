@@ -413,6 +413,7 @@ class IdentitySecurityMiddleware:
                 response_headers["Cache-Control"] = (
                     "private, no-store"
                     if ai_engineering_response or local_path == "/api/v1/account"
+                    or (local_path == "/" and message["status"] == 403)
                     or _is_conversation_attachment_response_path(local_path)
                     else "no-store"
                 )
