@@ -78,8 +78,10 @@ def build_ai_engineering_router() -> APIRouter:
         })
 
     @router.get('/export.svg')
-    def export_svg(request: Request):
+    def export_svg(request: Request, version: str | None = None):
         allowed(request)
+        if version is not None and version != PANORAMA['version']:
+            raise _failure(409, 'panorama version mismatch')
         return Response(render_svg(), media_type='image/svg+xml', headers={
             **_PRIVATE,
             'Content-Disposition': 'attachment; filename="orbbec-ai-panorama.svg"',
@@ -88,8 +90,10 @@ def build_ai_engineering_router() -> APIRouter:
         })
 
     @router.get('/export.png')
-    def export_png(request: Request):
+    def export_png(request: Request, version: str | None = None):
         allowed(request)
+        if version is not None and version != PANORAMA['version']:
+            raise _failure(409, 'panorama version mismatch')
         return Response(render_png(), media_type='image/png', headers={
             **_PRIVATE,
             'Content-Disposition': 'attachment; filename="orbbec-ai-panorama.png"',

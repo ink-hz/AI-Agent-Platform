@@ -148,9 +148,53 @@ def test_panorama_exports_are_same_version_private_and_1920_by_1080(tmp_path, mo
     assert '<svg' in svg and 'width="1920"' in svg and 'height="1080"' in svg
     assert data_response.json()['version'] in svg
     assert '生成时间' in svg and '数据时间' in svg and '来源编号' in svg
+    assert '主营业务收入分母 935,044,822.49 元' in svg
+    assert '工业级毛利率 66.79%' in svg
+    for domain in data_response.json()['domains']:
+        assert all(item in svg for item in domain['items'])
+        assert domain['status'] in svg
+    for source in data_response.json()['sources']:
+        assert f"{source['id']}｜{source['label']}" in svg
     with Image.open(BytesIO(png_response.content)) as image:
         assert image.size == (1920, 1080)
         assert image.format == 'PNG'
+
+
+@pytest.mark.parametrize('suffix', ['/export.svg', '/export.png'])
+def test_export_rejects_requested_content_version_mismatch(tmp_path, monkeypatch, suffix):
+    client, auth = client_for(tmp_path, monkeypatch)
+    client.cookies.set(auth.cookie_name, 'valid-cookie')
+
+    assert client.get(PREFIX + suffix + '?version=2026-09-20.v1').status_code == 200
+    response = client.get(PREFIX + suffix + '?version=stale-version')
+    assert response.status_code == 409
+    assert response.json()['detail'] == 'panorama version mismatch'
+    assert_private(response)
+
+
+def test_exports_share_complete_light_layout_primitives():
+    from app.ai_engineering.panorama import PANORAMA, export_layout
+
+    layout = export_layout('2026-09-20T00:00:00Z')
+    texts = [item.text for item in layout if item.kind == 'text']
+    assert layout[0].kind == 'rect'
+    assert layout[0].fill == '#f5f8fb'
+    for domain in [*PANORAMA['domains'], *PANORAMA['support']]:
+        assert domain['status'] in texts
+        assert all(any(value in text for text in texts) for value in domain['items'])
+    assert any('935,044,822.49 元' in text for text in texts)
+    assert any('66.79%' in text for text in texts)
+    revenue_rectangles = [item for item in layout if item.kind == 'rect' and item.y == 178]
+    assert sum(item.width for item in revenue_rectangles) == 1026
+    expected = [624.27, 311.14, 27.31, 37.26]
+    assert [round(item.width / 1026 * 1000, 2) for item in revenue_rectangles] == pytest.approx(expected, abs=1.0)
+
+
+def test_cloud_runtime_installs_cjk_font_for_png_export():
+    from pathlib import Path
+
+    dockerfile = (Path(__file__).parents[2] / 'deploy/cloud/Dockerfile').read_text()
+    assert 'fonts-noto-cjk' in dockerfile
 
 
 @pytest.mark.parametrize('prefix', ['/', '/_preview/dingtalk-r1/'])

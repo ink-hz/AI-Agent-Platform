@@ -25,6 +25,7 @@ RUN sed -i \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
       bubblewrap \
+      fonts-noto-cjk \
       libmagic1 \
       poppler-utils \
     && rm -rf /var/lib/apt/lists/*

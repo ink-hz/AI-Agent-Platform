@@ -4,7 +4,10 @@ import hashlib
 import html
 import io
 import json
+import unicodedata
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -124,108 +127,195 @@ def _percent(amount: int) -> str:
     return f"{amount / PANORAMA['revenue']['denominator_cents'] * 100:.2f}%"
 
 
-def render_svg() -> bytes:
-    generated = _generated_at()
-    esc = lambda value: html.escape(str(value), quote=True)
-    blocks: list[str] = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}">',
-        '<rect width="1920" height="1080" fill="#07131f"/>',
-        '<style>text{font-family:system-ui,"Noto Sans CJK SC",sans-serif;fill:#eef6ff}.muted{fill:#9fb4c8}.card{fill:#102637;stroke:#2d5269;stroke-width:2}.accent{fill:#61d8c6}.warn{fill:#ffc56e}</style>',
-        f'<text x="70" y="72" font-size="36" font-weight="700">{esc(PANORAMA["title"])}</text>',
-        f'<text x="70" y="108" font-size="17" class="muted">内容版本 {esc(PANORAMA["version"])}｜数据时间 {esc(PANORAMA["updated_at"])}｜生成时间 {esc(generated)}</text>',
-        '<rect class="card" x="70" y="140" width="1780" height="155" rx="18"/>',
-        f'<text x="100" y="180" font-size="20" class="accent">经营背景｜{esc(PANORAMA["context"]["period"])}</text>',
-    ]
+@dataclass(frozen=True)
+class ExportPrimitive:
+    kind: str
+    x: int
+    y: int
+    width: int = 0
+    height: int = 0
+    fill: str = ""
+    stroke: str = ""
+    radius: int = 0
+    text: str = ""
+    size: int = 14
+    bold: bool = False
+    color: str = "#10233d"
+    wrap_units: int = 0
+    align: str = "left"
+
+
+def export_layout(generated_at: str | None = None) -> tuple[ExportPrimitive, ...]:
+    """Build the single presentation model consumed by both export formats."""
+    generated_at = generated_at or _generated_at()
+    items: list[ExportPrimitive] = []
+
+    def rect(x: int, y: int, width: int, height: int, fill: str, *, stroke: str = "", radius: int = 0) -> None:
+        items.append(ExportPrimitive("rect", x, y, width, height, fill, stroke, radius))
+
+    def text(x: int, y: int, value: str, *, size: int = 14, bold: bool = False,
+             color: str = "#10233d", wrap_units: int = 0,
+             align: str = "left") -> None:
+        items.append(ExportPrimitive("text", x, y, text=value, size=size, bold=bold,
+                                     color=color, wrap_units=wrap_units, align=align))
+
+    rect(0, 0, WIDTH, HEIGHT, "#f5f8fb")
+    text(60, 32, "AI ENGINEERING PANORAMA", size=11, bold=True, color="#1767d2")
+    text(60, 49, PANORAMA["title"], size=34, bold=True)
+    text(60, 89, PANORAMA["context"]["observation"], size=14, color="#63748b")
+    text(1860, 38, f"内容版本 {PANORAMA['version']}", size=12, color="#63748b", align="right")
+    text(1860, 59, f"数据时间 {PANORAMA['updated_at']}", size=12, color="#63748b", align="right")
+    text(1860, 80, f"生成时间 {generated_at}", size=12, color="#63748b", align="right")
+
+    rect(60, 115, 710, 190, "#ffffff", stroke="#dbe6ee", radius=14)
+    text(82, 133, "01", size=11, bold=True, color="#1767d2")
+    text(118, 130, "为什么现在做 AI", size=18, bold=True)
+    text(118, 153, PANORAMA["context"]["period"], size=12, color="#63748b")
     for index, metric in enumerate(PANORAMA["context"]["metrics"]):
-        blocks.append(f'<text x="{100 + index * 455}" y="224" font-size="25" font-weight="650">{esc(metric["label"])}  {esc(metric["value"])}</text>')
-    blocks.extend([
-        f'<text x="100" y="264" font-size="18" class="muted">{esc(PANORAMA["context"]["observation"])} {esc(PANORAMA["context"]["judgment"])}</text>',
-        '<text x="70" y="338" font-size="21" font-weight="700">2025 主营收入构成｜同尺度原金额</text>',
-    ])
-    x = 70
-    for segment, color in zip(PANORAMA["revenue"]["segments"], ("#61d8c6", "#58a6ff", "#ffc56e", "#899aab"), strict=True):
-        width = round(1780 * segment["amount_cents"] / PANORAMA["revenue"]["denominator_cents"])
-        blocks.append(f'<rect x="{x}" y="360" width="{width}" height="42" fill="{color}"/>')
+        metric_x = 82 + index * 220
+        rect(metric_x, 181, 3, 50, "#2e93c3")
+        text(metric_x + 11, 181, metric["value"], size=16, bold=True, wrap_units=20)
+        text(metric_x + 11, 220, metric["label"], size=11, color="#63748b")
+    rect(82, 250, 666, 38, "#edf8f7", radius=8)
+    text(94, 258, PANORAMA["context"]["judgment"], size=12, bold=True,
+         color="#087379", wrap_units=78)
+
+    rect(790, 115, 1070, 190, "#ffffff", stroke="#dbe6ee", radius=14)
+    text(812, 133, "02", size=11, bold=True, color="#1767d2")
+    text(848, 130, "收入构成", size=18, bold=True)
+    text(848, 153, PANORAMA["revenue"]["period"] + " · 同尺度", size=12, color="#63748b")
+    x = 812
+    colors = ("#1767d2", "#07999a", "#5ac4b1", "#93a8bb")
+    for segment, color in zip(PANORAMA["revenue"]["segments"], colors, strict=True):
+        width = round(1026 * segment["amount_cents"] / PANORAMA["revenue"]["denominator_cents"])
+        rect(x, 178, width, 26, color)
         x += width
-    labels = "   ".join(f'{item["label"]} {_percent(item["amount_cents"])}' for item in PANORAMA["revenue"]["segments"])
-    blocks.append(f'<text x="70" y="432" font-size="19">{esc(labels)}</text>')
+    for index, (segment, color) in enumerate(zip(PANORAMA["revenue"]["segments"], colors, strict=True)):
+        col_x = 812 + (index % 2) * 510
+        row_y = 215 + (index // 2) * 23
+        rect(col_x, row_y + 4, 9, 9, color, radius=2)
+        text(col_x + 17, row_y, f"{segment['label']}  {_percent(segment['amount_cents'])}", size=12, bold=True)
+    text(812, 261, "主营业务收入分母 935,044,822.49 元｜工业级毛利率 66.79%（非收入占比或投资优先级）",
+         size=11, color="#63748b", wrap_units=94)
+
+    text(60, 324, "03", size=11, bold=True, color="#1767d2")
+    text(96, 319, "业务价值链与 AI 覆盖", size=19, bold=True)
+    text(330, 325, "五类为分析归组；建设、运行与业务效果分别表达", size=12, color="#63748b")
+    card_width = 344
     for index, domain in enumerate(PANORAMA["domains"]):
-        card_x = 70 + index * 356
-        blocks.extend([
-            f'<rect class="card" x="{card_x}" y="475" width="330" height="245" rx="16"/>',
-            f'<text x="{card_x + 22}" y="516" font-size="23" font-weight="700">{esc(domain["title"])}</text>',
-            f'<text x="{card_x + 22}" y="546" font-size="16" class="muted">{esc(domain["subtitle"])}</text>',
-        ])
-        for line_index, item in enumerate(domain["items"][:4]):
-            blocks.append(f'<text x="{card_x + 22}" y="{582 + line_index * 27}" font-size="17">• {esc(item)}</text>')
-        blocks.append(f'<text x="{card_x + 22}" y="696" font-size="14" class="warn">{esc(domain["status"][:20])}</text>')
-    support = "｜".join(item["title"] for item in PANORAMA["support"])
-    blocks.extend([
-        '<rect class="card" x="70" y="750" width="1780" height="82" rx="16"/>',
-        f'<text x="95" y="786" font-size="21" font-weight="700">管理支撑</text><text x="230" y="786" font-size="19">{esc(support)}</text>',
-        f'<text x="95" y="815" font-size="16" class="muted">共用能力｜{esc(PANORAMA["shared"]["status"])}</text>',
-        '<text x="70" y="878" font-size="22" font-weight="700">请管理层协调（提议，尚未获批）</text>',
-    ])
+        card_x = 60 + index * 360
+        rect(card_x, 353, card_width, 274, "#ffffff", stroke="#dbe6ee", radius=10)
+        text(card_x + 16, 370, domain["title"], size=18, bold=True)
+        text(card_x + 16, 397, domain["subtitle"], size=11, color="#63748b", wrap_units=36)
+        for line_index, value in enumerate(domain["items"]):
+            rect(card_x + 16, 427 + line_index * 27, 312, 22, "#edf2f6", radius=5)
+            text(card_x + 24, 430 + line_index * 27, value, size=12, color="#405b75", wrap_units=30)
+        text(card_x + 16, 569, domain["status"], size=11, bold=True,
+             color="#08777d", wrap_units=31)
+
+    text(60, 645, "管理支撑", size=15, bold=True)
+    for index, support in enumerate(PANORAMA["support"]):
+        card_x = 60 + index * 300
+        rect(card_x, 669, 284, 94, "#ffffff", stroke="#dbe6ee", radius=10)
+        text(card_x + 13, 681, support["title"], size=14, bold=True)
+        text(card_x + 13, 704, " · ".join(support["items"]), size=10, color="#405b75", wrap_units=31)
+        text(card_x + 13, 728, support["status"], size=10, bold=True,
+             color="#08777d", wrap_units=31)
+    rect(60, 775, 1800, 48, "#12365b", radius=10)
+    text(80, 787, "PLATFORM LAYER  ·  " + PANORAMA["shared"]["title"], size=15,
+         bold=True, color="#ffffff")
+    text(530, 789, PANORAMA["shared"]["status"], size=12, color="#bcd4df")
+
+    rect(60, 837, 1800, 112, "#ffffff", stroke="#dbe6ee", radius=14)
+    text(80, 853, "04  请管理层协调", size=17, bold=True)
+    text(270, 857, "提议 · 尚未获批", size=11, color="#63748b")
     for index, ask in enumerate(PANORAMA["asks"]):
-        blocks.append(f'<text x="90" y="{916 + index * 34}" font-size="18"><tspan class="accent">{esc(ask["owner"])}：</tspan>{esc(ask["request"])}</text>')
-    source_ids = "、".join(source["id"] for source in PANORAMA["sources"])
-    blocks.extend([
-        f'<text x="70" y="1038" font-size="13" class="muted">来源编号：{esc(source_ids)}</text>',
-        f'<text x="1850" y="1064" text-anchor="end" font-size="12" class="muted">内容 SHA-256 {content_hash()[:16]}…</text>',
-        '</svg>',
-    ])
+        ask_x = 80 + index * 588
+        rect(ask_x, 884, 3, 48, "#58b9b2")
+        text(ask_x + 12, 882, ask["owner"], size=11, bold=True, color="#08777d")
+        text(ask_x + 12, 902, ask["request"], size=11, wrap_units=51)
+
+    text(60, 964, "来源编号与页面映射", size=12, bold=True, color="#405b75")
+    for index, source in enumerate(PANORAMA["sources"]):
+        col_x = 60 + (index % 3) * 600
+        row_y = 986 + (index // 3) * 18
+        text(col_x, row_y, f"{source['id']}｜{source['label']} → {source['document']}",
+             size=10, color="#63748b", wrap_units=68)
+    text(60, 1060, "内容 SHA-256 " + content_hash(), size=9, color="#7b8b9c")
+    return tuple(items)
+
+
+def _wrap(value: str, max_units: int) -> list[str]:
+    if not max_units:
+        return [value]
+    lines: list[str] = []
+    current = ""
+    units = 0.0
+    for character in value:
+        weight = 1.0 if unicodedata.east_asian_width(character) in {"W", "F", "A"} else 0.55
+        if current and units + weight > max_units:
+            lines.append(current)
+            current, units = "", 0.0
+        current += character
+        units += weight
+    if current:
+        lines.append(current)
+    return lines
+
+
+def render_svg() -> bytes:
+    blocks = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}">',
+        '<style>text{font-family:"Noto Sans CJK SC",system-ui,sans-serif}</style>',
+    ]
+    for item in export_layout():
+        if item.kind == "rect":
+            stroke = f' stroke="{item.stroke}" stroke-width="1"' if item.stroke else ""
+            blocks.append(f'<rect x="{item.x}" y="{item.y}" width="{item.width}" height="{item.height}" fill="{item.fill}" rx="{item.radius}"{stroke}/>')
+            continue
+        lines = _wrap(item.text, item.wrap_units)
+        weight = "700" if item.bold else "400"
+        anchor = ' text-anchor="end"' if item.align == "right" else ""
+        blocks.append(f'<text aria-label="{html.escape(item.text, quote=True)}" x="{item.x}" y="{item.y + item.size}" font-size="{item.size}" font-weight="{weight}" fill="{item.color}"{anchor}>')
+        for index, line in enumerate(lines):
+            dy = "0" if index == 0 else str(round(item.size * 1.25))
+            blocks.append(f'<tspan x="{item.x}" dy="{dy}">{html.escape(line)}</tspan>')
+        blocks.append('</text>')
+    blocks.append('</svg>')
     return "".join(blocks).encode()
 
 
-def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+@lru_cache(maxsize=16)
+def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/System/Library/Fonts/STHeiti Medium.ttc" if bold else "/System/Library/Fonts/STHeiti Light.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     for candidate in candidates:
         if Path(candidate).is_file():
             return ImageFont.truetype(candidate, size)
-    return ImageFont.load_default(size=size)
+    raise RuntimeError("PNG export requires a CJK font (install fonts-noto-cjk)")
 
 
 def render_png() -> bytes:
-    image = Image.new("RGB", (WIDTH, HEIGHT), "#07131f")
+    image = Image.new("RGB", (WIDTH, HEIGHT), "#f5f8fb")
     draw = ImageDraw.Draw(image)
-    regular = _font(18)
-    small = _font(14)
-    heading = _font(24, bold=True)
-    title = _font(36, bold=True)
-    draw.text((70, 45), PANORAMA["title"], font=title, fill="#eef6ff")
-    draw.text((70, 95), f"内容版本 {PANORAMA['version']}｜数据时间 {PANORAMA['updated_at']}｜生成时间 {_generated_at()}", font=small, fill="#9fb4c8")
-    draw.rounded_rectangle((70, 140, 1850, 295), 18, fill="#102637", outline="#2d5269", width=2)
-    draw.text((100, 165), f"经营背景｜{PANORAMA['context']['period']}", font=heading, fill="#61d8c6")
-    for index, metric in enumerate(PANORAMA["context"]["metrics"]):
-        draw.text((100 + index * 455, 210), f"{metric['label']}  {metric['value']}", font=regular, fill="#eef6ff")
-    draw.text((100, 254), PANORAMA["context"]["observation"] + " " + PANORAMA["context"]["judgment"], font=small, fill="#9fb4c8")
-    draw.text((70, 320), "2025 主营收入构成｜同尺度原金额", font=heading, fill="#eef6ff")
-    x = 70
-    for segment, color in zip(PANORAMA["revenue"]["segments"], ("#61d8c6", "#58a6ff", "#ffc56e", "#899aab"), strict=True):
-        width = round(1780 * segment["amount_cents"] / PANORAMA["revenue"]["denominator_cents"])
-        draw.rectangle((x, 360, x + width, 402), fill=color)
-        x += width
-    draw.text((70, 415), "   ".join(f"{item['label']} {_percent(item['amount_cents'])}" for item in PANORAMA["revenue"]["segments"]), font=regular, fill="#eef6ff")
-    for index, domain in enumerate(PANORAMA["domains"]):
-        card_x = 70 + index * 356
-        draw.rounded_rectangle((card_x, 475, card_x + 330, 720), 16, fill="#102637", outline="#2d5269", width=2)
-        draw.text((card_x + 22, 495), domain["title"], font=heading, fill="#eef6ff")
-        draw.text((card_x + 22, 530), domain["subtitle"], font=small, fill="#9fb4c8")
-        for line_index, item in enumerate(domain["items"][:4]):
-            draw.text((card_x + 22, 570 + line_index * 28), "• " + item, font=regular, fill="#eef6ff")
-        draw.text((card_x + 22, 690), domain["status"][:20], font=small, fill="#ffc56e")
-    draw.rounded_rectangle((70, 750, 1850, 832), 16, fill="#102637", outline="#2d5269", width=2)
-    draw.text((95, 770), "管理支撑｜" + "｜".join(item["title"] for item in PANORAMA["support"]), font=regular, fill="#eef6ff")
-    draw.text((95, 802), "共用能力｜" + PANORAMA["shared"]["status"], font=small, fill="#9fb4c8")
-    draw.text((70, 858), "请管理层协调（提议，尚未获批）", font=heading, fill="#eef6ff")
-    for index, ask in enumerate(PANORAMA["asks"]):
-        draw.text((90, 900 + index * 34), f"{ask['owner']}：{ask['request']}", font=regular, fill="#eef6ff")
-    draw.text((70, 1025), "来源编号：" + "、".join(source["id"] for source in PANORAMA["sources"]), font=small, fill="#9fb4c8")
-    draw.text((70, 1052), "内容 SHA-256 " + content_hash(), font=small, fill="#9fb4c8")
+    for item in export_layout():
+        if item.kind == "rect":
+            draw.rounded_rectangle(
+                (item.x, item.y, item.x + item.width, item.y + item.height),
+                radius=item.radius, fill=item.fill, outline=item.stroke or None, width=1,
+            )
+            continue
+        lines = _wrap(item.text, item.wrap_units)
+        font = _font(item.size, item.bold)
+        x = item.x
+        if item.align == "right":
+            x -= max(draw.textlength(line, font=font) for line in lines)
+        draw.multiline_text(
+            (x, item.y), "\n".join(lines), font=font,
+            fill=item.color, spacing=round(item.size * .25),
+        )
     output = io.BytesIO()
     image.save(output, format="PNG", optimize=True)
     return output.getvalue()

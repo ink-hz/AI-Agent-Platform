@@ -30,6 +30,12 @@ STALE_ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), True)
 STALE_MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), True)
 STALE_VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), True)
 
+AI_ENGINEERING_PROTECTED_ROUTES = (
+    "/api/v1/ai-engineering/panorama",
+    "/api/v1/ai-engineering/export.svg",
+    "/api/v1/ai-engineering/export.png",
+)
+
 def _fae_routes(prefix: str) -> tuple[tuple[str, str], ...]:
     return (
         ("GET", f"{prefix}/overview"),
@@ -383,6 +389,24 @@ def test_partner_auth_namespace_never_grants_platform_authorization(
     assert decision.allowed is False
     assert decision.status_code == 403
     assert decision.reason == "route_not_authorized"
+
+
+@pytest.mark.parametrize("route", AI_ENGINEERING_PROTECTED_ROUTES)
+@pytest.mark.parametrize(
+    ("context", "expected_status"),
+    [
+        (None, 401), (MEMBER, 403), (VIEWER, 403),
+        (STALE_MEMBER, 403), (STALE_VIEWER, 403),
+        (ADMIN, 200), (OWNER, 200), (STALE_ADMIN, 200), (STALE_OWNER, 200),
+    ],
+)
+def test_ai_engineering_data_and_exports_use_real_central_policy(
+    route: str, context: AuthContext | None, expected_status: int
+) -> None:
+    decision = AuthorizationService(Grants()).decide(context, "GET", route, ())
+
+    assert decision.status_code == expected_status
+    assert decision.allowed is (expected_status == 200)
 
 
 @pytest.mark.parametrize("role", [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN, Role.MANAGEMENT_VIEWER])
