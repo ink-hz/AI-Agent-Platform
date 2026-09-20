@@ -34,7 +34,6 @@ from .agent_brain.turn_attempts import TurnAttemptRepository
 from .agent_brain.turn_result_projection import TurnResultProjector
 from .agent_brain.turn_snapshot import TurnSnapshotReader
 from .agent_catalog.routes import build_agent_catalog_router
-from .ai_engineering.access import PanoramaAccess
 from .ai_engineering.routes import build_ai_engineering_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
@@ -1531,7 +1530,7 @@ def create_app(
         app.include_router(build_hr_knowledge_router(hr_knowledge_repository, agent_use_authorization))
     if identity_enabled:
         app.include_router(
-            build_ai_engineering_router(PanoramaAccess(config.ai_engineering_allowlist_file)),
+            build_ai_engineering_router(),
             prefix=identity_auth.route_prefix.rstrip("/"),
         )
     if identity_enabled and ai_notes_reader is not None:

@@ -13,19 +13,11 @@ PREFIX = '/api/v1/ai-engineering'
 CONTENT = ['', '/documents/overview', '/assets/panorama.svg', '/assets/panorama.png']
 
 
-def write_policy(path, ids):
-    path.write_text(json.dumps({'schema_version': 1, 'internal_user_ids': ids}))
-    path.chmod(0o600)
-
-
-def client_for(tmp_path, monkeypatch, role=Role.MEMBER):
+def client_for(tmp_path, monkeypatch, role=Role.PLATFORM_ADMIN):
     auth = FakeAuth()
     auth.context = AuthContext(uuid4(), role, uuid4(), False)
-    policy = tmp_path / 'allowlist.json'
-    write_policy(policy, [])
-    monkeypatch.setenv('PLATFORM_AI_ENGINEERING_ALLOWLIST_FILE', str(policy))
     client = TestClient(_app(tmp_path, monkeypatch, auth), base_url='https://agent.example.test')
-    return client, auth, policy
+    return client, auth
 
 
 def assert_private(response):
@@ -34,30 +26,36 @@ def assert_private(response):
 
 
 @pytest.mark.parametrize('role', list(Role))
-def test_no_role_bypass_and_revocation(tmp_path, monkeypatch, role):
-    client, auth, policy = client_for(tmp_path, monkeypatch, role)
+def test_existing_platform_management_roles(tmp_path, monkeypatch, role):
+    client, auth = client_for(tmp_path, monkeypatch, role)
     client.cookies.set(auth.cookie_name, 'valid-cookie')
+    permitted = role in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}
+    assert client.get(PREFIX + '/access').json() == {'allowed': permitted}
+    for suffix in CONTENT:
+        response = client.get(PREFIX + suffix, headers={'X-Role': 'platform_admin'})
+        assert response.status_code == (200 if permitted else 403)
+        assert_private(response)
+
+
+@pytest.mark.parametrize('role', [Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER])
+def test_role_revocation_with_same_session(tmp_path, monkeypatch, role):
+    client, auth = client_for(tmp_path, monkeypatch, role)
+    client.cookies.set(auth.cookie_name, 'valid-cookie')
+    assert client.get(PREFIX).status_code == 200
+    auth.context = AuthContext(auth.context.internal_user_id, Role.MEMBER, auth.context.session_id, False)
     assert client.get(PREFIX + '/access').json() == {'allowed': False}
     for suffix in CONTENT:
-        denied = client.get(PREFIX + suffix, headers={'X-Internal-User-Id': str(auth.context.internal_user_id)})
-        assert denied.status_code == 403
-        assert_private(denied)
-    write_policy(policy, [str(auth.context.internal_user_id)])
-    assert client.get(PREFIX + '/access').json() == {'allowed': True}
-    for suffix in CONTENT:
-        allowed = client.get(PREFIX + suffix)
-        assert allowed.status_code == 200
-        assert_private(allowed)
-    replacement = policy.with_suffix('.next')
-    write_policy(replacement, [])
-    replacement.replace(policy)
-    for suffix in CONTENT:
         assert client.get(PREFIX + suffix).status_code == 403
+    # Shared identity remains available to independent /office/, /hr/ apps.
+    assert client.get('/api/v1/account').status_code == 200
+    assert client.get('/hr/').status_code == 200
+    from app.control_plane.auth import validate_return_path
+    for path in ['/office/', '/hr/', '/voc/', '/fae/']:
+        assert validate_return_path(path, route_prefix='/') == path
 
 
-def test_session_required_even_when_allowlisted(tmp_path, monkeypatch):
-    client, auth, policy = client_for(tmp_path, monkeypatch)
-    write_policy(policy, [str(auth.context.internal_user_id)])
+def test_session_required_even_for_admin(tmp_path, monkeypatch):
+    client, auth = client_for(tmp_path, monkeypatch)
     for suffix in ['/access', *CONTENT]:
         response = client.get(PREFIX + suffix)
         assert response.status_code == 401
@@ -67,42 +65,9 @@ def test_session_required_even_when_allowlisted(tmp_path, monkeypatch):
     assert client.get(PREFIX + '/documents/overview').status_code == 401
 
 
-@pytest.mark.parametrize('bad', ['missing', 'malformed', 'symlink', 'public', 'duplicate', 'name', 'bool'])
-def test_bad_policy_fails_closed_without_breaking_account(tmp_path, monkeypatch, bad):
-    client, auth, policy = client_for(tmp_path, monkeypatch)
-    client.cookies.set(auth.cookie_name, 'valid-cookie')
-    if bad == 'missing':
-        policy.unlink()
-    elif bad == 'malformed':
-        policy.write_text('secret-broken-json')
-    elif bad == 'symlink':
-        target = tmp_path / 'target.json'
-        write_policy(target, [str(auth.context.internal_user_id)])
-        policy.unlink()
-        policy.symlink_to(target)
-    elif bad == 'public':
-        policy.chmod(0o644)
-    elif bad == 'duplicate':
-        write_policy(policy, [str(auth.context.internal_user_id)] * 2)
-    elif bad == 'name':
-        write_policy(policy, ['CEO'])
-    else:
-        policy.write_text('{"schema_version":true,"internal_user_ids":[]}')
-    assert client.get(PREFIX + '/access').json() == {'allowed': False}
-    for suffix in CONTENT:
-        response = client.get(PREFIX + suffix)
-        assert response.status_code == 503
-        assert_private(response)
-        assert str(policy) not in response.text
-        assert 'secret-broken-json' not in response.text
-    assert client.get('/api/v1/account').status_code == 200
-    assert client.get('/brain').status_code == 200
-
-
 def test_fixed_content_paths_and_sources(tmp_path, monkeypatch):
-    client, auth, policy = client_for(tmp_path, monkeypatch)
+    client, auth = client_for(tmp_path, monkeypatch)
     client.cookies.set(auth.cookie_name, 'valid-cookie')
-    write_policy(policy, [str(auth.context.internal_user_id)])
     manifest = client.get(PREFIX).json()
     assert len(manifest['documents']) == 6
     for doc in manifest['documents']:
@@ -133,21 +98,13 @@ def test_prefixed_content_uses_same_gate(tmp_path, monkeypatch):
     from app.control_plane.models import IdentityMode
     prefix = '/_preview/dingtalk-r1/'
     auth = FakeAuth(mode=IdentityMode.PREVIEW, prefix=prefix)
-    policy = tmp_path / 'allowlist.json'
-    write_policy(policy, [str(auth.context.internal_user_id)])
-    monkeypatch.setenv('PLATFORM_AI_ENGINEERING_ALLOWLIST_FILE', str(policy))
     client = TestClient(_app(tmp_path, monkeypatch, auth), base_url='https://agent.example.test')
     client.cookies.set(auth.cookie_name, 'valid-cookie')
     assert client.get(prefix.rstrip('/') + PREFIX + '/documents/overview').status_code == 200
-    write_policy(policy, [])
+    auth.context = AuthContext(auth.context.internal_user_id, Role.MEMBER, auth.context.session_id, False)
     response = client.get(prefix.rstrip('/') + PREFIX + '/assets/panorama.svg')
     assert response.status_code == 403
     assert_private(response)
-
-
-def test_unconfigured_feature_denies_all(tmp_path, monkeypatch):
-    from app.ai_engineering.access import PanoramaAccess
-    assert PanoramaAccess('').allows(uuid4()) is False
 
 
 def test_content_snapshot_hashes():

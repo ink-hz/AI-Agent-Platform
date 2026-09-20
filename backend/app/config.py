@@ -105,7 +105,6 @@ class Config:
     partner_callback_method: Literal["GET", "POST"]
     partner_callback_path: str
     control_plane: ControlPlaneConfig
-    ai_engineering_allowlist_file: str = ""
     hr_web_worker_enabled: bool = False
     hr_agent_settings: HrAgentSettings = field(default_factory=HrAgentSettings)
     hr_role_package_root: str = ""
@@ -844,7 +843,6 @@ def load_config() -> Config:
         partner_provider_release_sha256,
     ) = _partner_provider_settings()
     config = Config(
-        ai_engineering_allowlist_file=os.getenv("PLATFORM_AI_ENGINEERING_ALLOWLIST_FILE", ""),
         deployment_mode=os.getenv("PLATFORM_DEPLOYMENT_MODE", "local"),
         cloud_auth_mode=os.getenv("PLATFORM_CLOUD_AUTH_MODE", "ssh-tunnel"),
         registry_path=os.getenv("PLATFORM_REGISTRY_PATH", "../registry.yaml"),

@@ -68,6 +68,28 @@ describe("cloud replica mode", () => {
     });
   });
 
+  it("keeps the admin homepage separate from member service subpaths", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "platform-identity-mode";
+    meta.content = "enabled";
+    document.head.append(meta);
+    window.history.replaceState({}, "", "/");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.endsWith("/api/v1/account")) return new Response(JSON.stringify({
+        internal_user_id: "member", display_name: "成员", role: "member",
+        departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [],
+        directory_freshness: "fresh", hard_stale_read_only: false, csrf_token: "csrf",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (path.endsWith("/api/v1/ai-engineering/access")) return new Response(JSON.stringify({ allowed: false }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response("{}", { status: 404 });
+    });
+    await act(async () => root.render(<App />));
+    expect(container.textContent).toContain("无权访问 AI 工程全景");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/conversations"))).toBe(false);
+    expect(parseRoute("/hr/")).toEqual({ name: "legacy-redirect", to: "/hr/", navigation: "document" });
+  });
+
   it("allows a member to open the AI notes product", async () => {
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
@@ -102,6 +124,7 @@ describe("cloud replica mode", () => {
   });
 
   it("opens the real Brain composer without a release availability gate", async () => {
+    window.history.replaceState({}, "", "/brain");
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
     identityMeta.content = "enabled";
@@ -119,7 +142,7 @@ describe("cloud replica mode", () => {
     expect(container.querySelector("#brain-request")).not.toBeNull();
   });
 
-  it("opens the authenticated cloud root as the continuous Agent Brain composer", async () => {
+  it("opens the authenticated admin root as the panorama homepage", async () => {
     const meta = document.createElement("meta");
     meta.name = "platform-identity-mode";
     meta.content = "enabled";
@@ -128,14 +151,18 @@ describe("cloud replica mode", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/api/v1/account")) return new Response(JSON.stringify({
-        internal_user_id: "member", display_name: "成员", role: "member",
+        internal_user_id: "member", display_name: "成员", role: "platform_admin",
         departments: [], gender: null,
         observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (url.includes("/api/v1/conversations")) return new Response(JSON.stringify({
-        items: [], next_cursor: null,
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/api/v1/ai-engineering/access")) return new Response(JSON.stringify({ allowed: true }), { status: 200 });
+      if (url.endsWith("/api/v1/ai-engineering")) return new Response(JSON.stringify({
+        title: "AI 工程全景", version: "v1", updated_at: "2026-09-20",
+        diagram: { svg_path: "/api/v1/ai-engineering/assets/panorama.svg", png_path: "/api/v1/ai-engineering/assets/panorama.png", alt: "全景" },
+        documents: [{ slug: "overview", title: "总览" }],
+      }), { status: 200 });
+      if (url.endsWith("/documents/overview")) return new Response(JSON.stringify({ slug: "overview", title: "总览", markdown: "管理员全景正文" }), { status: 200 });
       return new Response(JSON.stringify({
         mode: "local", read_only: false, auth: "dingtalk",
         freshness: "current", last_success_at: null,
@@ -145,10 +172,9 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.querySelector("#brain-heading")?.textContent).toBe("Agent 大脑");
-    expect(container.querySelector<HTMLTextAreaElement>("#brain-request")?.disabled).toBe(false);
-    expect(container.textContent).toContain("开始对话");
-    expect(container.textContent).not.toContain("Agent 集群总览");
+    expect(container.textContent).toContain("管理员全景正文");
+    expect(container.querySelector("#brain-request")).toBeNull();
+    expect(container.querySelector('a[href="/brain"]')).not.toBeNull();
   });
 
   it("returns an expired usage route to login with its safe Mission path", async () => {

@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-from .access import AllowlistUnavailable, PanoramaAccess
+from ..control_plane.models import Role
 
 _PRIVATE = {'Cache-Control': 'private, no-store', 'Pragma': 'no-cache', 'X-Content-Type-Options': 'nosniff'}
 _CONTENT = Path(__file__).parent / 'content'
@@ -34,19 +34,14 @@ def _read(filename: str) -> bytes:
         raise _failure(503, 'panorama content unavailable') from None
 
 
-def build_ai_engineering_router(access: PanoramaAccess) -> APIRouter:
+def build_ai_engineering_router() -> APIRouter:
     router = APIRouter(prefix='/api/v1/ai-engineering')
 
     def allowed(request: Request, *, probe=False) -> bool:
         context = getattr(request.state, 'auth_context', None)
         if context is None:
             raise _failure(401, 'authentication required')
-        try:
-            permitted = access.allows(context.internal_user_id)
-        except AllowlistUnavailable:
-            if probe:
-                return False
-            raise _failure(503, 'panorama access unavailable') from None
+        permitted = context.role in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}
         if not permitted and not probe:
             raise _failure(403, 'panorama access denied')
         return permitted

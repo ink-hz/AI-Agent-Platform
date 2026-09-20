@@ -1,1 +1,1 @@
-"""Private AI engineering panorama, independent of platform management roles."""
+"""Private AI engineering panorama for the platform management homepage."""

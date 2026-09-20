@@ -106,10 +106,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       window.location.replace(platformPath("/login"));
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
     case "home": return account
-      ? <AiEngineeringLanding account={account} fallback={<>
-        <AccessEventReporter account={account} route={{ name: "brain" }} />
-        <BrainWorkspacePage account={account} />
-      </>} />
+      ? <AiEngineeringLanding account={account} direct fallback={null} />
       : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
     case "brain": return account
       ? <BrainWorkspacePage account={account} />

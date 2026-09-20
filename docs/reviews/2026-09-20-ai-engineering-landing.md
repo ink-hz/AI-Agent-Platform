@@ -1,5 +1,7 @@
 # Protected AI panorama landing review
 
+> Historical review of commit 496077d4. The later user decision removes the separate UUID allowlist and reuses platform management roles; current behavior is documented in ../design/2026-09-20-ai-engineering-landing.md.
+
 Review scope: uncommitted working tree relative to ca601c5e2b7486fa3d35f66a7bbcf6c906cc6eb1 in `/Users/neo/Developer/work/AI-Agent-Platform/.worktrees/ai-engineering-landing-20260920`, including the untracked backend content/router, client, page, tests, and design record. Requirements: `/Users/neo/Developer/work/Orbbec-AI-Engineering/docs/plans/2026-09-20-platform-panorama-landing.md`. Reviewed 2026-09-20; implementation was still changing during review.
 
 ## Final verdict

@@ -439,7 +439,9 @@ class AuthorizationService:
                 return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "self_service", None)
         if key in _AI_ENGINEERING_ROUTES:
-            # Exact member allowlist is enforced by every content route.
+            # Reuse platform management roles; sub-application routes are independent.
+            if auth.role not in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:
+                return self._deny(403, "platform_management_required")
             return AuthorizationDecision(True, 200, "ai_engineering_route", None)
         if key in _HR_POSITION_ROUTES:
             if auth.hard_stale_read_only and key in _HR_POSITION_MUTATION_ROUTES:

@@ -106,7 +106,7 @@ describe("AiEngineeringLanding", () => {
     expect(client.fetchIndex).not.toHaveBeenCalled();
   });
 
-  it("loads protected content only after allowlist access and maps Markdown URLs safely", async () => {
+  it("loads protected content only after server authorization and maps Markdown URLs safely", async () => {
     window.history.replaceState({}, "", "/_preview/dingtalk-r1/");
     const client = clientWith();
     await act(async () => root.render(
