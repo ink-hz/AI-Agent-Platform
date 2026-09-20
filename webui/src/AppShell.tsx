@@ -58,20 +58,20 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 }
 
 
-export function AppShell({ route, children, account }: { route: Route; children: ReactNode; account?: Account | null }) {
+export function AppShell({ route, children, account, panorama = false }: { route: Route; children: ReactNode; account?: Account | null; panorama?: boolean }) {
   const current = routeSection(route);
-  const brainWorkspace = route.name === "home" || route.name === "brain" || route.name === "conversation"
-    || route.name === "marketing" || route.name === "marketing-conversation";
+  const brainWorkspace = !panorama && (route.name === "home" || route.name === "brain" || route.name === "conversation"
+    || route.name === "marketing" || route.name === "marketing-conversation");
   const hrWorkspace = route.name === "hr" || route.name === "hr-chat" || route.name === "hr-agent" || route.name === "hr-positions"
     || route.name === "hr-position" || route.name === "hr-position-section"
     || route.name === "hr-panorama";
-  const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
+  const aiNotesWorkspace = !panorama && (route.name === "ai-notes" || route.name === "ai-note");
   const faeWorkspace = route.name.startsWith("fae-manage-");
   const faeGovernanceWorkspace = route.name === "fae-manage-issues" || route.name === "fae-manage-issue";
   const accountCanReadDeployment = account?.role === "platform_owner" || account?.role === "platform_admin";
   const hasFaeManagement = account?.role === "platform_owner"
     || account?.workspace_scopes.includes("fae_workbench") === true;
-  const shouldLoadDeployment = (current === "admin" && (!account || accountCanReadDeployment))
+  const shouldLoadDeployment = (panorama && accountCanReadDeployment) || (current === "admin" && (!account || accountCanReadDeployment))
     || (faeWorkspace && accountCanReadDeployment && hasFaeManagement);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   const [deploymentResolved, setDeploymentResolved] = useState(!shouldLoadDeployment);
@@ -107,8 +107,8 @@ export function AppShell({ route, children, account }: { route: Route; children:
       ? "数据已过期"
       : "等待首次同步";
   return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
-    <div className={`app${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
-      <header className="topbar">
+    <div className={`app${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
+      {!panorama && <header className="topbar">
         <div className="topbar-inner">
           <a className="brand" href={platformPath("/")} onClick={(event) => follow(event, "/")}>
             <img className="brand-mark" src={platformPath("/favicon.ico")} alt="" aria-hidden="true" />
@@ -133,7 +133,7 @@ export function AppShell({ route, children, account }: { route: Route; children:
             onClick={(event) => follow(event, "/account")}
           >{account.display_name}</a>}
         </div>
-      </header>
+      </header>}
       {account?.hard_stale_read_only && !faeWorkspace && !hrWorkspace && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
@@ -149,15 +149,15 @@ export function AppShell({ route, children, account }: { route: Route; children:
           }).format(new Date(deployment.last_success_at))}
         </time>}
       </aside>}
-      {current === "admin" && managementNavigation.length > 0 && <nav className="admin-nav" aria-label="管理中心">
+      {!panorama && current === "admin" && managementNavigation.length > 0 && <nav className="admin-nav" aria-label="管理中心">
         <div>{managementNavigation.map((item) => <a
           className={current === item.section && (window.location.pathname === platformPath(item.path)
             || (item.path !== "/admin" && window.location.pathname.startsWith(`${platformPath(item.path)}/`))) ? "is-current" : undefined}
           href={platformPath(item.path)} key={item.path} onClick={(event) => follow(event, item.path)}
         >{item.label}</a>)}</div>
       </nav>}
-      <main className={`page${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>{children}</main>
-      {!brainWorkspace && !hrWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
+      <main className={`page${panorama ? " is-panorama-page" : ""}${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>{children}</main>
+      {!panorama && !brainWorkspace && !hrWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
     </div>
   </DeploymentProvider>;
 }

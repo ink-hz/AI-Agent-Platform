@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -12,7 +12,13 @@ import {
 } from "../aiEngineeringApi";
 import { platformPath, type Account } from "../auth";
 import { PLATFORM_TITLE, useDocumentTitle } from "../documentTitle";
-import { navigate } from "../router";
+import { navigate, currentLocationPath, type Route } from "../router";
+import { PanoramaView } from "../panorama/PanoramaView";
+import { fetchPanorama } from "../panorama/panoramaApi";
+import type { PanoramaData, PanoramaActionId } from "../panoramaTypes";
+import { actionPath, workspaceGroup } from "../panoramaNavigation";
+import { PanoramaWorkArea } from "../PanoramaWorkArea";
+import "../panoramaWorkspace.css";
 
 
 const DOCUMENT_BY_FILENAME: Record<string, AiEngineeringDocumentSlug> = {
@@ -105,6 +111,8 @@ interface LandingProps {
   fallback: ReactNode;
   selectedDocument?: AiEngineeringDocumentSlug;
   onNavigate?: (path: string) => void;
+  workspaceRoute?: Route;
+  renderWorkspace?: (route: Route) => ReactNode;
 }
 
 interface SessionProps extends LandingProps {
@@ -244,17 +252,134 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
   </article>;
 }
 
+function documentActiveElement(): HTMLElement | null { return window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null; }
+
+function PanoramaSession({ account, client, direct = false, fallback, onNavigate, workspaceRoute, renderWorkspace }: SessionProps) {
+  const [access, setAccess] = useState<"checking" | "allowed" | "denied">("checking");
+  const [data, setData] = useState<PanoramaData | null>(null);
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [evidence, setEvidence] = useState<AiEngineeringDocumentSlug | null>(null);
+  const [document, setDocument] = useState<AiEngineeringDocument | null>(null);
+  const [documentError, setDocumentError] = useState(false);
+  const lastWorkspace = useRef<{group: PanoramaActionId; path: string} | null>(null);
+  const dirty = useRef(false);
+  const workspaceHeading = useRef<HTMLDivElement>(null);
+  const graph = useRef<HTMLDivElement>(null);
+  const evidencePanel = useRef<HTMLElement>(null);
+  useDocumentTitle(data ? `${data.title} · ${PLATFORM_TITLE}` : PLATFORM_TITLE);
+  const deny = useCallback(() => { setData(null); setDocument(null); setEvidence(null); setAccess("denied"); dirty.current = false; }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => { controller.abort(); deny(); }, ACCESS_PROBE_TIMEOUT_MS);
+    void client.fetchAccess(controller.signal).then(({allowed}) => {
+      if (controller.signal.aborted) return;
+      window.clearTimeout(timeout);
+      if (allowed) setAccess("allowed"); else deny();
+    }).catch(() => { if (!controller.signal.aborted) { window.clearTimeout(timeout); deny(); } });
+    return () => { window.clearTimeout(timeout); controller.abort(); };
+  }, [client, deny]);
+  useEffect(() => {
+    if (access !== "allowed") return;
+    const controller = new AbortController();
+    setError(false);
+    void fetchPanorama(controller.signal).then(value => { if (!controller.signal.aborted) setData(value); }).catch(failure => {
+      if (controller.signal.aborted) return;
+      if (isAuthorizationFailure(failure)) deny(); else setError(true);
+    });
+    return () => controller.abort();
+  }, [access, attempt, deny]);
+  useEffect(() => {
+    if (access !== "allowed") return;
+    let pending: {controller: AbortController; timeout: number} | null = null;
+    const check = () => {
+      if (pending) { pending.controller.abort(); window.clearTimeout(pending.timeout); }
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => { controller.abort(); deny(); }, ACCESS_PROBE_TIMEOUT_MS);
+      pending = {controller, timeout};
+      void client.fetchAccess(controller.signal).then(result => {
+        if (!controller.signal.aborted && !result.allowed) deny();
+      }).catch(() => { if (!controller.signal.aborted) deny(); }).finally(() => window.clearTimeout(timeout));
+    };
+    const timer = window.setInterval(check, 60_000);
+    window.addEventListener("focus", check);
+    return () => { if (pending) { pending.controller.abort(); window.clearTimeout(pending.timeout); } window.clearInterval(timer); window.removeEventListener("focus", check); };
+  }, [access, client, deny]);
+  useEffect(() => {
+    if (access !== "allowed" || !evidence) return;
+    const controller = new AbortController(); setDocument(null); setDocumentError(false);
+    void client.fetchDocument(evidence, controller.signal).then(value => { if (!controller.signal.aborted) setDocument(value); }).catch(failure => {
+      if (controller.signal.aborted) return;
+      if (isAuthorizationFailure(failure)) deny(); else setDocumentError(true);
+    });
+    return () => controller.abort();
+  }, [access, client, evidence, deny]);
+  useEffect(() => {
+    if (!workspaceRoute) return;
+    const group = workspaceGroup(workspaceRoute);
+    if (group) lastWorkspace.current = {group, path: currentLocationPath()};
+    workspaceHeading.current?.focus();
+  }, [workspaceRoute]);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => { if (dirty.current) { event.preventDefault(); event.returnValue = ""; } };
+    window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+  useEffect(() => {
+    if (!evidence) return;
+    const previous = documentActiveElement();
+    evidencePanel.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => previous?.focus();
+  }, [evidence]);
+  const closeWorkspace = useCallback(() => { onNavigate("/"); window.requestAnimationFrame(() => graph.current?.focus()); }, [onNavigate]);
+  const openAction = (action: PanoramaActionId) => {
+    if (action === "access" && account.role !== "platform_owner") return;
+    const target = actionPath(action);
+    const previous = lastWorkspace.current;
+    if (dirty.current && (target.external || (previous && previous.group !== action))) {
+      if (!window.confirm("当前工作区可能有未保存的输入。确定放弃并切换？选择取消可保留当前工作。")) return;
+      dirty.current = false;
+    }
+    if (target.external) { window.location.assign(platformPath(target.path)); return; }
+    onNavigate(previous?.group === action ? previous.path : target.path);
+  };
+  if (access === "denied") return direct ? pageState("无权访问 AI 工程全景", "请重新登录或由管理员确认权限。", "alert") : <>{fallback}</>;
+  if (access === "checking") return pageState("正在确认访问权限", "正在确认企业账号。");
+  if (!data) return error ? <section role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。");
+  return <article className="panorama-home">
+    <div ref={graph} tabIndex={-1} hidden={!!workspaceRoute} inert={!!evidence}>
+      <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} />
+    </div>
+    {renderWorkspace && <div ref={workspaceHeading} tabIndex={-1} inert={!!evidence}><PanoramaWorkArea route={workspaceRoute} renderWorkspace={renderWorkspace} onClose={closeWorkspace} onDirty={value => { dirty.current = value; }} /></div>}
+    {evidence && <section ref={evidencePanel} className="panorama-evidence" role="dialog" aria-modal="true" aria-label="事实依据" onKeyDown={event => {
+      if (event.key === "Escape") { event.stopPropagation(); setEvidence(null); }
+      if (event.key === "Tab") {
+        const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button, a[href], input, [tabindex="0"]')];
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && documentActiveElement() === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && documentActiveElement() === last) { event.preventDefault(); first?.focus(); }
+      }
+    }}>
+      <header><h2>{document?.title ?? "事实依据"}</h2><button type="button" autoFocus onClick={() => setEvidence(null)}>关闭依据</button></header>
+      {documentError ? <p role="alert">此项依据暂时不可用，其他区域仍可使用。</p> : document ? <div onClickCapture={event => {
+        const anchor = (event.target as Element).closest("a");
+        if (!anchor || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        const url = new URL(anchor.href, window.location.origin);
+        if (url.origin === window.location.origin && url.pathname === platformPath("/ai-engineering")) {
+          const slug = url.searchParams.get("document");
+          if (slug && ["overview", "reading", "domains", "finance", "products", "assets"].includes(slug)) { event.preventDefault(); setEvidence(slug as AiEngineeringDocumentSlug); }
+        }
+      }}><AiEngineeringMarkdown markdown={document.markdown} onAssetError={() => setDocumentError(true)} /></div> : <p role="status">正在读取依据…</p>}
+    </section>}
+  </article>;
+}
+
 export function AiEngineeringLanding({
   account,
   client = aiEngineeringClient,
-  onNavigate = navigate,
+  onNavigate = (path: string) => navigate(path, {state: {panorama: true}}),
   ...props
 }: LandingProps) {
-  return <AiEngineeringSession
-    {...props}
-    account={account}
-    client={client}
-    key={account.internal_user_id}
-    onNavigate={onNavigate}
-  />;
+  const Session = props.selectedDocument ? AiEngineeringSession : PanoramaSession;
+  return <Session {...props} account={account} client={client}
+    key={`${account.internal_user_id}:${account.role}`} onNavigate={onNavigate} />;
 }

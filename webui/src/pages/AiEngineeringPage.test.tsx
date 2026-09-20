@@ -60,7 +60,7 @@ describe("AiEngineeringLanding", () => {
   it("keeps the old homepage for a disallowed owner and never loads protected content", async () => {
     const client = clientWith(false);
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} fallback={<div>旧 Agent 大脑</div>} />,
+      <AiEngineeringLanding account={owner} client={client} selectedDocument="overview" fallback={<div>旧 Agent 大脑</div>} />,
     ));
 
     expect(container.textContent).toContain("旧 Agent 大脑");
@@ -71,7 +71,7 @@ describe("AiEngineeringLanding", () => {
   it("denies direct access even when the disallowed account is a platform owner", async () => {
     const client = clientWith(false);
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} direct fallback={null} />,
+      <AiEngineeringLanding account={owner} client={client} direct selectedDocument="overview" fallback={null} />,
     ));
 
     expect(container.textContent).toContain("无权访问 AI 工程全景");
@@ -82,7 +82,7 @@ describe("AiEngineeringLanding", () => {
     const client = clientWith();
     client.fetchAccess.mockRejectedValue(new TypeError("offline"));
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} fallback={<div>旧 Agent 大脑</div>} />,
+      <AiEngineeringLanding account={owner} client={client} selectedDocument="overview" fallback={<div>旧 Agent 大脑</div>} />,
     ));
 
     expect(container.textContent).toContain("旧 Agent 大脑");
@@ -94,7 +94,7 @@ describe("AiEngineeringLanding", () => {
     const client = clientWith();
     client.fetchAccess.mockImplementation(() => new Promise(() => undefined));
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} fallback={<div>旧 Agent 大脑</div>} />,
+      <AiEngineeringLanding account={owner} client={client} selectedDocument="overview" fallback={<div>旧 Agent 大脑</div>} />,
     ));
     const signal = client.fetchAccess.mock.calls[0][0] as AbortSignal;
     expect(container.textContent).toContain("正在确认访问权限");
@@ -110,7 +110,7 @@ describe("AiEngineeringLanding", () => {
     window.history.replaceState({}, "", "/_preview/dingtalk-r1/");
     const client = clientWith();
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} fallback={<div>旧 Agent 大脑</div>} />,
+      <AiEngineeringLanding account={owner} client={client} selectedDocument="overview" fallback={<div>旧 Agent 大脑</div>} />,
     ));
 
     expect(client.fetchAccess.mock.invocationCallOrder[0]).toBeLessThan(client.fetchIndex.mock.invocationCallOrder[0]);
@@ -129,7 +129,7 @@ describe("AiEngineeringLanding", () => {
   it("clears protected content on a document 403", async () => {
     const client = clientWith();
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} direct fallback={<div>旧 Agent 大脑</div>} />,
+      <AiEngineeringLanding account={owner} client={client} direct selectedDocument="overview" fallback={<div>旧 Agent 大脑</div>} />,
     ));
     expect(container.textContent).toContain("全景总览");
 
@@ -145,7 +145,7 @@ describe("AiEngineeringLanding", () => {
   it("clears the protected article if its authenticated image cannot be read", async () => {
     const client = clientWith();
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} direct fallback={null} />,
+      <AiEngineeringLanding account={owner} client={client} direct selectedDocument="overview" fallback={null} />,
     ));
     const image = container.querySelector<HTMLImageElement>("img.ai-engineering-diagram")!;
 
@@ -163,11 +163,11 @@ describe("AiEngineeringLanding", () => {
     client.fetchAccess.mockReturnValueOnce(firstAccess).mockResolvedValueOnce({ allowed: false });
 
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} fallback={<div>旧 Agent 大脑</div>} />,
+      <AiEngineeringLanding account={owner} client={client} selectedDocument="overview" fallback={<div>旧 Agent 大脑</div>} />,
     ));
     const firstSignal = client.fetchAccess.mock.calls[0][0] as AbortSignal;
     await act(async () => root.render(
-      <AiEngineeringLanding account={{ ...owner, internal_user_id: "other" }} client={client} fallback={<div>另一账号的大脑</div>} />,
+      <AiEngineeringLanding account={{ ...owner, internal_user_id: "other" }} client={client} selectedDocument="overview" fallback={<div>另一账号的大脑</div>} />,
     ));
     expect(firstSignal.aborted).toBe(true);
 
@@ -182,12 +182,12 @@ describe("AiEngineeringLanding", () => {
     const client = clientWith();
     client.fetchAccess.mockResolvedValueOnce({ allowed: true }).mockReturnValueOnce(secondAccess);
     await act(async () => root.render(
-      <AiEngineeringLanding account={owner} client={client} fallback={<div>旧 Agent 大脑</div>} />,
+      <AiEngineeringLanding account={owner} client={client} selectedDocument="overview" fallback={<div>旧 Agent 大脑</div>} />,
     ));
     expect(container.querySelector(".ai-engineering-markdown")).not.toBeNull();
 
     await act(async () => root.render(
-      <AiEngineeringLanding account={{ ...owner, internal_user_id: "other" }} client={client} fallback={<div>另一账号的大脑</div>} />,
+      <AiEngineeringLanding account={{ ...owner, internal_user_id: "other" }} client={client} selectedDocument="overview" fallback={<div>另一账号的大脑</div>} />,
     ));
     expect(container.querySelector(".ai-engineering-markdown")).toBeNull();
     expect(container.textContent).not.toContain("事实来源");

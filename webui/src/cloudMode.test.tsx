@@ -157,12 +157,13 @@ describe("cloud replica mode", () => {
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
       if (url.endsWith("/api/v1/ai-engineering/access")) return new Response(JSON.stringify({ allowed: true }), { status: 200 });
-      if (url.endsWith("/api/v1/ai-engineering")) return new Response(JSON.stringify({
-        title: "AI 工程全景", version: "v1", updated_at: "2026-09-20",
-        diagram: { svg_path: "/api/v1/ai-engineering/assets/panorama.svg", png_path: "/api/v1/ai-engineering/assets/panorama.png", alt: "全景" },
-        documents: [{ slug: "overview", title: "总览" }],
+      if (url.endsWith("/api/v1/ai-engineering/panorama")) return new Response(JSON.stringify({
+        title: "管理员全景", version: "test", updated_at: "2026-09-20",
+        context: {period:"测试期间",metrics:[{label:"测试指标",value:"未知"}],observation:"测试总览",judgment:"测试判断",source_ids:[]},
+        revenue:{period:"测试收入",denominator_cents:100,segments:[{id:"test",label:"测试类别",amount_cents:100}],note:"测试口径",source_ids:[]},
+        domains:[],support:[],shared:{title:"共用能力",actions:["brain","sessions"],status:"测试"},asks:[],sources:[],
       }), { status: 200 });
-      if (url.endsWith("/documents/overview")) return new Response(JSON.stringify({ slug: "overview", title: "总览", markdown: "管理员全景正文" }), { status: 200 });
+      if (url.includes("/api/v1/conversations")) return new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200 });
       return new Response(JSON.stringify({
         mode: "local", read_only: false, auth: "dingtalk",
         freshness: "current", last_success_at: null,
@@ -172,9 +173,22 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.textContent).toContain("管理员全景正文");
+    expect(container.textContent).toContain("管理员全景");
+    expect(container.querySelector(".ai-engineering-markdown")).toBeNull();
     expect(container.querySelector("#brain-request")).toBeNull();
-    expect(container.querySelector('a[href="/brain"]')).not.toBeNull();
+    expect(container.querySelector('[data-action-id="brain"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
+    expect(window.location.pathname).toBe("/brain");
+    expect(window.history.state.panorama).toBe(true);
+    expect(container.querySelector("#brain-request")).not.toBeNull();
+    expect(container.textContent).toContain("回到全景");
+    const composer = container.querySelector("#brain-request");
+    await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent === "回到全景")!.click());
+    expect(window.location.pathname).toBe("/");
+    expect(container.querySelector("#brain-request")).toBe(composer);
+    expect(container.querySelector<HTMLElement>(".panorama-work-area")?.hidden).toBe(true);
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
+    expect(container.querySelector("#brain-request")).toBe(composer);
   });
 
   it("returns an expired usage route to login with its safe Mission path", async () => {

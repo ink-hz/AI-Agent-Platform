@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { AppShell } from "./AppShell";
+import { isPanoramaLocation, workspaceGroup } from "./panoramaNavigation";
 import { routeDocumentTitle, useDocumentTitle } from "./documentTitle";
 import { OverviewPage } from "./pages/OverviewPage";
 import { AgentsPage } from "./pages/AgentsPage";
@@ -202,8 +203,12 @@ export default function App() {
       return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;
     }
   }
-  return <AppShell route={route} account={account}>
+  const panorama = !!account && isPanoramaLocation(route);
+  return <AppShell route={route} account={account} panorama={panorama}>
     {account && <AccessEventReporter account={account} route={route} />}
-    {productPage(route, account ?? undefined)}
+    {panorama && account ? <AiEngineeringLanding account={account} direct fallback={null}
+      selectedDocument={route.name === "ai-engineering" ? route.documentSlug : undefined}
+      workspaceRoute={workspaceGroup(route) ? route : undefined}
+      renderWorkspace={selected => productPage(selected, account)} /> : productPage(route, account ?? undefined)}
   </AppShell>;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { workspaceGroup } from "./panoramaNavigation";
 
 import { localPathname, platformPath } from "./auth";
 import { STATUS_LABELS } from "./components/review/IssueList";
@@ -469,10 +470,16 @@ export function currentLocationPath(): string {
 export function navigate(path: string, options: NavigateOptions = {}): void {
   if (currentLocationPath() === path) return;
   const target = platformPath(path);
+  const destination = new URL(target, window.location.origin);
+  const nextRoute = parseRoute(destination.pathname, destination.search);
+  const inPanorama = (window.history.state?.panorama === true || (options.state as { panorama?: boolean } | undefined)?.panorama === true)
+    && (workspaceGroup(nextRoute) !== null || nextRoute.name === "home" || nextRoute.name === "ai-engineering");
+  const state = { ...(typeof options.state === "object" && options.state !== null ? options.state : {}), ...(inPanorama ? { panorama: true } : {}) };
+  if (!inPanorama) delete (state as { panorama?: boolean }).panorama;
   if (options.replace) {
-    window.history.replaceState(options.state ?? {}, "", target);
+    window.history.replaceState(state, "", target);
   } else {
-    window.history.pushState(options.state ?? {}, "", target);
+    window.history.pushState(state, "", target);
   }
   window.dispatchEvent(new Event("platform:navigate"));
   if (!options.replace) window.requestAnimationFrame(() => window.scrollTo(0, 0));
