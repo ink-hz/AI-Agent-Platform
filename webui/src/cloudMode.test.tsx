@@ -59,7 +59,7 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/brain");
   });
 
   it("assigns legacy VOC management to its canonical external document", () => {

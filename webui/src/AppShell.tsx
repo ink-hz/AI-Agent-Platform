@@ -10,7 +10,7 @@ import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
 
 
 const USE_NAVIGATION = [
-  { label: "Agent 大脑", path: "/", section: "brain" },
+  { label: "Agent 大脑", path: "/brain", section: "brain" },
   { label: "专业 Agent", path: "/agents", section: "agents" },
 ] as const;
 
@@ -60,7 +60,7 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 
 export function AppShell({ route, children, account }: { route: Route; children: ReactNode; account?: Account | null }) {
   const current = routeSection(route);
-  const brainWorkspace = route.name === "brain" || route.name === "conversation"
+  const brainWorkspace = route.name === "home" || route.name === "brain" || route.name === "conversation"
     || route.name === "marketing" || route.name === "marketing-conversation";
   const hrWorkspace = route.name === "hr" || route.name === "hr-chat" || route.name === "hr-agent" || route.name === "hr-positions"
     || route.name === "hr-position" || route.name === "hr-position-section"

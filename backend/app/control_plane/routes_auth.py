@@ -220,6 +220,8 @@ def build_auth_router(
             )
         return response
 
+    @router.get("/brain", include_in_schema=False)
+    @router.get("/ai-engineering", include_in_schema=False)
     @router.get("/account", include_in_schema=False)
     @router.get("/agents", include_in_schema=False)
     @router.get("/agents/{client_path:path}", include_in_schema=False)

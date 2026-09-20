@@ -106,7 +106,7 @@ describe("Platform router", () => {
   ])("parses %s", (path, expected) => expect(parseRoute(path)).toEqual(expected));
 
   it("parses use, account and unknown routes", () => {
-    expect(parseRoute("/")).toEqual({ name: "brain" });
+    expect(parseRoute("/")).toEqual({ name: "home" });
     expect(parseRoute("/agents")).toEqual({ name: "agents" });
     expect(parseRoute("/agents/ai-fae-agent")).toEqual({ name: "legacy-redirect", to: "/fae/", navigation: "document" });
     expect(parseRoute("/agents/voc/workspace")).toEqual({

@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1840" height="1560" viewBox="0 0 1840 1560" role="img" aria-labelledby="title desc">
+<title id="title">奥比中光 AI 工程全景 v1</title>
+<desc id="desc">以客户、产品交付、研发、供应生产和服务为价值链，展示经营背景、五类交付、已有 AI 资产及组织和系统缺口。事实来源 F1 至 F7 详见配套全景文档。</desc>
+<style>text{font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;fill:#18354b} .small{fill:#52697b}</style>
+<rect width="1840" height="1560" fill="#f7f9fc"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#91a6b7"/></marker></defs>
+<rect x="0" y="0" width="1840" height="94" rx="0" fill="#15394f" stroke="#15394f"/>
+<text x="42" y="48.0" style="fill:#ffffff" font-size="34" font-weight="650">奥比中光 AI 工程全景 v1</text>
+<text x="44" y="82.0" style="fill:#c4d8e7" font-size="18" font-weight="400">价值链主视图  /  内部研发、业务与管理  /  经营事实 × 交付形态 × AI 覆盖</text>
+<text x="1570" y="46.0" style="fill:#ffffff" font-size="20" font-weight="400">2026-09-20</text>
+<text x="1570" y="75.0" style="fill:#c4d8e7" font-size="16" font-weight="400">事实 F1—F7 见来源索引</text>
+<text x="42" y="128.0" style="fill:#18354b" font-size="23" font-weight="650">01  经营动因</text>
+<text x="236" y="128.0" style="fill:#52697b" font-size="19" font-weight="400">管理判断：效率与质量优先；经营变化不是 AI 改造成果。</text>
+<rect x="42" y="145" width="552" height="108" rx="10" fill="#fff3dd" stroke="#e3c78f"/>
+<text x="60" y="174.0" style="fill:#765213" font-size="18" font-weight="600">2025 全年</text>
+<text x="60" y="213.0" style="fill:#65430b" font-size="27" font-weight="600">收入 9.41 亿元  /  同比 +66.66%</text>
+<text x="60" y="239.0" style="fill:#765213" font-size="16" font-weight="400">F1 · 年报 p.9</text>
+<rect x="612" y="145" width="1186" height="108" rx="10" fill="#fff3dd" stroke="#e3c78f"/>
+<text x="632" y="174.0" style="fill:#765213" font-size="18" font-weight="600">2026 年上半年</text>
+<text x="632" y="211.0" style="fill:#65430b" font-size="27" font-weight="600">收入 4.38 亿元</text>
+<text x="922" y="211.0" style="fill:#65430b" font-size="27" font-weight="600">同比 +0.49%</text>
+<text x="1187" y="211.0" style="fill:#65430b" font-size="25" font-weight="600">研发投入 +22.17%</text>
+<text x="1510" y="211.0" style="fill:#65430b" font-size="25" font-weight="600">归母净利 -30.82%</text>
+<text x="632" y="239.0" style="fill:#765213" font-size="17" font-weight="400">各增减比例均为同比；不据半年外推全年或认定利润变动原因。F1 · 半年报 p.9、32</text>
+<text x="42" y="290.0" style="fill:#18354b" font-size="23" font-weight="650">02  经营构成</text>
+<text x="236" y="290.0" style="fill:#52697b" font-size="19" font-weight="400">2025 主营业务分产品 · 分母 9.3504 亿元，非营业收入总额 · F2：年报 p.49</text>
+<rect x="42" y="309" width="427" height="112" rx="10" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="60" y="333.0" style="fill:#18354b" font-size="21" font-weight="600">消费级应用设备</text>
+<text x="60" y="380.0" style="fill:#18354b" font-size="34" font-weight="650">62.43%</text>
+<rect x="485" y="309" width="427" height="112" rx="10" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="503" y="333.0" style="fill:#18354b" font-size="21" font-weight="600">3D 视觉传感器</text>
+<text x="503" y="380.0" style="fill:#18354b" font-size="34" font-weight="650">31.11%</text>
+<rect x="928" y="309" width="427" height="112" rx="10" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="946" y="333.0" style="fill:#18354b" font-size="21" font-weight="600">工业级应用设备</text>
+<text x="946" y="380.0" style="fill:#18354b" font-size="34" font-weight="650">2.73%</text>
+<text x="946" y="414.0" style="fill:#52697b" font-size="17" font-weight="400">毛利率 66.79%：四类最高；收入最小</text>
+<rect x="1371" y="309" width="427" height="112" rx="10" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="1389" y="333.0" style="fill:#18354b" font-size="21" font-weight="600">其他</text>
+<text x="1389" y="380.0" style="fill:#18354b" font-size="34" font-weight="650">3.73%</text>
+<text x="42" y="459.0" style="fill:#18354b" font-size="23" font-weight="650">03  价值链与交付形态</text>
+<text x="355" y="459.0" style="fill:#52697b" font-size="19" font-weight="400">财报构成与交付形态不一一映射；这是业务能力视图，不是组织架构。</text>
+<rect x="42" y="478" width="336" height="360" rx="10" fill="#ffffff" stroke="#d3dfe9"/>
+<rect x="42" y="478" width="336" height="50" rx="9" fill="#234e6b" stroke="#234e6b"/>
+<text x="57" y="511.0" style="fill:#ffffff" font-size="23" font-weight="600">客户与市场 F3</text>
+<path d="M380,503 L394,503" fill="none" stroke="#91a6b7" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="397" y="478" width="336" height="360" rx="10" fill="#ffffff" stroke="#d3dfe9"/>
+<rect x="397" y="478" width="336" height="50" rx="9" fill="#234e6b" stroke="#234e6b"/>
+<text x="412" y="511.0" style="fill:#ffffff" font-size="23" font-weight="600">产品与交付选择 F4</text>
+<path d="M735,503 L749,503" fill="none" stroke="#91a6b7" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="752" y="478" width="336" height="360" rx="10" fill="#ffffff" stroke="#d3dfe9"/>
+<rect x="752" y="478" width="336" height="50" rx="9" fill="#234e6b" stroke="#234e6b"/>
+<text x="767" y="511.0" style="fill:#ffffff" font-size="23" font-weight="600">核心技术研发 F5</text>
+<path d="M1090,503 L1104,503" fill="none" stroke="#91a6b7" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1107" y="478" width="336" height="360" rx="10" fill="#ffffff" stroke="#d3dfe9"/>
+<rect x="1107" y="478" width="336" height="50" rx="9" fill="#234e6b" stroke="#234e6b"/>
+<text x="1122" y="511.0" style="fill:#ffffff" font-size="23" font-weight="600">供应与量产 F5</text>
+<path d="M1445,503 L1459,503" fill="none" stroke="#91a6b7" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="1462" y="478" width="336" height="360" rx="10" fill="#ffffff" stroke="#d3dfe9"/>
+<rect x="1462" y="478" width="336" height="50" rx="9" fill="#234e6b" stroke="#234e6b"/>
+<text x="1477" y="511.0" style="fill:#ffffff" font-size="23" font-weight="600">交付与服务 F4</text>
+<text x="62" y="570" style="fill:#18354b" font-size="23" font-weight="400">机器人</text>
+<text x="62" y="610" style="fill:#18354b" font-size="23" font-weight="400">三维扫描</text>
+<text x="62" y="650" style="fill:#18354b" font-size="23" font-weight="400">生物识别</text>
+<text x="62" y="690" style="fill:#18354b" font-size="23" font-weight="400">AIoT</text>
+<text x="62" y="730" style="fill:#18354b" font-size="23" font-weight="400">工业测量</text>
+<text x="62" y="799" style="fill:#52697b" font-size="17" font-weight="400">公开场景类别；</text>
+<text x="62" y="824" style="fill:#52697b" font-size="17" font-weight="400">不代表客户名单或组织部门。</text>
+<rect x="409" y="539" width="312" height="40" rx="6" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="421" y="564" style="fill:#18354b" font-size="18" font-weight="500">芯片｜LS635</text>
+<rect x="409" y="583" width="312" height="58" rx="6" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="421" y="608" style="fill:#18354b" font-size="18" font-weight="500">模组／相机</text>
+<text x="421" y="635" style="fill:#18354b" font-size="18" font-weight="500">Gemini · Femto · Astra</text>
+<rect x="409" y="645" width="312" height="40" rx="6" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="421" y="670" style="fill:#18354b" font-size="18" font-weight="500">行业整机｜支付终端</text>
+<rect x="409" y="689" width="312" height="58" rx="6" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="421" y="714" style="fill:#18354b" font-size="18" font-weight="500">测量系统</text>
+<text x="421" y="741" style="fill:#18354b" font-size="18" font-weight="500">XTOM · XTDIC · Tube Qualify</text>
+<rect x="409" y="751" width="312" height="58" rx="6" fill="#edf4fb" stroke="#c4d5e5"/>
+<text x="421" y="776" style="fill:#18354b" font-size="18" font-weight="500">软件／算法</text>
+<text x="421" y="803" style="fill:#18354b" font-size="18" font-weight="500">Enhanced Depth Filter · SDK</text>
+<text x="413" y="826.0" style="fill:#52697b" font-size="16" font-weight="400">代表形态，非穷尽；许可分别核实。</text>
+<text x="772" y="571" style="fill:#18354b" font-size="22" font-weight="400">自研芯片／深度引擎</text>
+<text x="772" y="611" style="fill:#18354b" font-size="22" font-weight="400">光学模组与标定</text>
+<text x="772" y="651" style="fill:#18354b" font-size="22" font-weight="400">深度算法与后处理</text>
+<text x="772" y="691" style="fill:#18354b" font-size="22" font-weight="400">固件、SDK</text>
+<text x="772" y="731" style="fill:#18354b" font-size="22" font-weight="400">及多平台适配</text>
+<text x="772" y="799" style="fill:#52697b" font-size="16" font-weight="400">年报 p.13—14；</text>
+<text x="772" y="824" style="fill:#52697b" font-size="16" font-weight="400">标定及软件另见产品／文档来源。</text>
+<text x="1127" y="571" style="fill:#18354b" font-size="22" font-weight="400">自研芯片委外制造</text>
+<text x="1127" y="623" style="fill:#18354b" font-size="22" font-weight="400">定制光学料件</text>
+<text x="1127" y="675" style="fill:#18354b" font-size="22" font-weight="400">模组组装与成品测试</text>
+<text x="1127" y="776" style="fill:#52697b" font-size="17" font-weight="400">年报 p.13—14</text>
+<text x="1127" y="801" style="fill:#52697b" font-size="17" font-weight="400">内部工艺、系统与责任映射</text>
+<text x="1127" y="826" style="fill:#52697b" font-size="17" font-weight="400">待业务确认。</text>
+<text x="1482" y="571" style="fill:#18354b" font-size="22" font-weight="400">客户设计导入</text>
+<text x="1482" y="611" style="fill:#18354b" font-size="22" font-weight="400">相机主机接入</text>
+<text x="1482" y="651" style="fill:#18354b" font-size="22" font-weight="400">终端业务集成</text>
+<text x="1482" y="691" style="fill:#18354b" font-size="22" font-weight="400">测量流程与结果验收</text>
+<text x="1482" y="731" style="fill:#18354b" font-size="22" font-weight="400">软件集成与适配</text>
+<text x="1482" y="799" style="fill:#52697b" font-size="16" font-weight="400">客户集成链为分析归纳；</text>
+<text x="1482" y="824" style="fill:#52697b" font-size="16" font-weight="400">合同、流程及服务边界待确认。</text>
+<rect x="42" y="850" width="1756" height="63" rx="8" fill="#ffffff" stroke="#d3dfe9"/>
+<text x="60" y="875.0" style="fill:#18354b" font-size="19" font-weight="400">业务关系：需求与约束 → 规格 → 设计／工艺 → 实物交付；研发软件与技术资料 → 客户交付。</text>
+<text x="60" y="901.0" style="fill:#52697b" font-size="19" font-weight="400">反馈回环：交付与服务 → 客户需求与产品改进。相邻栏目表示业务协作，不表示内部系统已接通。</text>
+<text x="42" y="948.0" style="fill:#18354b" font-size="23" font-weight="650">04  AI 改造叠加层</text>
+<text x="355" y="948.0" style="fill:#52697b" font-size="19" font-weight="400">与上方业务列对应 · 绿色为历史运行资产，非全面覆盖 · 橙色为待验证方向 · F6</text>
+<rect x="42" y="965" width="336" height="143" rx="10" fill="#e7f3ee" stroke="#80b5a0"/>
+<text x="59" y="998.0" style="fill:#205e49" font-size="23" font-weight="650">VOC</text>
+<text x="59" y="1030" style="fill:#315e50" font-size="18" font-weight="400">历史运行｜当前效果基线待补</text>
+<text x="59" y="1059" style="fill:#315e50" font-size="18" font-weight="400">机会：反馈归类</text>
+<text x="59" y="1088" style="fill:#315e50" font-size="18" font-weight="400">与需求证据组织</text>
+<rect x="397" y="965" width="336" height="143" rx="10" fill="#e7f3ee" stroke="#80b5a0"/>
+<text x="414" y="998.0" style="fill:#205e49" font-size="23" font-weight="650">FAE · 选型支持</text>
+<text x="414" y="1030" style="fill:#315e50" font-size="18" font-weight="400">历史运行｜当前效果基线待补</text>
+<text x="414" y="1059" style="fill:#315e50" font-size="18" font-weight="400">产品证据与选型支持</text>
+<text x="414" y="1088" style="fill:#315e50" font-size="18" font-weight="400">非产品决策全覆盖</text>
+<rect x="752" y="965" width="336" height="143" rx="10" fill="#fff3dd" stroke="#dfc18a"/>
+<text x="769" y="998.0" style="fill:#765213" font-size="23" font-weight="650">内部研发</text>
+<text x="769" y="1030" style="fill:#765213" font-size="18" font-weight="400">本次五仓盘点未见覆盖证据</text>
+<text x="769" y="1059" style="fill:#765213" font-size="18" font-weight="400">机会：设计、缺陷</text>
+<text x="769" y="1088" style="fill:#765213" font-size="18" font-weight="400">与测试知识关联</text>
+<rect x="1107" y="965" width="336" height="143" rx="10" fill="#fff3dd" stroke="#dfc18a"/>
+<text x="1124" y="998.0" style="fill:#765213" font-size="23" font-weight="650">供应／生产</text>
+<text x="1124" y="1030" style="fill:#765213" font-size="18" font-weight="400">本次五仓盘点未见覆盖证据</text>
+<text x="1124" y="1059" style="fill:#765213" font-size="18" font-weight="400">机会：变更、标定</text>
+<text x="1124" y="1088" style="fill:#765213" font-size="18" font-weight="400">与测试异常追溯</text>
+<rect x="1462" y="965" width="336" height="143" rx="10" fill="#e7f3ee" stroke="#80b5a0"/>
+<text x="1479" y="998.0" style="fill:#205e49" font-size="23" font-weight="650">FAE · 技术服务</text>
+<text x="1479" y="1030" style="fill:#315e50" font-size="18" font-weight="400">同一资产，不重复计数</text>
+<text x="1479" y="1059" style="fill:#315e50" font-size="18" font-weight="400">历史运行｜当前效果基线待补</text>
+<text x="1479" y="1088" style="fill:#315e50" font-size="18" font-weight="400">机会：重复问题复用</text>
+<text x="42" y="1145.0" style="fill:#18354b" font-size="23" font-weight="650">05  共用平台与管理支撑</text>
+<text x="392" y="1145.0" style="fill:#52697b" font-size="19" font-weight="400">历史运行记录 ≠ 当前健康或收益基线；采纳、质量、成本与效果另行度量。</text>
+<rect x="42" y="1163" width="427" height="139" rx="10" fill="#e7f3ee" stroke="#80b5a0"/>
+<text x="59" y="1194.0" style="fill:#205e49" font-size="23" font-weight="650">平台</text>
+<text x="59" y="1226" style="fill:#315e50" font-size="18" font-weight="400">历史运行｜当前效果基线待补</text>
+<text x="59" y="1254" style="fill:#315e50" font-size="18" font-weight="400">身份、目录接入、附件与应用入口</text>
+<rect x="485" y="1163" width="427" height="139" rx="10" fill="#e7f3ee" stroke="#80b5a0"/>
+<text x="502" y="1194.0" style="fill:#205e49" font-size="23" font-weight="650">HR</text>
+<text x="502" y="1226" style="fill:#315e50" font-size="18" font-weight="400">历史运行｜当前效果基线待补</text>
+<text x="502" y="1254" style="fill:#315e50" font-size="18" font-weight="400">岗位、标准／成果与人才工作流</text>
+<text x="502" y="1282" style="fill:#315e50" font-size="18" font-weight="400">AI 素养与岗位培训：待建设判断</text>
+<rect x="928" y="1163" width="427" height="139" rx="10" fill="#e7f3ee" stroke="#80b5a0"/>
+<text x="945" y="1194.0" style="fill:#205e49" font-size="23" font-weight="650">ADMIN</text>
+<text x="945" y="1226" style="fill:#315e50" font-size="18" font-weight="400">历史运行｜当前效果基线待补</text>
+<text x="945" y="1254" style="fill:#315e50" font-size="18" font-weight="400">制度问答与行政流程</text>
+<text x="945" y="1282" style="fill:#315e50" font-size="18" font-weight="400">AI 问答与事务数字化分别计量</text>
+<rect x="1371" y="1163" width="427" height="139" rx="10" fill="#fff3dd" stroke="#dfc18a"/>
+<text x="1388" y="1194.0" style="fill:#765213" font-size="23" font-weight="650">财务经营／质量法务</text>
+<text x="1388" y="1226" style="fill:#765213" font-size="18" font-weight="400">本次盘点未见独立应用覆盖证据</text>
+<text x="1388" y="1254" style="fill:#765213" font-size="18" font-weight="400">机会：成本归因、规范与资料边界复核</text>
+<text x="42" y="1339.0" style="fill:#18354b" font-size="23" font-weight="650">06  明确留空 F7</text>
+<text x="290" y="1339.0" style="fill:#52697b" font-size="19" font-weight="400">管理层需协调的信息；不阻塞全景 v1 审阅。</text>
+<rect x="42" y="1357" width="870" height="106" rx="10" fill="#eef1f5" stroke="#8794a3" stroke-dasharray="7 5"/>
+<rect x="930" y="1357" width="868" height="106" rx="10" fill="#eef1f5" stroke="#8794a3" stroke-dasharray="7 5"/>
+<text x="61" y="1388.0" style="fill:#18354b" font-size="23" font-weight="600">部门与责任归属：留空</text>
+<text x="61" y="1420" style="fill:#52697b" font-size="18" font-weight="400">目录读取授权待确认；职责另需正式材料和业务确认。</text>
+<text x="61" y="1448" style="fill:#52697b" font-size="18" font-weight="400">不从产品分类、仓库名称或部门名称推定职责。</text>
+<text x="950" y="1388.0" style="fill:#18354b" font-size="23" font-weight="600">内部系统现状：留空</text>
+<text x="950" y="1420" style="fill:#52697b" font-size="18" font-weight="400">待问卷形成、发出与回收；本轮未代发。</text>
+<text x="950" y="1448" style="fill:#52697b" font-size="18" font-weight="400">PLM／MES／ERP／CRM 等是否采用尚未确认。</text>
+<text x="42" y="1500.0" style="fill:#52697b" font-size="18" font-weight="400">蓝：业务事实  ·  绿：历史运行资产  ·  橙：待验证方向  ·  灰：证据缺口</text>
+<text x="42" y="1531.0" style="fill:#52697b" font-size="17" font-weight="400">F1—F7 见配套主图文档：年报／半年报页码、产品官方来源及五仓提交证据。覆盖空白仅限本次盘点，不代表公司不存在其他建设。</text>
+</svg>

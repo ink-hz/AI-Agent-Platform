@@ -1,0 +1,38 @@
+{
+  "repository": "Orbbec-AI-Engineering",
+  "commit": "69a9de2168de6fa42b14d586587169487797e6f3",
+  "files": {
+    "overview.md": {
+      "source_path": "docs/panorama/2026-09-20-panorama-v1.md",
+      "sha256": "10ba1435423c1afa8349336348b809d4f7ed7816c049ccd3203228c11da60d62"
+    },
+    "reading.md": {
+      "source_path": "docs/panorama/2026-09-20-panorama-reading-guide.md",
+      "sha256": "2dc8cdbdfe9fe68223e11e8e42896eae533bb3cb9ef2e1472d436ac5a93766d7"
+    },
+    "domains.md": {
+      "source_path": "docs/panorama/2026-09-20-domain-cards.md",
+      "sha256": "92a78587167ab6f7674dc518ad20f595193be0526de1bedf60d4b4ba22689927"
+    },
+    "finance.md": {
+      "source_path": "docs/research/2026-09-20-public-disclosures.md",
+      "sha256": "318a9ce9b1b37a9d8f9c4b57770c79d8f9ac157869c23edc83dba29ad81e8611"
+    },
+    "products.md": {
+      "source_path": "docs/products/2026-09-20-product-family-inventory.md",
+      "sha256": "3850d1bea73fe74bfbdcc4f35dedd1007f002e5c20bdff3a3589613b69d1d39a"
+    },
+    "assets.md": {
+      "source_path": "docs/initiatives/2026-09-20-existing-ai-assets.md",
+      "sha256": "e3cff967f63b5e081443abd9a2b4256b6ed7d7743d5ad6e83d6f8988634d1e92"
+    },
+    "panorama.svg": {
+      "source_path": "docs/panorama/assets/2026-09-20-panorama-v1.svg",
+      "sha256": "b0d54d0a381bf8818d3cd3240940b20f94d318a8f084f81b5dc2e17313e31602"
+    },
+    "panorama.png": {
+      "source_path": "docs/panorama/assets/2026-09-20-panorama-v1.png",
+      "sha256": "cbace458c7921005799653efe342531b8dd2f8499be534752c5e9ef2f63a5dbe"
+    }
+  }
+}

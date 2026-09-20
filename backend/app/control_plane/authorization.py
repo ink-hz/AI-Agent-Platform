@@ -33,7 +33,16 @@ _FAE_WORKBENCH_SHELL_ROUTES = frozenset({
     ("GET", "/fae/manage/{client_path:path}"),
 })
 
+_AI_ENGINEERING_ROUTES = frozenset({
+    ("GET", "/api/v1/ai-engineering"),
+    ("GET", "/api/v1/ai-engineering/documents/{slug}"),
+    ("GET", "/api/v1/ai-engineering/assets/{filename}"),
+})
+
 _AUTHENTICATED_SELF_ROUTES = frozenset({
+    ("GET", "/api/v1/ai-engineering/access"),
+    ("GET", "/brain"),
+    ("GET", "/ai-engineering"),
     ("GET", "/api/v1/account"),
     ("GET", "/api/v1/internal/session/subject"),
     ("GET", "/api/v1/internal/voc/browser-subject"),
@@ -429,6 +438,9 @@ class AuthorizationService:
             if auth.hard_stale_read_only and key in _HARD_STALE_SELF_MUTATION_ROUTES:
                 return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "self_service", None)
+        if key in _AI_ENGINEERING_ROUTES:
+            # Exact member allowlist is enforced by every content route.
+            return AuthorizationDecision(True, 200, "ai_engineering_route", None)
         if key in _HR_POSITION_ROUTES:
             if auth.hard_stale_read_only and key in _HR_POSITION_MUTATION_ROUTES:
                 return self._deny(503, "hard_stale_read_only")

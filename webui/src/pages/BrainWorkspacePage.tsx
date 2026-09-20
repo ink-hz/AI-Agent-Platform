@@ -98,7 +98,7 @@ export function BrainWorkspacePage({
     const archived = await archiveConversation(selectedId, account.csrf_token);
     setConversations((current) => current.filter((item) => item.conversation_id !== selectedId));
     setArchivedConversations((current) => mergeConversations(current, [archived]));
-    if (selectedId === conversationId) onNavigate("/");
+    if (selectedId === conversationId) onNavigate("/brain");
   };
 
   const restoreHistory = async (selectedId: string) => {
@@ -135,7 +135,7 @@ export function BrainWorkspacePage({
       onArchive={account.hard_stale_read_only ? undefined : archiveHistory}
       onLoadArchived={() => void loadArchived()}
       onLoadMore={() => void loadMore()}
-      onNewConversation={() => { setMobileOpen(false); onNavigate("/"); }}
+      onNewConversation={() => { setMobileOpen(false); onNavigate("/brain"); }}
       onRename={account.hard_stale_read_only ? undefined : renameHistory}
       onRestore={account.hard_stale_read_only ? undefined : restoreHistory}
       onRetry={() => setAttempt((value) => value + 1)}

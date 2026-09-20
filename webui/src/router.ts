@@ -12,7 +12,9 @@ export type MarketingAgentSlug = keyof typeof MARKETING_AGENT_ID_BY_SLUG;
 export type Route =
   | { name: "login" }
   | { name: "account" }
+  | { name: "home" }
   | { name: "brain" }
+  | { name: "ai-engineering"; documentSlug?: import("./aiEngineeringApi").AiEngineeringDocumentSlug }
   | { name: "conversations" }
   | { name: "conversation"; conversationId: string }
   | { name: "missions" }
@@ -210,7 +212,15 @@ export function parseRoute(pathname: string, search = ""): Route {
   const clean = local === "/" ? "/" : local.replace(/\/+$/, "");
   if (clean === "/login") return { name: "login" };
   if (clean === "/account") return { name: "account" };
-  if (clean === "/") return { name: "brain" };
+  if (clean === "/") return { name: "home" };
+  if (clean === "/brain") return { name: "brain" };
+  if (clean === "/ai-engineering") {
+    if (!search) return { name: "ai-engineering" };
+    const documentSlug = ["overview", "reading", "domains", "finance", "products", "assets"]
+      .find((slug) => search === `?document=${slug}`);
+    if (documentSlug) return { name: "ai-engineering", documentSlug: documentSlug as import("./aiEngineeringApi").AiEngineeringDocumentSlug };
+    return { name: "not-found" };
+  }
   if (clean === "/conversations") return { name: "conversations" };
   if (clean === "/missions") return { name: "missions" };
   if (clean === "/agents") return { name: "agents" };
@@ -386,7 +396,9 @@ export function routePath(route: Route): string {
   switch (route.name) {
     case "login": return "/login";
     case "account": return "/account";
-    case "brain": return "/";
+    case "home": return "/";
+    case "brain": return "/brain";
+    case "ai-engineering": return `/ai-engineering${route.documentSlug ? `?document=${route.documentSlug}` : ""}`;
     case "conversations": return "/conversations";
     case "conversation": return `/conversations/${encodeURIComponent(route.conversationId)}`;
     case "missions": return "/missions";

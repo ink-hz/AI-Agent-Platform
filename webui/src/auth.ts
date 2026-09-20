@@ -117,6 +117,9 @@ export function localPathname(pathname?: string): string {
 
 export type LoginReturnPath =
   | "/"
+  | "/brain"
+  | "/ai-engineering"
+  | `/ai-engineering?document=${string}`
   | "/account"
   | "/missions"
   | `/missions/${string}`
@@ -154,6 +157,9 @@ function canonicalEncodedDetailPath(value: string): boolean {
 
 
 function safeLoginReturnPath(value: string): boolean {
+  if (value === "/ai-engineering") return true;
+  if (["overview", "reading", "domains", "finance", "products", "assets"]
+    .some((slug) => value === `/ai-engineering?document=${slug}`)) return true;
   if (["/hr/agent?", "/hr/?", "/hr?"].some(prefix => value.startsWith(prefix))) {
     const query = value.slice(value.indexOf("?") + 1);
     if (!/^[a-zA-Z0-9=&-]+$/.test(query)) return false;
@@ -166,7 +172,7 @@ function safeLoginReturnPath(value: string): boolean {
   const canonicalDetail = canonicalEncodedDetailPath(value);
   if (value.includes("%") && !canonicalDetail) return false;
   if (canonicalDetail) return true;
-  if (value === "/" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes" || value === "/voc/") return true;
+  if (value === "/" || value === "/brain" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes" || value === "/voc/") return true;
   if (/^\/missions\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;

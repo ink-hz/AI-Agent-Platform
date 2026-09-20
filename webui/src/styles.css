@@ -361,6 +361,60 @@ body {
 }
 .page { flex: 1; padding: 46px 0 68px; }
 .page.is-fae-workbench { width: min(1440px, calc(100% - 48px)); }
+
+.ai-engineering-state { display: grid; min-height: 360px; place-content: center; padding: 40px 24px; text-align: center; }
+.ai-engineering-state h1 { margin: 0; font-size: clamp(26px, 4vw, 36px); letter-spacing: -.035em; }
+.ai-engineering-state p { max-width: 560px; margin: 12px auto 0; color: var(--ink-soft); line-height: 1.7; }
+.ai-engineering-page { width: min(1180px, 100%); margin: 0 auto; }
+.page.is-brain-workspace > .ai-engineering-page { height: 100%; overflow-y: auto; padding: 44px 24px 68px; }
+.ai-engineering-hero { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; overflow: hidden; padding: 34px 38px; border: 1px solid #aec6df; border-radius: 24px; background: linear-gradient(135deg, #0f315d 0%, #174c83 62%, #236b9b 100%); color: #fff; box-shadow: 0 22px 54px rgba(15,49,93,.2); }
+.ai-engineering-hero::after { position: absolute; width: 280px; height: 280px; border: 1px solid rgba(255,255,255,.13); border-radius: 50%; top: -170px; right: 8%; content: ""; }
+.ai-engineering-hero > div, .ai-engineering-hero > nav { position: relative; z-index: 1; }
+.ai-engineering-hero p { margin: 0 0 9px; color: #a8d2ff; font-size: 11.5px; font-weight: 850; letter-spacing: .16em; }
+.ai-engineering-hero h1 { margin: 0; font-size: clamp(34px, 5vw, 52px); letter-spacing: -.05em; line-height: 1.05; }
+.ai-engineering-hero span { display: block; margin-top: 13px; color: rgba(255,255,255,.72); font-size: 12px; }
+.ai-engineering-hero nav { display: flex; flex: 0 0 auto; gap: 9px; }
+.ai-engineering-hero nav a { padding: 10px 14px; border: 1px solid rgba(255,255,255,.3); border-radius: 10px; background: rgba(255,255,255,.09); color: #fff; font-size: 12.5px; font-weight: 760; text-decoration: none; backdrop-filter: blur(8px); }
+.ai-engineering-hero nav a:hover { background: rgba(255,255,255,.18); }
+.ai-engineering-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; margin-top: 24px; align-items: start; }
+.ai-engineering-layout > aside { position: sticky; top: 94px; padding: 19px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.9); box-shadow: 0 10px 28px rgba(20,51,89,.07); }
+.page.is-brain-workspace .ai-engineering-layout > aside { top: 0; }
+.ai-engineering-layout > aside h2 { margin: 0 0 12px; padding: 0 5px; color: var(--ink-faint); font-size: 11.5px; letter-spacing: .1em; }
+.ai-engineering-layout > aside nav { display: grid; gap: 4px; }
+.ai-engineering-layout > aside a { padding: 10px 11px; border-radius: 9px; color: var(--ink-soft); font-size: 12.5px; font-weight: 700; text-decoration: none; }
+.ai-engineering-layout > aside a:hover { background: var(--surface-soft); color: var(--brand); }
+.ai-engineering-layout > aside a.is-current { background: var(--brand-wash); color: var(--brand); }
+.ai-engineering-reader { min-width: 0; padding: 14px 34px 42px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 12px 34px rgba(20,51,89,.07); }
+.ai-engineering-markdown { min-width: 0; color: var(--ink); font-size: 15.5px; line-height: 1.78; overflow-wrap: anywhere; }
+.ai-engineering-markdown h1, .ai-engineering-markdown h2, .ai-engineering-markdown h3, .ai-engineering-markdown h4 { margin: 1.65em 0 .65em; line-height: 1.35; scroll-margin-top: 92px; }
+.ai-engineering-markdown h1 { margin-top: .65em; font-size: clamp(28px, 4vw, 38px); letter-spacing: -.035em; }
+.ai-engineering-markdown h2 { padding-bottom: 9px; border-bottom: 1px solid var(--line-soft); font-size: 24px; }
+.ai-engineering-markdown h3 { font-size: 19px; }
+.ai-engineering-markdown p, .ai-engineering-markdown ul, .ai-engineering-markdown ol, .ai-engineering-markdown blockquote { margin: 1em 0; }
+.ai-engineering-markdown li + li { margin-top: .35em; }
+.ai-engineering-markdown a { color: var(--brand-bright); text-underline-offset: 3px; }
+.ai-engineering-unsafe-link { color: var(--ink-soft); text-decoration: underline dotted; text-underline-offset: 3px; }
+.ai-engineering-markdown blockquote { padding: 4px 0 4px 18px; border-left: 4px solid #9fb9d6; color: var(--ink-soft); }
+.ai-engineering-markdown img.ai-engineering-diagram { display: block; width: 100%; height: auto; margin: 24px 0; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.ai-engineering-table-scroll { max-width: 100%; margin: 20px 0; overflow-x: auto; }
+.ai-engineering-markdown table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 13px; }
+.ai-engineering-markdown th, .ai-engineering-markdown td { padding: 10px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.ai-engineering-markdown th { background: #edf3f9; color: var(--brand); }
+.ai-engineering-markdown tr:nth-child(even) td { background: #fafbfd; }
+.ai-engineering-markdown code { padding: 2px 5px; border-radius: 4px; background: #edf2f7; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+
+@media (max-width: 759px) {
+  .page.is-brain-workspace > .ai-engineering-page { padding: 20px 14px 42px; }
+  .ai-engineering-hero { align-items: stretch; flex-direction: column; padding: 28px 24px; border-radius: 18px; }
+  .ai-engineering-hero nav { flex-wrap: wrap; }
+  .ai-engineering-layout { grid-template-columns: 1fr; gap: 14px; margin-top: 14px; }
+  .ai-engineering-layout > aside { position: static; overflow-x: auto; padding: 12px; }
+  .ai-engineering-layout > aside h2 { margin-bottom: 8px; }
+  .ai-engineering-layout > aside nav { display: flex; width: max-content; }
+  .ai-engineering-layout > aside a { white-space: nowrap; }
+  .ai-engineering-reader { padding: 10px 20px 32px; border-radius: 14px; }
+  .ai-engineering-markdown { font-size: 15px; }
+}
 .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 34px; }
 .hero h1 { margin: 0; font-size: clamp(34px, 4vw, 44px); line-height: 1.12; letter-spacing: -.04em; }
 .hero-sub { max-width: 690px; margin: 13px 0 0; color: var(--ink-soft); font-size: 16px; line-height: 1.65; }

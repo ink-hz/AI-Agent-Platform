@@ -60,6 +60,19 @@ function accountResponse(): Response {
 
 
 describe("login return path", () => {
+  it("returns to the panorama and Agent Brain through canonical prefixed-safe paths", () => {
+    expect(loginReturnPath("?return_path=%2Fai-engineering%3Fdocument%3Dreading")).toBe("/ai-engineering?document=reading");
+    expect(loginReturnPath("?return_path=%2Fbrain")).toBe("/brain");
+    expect(loginReturnPath("?return_path=%2Fai-engineering%3Fdocument%3Dunknown")).toBe("/");
+    for (const nonCanonical of [
+      "/ai-engineering?document=%64omains",
+      "/ai-engineering?document=domains&",
+      "/ai-engineering?document=domains&&",
+      "/ai-engineering?document=domains&extra=",
+    ]) {
+      expect(loginReturnPath(`?${new URLSearchParams({ return_path: nonCanonical })}`)).toBe("/");
+    }
+  });
   it("returns to HR intelligence after reauthentication", () => {
     expect(loginReturnPath('?return_path=%2Fhr%2Fpanorama')).toBe('/hr/panorama');
     expect(loginReturnPath('?return_path=%2Fhr%2Fpanorama%3Fnext%3Dhttps%3A%2F%2Fevil.test')).toBe('/');

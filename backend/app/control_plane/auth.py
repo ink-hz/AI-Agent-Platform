@@ -41,6 +41,7 @@ _IN_CLIENT_APP_ID = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _SAFE_RETURN_ID = r"[A-Za-z0-9:._-]+"
 _SAFE_RETURN_EXACT = frozenset(
     {
+        "/brain", "/ai-engineering",
         "/", "/account", "/missions", "/conversations", "/agents",
         "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
         "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
@@ -314,11 +315,18 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
     selected = route_prefix if value is None else value
     if not isinstance(selected, str) or not selected.startswith("/"):
         raise ValueError("return path invalid")
-    # Only the current HR workspace carries exact work/position IDs through login.
+    # Only fixed panorama document slugs and exact HR IDs survive login.
     # Validate the raw query: no aliases, encoding, repeated keys or other routes.
     if "?" in selected:
         base, query = selected.split("?", 1)
         prefix = route_prefix.rstrip("/")
+        if base == prefix + "/ai-engineering":
+            if query not in {"document=" + slug for slug in (
+                "overview", "reading", "domains", "finance", "products", "assets"
+            )}:
+                raise ValueError("return path invalid")
+            validate_return_path(base, route_prefix=route_prefix)
+            return selected
         expected = {prefix + path for path in ("/hr", "/hr/", "/hr/agent")}
         pairs = query.split("&")
         seen = set()

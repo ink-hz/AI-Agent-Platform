@@ -57,6 +57,8 @@ describe("page access reporter", () => {
     expect(accessEventForRoute({ name: "admin-access" })).toEqual({
       workspace_key: "admin", page_key: "admin.access_history",
     });
+    expect(accessEventForRoute({ name: "home" })).toBeNull();
+    expect(accessEventForRoute({ name: "ai-engineering" })).toBeNull();
     expect(accessEventForRoute({ name: "login" })).toBeNull();
     expect(JSON.stringify(accessEventForRoute({ name: "admin-session", sessionKey: "secret-session" }))).not.toContain("secret-session");
   });

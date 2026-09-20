@@ -29,6 +29,7 @@ describe("usage navigation", () => {
   it("gives members a use-first navigation and always sends the brand home", async () => {
     await act(async () => root.render(<AppShell route={{ name: "brain" }} account={member}><p>内容</p></AppShell>));
     expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent");
+    expect(container.querySelector<HTMLAnchorElement>('.product-nav a[href="/brain"]')).not.toBeNull();
     expect(container.querySelector(".product-nav")?.textContent).not.toContain("企业账号");
     const accountEntry = container.querySelector<HTMLAnchorElement>("a.account-chip");
     expect(accountEntry?.textContent).toBe("成员");

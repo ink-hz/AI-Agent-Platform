@@ -40,6 +40,8 @@ describe("BrainWorkspacePage", () => {
     expect(container.querySelector('.brain-ai-notes-entry[href="/ai-notes"]')).not.toBeNull();
     await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/conversations/newer"]')?.click());
     expect(onNavigate).toHaveBeenCalledWith("/conversations/newer");
+    await act(async () => container.querySelector<HTMLButtonElement>(".conversation-sidebar-new")?.click());
+    expect(onNavigate).toHaveBeenCalledWith("/brain");
   });
 
   it("does not block the composer when Session history is unavailable", async () => {

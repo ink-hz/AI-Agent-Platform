@@ -32,6 +32,7 @@ import { MissionPage } from "./pages/MissionPage";
 import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AiNotesPage } from "./pages/AiNotesPage";
+import { AiEngineeringLanding } from "./pages/AiEngineeringPage";
 import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
 import { FaeManagementWorkspace } from "./workspaces/fae/FaeManagementWorkspace";
 import { AccessEventReporter } from "./accessEventReporter";
@@ -86,7 +87,7 @@ function AccessState({
 
 
 function viewerRouteAllowed(account: Account, route: ReturnType<typeof useRoute>): boolean {
-  if (["brain", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
+  if (["home", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
   if (route.name === "admin-governance") return true;
   if (route.name === "admin-voc") return true;
   if (route.name === "admin-agent-runtime") return account.observation_agent_ids.includes(route.agentId);
@@ -104,10 +105,19 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       await logoutAccount(csrf);
       window.location.replace(platformPath("/login"));
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
+    case "home": return account
+      ? <AiEngineeringLanding account={account} fallback={<>
+        <AccessEventReporter account={account} route={{ name: "brain" }} />
+        <BrainWorkspacePage account={account} />
+      </>} />
+      : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
     case "brain": return account
       ? <BrainWorkspacePage account={account} />
       : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
-    case "conversations": return <LegacyRedirect to="/" navigation="spa" />;
+    case "ai-engineering": return account
+      ? <AiEngineeringLanding account={account} direct selectedDocument={route.documentSlug} fallback={null} />
+      : <PendingPage title="AI 工程全景" description="请启用企业身份后阅读。" />;
+    case "conversations": return <LegacyRedirect to="/brain" navigation="spa" />;
     case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
     case "missions": return <MissionsPage />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
@@ -186,7 +196,7 @@ export default function App() {
   if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
   if (!legacyMode && account) {
-    const usageRoute = ["brain", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
+    const usageRoute = ["home", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
     const faeManagementRoute = route.name.startsWith("fae-manage-");
     const ownerOnlyRoute = route.name === "admin-access";
     const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")

@@ -268,7 +268,8 @@ def is_public_request(
     # expired or missing browser Session enter the existing DingTalk login
     # flow and preserve its validated workspace return path.
     if method == "GET" and (
-        _PUBLIC_HR_WORKSPACE_SHELL.fullmatch(local) is not None
+        local in {"/brain", "/ai-engineering"}
+        or _PUBLIC_HR_WORKSPACE_SHELL.fullmatch(local) is not None
         or _PUBLIC_MARKETING_WORKSPACE_SHELL.fullmatch(local) is not None
     ):
         return True
@@ -380,7 +381,13 @@ class IdentitySecurityMiddleware:
             partner_callback_method=self.partner_callback_method,
             partner_callback_path=self.partner_callback_path,
         ) and partner_namespace and _has_canonical_ascii_raw_path(scope, path)
+        ai_engineering_response = isinstance(local_path, str) and (
+            local_path == "/api/v1/ai-engineering"
+            or local_path.startswith("/api/v1/ai-engineering/")
+        )
         identity_response = (
+            ai_engineering_response
+            or
             local_path in _IDENTITY_RESPONSE_PATHS
             or partner_namespace
             or (
@@ -405,7 +412,7 @@ class IdentitySecurityMiddleware:
                 response_headers = MutableHeaders(scope=message)
                 response_headers["Cache-Control"] = (
                     "private, no-store"
-                    if local_path == "/api/v1/account"
+                    if ai_engineering_response or local_path == "/api/v1/account"
                     or _is_conversation_attachment_response_path(local_path)
                     else "no-store"
                 )
