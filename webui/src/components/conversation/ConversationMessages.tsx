@@ -78,7 +78,7 @@ function AssistantMessage({ message, assistantLabel, feedbackState, citations, v
 
 export function ConversationMessages({
   messages,
-  assistantLabel = "Agent 大脑",
+  assistantLabel = "AI 助手",
   feedback = {},
   citations = {},
   artifactVersions = {},

@@ -56,7 +56,7 @@ export function WorkroomAgentSession({
     {failed && <p className="workroom-session-state is-error" role="alert">子会话暂时无法读取，公开协作记录仍可查看。</p>}
     {detail && <ol className="workroom-session-messages" aria-label="子会话消息">
       {detail.messages.map((message) => <li className={`is-${message.sender}`} key={`${message.sender}-${message.seq}`}>
-        <div><strong>{message.sender === "brain" ? "Agent 大脑" : message.sender === "agent" ? task.agentLabel : "Platform"}</strong><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time></div>
+        <div><strong>{message.sender === "brain" ? "AI 助手" : message.sender === "agent" ? task.agentLabel : "Platform"}</strong><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time></div>
         <p>{message.text}</p>
       </li>)}
     </ol>}

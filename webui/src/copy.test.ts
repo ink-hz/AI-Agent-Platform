@@ -24,9 +24,9 @@ function allStrings(value: unknown): string[] {
 
 describe("reviewed UI copy", () => {
   it("uses Chinese system copy while preserving agreed technical nouns", () => {
-    expect(UI_COPY.navigation).toEqual(["总览", "Agent", "Session", "运行记录"]);
+    expect(UI_COPY.navigation).toEqual(["运行概览", "Agent 状态", "会话记录", "运行事件"]);
     expect(UI_COPY.navigationLabel).toBe("主导航");
-    expect(UI_COPY.hero.title).toBe("Agent 集群总览");
+    expect(UI_COPY.hero.title).toBe("运行概览");
     expect(UI_COPY.summary.metrics).toEqual([
       "Agent 数量", "正常运行", "累计对话", "近 7 天对话",
     ]);

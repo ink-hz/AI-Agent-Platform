@@ -23,19 +23,19 @@ describe("document titles", () => {
   });
 
   it("uses contextual Orbbec Agent Platform titles", () => {
-    expect(routeDocumentTitle({ name: "brain" })).toBe("Agent 大脑 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "conversations" })).toBe("Agent 大脑 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "conversation", conversationId: "one" })).toBe("Agent 大脑 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "agents" })).toBe("专业 Agent · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "brain" })).toBe("AI 助手 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "conversations" })).toBe("AI 助手 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "conversation", conversationId: "one" })).toBe("AI 助手 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "agents" })).toBe("全部 Agent · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "voc-workspace" })).toBe("VOC 洞察助手 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "ai-notes" })).toBe("AI 工程笔记 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "ai-note", categorySlug: "foundations", articleSlug: "handbook" })).toBe("AI 工程笔记 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "mission", missionId: "one" })).toBe("任务 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "admin-agent-runtime", agentId: "one" })).toBe("运行详情 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-sessions" })).toBe("Session · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-session", sessionKey: "one" })).toBe("Session 回放 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-activity" })).toBe("运行记录 · Orbbec Agent Platform");
-    expect(routeDocumentTitle({ name: "admin-voc" })).toBe("VOC 管理 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-sessions" })).toBe("会话记录 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-session", sessionKey: "one" })).toBe("会话回放 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-activity" })).toBe("运行事件 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "admin-voc" })).toBe("AI VOC Agent · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "hr" })).toBe("HR 智能工作台 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "hr-positions" })).toBe("岗位 · HR 智能工作台");
     expect(routeDocumentTitle({ name: "hr-position-section", positionId: "11111111-1111-4111-8111-111111111111", section: "artifacts" })).toBe("岗位 · HR 智能工作台");

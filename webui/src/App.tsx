@@ -108,15 +108,15 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
     case "home": return account
       ? <AiEngineeringLanding account={account} direct fallback={null} />
-      : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
+      : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
     case "brain": return account
       ? <BrainWorkspacePage account={account} />
-      : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
+      : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
     case "ai-engineering": return account
       ? <AiEngineeringLanding account={account} direct selectedDocument={route.documentSlug} fallback={null} />
       : <PendingPage title="AI 工程全景" description="请启用企业身份后阅读。" />;
     case "conversations": return <LegacyRedirect to="/brain" navigation="spa" />;
-    case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="Agent 大脑" description="请启用企业身份后使用。" />;
+    case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
     case "missions": return <MissionsPage />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
@@ -149,7 +149,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       ? <FaeManagementWorkspace account={account} route={route} />
       : <PendingPage title="FAE 工作台" description="请启用企业身份后使用。" />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} navigation={route.navigation} />;
-    default: return <PendingPage title="页面不存在" description="请返回 Agent 大脑。" />;
+    default: return <PendingPage title="页面不存在" description="请返回 AI 助手。" />;
   }
 }
 

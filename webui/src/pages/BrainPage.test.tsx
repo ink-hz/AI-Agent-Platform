@@ -66,7 +66,7 @@ describe("BrainPage", () => {
     };
     await act(async () => root.render(<BrainPage account={account} client={client} onOpenConversation={vi.fn()} />));
 
-    expect(container.querySelector("h1")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector("h1")?.textContent).toBe("AI 助手");
     expect(container.querySelector("textarea")?.disabled).toBe(false);
     expect(container.querySelectorAll(".brain-example")).toHaveLength(0);
     expect(container.textContent).not.toContain("把原始需求直接交给它");
@@ -91,7 +91,7 @@ describe("BrainPage", () => {
     expect(entry?.textContent).toBe("AI 工程笔记 →");
     expect(entry?.getAttribute("href")).toBe("/ai-notes");
     expect(entry?.parentElement?.classList.contains("brain-home-toolbar")).toBe(true);
-    expect(container.querySelector(".brain-home-focus h1")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector(".brain-home-focus h1")?.textContent).toBe("AI 助手");
     expect(container.querySelector(".brain-home-focus .brain-composer")).not.toBeNull();
 
     await act(async () => entry?.click());
@@ -185,7 +185,7 @@ describe("BrainPage", () => {
     });
     await act(async () => container.querySelector<HTMLButtonElement>(".brain-submit")?.click());
 
-    expect(container.textContent).toContain("Agent 大脑暂不可用");
+    expect(container.textContent).toContain("AI 助手暂不可用");
     expect(container.textContent).toContain("使用同一次请求重试");
     expect(container.textContent).not.toContain("正在准备");
   });

@@ -11,21 +11,21 @@ interface EventPresentation {
 
 const PRESENTATIONS: Record<string, EventPresentation> = {
   "mission.started": { title: "需求已接收", actor: "你", tone: "neutral", markdown: false },
-  "brain.responding": { title: "分析需求", actor: "Agent 大脑", tone: "working", markdown: false },
-  "plan.created": { title: "任务规划", actor: "Agent 大脑", tone: "working", markdown: false },
-  "plan.revised": { title: "计划已更新", actor: "Agent 大脑", tone: "working", markdown: false },
-  "task.dispatched": { title: "已交付专业 Agent", actor: "Agent 大脑", tone: "working", markdown: false },
+  "brain.responding": { title: "分析需求", actor: "AI 助手", tone: "working", markdown: false },
+  "plan.created": { title: "任务规划", actor: "AI 助手", tone: "working", markdown: false },
+  "plan.revised": { title: "计划已更新", actor: "AI 助手", tone: "working", markdown: false },
+  "task.dispatched": { title: "已交付专业 Agent", actor: "AI 助手", tone: "working", markdown: false },
   "agent.accepted": { title: "专业 Agent 已接收", actor: "专业 Agent", tone: "working", markdown: false },
   "agent.progress": { title: "执行进度", actor: "专业 Agent", tone: "working", markdown: false },
   "agent.result": { title: "专业结果", actor: "专业 Agent", tone: "result", markdown: true },
-  "task.reviewed": { title: "结果复核", actor: "Agent 大脑", tone: "result", markdown: true },
-  "task.revision_requested": { title: "补充要求", actor: "Agent 大脑", tone: "working", markdown: false },
-  "synthesis.started": { title: "整理交付", actor: "Agent 大脑", tone: "working", markdown: false },
-  "mission.partially_completed": { title: "部分交付", actor: "Agent 大脑", tone: "failure", markdown: true },
-  "mission.completed": { title: "最终交付", actor: "Agent 大脑", tone: "result", markdown: true },
-  "mission.failed": { title: "任务未完成", actor: "Agent 大脑", tone: "failure", markdown: false },
-  "mission.interrupted": { title: "执行已中断", actor: "Agent 大脑", tone: "failure", markdown: false },
-  "mission.cancelled": { title: "任务已停止", actor: "Agent 大脑", tone: "failure", markdown: false },
+  "task.reviewed": { title: "结果复核", actor: "AI 助手", tone: "result", markdown: true },
+  "task.revision_requested": { title: "补充要求", actor: "AI 助手", tone: "working", markdown: false },
+  "synthesis.started": { title: "整理交付", actor: "AI 助手", tone: "working", markdown: false },
+  "mission.partially_completed": { title: "部分交付", actor: "AI 助手", tone: "failure", markdown: true },
+  "mission.completed": { title: "最终交付", actor: "AI 助手", tone: "result", markdown: true },
+  "mission.failed": { title: "任务未完成", actor: "AI 助手", tone: "failure", markdown: false },
+  "mission.interrupted": { title: "执行已中断", actor: "AI 助手", tone: "failure", markdown: false },
+  "mission.cancelled": { title: "任务已停止", actor: "AI 助手", tone: "failure", markdown: false },
 };
 
 const DIRECT_AGENT_EVENT_TYPES = new Set([
@@ -100,7 +100,7 @@ export function MissionTimeline({
   return <ol className="mission-timeline" aria-label="任务协作过程" aria-live="polite" aria-relevant="additions text">
     {ordered.map((event) => {
       const presentation = PRESENTATIONS[event.event_type] ?? {
-        title: "任务更新", actor: "Agent 大脑", tone: "neutral", markdown: false,
+        title: "任务更新", actor: "AI 助手", tone: "neutral", markdown: false,
       };
       const actor = actorForEvent(event.event_type, presentation.actor, missionMode, directAgentId);
       const text = textValue(event.event_type, event.payload);

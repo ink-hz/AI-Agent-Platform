@@ -48,7 +48,7 @@ function activityLabel(status: Conversation["activity_status"]): string | null {
 }
 
 export function ConversationSidebar({
-  title = "Agent 大脑",
+  title = "AI 助手",
   label,
   mark,
   conversations, selectedConversationId, loading, error, hasMore, loadingMore, mobileOpen,

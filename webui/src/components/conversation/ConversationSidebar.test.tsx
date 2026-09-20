@@ -37,7 +37,7 @@ describe("ConversationSidebar", () => {
     />));
 
     expect(container.querySelector('nav[aria-label="对话列表"]')).not.toBeNull();
-    expect(container.querySelector(".conversation-sidebar-head strong")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector(".conversation-sidebar-head strong")?.textContent).toBe("AI 助手");
     expect(container.querySelector('a[aria-current="page"]')?.textContent).toContain("当前会话");
     expect(container.textContent).not.toContain("HR Agent");
     expect(container.querySelector('a[href="/hr/conversations/direct"]')).not.toBeNull();

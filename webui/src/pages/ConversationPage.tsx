@@ -187,7 +187,7 @@ export function ConversationPage({
   onConversationUpdated,
   onConversationSettled,
   expectedAgentId,
-  assistantLabel = "Agent 大脑",
+  assistantLabel = "AI 助手",
   personaSubtitle,
   attachmentLimits,
   positionMaterialIds,

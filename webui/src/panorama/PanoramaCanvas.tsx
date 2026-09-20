@@ -5,9 +5,9 @@ import type { PanoramaActionId, PanoramaData, PanoramaGroup, PanoramaNode } from
 import { routePanoramaEdge, type PanoramaRect } from "../panoramaRouting";
 
 const ACTION_LABELS: Record<PanoramaActionId, string> = {
-  brain: "使用大脑", agents: "Agent 目录", missions: "任务", sessions: "会话", operations: "运行总览",
-  review: "复审", activity: "运行记录", identity: "身份", governance: "治理", access: "访问记录",
-  account: "账号", "agent-admin": "Agent 管理", notes: "建设笔记", hr: "HR · 独立入口",
+  brain: "AI 助手", agents: "全部 Agent", missions: "任务", sessions: "会话", operations: "运行概览",
+  review: "复审", activity: "运行事件", identity: "账号与权限", governance: "审计日志", access: "访问记录",
+  account: "账号", "agent-admin": "Agent 状态", notes: "工程笔记", hr: "HR · 独立入口",
   office: "行政 · 独立入口", voc: "VOC · 独立入口", fae: "FAE · 独立入口",
 };
 const EXTERNAL_ACTIONS = new Set<PanoramaActionId>(["hr", "office", "voc", "fae"]);

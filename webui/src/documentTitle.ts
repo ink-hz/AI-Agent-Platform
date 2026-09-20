@@ -17,13 +17,13 @@ const MARKETING_TITLE_BY_SLUG = {
 export function routeDocumentTitle(route: Route): string {
   switch (route.name) {
     case "home": return PLATFORM_TITLE;
-    case "brain": return `Agent 大脑 · ${PLATFORM_TITLE}`;
+    case "brain": return `AI 助手 · ${PLATFORM_TITLE}`;
     case "ai-engineering": return `AI 工程全景 · ${PLATFORM_TITLE}`;
-    case "conversations": return `Agent 大脑 · ${PLATFORM_TITLE}`;
-    case "conversation": return `Agent 大脑 · ${PLATFORM_TITLE}`;
+    case "conversations": return `AI 助手 · ${PLATFORM_TITLE}`;
+    case "conversation": return `AI 助手 · ${PLATFORM_TITLE}`;
     case "missions": return `历史任务 · ${PLATFORM_TITLE}`;
     case "mission": return `任务 · ${PLATFORM_TITLE}`;
-    case "agents": return `专业 Agent · ${PLATFORM_TITLE}`;
+    case "agents": return `全部 Agent · ${PLATFORM_TITLE}`;
     case "voc-workspace": return `VOC 洞察助手 · ${PLATFORM_TITLE}`;
     case "hr": return `HR 智能工作台 · ${PLATFORM_TITLE}`;
     case "hr-agent": return "Hannah · HR 智能工作台";
@@ -43,20 +43,20 @@ export function routeDocumentTitle(route: Route): string {
     case "fae-manage-report": return `FAE 工作台 · ${PLATFORM_TITLE}`;
     case "ai-notes": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
     case "ai-note": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
-    case "admin-overview": return `管理中心 · ${PLATFORM_TITLE}`;
-    case "admin-agents": return `Agent 管理 · ${PLATFORM_TITLE}`;
+    case "admin-overview": return `运行概览 · ${PLATFORM_TITLE}`;
+    case "admin-agents": return `Agent 状态 · ${PLATFORM_TITLE}`;
     case "admin-agent": return `Agent 详情 · ${PLATFORM_TITLE}`;
     case "admin-agent-runtime": return `运行详情 · ${PLATFORM_TITLE}`;
-    case "admin-sessions": return `Session · ${PLATFORM_TITLE}`;
-    case "admin-session": return `Session 回放 · ${PLATFORM_TITLE}`;
-    case "admin-review": return `复审闭环 · ${PLATFORM_TITLE}`;
-    case "admin-activity": return `运行记录 · ${PLATFORM_TITLE}`;
+    case "admin-sessions": return `会话记录 · ${PLATFORM_TITLE}`;
+    case "admin-session": return `会话回放 · ${PLATFORM_TITLE}`;
+    case "admin-review": return `任务复审 · ${PLATFORM_TITLE}`;
+    case "admin-activity": return `运行事件 · ${PLATFORM_TITLE}`;
     case "login": return `登录 · ${PLATFORM_TITLE}`;
     case "account": return `企业账号 · ${PLATFORM_TITLE}`;
-    case "admin-identity": return `身份管理 · ${PLATFORM_TITLE}`;
-    case "admin-governance": return `治理审计 · ${PLATFORM_TITLE}`;
+    case "admin-identity": return `账号与权限 · ${PLATFORM_TITLE}`;
+    case "admin-governance": return `审计日志 · ${PLATFORM_TITLE}`;
     case "admin-access": return `访问记录 · ${PLATFORM_TITLE}`;
-    case "admin-voc": return `VOC 管理 · ${PLATFORM_TITLE}`;
+    case "admin-voc": return `AI VOC Agent · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }

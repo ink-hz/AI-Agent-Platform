@@ -10,7 +10,7 @@ export function GovernancePage() {
     void listGovernanceAudit().then(setEvents).catch(() => setFailed(true));
   }, []);
   return <section className="governance-page">
-    <header><p>IMMUTABLE AUDIT</p><h1>治理审计</h1><span>仅展示脱敏的身份、授权和特权访问事件。</span></header>
+    <header><p>IMMUTABLE AUDIT</p><h1>审计日志</h1><span>仅展示脱敏的身份、授权和特权访问事件。</span></header>
     {failed && <p className="auth-message is-error" role="alert">审计服务暂不可用。</p>}
     <div className="governance-list">
       {events.map((event) => <article key={event.audit_event_id}>

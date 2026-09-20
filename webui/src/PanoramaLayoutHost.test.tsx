@@ -51,7 +51,7 @@ it('removes protected graph and starts existing login on editor authorization fa
  expect(box.querySelector('nav[aria-label="平台功能"]')).toBeNull();
 });
 it('keeps normal platform navigation outside the panorama content',async()=>{
- const navigate=await setup();const nav=box.querySelector('.topbar')!;
+ const navigate=await setup();const nav=box.querySelector('.platform-sidebar')!;
  expect(box.querySelector('.panorama-home .topbar')).toBeNull();expect(box.querySelector('.platform-functions')).toBeNull();
  expect(nav).not.toBeNull();expect(nav.compareDocumentPosition(box.querySelector('h1')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
  await act(async()=>nav.querySelector<HTMLAnchorElement>('a[href="/admin"]')!.click());
@@ -59,13 +59,13 @@ it('keeps normal platform navigation outside the panorama content',async()=>{
 });
 it('preserves unsaved layout protection when leaving through a business management shortcut',async()=>{
  const navigate=await setup();await click('本地修改');vi.spyOn(window,'confirm').mockReturnValue(false);
- await act(async()=>box.querySelector<HTMLAnchorElement>('.topbar a[href="/admin"]')!.click());
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin"]')!.click());
  expect(window.confirm).toHaveBeenCalledTimes(1);expect(navigate).not.toHaveBeenCalled();expect(window.location.pathname).toBe('/');
 });
 
 it('keeps platform entry points available if only the panorama data request fails',async()=>{
  vi.mocked(fetchPanorama).mockRejectedValue(new Error('panorama unavailable'));
  const navigate=await setup();expect(box.textContent).toContain('AI 工程全景暂时不可用');
- await act(async()=>box.querySelector<HTMLAnchorElement>('.topbar a[href="/admin"]')!.click());
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin"]')!.click());
  expect(window.location.pathname).toBe('/admin');
 });

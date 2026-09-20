@@ -1394,7 +1394,7 @@ describe("ConversationPage", () => {
     ));
 
     expect(container.textContent).toContain("请补充岗位级别");
-    const input = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='回答 Agent 大脑']");
+    const input = container.querySelector<HTMLTextAreaElement>("textarea[aria-label='回答 AI 助手']");
     expect(input).not.toBeNull();
     expect(container.querySelector(".conversation-composer")?.textContent)
       .toContain("请先回答上方问题。");

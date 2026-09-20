@@ -160,7 +160,7 @@ describe("IdentityManagementPage", () => {
       role: "management_viewer", status: "active", scopes: ["ai-fae-agent"],
     }] }), { status: 200, headers: { "Content-Type": "application/json" } }))));
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
-    expect(container.textContent).toContain("身份与观察范围");
+    expect(container.textContent).toContain("账号与权限");
     const action = [...container.querySelectorAll("button")].find((item) => item.textContent === "设为只读观察者");
     expect(action?.hasAttribute("disabled")).toBe(true);
     const reason = container.querySelector("input[aria-label='变更原因']") as HTMLInputElement;
@@ -232,7 +232,7 @@ describe("IdentityManagementPage", () => {
 
     await act(async () => root.render(<IdentityManagementPage account={administrator} />));
 
-    expect(container.textContent).toContain("身份与观察范围");
+    expect(container.textContent).toContain("账号与权限");
     expect([...container.querySelectorAll("button")]
       .some((button) => button.textContent?.includes("平台管理员"))).toBe(false);
     const memberViewerButton = [...articleFor(container, "测试成员").querySelectorAll("button")]

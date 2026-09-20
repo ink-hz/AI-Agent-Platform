@@ -14,5 +14,6 @@
 .panorama-evidence h2 { font-size:20px; }
 @media(max-width:700px) { .panorama-work-area { padding:12px; } .panorama-evidence { inset:12px; padding:16px; } .panorama-work-area-heading h2 { font-size:18px; } }
 
-.app.is-panorama-shell:has(.panorama--presenting) > .topbar,
-.app.is-panorama-shell:has(.panorama--presenting) > .admin-nav { display:none; }
+/* Only a visible graph in presentation mode hides the surrounding platform shell. */
+.app.is-panorama-shell:has(.panorama-home > div:not([hidden]) > .panorama--presenting) > .topbar,
+.app.is-panorama-shell:has(.panorama-home > div:not([hidden]) > .panorama--presenting) .platform-sidebar { display:none; }

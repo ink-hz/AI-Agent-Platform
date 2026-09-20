@@ -99,7 +99,7 @@ describe("PublicProgress", () => {
   it("shows only a factual live status while the workroom owns collaboration detail", async () => {
     await act(async () => root.render(<PublicProgress
       active
-      assistantLabel="Agent 大脑"
+      assistantLabel="AI 助手"
       events={[
         event(1, "brain.started", { status: "running" }),
         event(2, "agent.task_dispatched", { agent_name: "HR Agent", public_reason: "需要人才判断" }),

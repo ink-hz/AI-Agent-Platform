@@ -285,7 +285,7 @@ describe("ActivityPage", () => {
     expect(options).not.toContain("测试机器人");
     expect(Array.from(container.querySelectorAll(".activity-group h2"), (node) => node.textContent))
       .toEqual(["今天", "昨天", "2026年7月21日"]);
-    expect(container.textContent).toContain("运行记录");
+    expect(container.textContent).toContain("运行事件");
     expect(container.textContent).toContain("筛选 Agent 的部署、配置、运行状态和数据同步记录");
   });
 
@@ -647,10 +647,10 @@ describe("ActivityPage", () => {
 
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".readonly-tag")).toBeNull();
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent管理中心");
+    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("AI 助手");
     expect(container.querySelector("[role=alert]")?.textContent).toContain("运行记录暂不可用");
-    expect(container.querySelector(".product-nav [aria-current=page]")?.textContent).toBe("管理中心");
-    expect(container.querySelector(".admin-nav")?.textContent).toContain("运行记录");
+    expect(container.querySelector(".platform-sidebar [aria-current=page]")).toBeNull();
+    expect(container.querySelector('.platform-sidebar a[href="/admin/activity"]')).toBeNull();
   });
 
   it("aborts Agent and Activity requests on cleanup and ignores late results", async () => {

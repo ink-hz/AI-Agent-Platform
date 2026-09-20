@@ -134,7 +134,7 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
   const title = index && access === "allowed"
     ? `${index.title} · ${PLATFORM_TITLE}`
     : access === "fallback"
-      ? `Agent 大脑 · ${PLATFORM_TITLE}`
+      ? `AI 助手 · ${PLATFORM_TITLE}`
       : direct
         ? `AI 工程全景 · ${PLATFORM_TITLE}`
         : PLATFORM_TITLE;
@@ -225,8 +225,8 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
         <span>版本 {index.version} · 更新于 <time dateTime={index.updated_at}>{new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(new Date(index.updated_at))}</time></span>
       </div>
       <nav aria-label="AI 工程快捷入口">
-        <a href={platformPath("/brain")} onClick={(event) => follow(event, "/brain")}>Agent 大脑</a>
-        <a href={platformPath("/agents")} onClick={(event) => follow(event, "/agents")}>专业 Agent</a>
+        <a href={platformPath("/brain")} onClick={(event) => follow(event, "/brain")}>AI 助手</a>
+        <a href={platformPath("/agents")} onClick={(event) => follow(event, "/agents")}>全部 Agent</a>
       </nav>
     </header>
     <div className="ai-engineering-layout">

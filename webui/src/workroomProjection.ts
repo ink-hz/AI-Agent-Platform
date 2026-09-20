@@ -138,11 +138,11 @@ function platformText(event: ConversationEvent, label: string): string {
     "agent.task_unavailable": `${label} 当前不可用`,
     "agent.cancelled": `${label} 任务已停止`,
     "agent.task_recovered": `${label} 任务已恢复`,
-    "brain.waiting_agents": "Agent 大脑正在等待专业 Agent 的真实更新",
+    "brain.waiting_agents": "AI 助手正在等待专业 Agent 的真实更新",
     "brain.user_intervention": "已收到你对当前任务的补充",
-    "brain.agent_stop_requested": "Agent 大脑已发送停止请求",
-    "brain.answer_submitted": "Agent 大脑已完成本轮交付",
-    "brain.failed": "Agent 大脑未能完成本轮交付",
+    "brain.agent_stop_requested": "AI 助手已发送停止请求",
+    "brain.answer_submitted": "AI 助手已完成本轮交付",
+    "brain.failed": "AI 助手未能完成本轮交付",
   } as Record<string, string>)[event.event_type] ?? "平台已更新协作状态";
 }
 
@@ -179,14 +179,14 @@ function timelineItem(
       || !(text = stringValue(event.payload.summary))
     ) return null;
     sourceKind = "brain_thinking";
-    sourceLabel = "Agent 大脑 · 思考摘要";
+    sourceLabel = "AI 助手 · 思考摘要";
   } else if (event.event_type === "brain.agent_message_sent") {
     text = stringValue(event.payload.summary)
       ?? stringValue(event.payload.public_reason)
       ?? stringValue(event.payload.objective_summary);
     if (!task || !text) return malformedFact(event, taskId);
     sourceKind = "brain_message";
-    sourceLabel = `Agent 大脑 → ${agentLabel}`;
+    sourceLabel = `AI 助手 → ${agentLabel}`;
   } else if (event.event_type === "agent.thinking_summary") {
     text = stringValue(event.payload.summary);
     if (

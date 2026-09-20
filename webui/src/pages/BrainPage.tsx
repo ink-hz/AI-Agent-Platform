@@ -94,7 +94,7 @@ export function BrainPage({
         >AI 工程笔记 <span aria-hidden="true">→</span></a>
       </div>
       <div className="brain-home-focus">
-        <h1 id="brain-heading">Agent 大脑</h1>
+        <h1 id="brain-heading">AI 助手</h1>
         <form className="brain-composer" onSubmit={submit}>
           <label htmlFor="brain-request">你想完成什么？</label>
           <textarea
@@ -122,7 +122,7 @@ export function BrainPage({
         {inputTooLarge && <p className="mission-input-error" role="alert">输入超过 32 KiB，请精简后再提交。</p>}
         {failure && <div className="brain-submit-error" role="alert">
           <span>{failure === "unavailable"
-            ? "Agent 大脑暂不可用。请稍后使用同一次请求重试。"
+            ? "AI 助手暂不可用。请稍后使用同一次请求重试。"
             : "对话暂未创建成功。网络恢复后可使用同一次请求安全重试。"}</span>
           <button className="brain-retry" disabled={pending} onClick={() => void send()} type="button">重新提交</button>
         </div>}

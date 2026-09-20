@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { BUSINESS_AGENT_LABELS } from "../platform/agentLabels";
 import { fetchAgentCatalog } from "../brainApi";
 import type { AgentCapabilityCard } from "../brainTypes";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
@@ -32,6 +33,7 @@ function safeWorkspaceUrl(card: AgentCapabilityCard): string | null {
 }
 
 function AgentCard({ card }: { card: AgentCapabilityCard }) {
+  const displayName = BUSINESS_AGENT_LABELS[card.agent_id] ?? card.display_name;
   const external = card.interaction_modes.includes("external_workspace");
   const kind = agentKind(card);
   const launchPath = workspaceLaunchPath(card.agent_id);
@@ -41,7 +43,7 @@ function AgentCard({ card }: { card: AgentCapabilityCard }) {
       <span aria-hidden="true" className="agent-use-card-arrow">↗</span>
     </header>
     <div className="agent-use-card-body">
-      <h3>{card.display_name}</h3>
+      <h3>{displayName}</h3>
       <p>{card.mission}</p>
       {card.capabilities[0] && <p className="agent-use-card-capability">{card.capabilities[0]}</p>}
     </div>
@@ -54,9 +56,9 @@ function AgentCard({ card }: { card: AgentCapabilityCard }) {
   if (!href) return <article className="agent-use-card agent-use-card-disabled" data-agent-kind={kind}>
     {content}<span className="agent-use-card-unavailable">入口暂不可用</span>
   </article>;
-  if (external) return <a aria-label={`打开 ${card.display_name} 工作区`} className="agent-use-card"
+  if (external) return <a aria-label={`打开 ${displayName} 工作区`} className="agent-use-card"
     data-agent-kind={kind} href={href}>{content}{footer}</a>;
-  return <PlatformLink aria-label={`打开 ${card.display_name} 工作区`} className="agent-use-card"
+  return <PlatformLink aria-label={`打开 ${displayName} 工作区`} className="agent-use-card"
     data-agent-kind={kind} href={href}>{content}{footer}</PlatformLink>;
 }
 
@@ -86,10 +88,10 @@ export function AgentUseDirectoryPage({
   }), [agents]);
 
   return <div className="agent-use-directory">
-    <section className="use-page-intro"><p>AUTHORIZED EXPERTS</p><h1>专业 Agent</h1><span>直接进入你已获授权的专业能力。每次任务仍由 Platform 保存、鉴权和回放。</span></section>
+    <section className="use-page-intro"><h1>全部 Agent</h1><span>选择一个 Agent 开始工作。</span></section>
     {error ? <ErrorState onRetry={() => setAttempt((value) => value + 1)} />
       : agents === null ? <LoadingState label="正在读取可用 Agent" />
-      : orderedAgents.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="你仍可从 Agent 大脑完成通用对话和需求澄清。" />
+      : orderedAgents.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="你仍可从 AI 助手完成通用对话和需求澄清。" />
       : <div className="agent-use-grid agent-use-directory-grid">
         {orderedAgents.map((card) => <AgentCard card={card} key={card.agent_id} />)}
       </div>}

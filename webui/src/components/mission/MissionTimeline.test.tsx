@@ -104,7 +104,7 @@ describe("MissionTimeline", () => {
     expect(card?.querySelector(".mission-event-title")?.textContent).toBe(title);
   });
 
-  it("attributes direct execution to its Agent while keeping brain stages with Agent 大脑", async () => {
+  it("attributes direct execution to its Agent while keeping brain stages with AI 助手", async () => {
     await act(async () => root.render(<MissionTimeline
       directAgentId="hr-bot"
       events={[
@@ -117,16 +117,16 @@ describe("MissionTimeline", () => {
 
     const actors = [...container.querySelectorAll(".mission-event header span")]
       .map((node) => node.textContent);
-    expect(actors).toEqual(["Agent 大脑", "专业 Agent · hr-bot", "Agent 大脑"]);
+    expect(actors).toEqual(["AI 助手", "专业 Agent · hr-bot", "AI 助手"]);
   });
 
-  it("keeps delegated Mission completion attributed to Agent 大脑", async () => {
+  it("keeps delegated Mission completion attributed to AI 助手", async () => {
     await act(async () => root.render(<MissionTimeline
       directAgentId={null}
       events={[event(1, "mission.completed", { text: "综合交付" })]}
       missionMode="brain"
     />));
 
-    expect(container.querySelector(".mission-event header span")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector(".mission-event header span")?.textContent).toBe("AI 助手");
   });
 });

@@ -15,9 +15,9 @@ export function UserInputRequest({
   const [answer, setAnswer] = useState("");
   const ready = Boolean(answer.trim()) && !disabled && !pending;
   return <section className="user-input-request" aria-live="polite">
-    <header><strong>Agent 大脑需要你补充信息</strong><p>{question}</p></header>
+    <header><strong>AI 助手需要你补充信息</strong><p>{question}</p></header>
     <textarea
-      aria-label="回答 Agent 大脑"
+      aria-label="回答 AI 助手"
       disabled={disabled || pending}
       onChange={(event) => setAnswer(event.target.value)}
       placeholder="输入补充信息，继续当前这一轮"

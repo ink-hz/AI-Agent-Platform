@@ -329,7 +329,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
   };
   return (<>
     <section className="identity-page">
-      <header><p>PLATFORM GOVERNANCE</p><h1>身份与观察范围</h1><span>角色和 Agent 范围均由后端执行；页面隐藏不是权限控制。</span></header>
+      <header><p>PLATFORM GOVERNANCE</p><h1>账号与权限</h1><span>管理平台账号、角色与可访问的 Agent 范围。</span></header>
       <label className="identity-reason">变更原因
         <input aria-label="变更原因" value={reason} onInput={(event) => setReason(event.currentTarget.value)} placeholder="填写审批或业务原因" />
       </label>

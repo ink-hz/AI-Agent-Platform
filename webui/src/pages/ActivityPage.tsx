@@ -265,7 +265,7 @@ export function ActivityPage() {
   return <>
     <section className="page-intro">
       <div>
-        <h1>运行记录</h1>
+        <h1>运行事件</h1>
         <p>筛选 Agent 的部署、配置、运行状态和数据同步记录</p>
       </div>
     </section>

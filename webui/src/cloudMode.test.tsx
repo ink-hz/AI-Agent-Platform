@@ -139,7 +139,7 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.querySelector("#brain-heading")?.textContent).toBe("Agent 大脑");
+    expect(container.querySelector("#brain-heading")?.textContent).toBe("AI 助手");
     expect(container.querySelector("#brain-request")).not.toBeNull();
   });
 
@@ -299,7 +299,7 @@ describe("cloud replica mode", () => {
     ));
     await act(async () => await Promise.resolve());
 
-    expect(container.textContent).toContain("云端脱敏只读副本");
+    expect(container.textContent).toContain("云端副本 · 只读");
     expect(container.textContent).toContain("数据已同步");
     expect(container.textContent).not.toContain("复审闭环");
     expect(container.querySelector(".cloud-replica-banner")?.className).toContain("is-current");
@@ -378,12 +378,12 @@ describe("cloud replica mode", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     await act(async () => root.render(
-      <AppShell route={{ name: "brain" }}><p>Agent 大脑内容</p></AppShell>,
+      <AppShell route={{ name: "brain" }}><p>AI 助手内容</p></AppShell>,
     ));
     await act(async () => await Promise.resolve());
 
-    expect(container.textContent).toContain("Agent 大脑内容");
-    expect(container.textContent).not.toContain("云端脱敏只读副本");
+    expect(container.textContent).toContain("AI 助手内容");
+    expect(container.textContent).not.toContain("云端副本 · 只读");
     expect(container.textContent).not.toContain("数据已同步");
     expect(container.textContent).not.toContain("最近同步");
     expect(container.querySelector(".cloud-replica-banner")).toBeNull();
@@ -414,7 +414,7 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(
       <AppShell route={{ name: "account" }} account={member}><p>内容</p></AppShell>,
     ));
-    expect(container.querySelector(".product-nav")?.textContent).toBe("Agent 大脑专业 Agent");
+    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("AI 助手");
     expect(container.querySelector<HTMLAnchorElement>("a.account-chip")?.getAttribute("href")).toBe("/account");
 
     const viewer: Account = {
@@ -424,10 +424,10 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(
       <AppShell route={{ name: "admin-governance" }} account={viewer}><p>内容</p></AppShell>,
     ));
-    const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toBe("Agent 大脑专业 Agent管理中心");
-    expect(container.querySelector<HTMLAnchorElement>('.product-nav a[href="/admin/voc"]')).not.toBeNull();
-    expect(container.querySelector(".admin-nav")?.textContent).toBe("VOC 管理");
+    const navigation = container.querySelector(".platform-sidebar")?.textContent || "";
+    expect(navigation).toContain("AI VOC Agent");
+    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/voc"]')).not.toBeNull();
+    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("AI VOC Agent");
   });
 
   it("shows the server-enforced hard-stale read-only state", async () => {
@@ -461,10 +461,10 @@ describe("cloud replica mode", () => {
     ));
     await act(async () => await Promise.resolve());
 
-    const navigation = container.querySelector(".product-nav")?.textContent || "";
-    expect(navigation).toContain("Agent 大脑");
-    expect(navigation).toContain("管理中心");
-    expect(container.querySelector(".admin-nav")?.textContent).toContain("身份管理");
+    const navigation = container.querySelector(".platform-sidebar")?.textContent || "";
+    expect(navigation).toContain("AI 助手");
+    expect(navigation).toContain("运行概览");
+    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("账号与权限");
     expect(fetchMock).toHaveBeenCalled();
   });
 
@@ -494,7 +494,7 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(<App />));
     await act(async () => await Promise.resolve());
 
-    expect(container.textContent).toContain("身份与观察范围");
+    expect(container.textContent).toContain("账号与权限");
     expect(container.textContent).not.toContain("无权访问");
   });
 });

@@ -133,7 +133,7 @@ describe("professional Agent use pages", () => {
       .every((node) => node.textContent?.includes("打开"))).toBe(true);
     expect([...container.querySelectorAll(".agent-use-card-availability")]
       .every((node) => node.textContent === "可用")).toBe(true);
-    expect(container.querySelector("a[href='/hr/']")?.getAttribute("aria-label")).toBe("打开 HR Agent 工作区");
+    expect(container.querySelector("a[href='/hr/']")?.getAttribute("aria-label")).toBe("打开 AI HR Agent 工作区");
     expect(container.querySelector("a[href='/fae/']")?.getAttribute("aria-label")).toBe("打开 AI FAE Agent 工作区");
   });
 

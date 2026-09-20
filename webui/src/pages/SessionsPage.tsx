@@ -140,7 +140,7 @@ export function SessionsView({
   };
 
   return <>
-    <section className="page-intro"><div><h1>{title}</h1><p>{description}</p></div>{page && <strong>{page.total}<span> 个 Session</span></strong>}</section>
+    <section className="page-intro"><div><h1>{title}</h1><p>{description}</p></div>{page && <strong>{page.total}<span> 个会话</span></strong>}</section>
     <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); submit(); }}>
       <label><span>搜索</span><input name="q" value={draft.q} onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))} placeholder="用户提问或 Agent 回答" /></label>
       {showScopeFilters && <>
@@ -160,7 +160,7 @@ export function SessionsView({
     </form>
     {error ? <ErrorState onRetry={() => setVersion((value) => value + 1)} />
       : page === null ? <LoadingState label="正在加载 Session" />
-      : page.items.length === 0 ? <EmptyState title="没有符合条件的 Session" description="请调整筛选条件，或等待下一次数据同步。" />
+      : page.items.length === 0 ? <EmptyState title="没有符合条件的会话" description="请调整筛选条件，或等待下一次数据同步。" />
       : <div className="session-list">{page.items.map((session) => <SessionListItem key={session.session_key} session={session} detailHref={detailHref(session)} />)}</div>}
     {page && page.items.length > 0 && <nav className="session-pagination" aria-label="Session 分页">
       <p>第 {visibleStart}–{visibleEnd} 条，共 {page.total} 条</p>
@@ -182,8 +182,8 @@ const genericDetailHref = (session: SessionSummary) => `/admin/sessions/${encode
 export function SessionsPage() {
   return <SessionsView
     basePath="/admin/sessions"
-    title="Session"
-    description="查看各 Agent 的真实 Session 和对话记录。"
+    title="会话记录"
+    description="查看各 Agent 的会话和对话记录。"
     showScopeFilters
     load={fetchSessions}
     detailHref={genericDetailHref}

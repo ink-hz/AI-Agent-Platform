@@ -39,7 +39,7 @@ function mergeEvent(events: MissionEvent[], next: MissionEvent): MissionEvent[] 
 
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
-    planning: "Agent 大脑正在分析", delegated: "专业 Agent 正在执行", synthesizing: "Agent 大脑正在整理",
+    planning: "AI 助手正在分析", delegated: "专业 Agent 正在执行", synthesizing: "AI 助手正在整理",
     completed: "任务已完成", partially_completed: "任务部分完成", failed: "任务未完成",
     cancelled: "任务已停止", interrupted: "任务已中断",
   };
@@ -152,9 +152,9 @@ export function MissionPage({ missionId, account, client = DEFAULT_CLIENT }: {
   if (!mission) return <section className="mission-load-state" aria-live="polite"><h1>正在打开任务</h1><p>正在读取已保存的任务与协作事件。</p></section>;
   const terminal = TERMINAL_MISSION_STATUSES.has(mission.status);
   return <div className="mission-page">
-    <PlatformLink className="back-link" href="/brain">← 返回 Agent 大脑</PlatformLink>
+    <PlatformLink className="back-link" href="/brain">← 返回 AI 助手</PlatformLink>
     <header className="mission-header">
-      <div><p>{mission.mode === "direct_agent" ? "专业 Agent 任务" : "Agent 大脑任务"}</p><h1>{mission.prompt}</h1><span>{statusLabel(mission.status)}</span></div>
+      <div><p>{mission.mode === "direct_agent" ? "专业 Agent 任务" : "AI 助手任务"}</p><h1>{mission.prompt}</h1><span>{statusLabel(mission.status)}</span></div>
       {!terminal && <button className="mission-cancel" disabled={mission.cancel_requested || account.hard_stale_read_only} onClick={() => void stop()} type="button">
         {mission.cancel_requested ? "正在停止" : "停止任务"}
       </button>}
