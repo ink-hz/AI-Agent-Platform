@@ -13,6 +13,16 @@ from PIL import Image, ImageDraw, ImageFont
 WIDTH, HEIGHT = 1920, 1080
 INK, MUTED, BORDER = '#152B42', '#607389', '#D8E2EC'
 
+# Business-role colors match panorama.css; role identity survives selection/reordering.
+ROLE_COLORS = {'upstream': ('#E8EEF5', '#B6C5D6', '#43566E'),
+ 'company': ('#152F50', '#152F50', '#FFFFFF'),
+ 'downstream': ('#D5F2ED', '#77C9BA', '#11665B'),
+ 'products': ('#DCEAFF', '#8AB4F5', '#184C9D'),
+ 'technology': ('#E9E0FA', '#B4A0DF', '#644096'),
+ 'marketing': ('#FFEDCD', '#E9BE6C', '#89510B'),
+ 'delivery': ('#DCEAFF', '#8AB4F5', '#184C9D'),
+ 'support': ('#E2EAF2', '#A9BDCF', '#3B5670')}
+
 
 @lru_cache(maxsize=16)
 def _font(size: int):
@@ -64,14 +74,15 @@ def export_layout(data: dict[str, Any]) -> list[dict[str, Any]]:
         boxes=[]
         for i, node_id in enumerate(visible):
             n=nodes[node_id]; left=x+(i%cols)*(cw+12); top=y+(i//cols)*(ch+10)
-            company=group['role']=='company'; fill='#152F50' if company else 'white'
-            rect(left,top,cw,ch,fill)
+            company=group['role']=='company'
+            fill,stroke,ink=ROLE_COLORS[group['role']]
+            rect(left,top,cw,ch,fill,stroke)
             label=n['title'] if i<len(visible)-1 or len(ids)==len(visible) else '更多内容'
             if company and n['subtitle'] and ch>=80:
                 text(left+cw/2,top+ch/2-2,label,32,'white','middle',cw-28)
                 text(left+cw/2,top+ch/2+31,n['subtitle'],21,'#CCDBEB','middle',cw-28)
             else:
-                text(left+cw/2,top+ch/2+8,label,22,'white' if company else INK,'middle',cw-24)
+                text(left+cw/2,top+ch/2+8,label,22,ink,'middle',cw-24)
             boxes.append((left,top,cw,ch))
         return boxes
 
@@ -110,7 +121,7 @@ def export_layout(data: dict[str, Any]) -> list[dict[str, Any]]:
             for i,group in enumerate(layer['groups']):
                 gy=y+62+i*117
                 if group['role']=='technology':
-                    rect(62,gy-7,1796,84,'#F2F6FB','#F2F6FB')
+                    rect(62,gy-7,1796,84,'#F0E9FA','#F0E9FA')
                 grid(group,74,gy,1772,70)
                 regions[group['role']]=(74,gy,1772,70)
             product,tech=regions['products'],regions['technology']
@@ -125,7 +136,7 @@ def export_layout(data: dict[str, Any]) -> list[dict[str, Any]]:
             rows=[]
             for i,group in enumerate(layer['groups']):
                 gy=y+62+i*88
-                text(76,gy+38,group['title'],22,'#007E82' if group['role']=='marketing' else '#1765DC',width=190)
+                text(76,gy+38,group['title'],22,ROLE_COLORS[group['role']][2],width=190)
                 boxes=grid(group,288,gy,1548,62)
                 rows.append(boxes)
                 for a,b in zip(boxes,boxes[1:]):
