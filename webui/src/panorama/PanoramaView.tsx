@@ -20,9 +20,13 @@ interface Props {
   onAction: (actionId: PanoramaActionId) => void;
   onEvidence: (slug: AiEngineeringDocumentSlug) => void;
   isOwner?: boolean;
+  active?: boolean;
 }
 
 function percent(amount: number, total: number): string { return `${(amount / total * 100).toFixed(2)}%`; }
+function yuan(cents: number): string {
+  return `${(cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 元`;
+}
 
 function Sources({ ids, data, onEvidence }: { ids: string[]; data: PanoramaData; onEvidence: Props["onEvidence"] }) {
   return <div className="panorama-sources" aria-label="事实来源">{ids.map((id) => {
@@ -37,25 +41,29 @@ function Action({ id, onAction }: { id: PanoramaActionId; onAction: Props["onAct
   </button>;
 }
 
-function DomainCard({ domain, data, expanded, related, match, onToggle, onAction, onEvidence }: {
+function DomainCard({ domain, data, expanded, related, match, isOwner, onToggle, onAction, onEvidence }: {
   domain: PanoramaDomain; data: PanoramaData; expanded: boolean; related: boolean; match: boolean;
+  isOwner: boolean;
   onToggle: () => void; onAction: Props["onAction"]; onEvidence: Props["onEvidence"];
 }) {
+  const actions = domain.actions.filter((id) => id !== "access" || isOwner);
+  const [primaryAction, ...secondaryActions] = actions;
   return <article className={`panorama-domain${related ? " is-related" : ""}${match ? " is-search-match" : ""}`} data-domain-id={domain.id} data-expanded={expanded}>
     <button type="button" className="panorama-domain__toggle" aria-expanded={expanded} onClick={onToggle}>
       <span className="panorama-domain__heading"><strong>{domain.title}</strong><small>{domain.subtitle}</small></span>
       <span className="panorama-status">{domain.status}</span><span className="panorama-chevron" aria-hidden="true">{expanded ? "−" : "+"}</span>
     </button>
     <ul className="panorama-domain__items">{domain.items.map((item) => <li key={item}>{item}</li>)}</ul>
+    {primaryAction && <div className="panorama-domain__primary"><Action id={primaryAction} onAction={onAction} /></div>}
     {expanded && <div className="panorama-domain__detail">
       <ul>{domain.detail.map((item) => <li key={item}>{item}</li>)}</ul>
-      <div className="panorama-actions">{domain.actions.map((id) => <Action id={id} key={id} onAction={onAction} />)}</div>
+      <div className="panorama-actions">{secondaryActions.map((id) => <Action id={id} key={id} onAction={onAction} />)}</div>
       <Sources ids={domain.source_ids} data={data} onEvidence={onEvidence} />
     </div>}
   </article>;
 }
 
-export function PanoramaView({ data, onAction, onEvidence, isOwner = false }: Props) {
+export function PanoramaView({ data, onAction, onEvidence, isOwner = false, active = true }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [presenting, setPresenting] = useState(false);
@@ -68,12 +76,15 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false }: Pr
   }, [data, query]);
   useEffect(() => { if (query.trim() && matchIds.size) setExpandedId([...matchIds][0]); }, [query, matchIds]);
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (event.defaultPrevented || target?.isContentEditable || target?.closest("input, textarea, select")) return;
       if (event.key === "Escape") { setExpandedId(null); setQuery(""); setPresenting(false); }
-      if (event.key === "/" && document.activeElement !== queryRef.current) { event.preventDefault(); queryRef.current?.focus(); }
+      if (event.key === "/") { event.preventDefault(); queryRef.current?.focus(); }
     };
     document.addEventListener("keydown", onKeyDown); return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [active]);
   const selected = domains.find(({ id }) => id === expandedId);
   const relatedIds = new Set(selected?.related_ids ?? []);
   const sharedActions = data.shared.actions.filter((id) => id !== "access" || isOwner);
@@ -85,8 +96,8 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false }: Pr
       <div className="panorama-toolbar">
         <label className="panorama-search"><span>搜索全景</span><input ref={queryRef} type="search" value={query} placeholder="产品、能力或状态…" onInput={(event) => setQuery(event.currentTarget.value)} /></label>
         <button type="button" onClick={() => setPresenting((value) => !value)}>{presenting ? "退出展示" : "展示模式"}</button>
-        <a className="panorama-export" href={platformPath("/api/v1/ai-engineering/export.svg")} download>导出 SVG</a>
-        <a className="panorama-export" href={platformPath("/api/v1/ai-engineering/export.png")} download>导出 PNG</a>
+        <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.svg?version=${encodeURIComponent(data.version)}`)} download title="导出文件为离线副本，导出后无法在线撤回">导出 SVG</a>
+        <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.png?version=${encodeURIComponent(data.version)}`)} download title="导出文件为离线副本，导出后无法在线撤回">导出 PNG</a>
       </div>
     </header>
 
@@ -102,6 +113,7 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false }: Pr
           {data.revenue.segments.map((segment, index) => { const width = segment.amount_cents / data.revenue.denominator_cents * 1000; const start = x; x += width; return <rect data-revenue-segment={segment.id} className={REVENUE_COLORS[index % REVENUE_COLORS.length]} key={segment.id} x={start} y="0" width={width} height="38" />; })}
         </svg>
         <div className="panorama-revenue__legend">{data.revenue.segments.map((segment, index) => <div key={segment.id}><i className={REVENUE_COLORS[index % REVENUE_COLORS.length]} /><span>{segment.label}</span><strong>{percent(segment.amount_cents, data.revenue.denominator_cents)}</strong></div>)}</div>
+        <p className="panorama-revenue__denominator">主营业务收入分母 {yuan(data.revenue.denominator_cents)}</p>
         <p className="panorama-note">{data.revenue.note}</p><Sources ids={data.revenue.source_ids} data={data} onEvidence={onEvidence} />
       </article>
     </section>
@@ -109,14 +121,14 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false }: Pr
     <section className="panorama-value-chain" aria-label="业务价值链与 AI 覆盖">
       <div className="panorama-section-title"><span>03</span><div><h2>业务价值链与 AI 覆盖</h2><p>点击领域查看细节；关联领域同步高亮</p></div></div>
       <div className="panorama-domain-grid">{data.domains.map((domain, index) => <div className="panorama-domain-slot" key={domain.id}>
-        <DomainCard domain={domain} data={data} expanded={expandedId === domain.id} related={relatedIds.has(domain.id)} match={matchIds.has(domain.id)} onToggle={() => setExpandedId((id) => id === domain.id ? null : domain.id)} onAction={onAction} onEvidence={onEvidence} />
-        {index < data.domains.length - 1 && <span className="panorama-flow" aria-hidden="true">→</span>}
+        <DomainCard domain={domain} data={data} expanded={expandedId === domain.id} related={relatedIds.has(domain.id)} match={matchIds.has(domain.id)} isOwner={isOwner} onToggle={() => setExpandedId((id) => id === domain.id ? null : domain.id)} onAction={onAction} onEvidence={onEvidence} />
+        {index < data.domains.length - 1 && <span className="panorama-flow">业务协作 <b aria-hidden="true">→</b></span>}
       </div>)}</div>
       {query.trim() && !matchIds.size && <p className="panorama-empty" role="status">未在当前全景中找到“{query}”</p>}
     </section>
 
     <section className="panorama-foundation" aria-label="管理与共用能力">
-      <div className="panorama-support">{data.support.map((domain) => <DomainCard key={domain.id} domain={domain} data={data} expanded={expandedId === domain.id} related={relatedIds.has(domain.id)} match={matchIds.has(domain.id)} onToggle={() => setExpandedId((id) => id === domain.id ? null : domain.id)} onAction={onAction} onEvidence={onEvidence} />)}</div>
+      <div className="panorama-support">{data.support.map((domain) => <DomainCard key={domain.id} domain={domain} data={data} expanded={expandedId === domain.id} related={relatedIds.has(domain.id)} match={matchIds.has(domain.id)} isOwner={isOwner} onToggle={() => setExpandedId((id) => id === domain.id ? null : domain.id)} onAction={onAction} onEvidence={onEvidence} />)}</div>
       <article className="panorama-shared"><div><p>PLATFORM LAYER</p><h2>{data.shared.title}</h2><span>{data.shared.status}</span></div><div className="panorama-actions">{sharedActions.map((id) => <Action id={id} key={id} onAction={onAction} />)}</div></article>
     </section>
 

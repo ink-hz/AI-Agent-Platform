@@ -48,13 +48,14 @@
 .panorama-revenue__legend > div { align-items: center; display: grid; font-size: 11px; gap: 6px; grid-template-columns: 8px 1fr auto; }
 .panorama-revenue__legend i { border-radius: 2px; display: block; height: 8px; width: 8px; }
 .panorama-revenue__legend strong { font-variant-numeric: tabular-nums; }
+.panorama-revenue__denominator { color: #334e68; font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 700; margin-bottom: 3px !important; }
 .panorama-sources { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
 .panorama-source { background: transparent; border: 0; color: #57718b; cursor: pointer; font-size: 10px; padding: 1px 0; text-decoration: underline; text-decoration-color: #9bb3c8; text-underline-offset: 2px; }
 
 .panorama-value-chain { margin-top: 14px; padding: 17px 20px 20px; }
 .panorama-domain-grid { display: grid; gap: 11px; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 15px; }
 .panorama-domain-slot { min-width: 0; position: relative; }
-.panorama-flow { align-items: center; background: #f5f8fb; border: 1px solid #d8e4ed; border-radius: 50%; color: #7590a8; display: flex; height: 22px; justify-content: center; position: absolute; right: -17px; top: 38px; width: 22px; z-index: 2; }
+.panorama-flow { align-items: center; background: #f5f8fb; border: 1px solid #d8e4ed; border-radius: 999px; color: #607d97; display: flex; font-size: 8px; gap: 2px; justify-content: center; padding: 3px 5px; position: absolute; right: -29px; top: 38px; white-space: nowrap; z-index: 2; }
 .panorama-domain { background: #f9fbfd; border: 1px solid #dbe6ee; border-radius: 10px; height: 100%; min-width: 0; overflow: hidden; transition: border-color .16s, box-shadow .16s, transform .16s; }
 .panorama-domain.is-related { border-color: #48afae; box-shadow: 0 0 0 3px #07999a16; }
 .panorama-domain.is-search-match { border-color: #247bd9; box-shadow: 0 0 0 3px #1767d21c; }
@@ -67,6 +68,7 @@
 .panorama-chevron { color: var(--p-blue); font-size: 17px; }
 .panorama-domain__items { display: flex; flex-wrap: wrap; gap: 5px; list-style: none; margin: 0; padding: 0 12px 12px; }
 .panorama-domain__items li { background: #edf2f6; border-radius: 5px; color: #405b75; font-size: 10px; padding: 4px 6px; }
+.panorama-domain__primary { padding: 0 12px 12px; }
 .panorama-domain__detail { border-top: 1px solid #e3ebf1; padding: 10px 12px 12px; }
 .panorama-domain__detail > ul { color: #405b75; font-size: 11px; line-height: 1.5; margin: 0 0 10px; padding-left: 16px; }
 .panorama-actions { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -96,7 +98,7 @@
 
 @media (max-width: 1050px) {
   .panorama-domain-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .panorama-flow { display: none; }
+  .panorama-flow { margin: 7px auto -4px; position: static; width: max-content; }
   .panorama-asks { grid-template-columns: 1fr; }
 }
 

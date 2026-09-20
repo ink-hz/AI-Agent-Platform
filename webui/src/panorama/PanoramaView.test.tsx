@@ -31,7 +31,7 @@ const data: PanoramaData = {
     { id: "supply", title: "供应与生产", subtitle: "稳定制造", items: ["模组组装", "成品测试"], detail: ["资料缺口待确认"], status: "资料缺口", source_ids: ["D4"], related_ids: ["service"], actions: [] },
     { id: "service", title: "交付与服务", subtitle: "闭环反馈", items: ["设计导入", "FAE"], detail: ["测量验收与问题反馈"], status: "已有应用", source_ids: ["D5"], related_ids: ["market"], actions: ["fae"] },
   ],
-  support: [{ id: "management", title: "管理支撑", subtitle: "组织与制度", items: ["人才／HR", "行政"], detail: ["职责映射待确认"], status: "部分已有", source_ids: ["D6"], related_ids: ["market"], actions: ["hr", "office"] }],
+  support: [{ id: "management", title: "管理支撑", subtitle: "组织与制度", items: ["人才／HR", "行政"], detail: ["职责映射待确认"], status: "部分已有", source_ids: ["D6"], related_ids: ["market"], actions: ["access", "hr", "office"] }],
   shared: { title: "共用能力", actions: ["brain", "agents", "missions", "sessions", "operations", "review", "identity", "access"], status: "已有能力" },
   asks: [{ owner: "产品／研发", request: "指定一条代表产品链的业务牵头人" }],
   sources: [
@@ -60,6 +60,41 @@ describe("PanoramaView", () => {
     ].map((amount) => amount / data.revenue.denominator_cents * 1000));
     expect(container.textContent).toContain("62.43%");
     expect(container.textContent).toContain("2.73%");
+    expect(container.querySelector(".panorama-revenue__denominator")?.textContent).toContain("935,044,822.49 元");
+    expect(container.querySelector<HTMLAnchorElement>('a[download][href*="export.svg"]')?.getAttribute("href")).toBe("/api/v1/ai-engineering/export.svg?version=v1.2");
+    expect([...container.querySelectorAll(".panorama-flow")].map((node) => node.textContent)).toEqual(Array(4).fill("业务协作 →"));
+  });
+
+  it("keeps the primary domain action visible and filters owner actions everywhere", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} isOwner={false} />));
+    expect(container.querySelector('[data-domain-id="market"] [data-action-id="voc"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-action-id="access"]')).toHaveLength(0);
+    expect(container.querySelector('[data-domain-id="management"] [data-action-id="hr"]')).not.toBeNull();
+
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} isOwner />));
+    expect(container.querySelectorAll('[data-action-id="access"]')).toHaveLength(2);
+  });
+
+  it("does not capture shortcuts while inactive or while a workspace editor owns focus", async () => {
+    await act(async () => root.render(<><textarea aria-label="工作区输入" /><PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} active={false} /></>));
+    const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const inactiveSlash = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+    await act(async () => document.dispatchEvent(inactiveSlash));
+    expect(document.activeElement).not.toBe(search);
+    expect(inactiveSlash.defaultPrevented).toBe(false);
+
+    await act(async () => root.render(<><textarea aria-label="工作区输入" /><PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} active /></>));
+    const editor = container.querySelector<HTMLTextAreaElement>("textarea")!;
+    editor.focus();
+    const editingSlash = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+    await act(async () => editor.dispatchEvent(editingSlash));
+    expect(document.activeElement).toBe(editor);
+    expect(editingSlash.defaultPrevented).toBe(false);
+
+    const handledElsewhere = new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true });
+    handledElsewhere.preventDefault();
+    await act(async () => document.dispatchEvent(handledElsewhere));
+    expect(document.activeElement).toBe(editor);
   });
 
   it("expands domains, highlights relationships, and returns with Escape", async () => {
