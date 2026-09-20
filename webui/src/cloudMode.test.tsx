@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { panoramaTestData } from './panoramaTestData';
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -157,12 +158,7 @@ describe("cloud replica mode", () => {
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
       if (url.endsWith("/api/v1/ai-engineering/access")) return new Response(JSON.stringify({ allowed: true }), { status: 200 });
-      if (url.endsWith("/api/v1/ai-engineering/panorama")) return new Response(JSON.stringify({
-        title: "管理员全景", version: "test", updated_at: "2026-09-20",
-        context: {period:"测试期间",metrics:[{label:"测试指标",value:"未知"}],observation:"测试总览",judgment:"测试判断",source_ids:[]},
-        revenue:{period:"测试收入",denominator_cents:100,segments:[{id:"test",label:"测试类别",amount_cents:100}],note:"测试口径",source_ids:[]},
-        domains:[],support:[],shared:{title:"共用能力",actions:["brain","sessions"],status:"测试"},asks:[],sources:[],
-      }), { status: 200 });
+      if (url.endsWith("/api/v1/ai-engineering/panorama")) return new Response(JSON.stringify(panoramaTestData("管理员全景")), { status: 200 });
       if (url.includes("/api/v1/conversations")) return new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200 });
       return new Response(JSON.stringify({
         mode: "local", read_only: false, auth: "dingtalk",
@@ -176,6 +172,7 @@ describe("cloud replica mode", () => {
     expect(container.textContent).toContain("管理员全景");
     expect(container.querySelector(".ai-engineering-markdown")).toBeNull();
     expect(container.querySelector("#brain-request")).toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="digital"] button')!.click());
     expect(container.querySelector('[data-action-id="brain"]')).not.toBeNull();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
     expect(window.location.pathname).toBe("/brain");

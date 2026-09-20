@@ -264,11 +264,13 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   const [documentError, setDocumentError] = useState(false);
   const lastWorkspace = useRef<{group: PanoramaActionId; path: string} | null>(null);
   const dirty = useRef(false);
+  const layoutDirty = useRef(false);
+  const onLayoutDirty = useCallback((value: boolean) => { layoutDirty.current = value; }, []);
   const workspaceHeading = useRef<HTMLDivElement>(null);
   const graph = useRef<HTMLDivElement>(null);
   const evidencePanel = useRef<HTMLElement>(null);
   useDocumentTitle(data ? `${data.title} · ${PLATFORM_TITLE}` : PLATFORM_TITLE);
-  const deny = useCallback(() => { setData(null); setDocument(null); setEvidence(null); setAccess("denied"); dirty.current = false; }, []);
+  const deny = useCallback(() => { setData(null); setDocument(null); setEvidence(null); setAccess("denied"); dirty.current = false; layoutDirty.current = false; }, []);
   const authorizationFailure = useCallback((failure: unknown) => {
     deny();
     if (failure instanceof AiEngineeringApiError && failure.status === 401) {
@@ -327,7 +329,7 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
     workspaceHeading.current?.focus();
   }, [workspaceRoute]);
   useEffect(() => {
-    const warn = (event: BeforeUnloadEvent) => { if (dirty.current) { event.preventDefault(); event.returnValue = ""; } };
+    const warn = (event: BeforeUnloadEvent) => { if (dirty.current || layoutDirty.current) { event.preventDefault(); event.returnValue = ""; } };
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, []);
   useEffect(() => {
@@ -337,7 +339,9 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
     return () => previous?.focus();
   }, [evidence]);
   useEffect(() => registerPanoramaLeaveGuard(path => {
-    // Returning to the graph keeps the current business component mounted.
+    // Returning to the graph keeps both workspaces mounted.
+    if (layoutDirty.current && path !== "/" && path !== "/ai-engineering"
+      && !window.confirm("全景布局有未保存修改。确定离开？")) return false;
     if (!dirty.current || path === "/" || path === "/ai-engineering" || path === lastWorkspace.current?.path) return true;
     if (!window.confirm("当前工作区有未保存输入或未确认的提交结果。确定离开？取消可保留原输入和重试请求。")) return false;
     dirty.current = false;
@@ -352,7 +356,10 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
       if (!window.confirm("当前工作区可能有未保存的输入。确定放弃并切换？选择取消可保留当前工作。")) return;
       dirty.current = false;
     }
-    if (target.external) { window.location.assign(platformPath(target.path)); return; }
+    if (target.external) {
+      if (layoutDirty.current && !window.confirm("全景布局有未保存修改。确定离开？")) return;
+      window.location.assign(platformPath(target.path)); return;
+    }
     onNavigate(previous?.group === action ? previous.path : target.path);
   };
   if (access === "denied") return direct ? pageState("无权访问 AI 工程全景", "请重新登录或由管理员确认权限。", "alert") : <>{fallback}</>;
@@ -360,7 +367,7 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   if (!data) return error ? <section role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。");
   return <article className="panorama-home">
     <div ref={graph} tabIndex={-1} hidden={!!workspaceRoute} inert={!!evidence}>
-      <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} />
+      <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} onDataChange={setData} onAuthorizationFailure={authorizationFailure} onDirtyChange={onLayoutDirty} />
     </div>
     {renderWorkspace && <div ref={workspaceHeading} tabIndex={-1} inert={!!evidence}><PanoramaWorkArea route={workspaceRoute} renderWorkspace={renderWorkspace} onClose={closeWorkspace} onDirty={value => { dirty.current = value; }} /></div>}
     {evidence && <section ref={evidencePanel} className="panorama-evidence" role="dialog" aria-modal="true" aria-label="事实依据" onKeyDown={event => {

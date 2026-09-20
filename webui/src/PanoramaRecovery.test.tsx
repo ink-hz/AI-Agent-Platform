@@ -3,9 +3,10 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
+import { panoramaTestData } from './panoramaTestData';
 let box:HTMLDivElement;let root:ReturnType<typeof createRoot>;
 let permitted=true;
-const panorama={title:'测试全景',version:'test',updated_at:'2026-09-20',context:{period:'测试',metrics:[],observation:'测试',judgment:'测试',source_ids:[]},revenue:{period:'测试',denominator_cents:100,segments:[{id:'one',label:'测试',amount_cents:100}],note:'测试',source_ids:[]},domains:[],support:[],shared:{title:'共用能力',actions:['brain','notes'],status:'测试'},asks:[],sources:[]};
+const panorama=panoramaTestData();
 let requests:RequestInit[];
 beforeEach(()=>{
  (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
@@ -28,6 +29,7 @@ afterEach(async()=>{await act(async()=>root.unmount());box.remove();document.que
 async function openDraft(){
  await act(async()=>root.render(<App/>));
  expect(box.textContent).toContain("测试全景");
+ await act(async()=>box.querySelector<HTMLButtonElement>('[data-node-id="digital"] button')!.click());
  await act(async()=>box.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
  const input=box.querySelector<HTMLTextAreaElement>('#brain-request')!;
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(input,'保留这条请求');input.dispatchEvent(new Event('input',{bubbles:true}));});

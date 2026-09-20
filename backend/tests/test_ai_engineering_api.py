@@ -88,106 +88,103 @@ def test_fixed_content_paths_and_sources(tmp_path, monkeypatch):
     assert client.get('/assets/panorama.svg').status_code != 200
 
 
-def test_panorama_contract_uses_verified_amounts_and_fixed_ids(tmp_path, monkeypatch):
+def test_panorama_contract_uses_four_layers_and_fixed_ids(tmp_path, monkeypatch):
     client, auth = client_for(tmp_path, monkeypatch)
-    client.cookies.set(auth.cookie_name, 'valid-cookie')
+    client.cookies.set(auth.cookie_name, "valid-cookie")
 
-    response = client.get(PREFIX + '/panorama')
+    response = client.get(PREFIX + "/panorama")
     assert response.status_code == 200
     assert_private(response)
     payload = response.json()
     assert set(payload) == {
-        'version', 'updated_at', 'title', 'context', 'revenue', 'domains',
-        'support', 'shared', 'asks', 'sources',
+        "version",
+        "updated_at",
+        "title",
+        "layers",
+        "nodes",
+        "edges",
+        "sources",
     }
-    assert payload['updated_at'] == '2026-09-20'
-    assert payload['revenue']['denominator_cents'] == 93_504_482_249
-    assert [segment['amount_cents'] for segment in payload['revenue']['segments']] == [
-        58_372_580_971, 29_093_471_169, 2_554_096_095, 3_484_334_014,
+    assert [layer["kind"] for layer in payload["layers"]] == [
+        "industry",
+        "portfolio",
+        "workflow",
+        "support",
     ]
-    assert sum(segment['amount_cents'] for segment in payload['revenue']['segments']) == payload['revenue']['denominator_cents']
-    assert {domain['id'] for domain in payload['domains']} == {
-        'market', 'products', 'technology', 'supply', 'delivery',
+    assert {"robotics", "camera", "sdk-tech", "talent", "digital"} <= {
+        node["id"] for node in payload["nodes"]
     }
-    assert {domain['id'] for domain in payload['support']} == {
-        'hr', 'office', 'finance', 'quality', 'legal', 'organization',
-    }
-    known_actions = {
-        'brain', 'agents', 'missions', 'sessions', 'operations', 'review',
-        'activity', 'identity', 'governance', 'access', 'account',
-        'agent-admin', 'notes', 'hr', 'office', 'voc', 'fae',
-    }
-    actual_actions = set(payload['shared']['actions'])
-    actual_actions.update(action for group in ('domains', 'support') for item in payload[group] for action in item['actions'])
-    assert actual_actions <= known_actions
-    source_ids = {source['id'] for source in payload['sources']}
+    source_ids = {source["id"] for source in payload["sources"]}
     assert source_ids
-    assert all(source['document'] in {'overview', 'reading', 'domains', 'finance', 'products', 'assets'} for source in payload['sources'])
-    referenced = set(payload['context']['source_ids']) | set(payload['revenue']['source_ids'])
-    referenced.update(source_id for group in ('domains', 'support') for item in payload[group] for source_id in item['source_ids'])
+    referenced = {
+        source_id for node in payload["nodes"] for source_id in node["source_ids"]
+    }
     assert referenced <= source_ids
     serialized = json.dumps(payload, ensure_ascii=False).lower()
-    for forbidden in ('internal_user_id', 'session_id', 'workspace', 'employee', '手机号', '员工姓名'):
+    for forbidden in (
+        "internal_user_id",
+        "session_id",
+        "workspace",
+        "employee",
+        "手机号",
+        "员工姓名",
+    ):
         assert forbidden not in serialized
 
 
-def test_panorama_exports_are_same_version_private_and_1920_by_1080(tmp_path, monkeypatch):
+def test_panorama_exports_are_same_version_private_and_1920_by_1080(
+    tmp_path, monkeypatch
+):
     client, auth = client_for(tmp_path, monkeypatch)
-    client.cookies.set(auth.cookie_name, 'valid-cookie')
-    data_response = client.get(PREFIX + '/panorama')
-    svg_response = client.get(PREFIX + '/export.svg')
-    png_response = client.get(PREFIX + '/export.png')
+    client.cookies.set(auth.cookie_name, "valid-cookie")
+    data_response = client.get(PREFIX + "/panorama")
+    svg_response = client.get(PREFIX + "/export.svg")
+    png_response = client.get(PREFIX + "/export.png")
 
     for response in (svg_response, png_response):
         assert response.status_code == 200
         assert_private(response)
-        assert response.headers['x-panorama-content-sha256'] == data_response.headers['x-panorama-content-sha256']
-        assert response.headers['content-disposition'].startswith('attachment; filename=')
-    assert svg_response.headers['content-type'].startswith('image/svg+xml')
+        assert (
+            response.headers["x-panorama-content-sha256"]
+            == data_response.headers["x-panorama-content-sha256"]
+        )
+        assert response.headers["content-disposition"].startswith(
+            "attachment; filename="
+        )
+    assert svg_response.headers["content-type"].startswith("image/svg+xml")
     svg = svg_response.text
-    assert '<svg' in svg and 'width="1920"' in svg and 'height="1080"' in svg
-    assert data_response.json()['version'] in svg
-    assert '生成时间' in svg and '数据时间' in svg and '来源编号' in svg
-    assert '主营业务收入分母 935,044,822.49 元' in svg
-    assert '工业级毛利率 66.79%' in svg
-    for domain in data_response.json()['domains']:
-        assert all(item in svg for item in domain['items'])
-        assert domain['status'] in svg
-    for source in data_response.json()['sources']:
-        assert f"{source['id']}｜{source['label']}" in svg
+    assert "<svg" in svg and 'width="1920"' in svg and 'height="1080"' in svg
+    assert data_response.json()["version"] in svg
+    for layer in data_response.json()["layers"]:
+        assert layer["title"] in svg
+    for node in data_response.json()["nodes"]:
+        assert node["title"] in svg
     with Image.open(BytesIO(png_response.content)) as image:
         assert image.size == (1920, 1080)
-        assert image.format == 'PNG'
+        assert image.format == "PNG"
 
 
 @pytest.mark.parametrize('suffix', ['/export.svg', '/export.png'])
-def test_export_rejects_requested_content_version_mismatch(tmp_path, monkeypatch, suffix):
+def test_export_rejects_requested_content_version_mismatch(
+    tmp_path, monkeypatch, suffix
+):
     client, auth = client_for(tmp_path, monkeypatch)
-    client.cookies.set(auth.cookie_name, 'valid-cookie')
+    client.cookies.set(auth.cookie_name, "valid-cookie")
 
-    assert client.get(PREFIX + suffix + '?version=2026-09-20.v1').status_code == 200
-    response = client.get(PREFIX + suffix + '?version=stale-version')
+    version = client.get(PREFIX + "/panorama").json()["version"]
+    assert client.get(PREFIX + suffix + "?version=" + version).status_code == 200
+    response = client.get(PREFIX + suffix + "?version=stale-version")
     assert response.status_code == 409
-    assert response.json()['detail'] == 'panorama version mismatch'
+    assert response.json()["detail"] == "panorama version mismatch"
     assert_private(response)
 
 
-def test_exports_share_complete_light_layout_primitives():
-    from app.ai_engineering.panorama import PANORAMA, export_layout
+def test_exports_contain_no_old_financial_main_content():
+    from app.ai_engineering.panorama import render_svg
 
-    layout = export_layout('2026-09-20T00:00:00Z')
-    texts = [item.text for item in layout if item.kind == 'text']
-    assert layout[0].kind == 'rect'
-    assert layout[0].fill == '#f5f8fb'
-    for domain in [*PANORAMA['domains'], *PANORAMA['support']]:
-        assert domain['status'] in texts
-        assert all(any(value in text for text in texts) for value in domain['items'])
-    assert any('935,044,822.49 元' in text for text in texts)
-    assert any('66.79%' in text for text in texts)
-    revenue_rectangles = [item for item in layout if item.kind == 'rect' and item.y == 178]
-    assert sum(item.width for item in revenue_rectangles) == 1026
-    expected = [624.27, 311.14, 27.31, 37.26]
-    assert [round(item.width / 1026 * 1000, 2) for item in revenue_rectangles] == pytest.approx(expected, abs=1.0)
+    svg = render_svg().decode()
+    assert "营业收入" not in svg
+    assert "归母净利润" not in svg
 
 
 def test_cloud_runtime_installs_cjk_font_for_png_export():
@@ -229,6 +226,113 @@ def test_content_snapshot_hashes():
     assert manifest['commit'] == '69a9de2168de6fa42b14d586587169487797e6f3'
     for filename, metadata in manifest['files'].items():
         assert hashlib.sha256((content / filename).read_bytes()).hexdigest() == metadata['sha256']
+
+
+def test_editor_api_is_durable_and_publish_controls_public_version(
+    tmp_path, monkeypatch
+):
+    state_path = tmp_path / "panorama" / "panorama.sqlite3"
+    monkeypatch.setenv("PLATFORM_PANORAMA_STATE_PATH", str(state_path))
+    client, auth = client_for(tmp_path, monkeypatch)
+    client.cookies.set(auth.cookie_name, "valid-cookie")
+    client.cookies.set(auth.csrf_cookie_name, auth.csrf)
+    headers = {"Origin": auth.public_base_url, "X-CSRF-Token": auth.csrf}
+    public = client.get(PREFIX + "/panorama").json()
+    state = client.get(PREFIX + "/panorama/draft").json()
+    edited = json.loads(json.dumps(public))
+    edited["title"] = "共享草稿"
+    saved = client.put(
+        PREFIX + "/panorama/draft",
+        json={
+            "expected_revision": state["revision"],
+            "data": edited,
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200
+    assert client.get(PREFIX + "/panorama").json()["title"] == public["title"]
+    conflict = client.put(
+        PREFIX + "/panorama/draft",
+        json={
+            "expected_revision": state["revision"],
+            "data": edited,
+        },
+        headers=headers,
+    )
+    assert conflict.status_code == 409
+    published = client.post(
+        PREFIX + "/panorama/publish",
+        json={
+            "expected_revision": saved.json()["revision"],
+        },
+        headers=headers,
+    )
+    assert published.status_code == 200
+    assert client.get(PREFIX + "/panorama").json()["title"] == "共享草稿"
+    assert state_path.is_file()
+
+
+
+def test_editor_mutations_require_manager_csrf_and_fresh_identity(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("PLATFORM_PANORAMA_STATE_PATH", str(tmp_path / "state.sqlite3"))
+    client, auth = client_for(tmp_path, monkeypatch)
+    client.cookies.set(auth.cookie_name, "valid-cookie")
+    state = client.get(PREFIX + "/panorama/draft").json()
+    assert (
+        client.request(
+            "DELETE",
+            PREFIX + "/panorama/draft",
+            json={"expected_revision": state["revision"]},
+        ).status_code
+        == 403
+    )
+    client.cookies.set(auth.csrf_cookie_name, auth.csrf)
+    headers = {"Origin": auth.public_base_url, "X-CSRF-Token": auth.csrf}
+    auth.context = AuthContext(
+        auth.context.internal_user_id,
+        Role.PLATFORM_ADMIN,
+        auth.context.session_id,
+        True,
+    )
+    assert (
+        client.request(
+            "DELETE",
+            PREFIX + "/panorama/draft",
+            json={"expected_revision": state["revision"]},
+            headers=headers,
+        ).status_code
+        == 503
+    )
+    auth.context = AuthContext(
+        auth.context.internal_user_id, Role.MEMBER, auth.context.session_id, False
+    )
+    assert client.get(PREFIX + "/panorama/draft").status_code == 403
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda p: p["edges"][0].__setitem__("from", []),
+    lambda p: p["edges"][0].__setitem__("to", {}),
+    lambda p: p["sources"][0].__setitem__("document", []),
+    lambda p: p["layers"][0].__setitem__("kind", {}),
+    lambda p: p["layers"][0]["groups"][0].__setitem__("role", []),
+    lambda p: p["nodes"][0].__setitem__("actions", [{}]),
+    lambda p: p["nodes"][0].__setitem__("source_ids", [[]]),
+])
+def test_editor_api_returns_422_for_malformed_nested_values(tmp_path, monkeypatch, mutation):
+    monkeypatch.setenv('PLATFORM_PANORAMA_STATE_PATH', str(tmp_path / 'state.sqlite3'))
+    client, auth = client_for(tmp_path, monkeypatch)
+    client.cookies.set(auth.cookie_name, 'valid-cookie')
+    client.cookies.set(auth.csrf_cookie_name, auth.csrf)
+    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf}
+    state = client.get(PREFIX + '/panorama/draft').json()
+    data = json.loads(json.dumps(state['published']))
+    mutation(data)
+    response = client.put(PREFIX + '/panorama/draft', json={
+        'expected_revision': state['revision'], 'data': data,
+    }, headers=headers)
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize('prefix', ['/', '/_preview/dingtalk-r1/'])

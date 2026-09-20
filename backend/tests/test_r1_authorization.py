@@ -716,3 +716,18 @@ def test_database_scope_check_and_viewer_read_audit_are_exact_and_immutable(
 )
 def test_execution_worker_public_boundary_is_exact(method, path, expected):
     assert is_execution_worker_request(method, path) is expected
+
+
+@pytest.mark.parametrize("method,route", [
+    ("PUT", "/api/v1/ai-engineering/panorama/draft"),
+    ("DELETE", "/api/v1/ai-engineering/panorama/draft"),
+    ("POST", "/api/v1/ai-engineering/panorama/publish"),
+    ("POST", "/api/v1/ai-engineering/panorama/restore"),
+])
+def test_ai_engineering_editor_mutations_require_manager_and_fresh_identity(method, route):
+    service = AuthorizationService(Grants())
+    assert service.decide(OWNER, method, route, ()).allowed is True
+    assert service.decide(ADMIN, method, route, ()).allowed is True
+    assert service.decide(MEMBER, method, route, ()).status_code == 403
+    assert service.decide(STALE_OWNER, method, route, ()).status_code == 503
+    assert service.decide(STALE_ADMIN, method, route, ()).status_code == 503

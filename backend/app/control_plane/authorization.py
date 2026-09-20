@@ -40,7 +40,17 @@ _AI_ENGINEERING_ROUTES = frozenset({
     ("GET", "/api/v1/ai-engineering/export.png"),
     ("GET", "/api/v1/ai-engineering/documents/{slug}"),
     ("GET", "/api/v1/ai-engineering/assets/{filename}"),
+    ("GET", "/api/v1/ai-engineering/panorama/draft"),
+    ("PUT", "/api/v1/ai-engineering/panorama/draft"),
+    ("DELETE", "/api/v1/ai-engineering/panorama/draft"),
+    ("POST", "/api/v1/ai-engineering/panorama/publish"),
+    ("POST", "/api/v1/ai-engineering/panorama/restore"),
 })
+
+_AI_ENGINEERING_MUTATION_ROUTES = frozenset(
+    route for route in _AI_ENGINEERING_ROUTES
+    if route[0] not in {"GET", "HEAD", "OPTIONS"}
+)
 
 _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/ai-engineering/access"),
@@ -445,6 +455,8 @@ class AuthorizationService:
             # Reuse platform management roles; sub-application routes are independent.
             if auth.role not in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:
                 return self._deny(403, "platform_management_required")
+            if auth.hard_stale_read_only and key in _AI_ENGINEERING_MUTATION_ROUTES:
+                return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "ai_engineering_route", None)
         if key in _HR_POSITION_ROUTES:
             if auth.hard_stale_read_only and key in _HR_POSITION_MUTATION_ROUTES:
