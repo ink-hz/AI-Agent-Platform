@@ -108,7 +108,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
       : "等待首次同步";
   return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className={`app${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
-      {!panorama && <header className="topbar">
+      <header className="topbar">
         <div className="topbar-inner">
           <a className="brand" href={platformPath("/")} onClick={(event) => follow(event, "/")}>
             <img className="brand-mark" src={platformPath("/favicon.ico")} alt="" aria-hidden="true" />
@@ -133,7 +133,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
             onClick={(event) => follow(event, "/account")}
           >{account.display_name}</a>}
         </div>
-      </header>}
+      </header>
       {account?.hard_stale_read_only && !faeWorkspace && !hrWorkspace && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
@@ -149,7 +149,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
           }).format(new Date(deployment.last_success_at))}
         </time>}
       </aside>}
-      {!panorama && current === "admin" && managementNavigation.length > 0 && <nav className="admin-nav" aria-label="管理中心">
+      {current === "admin" && managementNavigation.length > 0 && <nav className="admin-nav" aria-label="管理中心">
         <div>{managementNavigation.map((item) => <a
           className={current === item.section && (window.location.pathname === platformPath(item.path)
             || (item.path !== "/admin" && window.location.pathname.startsWith(`${platformPath(item.path)}/`))) ? "is-current" : undefined}

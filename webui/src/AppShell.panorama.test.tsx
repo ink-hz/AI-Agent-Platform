@@ -14,10 +14,10 @@ it('loads original read-only deployment context on the panorama and retains it w
  function Reader(){const {deployment,resolved}=useDeploymentContext();return <p>{!resolved?'权限环境待确认':deployment?.read_only?'只读':'非只读'}</p>;}
  try {
   await act(async()=>root.render(<AppShell panorama route={{name:'home'}} account={account}><Reader/></AppShell>));
-  expect(box.textContent).toContain('权限环境待确认');expect(box.querySelector('.topbar')).toBeNull();expect(box.textContent).toContain('变更功能已暂停');
+  expect(box.querySelector('.topbar')?.parentElement).toBe(box.querySelector('.app'));expect(box.querySelector('main .topbar')).toBeNull();expect(box.textContent).toContain('权限环境待确认');expect(box.querySelector('.topbar')).not.toBeNull();expect(box.textContent).toContain('变更功能已暂停');
   await act(async()=>finish({mode:'cloud-replica',read_only:true,freshness:'current'}));
   await act(async()=>root.render(<AppShell panorama route={{name:'admin-review'}} account={account}><Reader/></AppShell>));
-  expect(box.textContent).toContain('只读');expect(box.querySelector('.admin-nav')).toBeNull();
+  expect(box.textContent).toContain('只读');expect(box.querySelector('.admin-nav')).not.toBeNull();
   await act(async()=>root.render(<AppShell panorama route={{name:'home'}} account={account}><Reader/></AppShell>));
   expect(box.textContent).toContain('只读');expect(deployment).toHaveBeenCalledTimes(1);
  }finally{await act(async()=>root.unmount());box.remove();}

@@ -2,11 +2,13 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { AppShell } from './AppShell';
 import { AiEngineeringLanding } from './pages/AiEngineeringPage';
 import { AiEngineeringApiError } from './aiEngineeringApi';
 import { allowPanoramaNavigation } from './panoramaNavigation';
 import { fetchPanorama } from './panorama/panoramaApi';
 import { panoramaTestData } from './panoramaTestData';
+vi.mock('./api', () => ({fetchDeployment: async () => ({mode:'cloud-replica',read_only:true,freshness:'current'})}));
 vi.mock('./panorama/panoramaApi', () => ({fetchPanorama: vi.fn(async () => panoramaTestData())}));
 // Test the session boundary; the editor has its own API and component tests.
 vi.mock('./panorama/PanoramaView', () => ({PanoramaView: (props:any) => <section>
@@ -27,7 +29,7 @@ beforeEach(() => {
 afterEach(async () => {await act(async()=>root.unmount());box.remove();vi.restoreAllMocks();});
 async function setup(){
  const onNavigate=vi.fn();const client:any={fetchAccess:vi.fn().mockResolvedValue({allowed:true}),fetchIndex:vi.fn(),fetchDocument:vi.fn()};
- await act(async()=>root.render(<AiEngineeringLanding account={account} client={client} fallback={<p>无权访问</p>} onNavigate={onNavigate}/>));
+ await act(async()=>root.render(<AppShell panorama route={{name:"home"}} account={account}><AiEngineeringLanding account={account} client={client} fallback={<p>无权访问</p>} onNavigate={onNavigate}/></AppShell>));
  return onNavigate;
 }
 async function click(label:string){await act(async()=>[...box.querySelectorAll('button')].find(b=>b.textContent===label)!.click());}
@@ -48,21 +50,22 @@ it('removes protected graph and starts existing login on editor authorization fa
  expect(navigate).toHaveBeenCalledWith('/login?return_path=%2F');
  expect(box.querySelector('nav[aria-label="平台功能"]')).toBeNull();
 });
-it('places fixed platform functions before the panorama without a node selection',async()=>{
- const navigate=await setup();const nav=box.querySelector('nav[aria-label="平台功能"]')!;
+it('keeps normal platform navigation outside the panorama content',async()=>{
+ const navigate=await setup();const nav=box.querySelector('.topbar')!;
+ expect(box.querySelector('.panorama-home .topbar')).toBeNull();expect(box.querySelector('.platform-functions')).toBeNull();
  expect(nav).not.toBeNull();expect(nav.compareDocumentPosition(box.querySelector('h1')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
- await act(async()=>nav.querySelector<HTMLAnchorElement>('a[href="/admin/identity"]')!.click());
- expect(navigate).toHaveBeenCalledWith('/admin/identity');
+ await act(async()=>nav.querySelector<HTMLAnchorElement>('a[href="/admin"]')!.click());
+ expect(window.location.pathname).toBe('/admin');
 });
 it('preserves unsaved layout protection when leaving through a business management shortcut',async()=>{
  const navigate=await setup();await click('本地修改');vi.spyOn(window,'confirm').mockReturnValue(false);
- await act(async()=>box.querySelector<HTMLAnchorElement>('a[href="/voc/manage/"]')!.click());
- expect(window.confirm).toHaveBeenCalled();expect(navigate).not.toHaveBeenCalled();
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.topbar a[href="/admin"]')!.click());
+ expect(window.confirm).toHaveBeenCalledTimes(1);expect(navigate).not.toHaveBeenCalled();expect(window.location.pathname).toBe('/');
 });
 
 it('keeps platform entry points available if only the panorama data request fails',async()=>{
  vi.mocked(fetchPanorama).mockRejectedValue(new Error('panorama unavailable'));
  const navigate=await setup();expect(box.textContent).toContain('AI 工程全景暂时不可用');
- await act(async()=>box.querySelector<HTMLAnchorElement>('a[href="/admin/identity"]')!.click());
- expect(navigate).toHaveBeenCalledWith('/admin/identity');
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.topbar a[href="/admin"]')!.click());
+ expect(window.location.pathname).toBe('/admin');
 });
