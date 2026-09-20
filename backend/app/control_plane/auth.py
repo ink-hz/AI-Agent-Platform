@@ -315,7 +315,7 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
     selected = route_prefix if value is None else value
     if not isinstance(selected, str) or not selected.startswith("/"):
         raise ValueError("return path invalid")
-    # Only fixed panorama document slugs and exact HR IDs survive login.
+    # Panorama returns to its overview; only exact HR IDs persist as a query.
     # Validate the raw query: no aliases, encoding, repeated keys or other routes.
     if "?" in selected:
         base, query = selected.split("?", 1)
@@ -325,8 +325,9 @@ def validate_return_path(value: str | None, *, route_prefix: str) -> str:
                 "overview", "reading", "domains", "finance", "products", "assets"
             )}:
                 raise ValueError("return path invalid")
-            validate_return_path(base, route_prefix=route_prefix)
-            return selected
+            # Persisted login attempts only allow HR queries (migration 108).
+            # Validate the supplied document selector, then return to overview.
+            return validate_return_path(base, route_prefix=route_prefix)
         expected = {prefix + path for path in ("/hr", "/hr/", "/hr/agent")}
         pairs = query.split("&")
         seen = set()

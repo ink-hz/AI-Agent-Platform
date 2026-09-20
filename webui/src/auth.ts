@@ -195,7 +195,9 @@ function safeLoginReturnPath(value: string): boolean {
 export function loginReturnPath(search: string): LoginReturnPath {
   const params = new URLSearchParams(search);
   const values = params.getAll("return_path");
-  return values.length === 1 && safeLoginReturnPath(values[0]) ? values[0] as LoginReturnPath : "/";
+  if (values.length !== 1 || !safeLoginReturnPath(values[0])) return "/";
+  // The shared login store currently permits query strings for HR only.
+  return values[0].startsWith("/ai-engineering?") ? "/ai-engineering" : values[0] as LoginReturnPath;
 }
 
 

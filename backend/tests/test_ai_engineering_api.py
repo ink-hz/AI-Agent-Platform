@@ -88,7 +88,7 @@ def test_login_return_paths(prefix):
     from app.control_plane.auth import validate_return_path
     base = prefix.rstrip('/')
     for path in ['/brain', '/ai-engineering', '/ai-engineering?document=domains']:
-        assert validate_return_path(base + path, route_prefix=prefix) == base + path
+        assert validate_return_path(base + path, route_prefix=prefix) == base + path.split('?')[0]
     for query in ['document=unknown', 'document=domains&document=reading', 'document=domains&x=1', 'document=%64omains']:
         with pytest.raises(ValueError):
             validate_return_path(base + '/ai-engineering?' + query, route_prefix=prefix)
