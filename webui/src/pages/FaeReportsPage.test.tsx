@@ -196,7 +196,7 @@ describe("FAE reports", () => {
     await act(async () => root.render(<FaeReportsPage />));
     await act(async () => undefined);
 
-    expect(container.textContent).toContain("当前账号没有 FAE 工作台权限");
+    expect(container.textContent).toContain("当前账号没有技术支持工作台权限");
     expect(container.textContent).not.toContain("Platform Owner / Admin");
     await act(async () => root.unmount()); container.remove();
   });

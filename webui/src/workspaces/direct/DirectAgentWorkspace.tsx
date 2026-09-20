@@ -293,10 +293,10 @@ export function DirectAgentWorkspace({
 
   const submit = (event: FormEvent) => { event.preventDefault(); void send(); };
 
-  if (loadFailure) return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回全部 Agent</PlatformLink>}<ErrorState /></>;
+  if (loadFailure) return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回 Agent 目录</PlatformLink>}<ErrorState /></>;
   if (!catalog) return <LoadingState label="正在打开专业 Agent" />;
   if (!card || !card.interaction_modes.includes("direct_chat")) {
-    return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回全部 Agent</PlatformLink>}<ErrorState /></>;
+    return <>{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回 Agent 目录</PlatformLink>}<ErrorState /></>;
   }
 
   const renderedComposerTools = typeof composerTools === "function" ? composerTools(pending) : composerTools;
@@ -358,7 +358,7 @@ export function DirectAgentWorkspace({
           onIntelligenceReferencesSubmitted={onIntelligenceReferencesSubmitted}
           materialsPresentation={agentId === "hr-bot" ? "drawer" : layout === "focused" ? "hidden" : "sidebar"}
         />
-        : <div className="agent-use-page"><div className="agent-direct-introduction">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回全部 Agent</PlatformLink>}
+        : <div className="agent-use-page"><div className="agent-direct-introduction">{showWorkspaceBackLink && <PlatformLink className="back-link" href="/agents">← 返回 Agent 目录</PlatformLink>}
           {newConversationHeader ?? <section className="agent-use-profile is-compact"><span>{card.domain_group}</span><h1>{card.display_name}</h1>
             {card.persona_subtitle && <p className="agent-persona-subtitle">{card.persona_subtitle}</p>}
             <p>{card.mission}</p>

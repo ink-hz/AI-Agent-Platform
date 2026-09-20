@@ -22,7 +22,7 @@ interface Props {
 export function FaeWorkbenchShell({ currentSection, children }: Props) {
   return <section className="fae-workbench">
     <aside className="fae-workbench__sidebar">
-      <div><p>AI FAE OPERATIONS</p><h1>FAE 工作台</h1></div>
+      <div><p>AI FAE OPERATIONS</p><h1>技术支持工作台</h1></div>
       <nav aria-label="FAE 工作区" className="fae-workbench__workspace-nav">
         <a href={platformPath(FAE_DIRECT_PATH)}>返回 FAE Agent</a>
         <PlatformLink aria-current="page" href={`${FAE_MANAGEMENT_PATH}/`}>管理</PlatformLink>

@@ -342,7 +342,7 @@ describe("cloud replica mode", () => {
       await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
       expect(container.querySelector('[data-status-code="403"] h1')?.textContent).toBe("无权访问 FAE 管理");
-      expect(container.textContent).toContain("当前账号没有 FAE 工作台权限");
+      expect(container.textContent).toContain("当前账号没有技术支持工作台权限");
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/fae"))).toBe(false);
     },
   );
@@ -425,9 +425,9 @@ describe("cloud replica mode", () => {
       <AppShell route={{ name: "admin-governance" }} account={viewer}><p>内容</p></AppShell>,
     ));
     const navigation = container.querySelector(".platform-sidebar")?.textContent || "";
-    expect(navigation).toContain("AI VOC Agent");
+    expect(navigation).toContain("客户洞察");
     expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/voc"]')).not.toBeNull();
-    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("AI VOC Agent");
+    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("客户洞察");
   });
 
   it("shows the server-enforced hard-stale read-only state", async () => {

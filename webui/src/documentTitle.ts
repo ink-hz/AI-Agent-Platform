@@ -23,7 +23,7 @@ export function routeDocumentTitle(route: Route): string {
     case "conversation": return `AI 助手 · ${PLATFORM_TITLE}`;
     case "missions": return `历史任务 · ${PLATFORM_TITLE}`;
     case "mission": return `任务 · ${PLATFORM_TITLE}`;
-    case "agents": return `全部 Agent · ${PLATFORM_TITLE}`;
+    case "agents": return `Agent 目录 · ${PLATFORM_TITLE}`;
     case "voc-workspace": return `VOC 洞察助手 · ${PLATFORM_TITLE}`;
     case "hr": return `HR 智能工作台 · ${PLATFORM_TITLE}`;
     case "hr-agent": return "Hannah · HR 智能工作台";
@@ -34,13 +34,13 @@ export function routeDocumentTitle(route: Route): string {
     case "hr-panorama": return "HR 情报 · HR 智能工作台";
     case "marketing": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;
     case "marketing-conversation": return `${MARKETING_TITLE_BY_SLUG[route.agentSlug]} · ${PLATFORM_TITLE}`;
-    case "fae-manage-overview": return `FAE 工作台 · ${PLATFORM_TITLE}`;
-    case "fae-manage-sessions": return `FAE 工作台 · ${PLATFORM_TITLE}`;
-    case "fae-manage-session": return `FAE 工作台 · ${PLATFORM_TITLE}`;
-    case "fae-manage-issues": return `FAE 工作台 · ${PLATFORM_TITLE}`;
-    case "fae-manage-issue": return `FAE 工作台 · ${PLATFORM_TITLE}`;
-    case "fae-manage-reports": return `FAE 工作台 · ${PLATFORM_TITLE}`;
-    case "fae-manage-report": return `FAE 工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-overview": return `技术支持工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-sessions": return `技术支持工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-session": return `技术支持工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-issues": return `技术支持工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-issue": return `技术支持工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-reports": return `技术支持工作台 · ${PLATFORM_TITLE}`;
+    case "fae-manage-report": return `技术支持工作台 · ${PLATFORM_TITLE}`;
     case "ai-notes": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
     case "ai-note": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
     case "admin-overview": return `运行概览 · ${PLATFORM_TITLE}`;
@@ -56,7 +56,7 @@ export function routeDocumentTitle(route: Route): string {
     case "admin-identity": return `账号与权限 · ${PLATFORM_TITLE}`;
     case "admin-governance": return `审计日志 · ${PLATFORM_TITLE}`;
     case "admin-access": return `访问记录 · ${PLATFORM_TITLE}`;
-    case "admin-voc": return `AI VOC Agent · ${PLATFORM_TITLE}`;
+    case "admin-voc": return `客户洞察工作台 · ${PLATFORM_TITLE}`;
     default: return PLATFORM_TITLE;
   }
 }

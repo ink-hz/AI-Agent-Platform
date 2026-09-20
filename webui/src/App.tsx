@@ -147,7 +147,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "fae-manage-reports":
     case "fae-manage-report": return account
       ? <FaeManagementWorkspace account={account} route={route} />
-      : <PendingPage title="FAE 工作台" description="请启用企业身份后使用。" />;
+      : <PendingPage title="技术支持工作台" description="请启用企业身份后使用。" />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} navigation={route.navigation} />;
     default: return <PendingPage title="页面不存在" description="请返回 AI 助手。" />;
   }

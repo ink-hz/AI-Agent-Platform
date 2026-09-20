@@ -31,7 +31,7 @@ function hasManagementAccess(account: Account): boolean {
 function PermissionPage() {
   return <section className="permission-state fae-management-permission" data-status-code="403" role="alert">
     <h1>无权访问 FAE 管理</h1>
-    <p>当前账号没有 FAE 工作台权限，请联系 Platform Owner 授权。</p>
+    <p>当前账号没有技术支持工作台权限，请联系 Platform Owner 授权。</p>
     <a href={platformPath(FAE_DIRECT_PATH)}>返回 FAE Agent</a>
   </section>;
 }
@@ -66,7 +66,7 @@ export function FaeManagementWorkspace({
     </aside>
     : null;
 
-  return <WorkspaceErrorBoundary title="FAE 工作台">
+  return <WorkspaceErrorBoundary title="技术支持工作台">
     {readOnlyNotice}
     {page}
   </WorkspaceErrorBoundary>;

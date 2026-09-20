@@ -3,14 +3,12 @@ import { Activity, BookOpen, Bot, Boxes, ClipboardList, ExternalLink, Headset, H
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
 
-import { BUSINESS_AGENT_LABELS } from './agentLabels';
 interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; routes: readonly string[] }
-interface Group { label: string; items: Item[] }
-const common: Item[] = [
-  { label:'首页', path:'/', icon:Home, routes:['home','ai-engineering'] },
+interface Group { label: string; items: Item[]; hideHeading?: boolean }
+const aiWork: Item[] = [
   { label:'AI 助手', path:'/brain', icon:MessageSquare, routes:['brain','conversation','conversations'] },
+  { label:'Agent 目录', path:'/agents', icon:Boxes, routes:['agents','marketing','marketing-conversation'] },
   { label:'历史任务', path:'/missions', icon:ClipboardList, routes:['missions','mission'] },
-  { label:'工程笔记', path:'/ai-notes', icon:BookOpen, routes:['ai-notes','ai-note'] },
 ];
 const runtime: Item[] = [
   { label:'运行概览', path:'/admin', icon:Activity, routes:['admin-overview'] },
@@ -24,13 +22,13 @@ function groupsFor(account?: Account | null, readOnly = false): Group[] {
   const faeManager = account?.role === 'platform_owner' || account?.workspace_scopes.includes('fae_workbench');
   const vocManager = manager || account?.role === 'management_viewer';
   const groups: Group[] = [
-    { label:'常用入口', items:common },
-    { label:'业务应用', items:[
-      { label:'全部 Agent', path:'/agents', icon:Boxes, routes:['agents','marketing','marketing-conversation'] },
-      { label:BUSINESS_AGENT_LABELS['ai-fae-agent'], path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
-      { label:BUSINESS_AGENT_LABELS['hr-bot'], path:'/hr/', icon:UsersRound, external:true, routes:[] },
-      { label:BUSINESS_AGENT_LABELS['ai-admin-agent'], path:'/office/', icon:Building2, external:true, routes:[] },
-      { label:BUSINESS_AGENT_LABELS.voc, path:vocManager ? '/admin/voc' : '/voc/', icon:MessagesSquare, external:!vocManager, routes:['admin-voc'] },
+    { label:'首页', hideHeading:true, items:[{label:'首页',path:'/',icon:Home,routes:['home','ai-engineering']}] },
+    { label:'AI 工作', items:aiWork },
+    { label:'业务工作台', items:[
+      { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
+      { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },
+      { label:'行政服务', path:'/office/', icon:Building2, external:true, routes:[] },
+      { label:'客户洞察', path:vocManager ? '/admin/voc' : '/voc/', icon:MessagesSquare, external:!vocManager, routes:['admin-voc'] },
     ] },
   ];
   if (manager) {
@@ -41,6 +39,7 @@ function groupsFor(account?: Account | null, readOnly = false): Group[] {
       ...(account?.role === 'platform_owner' ? [{label:'访问记录',path:'/admin/access',icon:ScanEye,routes:['admin-access']}] : []),
     ]});
   }
+  groups.push({label:'辅助入口',hideHeading:true,items:[{label:'工程笔记',path:'/ai-notes',icon:BookOpen,routes:['ai-notes','ai-note']}]});
   return groups;
 }
 function follow(event: MouseEvent<HTMLAnchorElement>, item: Item) {
@@ -54,7 +53,7 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
   return <aside id="platform-navigation" className="platform-sidebar" hidden={collapsed}>
     <nav aria-label="主导航">
       {groupsFor(account,readOnly).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
-        {group.label !== '常用入口' && <h2>{group.label}</h2>}
+        {!group.hideHeading && <h2>{group.label}</h2>}
         {group.items.map(item => {
           const current=item.routes.includes(route.name); const Icon=item.icon;
           return <a key={item.path} href={item.external ? item.path : platformPath(item.path)}

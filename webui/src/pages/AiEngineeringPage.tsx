@@ -226,7 +226,7 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
       </div>
       <nav aria-label="AI 工程快捷入口">
         <a href={platformPath("/brain")} onClick={(event) => follow(event, "/brain")}>AI 助手</a>
-        <a href={platformPath("/agents")} onClick={(event) => follow(event, "/agents")}>全部 Agent</a>
+        <a href={platformPath("/agents")} onClick={(event) => follow(event, "/agents")}>Agent 目录</a>
       </nav>
     </header>
     <div className="ai-engineering-layout">
