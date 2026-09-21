@@ -14,3 +14,5 @@
 实现状态：已于 2026-09-21 按用户后续指令上线，应用版本 `84e726e7`；见[发布记录](../operations/2026-09-21-account-permissions-search-release.md)。管理员名单与候选搜索使用现有 users 路由的独立 view，默认不传输全员；查询过宽或同名同部门无法区分时停止选择。观察者、合作方分别位于 `/admin/identity/observers`、`/admin/identity/partners`；FAE、VOC 授权页分别位于 `/fae/manage/access`、`/admin/voc/access`，后续修订把入口集中至「账号与权限」顶部，移除侧栏小钥匙。访问记录沿用账号权限类别，所有原写入权限仍由后端判定。
 
 后续展示修订：移除全局「云端副本 · 只读 / 数据已同步 / 最近同步」横条及其样式。部署状态获取、上下文和只读限制继续生效；通讯录硬过期安全提示保留。
+
+以上后续展示修订已于 2026-09-21 上线，当前应用 `c9e337e9`，见[修订发布记录](../operations/2026-09-21-permission-navigation-cleanup-release.md)。
