@@ -38,27 +38,29 @@
 
 Files: 新增 `backend/control_migrations/109_organization_directory.sql`、`backend/app/ai_engineering/organization.py` 与 `backend/tests/test_organization_directory.py`；修改 `ai_engineering/routes.py`、`control_plane/authorization.py`、`main.py`。
 
-- [ ] 先写角色矩阵、只读结构不含人员、重复成员去重、无部门成员、分页、同名部门、代次变化、空/过期快照和SQL实际权限测试，观察失败。
-- [ ] SQL `platform_control.read_organization_directory_v109(department_id uuid,generation_id uuid,cursor uuid,page_limit integer) returns jsonb`：department_id=NULL表示树；其余表示详情。只读 complete active generation，security definer +固定search_path +仅本环境app角色execute。拒绝PUBLIC和其他环境，保持原表权限。
-- [ ] `OrganizationDirectoryRepository(database_url).tree()` 与 `.department(department_id,generation_id,cursor=None,limit=50)` 封装只读短事务与错误映射；API复用已有管理员guard和缓存约束。由main注入现有app DSN，不使用worker或owner凭证。
-- [ ] 跑新测试与既有全景/身份回归。不得用SQL字符串断言代替真实PostgreSQL结果验收。
+- [x] 先写角色矩阵、只读结构不含人员、重复成员去重、无部门成员、分页、同名部门、代次变化、空/过期快照和SQL实际权限测试，观察失败。
+- [x] SQL `platform_control.read_organization_directory_v109(department_id uuid,generation_id uuid,cursor uuid,page_limit integer) returns jsonb`：department_id=NULL表示树；其余表示详情。只读 complete active generation，security definer +固定search_path +仅本环境app角色execute。拒绝PUBLIC和其他环境，保持原表权限。
+- [x] `OrganizationDirectoryRepository(database_url).tree()` 与 `.department(department_id,generation_id,cursor=None,limit=50)` 封装只读短事务与错误映射；API复用已有管理员guard和缓存约束。由main注入现有app DSN，不使用worker或owner凭证。
+- [x] 跑新测试与既有全景/身份回归。不得用SQL字符串断言代替真实PostgreSQL结果验收。
 
 ## Task 2: 组织图组件
 
 Files: 新增 `webui/src/organization/OrganizationLayout.tsx`、`organizationApi.ts`、`organization.css` 及相关测试。
 
-- [ ] 先写主图无计数/人员、展开与选中分离、详情懒加载、游标追加、换节点旧响应忽略、409换代、权限拒绝、键盘/窄屏语义测试，观察失败。
-- [ ] 导出 `OrganizationLayout({active:boolean,onAuthorizationFailure:(error:AiEngineeringApiError)=>void})`。树默认根+一级，点箭头逐层展开；点击根/部门打开独立详情面板，名称和层级保持原位。浅蓝灰背景、部门淡青蓝、选中深蓝描边。
-- [ ] 结构初次可见加载；active=false中止请求，权限错误清空并通知父组件；后续focus复核沿用父层，重新active应更新树。详情显示时间、完整部门路径、直属/含下级人数和状态口径、职位未同步、人员分页。数字仅在详情中。
-- [ ] 复用fetch/platformPath，验证响应形状、防止HTML字符串注入，无新依赖/原始真实数据。失败显示可重试，不生成假树；409提示组织更新并刷新结构，旧详情清空。
-- [ ] 跑组件/API测试与build，报告结果。
+- [x] 先写主图无计数/人员、展开与选中分离、详情懒加载、游标追加、换节点旧响应忽略、409换代、权限拒绝、键盘/窄屏语义测试，观察失败。
+- [x] 导出 `OrganizationLayout({active:boolean,onAuthorizationFailure:(error:AiEngineeringApiError)=>void})`。树默认根+一级，点箭头逐层展开；点击根/部门打开独立详情面板，名称和层级保持原位。浅蓝灰背景、部门淡青蓝、选中深蓝描边。
+- [x] 结构初次可见加载；active=false中止请求，权限错误清空并通知父组件；后续focus复核沿用父层，重新active应更新树。详情显示时间、完整部门路径、直属/含下级人数和状态口径、职位未同步、人员分页。数字仅在详情中。
+- [x] 复用fetch/platformPath，验证响应形状、防止HTML字符串注入，无新依赖/原始真实数据。失败显示可重试，不生成假树；409提示组织更新并刷新结构，旧详情清空。
+- [x] 跑组件/API测试与build，报告结果。
 
 ## Task 3: 主代理集成与发布
 
 Files: `PanoramaCanvas.tsx`、`PanoramaView.tsx`、`AiEngineeringPage.tsx` 及集成测试；必要的部署/运营记录。
 
-- [ ] 组织组件作为独立slot放在workflow后support前；不写入PanoramaData/SQLite、不影响布局发布恢复，隐藏工作区时中止组织请求。业务全景现有SVG/PNG导出仍只导出业务布局，组织不含在其中，明确入口文案。
-- [ ] 复核完整登录->结构->部门->分页->撤权链，角色矩阵保持；独立代码/事务审查，合并准确master。
+- [x] 组织组件作为独立slot放在workflow后support前；不写入PanoramaData/SQLite、不影响布局发布恢复，隐藏工作区时中止组织请求。业务全景现有SVG/PNG导出仍只导出业务布局，组织不含在其中，明确入口文案。
+- [x] 复核完整登录->结构->部门->分页->撤权链，角色矩阵保持；独立代码/事务审查，合并准确master。
 - [ ] 生产109只通过现有有账本校验的owner migration runner应用；先核对版本/台账/维护链，函数为向后兼容新增，不改现有数据/同步。
 - [ ] 从准确主线构建，仅替换platform-api，保留20个Compose输入及所有持久挂载。线上读取验证树/详情结构（不打印人员），匿名401/private/no-store，业务子应用与其他容器不变。
 - [ ] 同步唯一设计文档和准确发布记录，清理自有隔离工作区，保留用户材料。
+
+验证记录：后台 268 项通过（含真实 PostgreSQL）；前端 68 项通过；npm build 通过，发布事务 13 项通过。全分支独立审查无重要问题。浏览器视觉未执行。
