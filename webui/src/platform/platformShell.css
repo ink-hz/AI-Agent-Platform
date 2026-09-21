@@ -23,9 +23,7 @@
 .platform-nav-group a.is-current > svg { color:#bddbff; }
 .platform-nav-group .platform-nav-external { margin-left:auto; color:#a9bbd1; }
 .platform-content > .page { min-width:0; }
-.platform-content .cloud-replica-banner { width:100%; margin:0 0 20px; padding:8px 12px; font-size:12px; border-radius:6px; }
 .platform-content .hard-stale-banner { margin:0 0 16px; }
-.platform-content > .is-panorama-page > .cloud-replica-banner,
 .platform-content > .is-panorama-page > .hard-stale-banner { margin:12px 20px; width:calc(100% - 40px); }
 .platform-content > .is-brain-workspace,
 .platform-content > .is-ai-notes-workspace { display:flex; flex-direction:column; overflow:hidden; }
@@ -39,8 +37,6 @@
   .platform-sidebar { position:static; width:100%; height:auto; max-height:45dvh; border-right:0; border-bottom:1px solid #314b69; }
   .platform-sidebar nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   .platform-nav-group + .platform-nav-group { margin-top:0; }
-  .platform-content .cloud-replica-banner { flex-wrap:wrap; gap:6px 12px; }
-  .platform-content .cloud-replica-banner time { margin-left:0; }
 }
 @media print {
   .platform-sidebar,.platform-nav-toggle { display:none!important; }

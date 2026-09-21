@@ -1033,4 +1033,15 @@ describe("IdentityManagementPage", () => {
     expect([...articleFor(container, "测试成员").querySelectorAll("button")]
       .some((button) => button.textContent === "撤销平台管理员")).toBe(true);
   });
+it("exposes business permissions alongside the administrator list without loading grants", async () => {
+  const fetchMock = withPartnerReads(vi.fn().mockResolvedValue(usersResponse()));
+  vi.stubGlobal("fetch", fetchMock);
+  await act(async () => root.render(<IdentityManagementPage account={owner} />));
+  const nav = container.querySelector("nav[aria-label='权限分类']");
+  expect(nav?.querySelector("a[href='/fae/manage/access']")?.textContent).toBe("FAE 权限");
+  expect(nav?.querySelector("a[href='/admin/voc/access']")?.textContent).toBe("VOC 权限");
+  expect(nav?.querySelector("a[aria-current='page']")?.textContent).toBe("平台管理员");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
 });

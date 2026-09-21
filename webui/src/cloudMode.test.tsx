@@ -292,7 +292,7 @@ describe("cloud replica mode", () => {
     expect(container.textContent).not.toContain("暂时无法进入平台");
   });
 
-  it("shows a compact read-only banner and hides Review navigation", async () => {
+  it("hides replica status while retaining read-only Review restrictions", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",
       freshness: "current", last_success_at: "2026-08-11T08:00:00Z",
@@ -303,10 +303,11 @@ describe("cloud replica mode", () => {
     ));
     await act(async () => await Promise.resolve());
 
-    expect(container.textContent).toContain("云端副本 · 只读");
-    expect(container.textContent).toContain("数据已同步");
+    expect(container.textContent).not.toContain("云端副本 · 只读");
+    expect(container.textContent).not.toContain("数据已同步");
     expect(container.textContent).not.toContain("复审闭环");
-    expect(container.querySelector(".cloud-replica-banner")?.className).toContain("is-current");
+    expect(container.querySelector(".cloud-replica-banner")).toBeNull();
+    expect(container.querySelector("a[href='/admin/review']")).toBeNull();
   });
 
   it("keeps the generic replica banner out of every FAE management route", async () => {
@@ -393,7 +394,7 @@ describe("cloud replica mode", () => {
     expect(container.querySelector(".cloud-replica-banner")).toBeNull();
   });
 
-  it("visibly distinguishes stale replica data", async () => {
+  it("keeps stale replica status out of the shell without enabling Review", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       mode: "cloud-replica", read_only: true, auth: "ssh-tunnel",
       freshness: "stale", last_success_at: "2026-08-11T07:00:00Z",
@@ -404,8 +405,9 @@ describe("cloud replica mode", () => {
     ));
     await act(async () => await Promise.resolve());
 
-    expect(container.textContent).toContain("数据已过期");
-    expect(container.querySelector(".cloud-replica-banner")?.className).toContain("is-stale");
+    expect(container.textContent).not.toContain("数据已过期");
+    expect(container.querySelector(".cloud-replica-banner")).toBeNull();
+    expect(container.querySelector("a[href='/admin/review']")).toBeNull();
   });
 
   it("derives member and viewer navigation from the server account", async () => {

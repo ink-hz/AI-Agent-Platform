@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { Activity, BookOpen, Bot, Boxes, ClipboardList, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, KeyRound, type LucideIcon } from 'lucide-react';
+import { Activity, BookOpen, Bot, Boxes, ClipboardList, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
 
@@ -58,24 +58,15 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
       {groupsFor(account,readOnly).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
         {!group.hideHeading && <h2>{group.label}</h2>}
         {group.items.map(item => {
-          const permissionSection = route.name === 'admin-permissions' ? route.section : null;
-          const current=item.routes.includes(route.name) || (permissionSection === 'fae' && item.label === '技术支持')
-            || (permissionSection === 'voc' && item.label === '客户洞察')
-            || ((permissionSection === 'observers' || permissionSection === 'partners') && item.path === '/admin/identity');
-          const accessPath = account?.role === 'platform_owner'
-            ? item.label === '技术支持' ? '/fae/manage/access' : item.label === '客户洞察' ? '/admin/voc/access' : null
-            : null;
+          const current = item.routes.includes(route.name)
+            || (route.name === 'admin-permissions' && item.path === '/admin/identity');
           const Icon=item.icon;
-          return <div key={item.path} className="platform-nav-item"><a href={item.external ? item.path : platformPath(item.path)}
+          return <a key={item.path} href={item.external ? item.path : platformPath(item.path)}
             className={current ? 'is-current' : undefined} aria-current={current ? 'page' : undefined}
             onClick={event => follow(event,item)}>
             <Icon size={17} aria-hidden="true"/><span>{item.label}</span>
             {item.external && <ExternalLink className="platform-nav-external" size={12} aria-hidden="true"/>}
-          </a>{accessPath && <a className="platform-nav-permission" href={platformPath(accessPath)}
-            aria-label={`${item.label}权限`} title={`${item.label}权限`}
-            onClick={event => follow(event, {label: `${item.label}权限`, path: accessPath, icon: KeyRound, routes: []})}>
-            <KeyRound size={14} aria-hidden="true" />
-          </a>}</div>;
+          </a>;
         })}
       </section>)}
     </nav>

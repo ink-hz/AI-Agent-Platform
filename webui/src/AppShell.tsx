@@ -32,7 +32,6 @@ export function AppShell({ route, children, account, panorama = false }: { route
     || route.name === "hr-panorama";
   const aiNotesWorkspace = !panorama && (route.name === "ai-notes" || route.name === "ai-note");
   const faeWorkspace = route.name.startsWith("fae-manage-");
-  const faeGovernanceWorkspace = route.name === "fae-manage-issues" || route.name === "fae-manage-issue";
   const accountCanReadDeployment = account?.role === "platform_owner" || account?.role === "platform_admin";
   const shouldLoadDeployment = accountCanReadDeployment || (current === "admin" && !account);
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
@@ -71,11 +70,6 @@ export function AppShell({ route, children, account, panorama = false }: { route
       return next;
     });
   };
-  const freshnessLabel = deployment?.freshness === "current"
-    ? "数据已同步"
-    : deployment?.freshness === "stale"
-      ? "数据已过期"
-      : "等待首次同步";
   return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
       <header className="topbar">
@@ -103,18 +97,6 @@ export function AppShell({ route, children, account, panorama = false }: { route
       <main className={`page${panorama ? " is-panorama-page" : ""}${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>
       {account?.hard_stale_read_only && !faeWorkspace && !hrWorkspace && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
-      </aside>}
-      {current === "admin" && cloudReplica && !faeGovernanceWorkspace && <aside
-        className={`cloud-replica-banner is-${deployment.freshness}`}
-        aria-label="云端副本状态"
-      >
-        <strong>云端副本 · 只读</strong>
-        <span>{freshnessLabel}</span>
-        {deployment.last_success_at && <time dateTime={deployment.last_success_at}>
-          最近同步 {new Intl.DateTimeFormat("zh-CN", {
-            month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
-          }).format(new Date(deployment.last_success_at))}
-        </time>}
       </aside>}
         {children}</main>
       {!panorama && !brainWorkspace && !hrWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}

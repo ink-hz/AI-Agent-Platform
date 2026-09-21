@@ -554,6 +554,6 @@ describe("PartnerAccessPanel", () => {
     await act(async () => root.render(<PermissionAccessPage account={owner} section="partners" />));
     await settle();
     expect(container.querySelector("[data-partner-access-panel]")).toBeTruthy();
-    expect(container.querySelector("a[href='/admin/identity']")?.textContent).toBe("返回账号与权限");
+    expect(container.querySelector("a[href='/admin/identity']")?.textContent).toBe("平台管理员");
   });
 });

@@ -85,7 +85,7 @@ it('keeps replica status inside the affected page and review out of a read-only 
  deployment.mockResolvedValue({mode:'cloud-replica',read_only:true,freshness:'current',last_success_at:'2026-09-20T09:24:00Z'});
  await render('platform_owner',{name:'admin-overview'});
  expect(link('/admin/review')).toBeNull();
- expect(box.querySelector('main .cloud-replica-banner')?.textContent).toContain('云端副本 · 只读');
+ expect(box.querySelector('main .cloud-replica-banner')).toBeNull();
  expect(box.querySelector('.platform-sidebar .cloud-replica-banner')).toBeNull();
  await render();expect(box.querySelector('.cloud-replica-banner')).toBeNull();
 });

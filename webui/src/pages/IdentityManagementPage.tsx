@@ -22,7 +22,7 @@ import {
 } from "../pendingAdministrator";
 import { listAdministratorUsers, type AdministratorUser } from "../administratorDirectory";
 import { AdministratorSearch } from "../components/AdministratorSearch";
-import { platformPath } from "../auth";
+import { PermissionNavigation } from "../components/PermissionNavigation";
 
 
 function failureMessage(error: unknown): string {
@@ -310,6 +310,7 @@ function AdministratorManagement({ account }: { account: Account }) {
       <h1>账号与权限</h1>
       {canManage && <button type="button" disabled={blocked || !loaded} onClick={() => setAdding(true)}>添加管理员</button>}
     </header>
+    <PermissionNavigation account={account} section="administrators" />
     {message && <p className={`auth-message ${message.startsWith("变更成功") || message.startsWith("变更结果曾无法确认") || message.startsWith("变更已确认") ? "is-success" : "is-error"}`} role="status">{message}</p>}
     {pendingAdministrator && <button type="button" disabled={busy || account.hard_stale_read_only} onClick={() => void retryAdministrator()}>使用同一请求重试确认</button>}
     {(confirmedAdministrator || inflightAdministrator) && <button type="button" disabled={busy} onClick={() => void refreshNonReplayAdministrator()}>刷新当前角色</button>}
@@ -329,9 +330,5 @@ function AdministratorManagement({ account }: { account: Account }) {
       </article>)}
     </div>
     {loaded && !users.length && <p>暂无管理员</p>}
-    <details className="identity-other-access"><summary>其他授权</summary>
-      <a href={platformPath("/admin/identity/observers")}>观察者权限</a>
-      {canManage && <a href={platformPath("/admin/identity/partners")}>合作方权限</a>}
-    </details>
   </section>;
 }

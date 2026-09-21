@@ -31,7 +31,7 @@ export function ObserverAccessPage({ account }: { account: Account }) {
   const shown = users.filter(user => ["member", "management_viewer"].includes(user.role)
     && (query.trim() ? user.display_name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) : user.role === "management_viewer"));
   return <section className="identity-page">
-    <h1>观察者权限</h1>
+    <h2>观察者权限</h2>
     <label className="identity-reason">搜索成员<input aria-label="搜索观察者成员" value={query} onInput={event => setQuery(event.currentTarget.value)} /></label>
     <label className="identity-reason">变更原因<input aria-label="变更原因" value={reason} onInput={event => setReason(event.currentTarget.value)} /></label>
     {message && <p role="status">{message}</p>}
