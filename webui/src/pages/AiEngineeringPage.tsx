@@ -14,6 +14,7 @@ import { platformPath, type Account } from "../auth";
 import { PLATFORM_TITLE, useDocumentTitle } from "../documentTitle";
 import { navigate, currentLocationPath, type Route } from "../router";
 import { PanoramaView } from "../panorama/PanoramaView";
+import { OrganizationLayout } from "../organization/OrganizationLayout";
 import { fetchPanorama } from "../panorama/panoramaApi";
 import type { PanoramaData, PanoramaActionId } from "../panoramaTypes";
 import { actionPath, workspaceGroup, registerPanoramaLeaveGuard } from "../panoramaNavigation";
@@ -369,7 +370,8 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   if (access === "checking") return pageState("正在确认访问权限", "正在确认企业账号。");
   return <article className="panorama-home">
     <div ref={graph} tabIndex={-1} hidden={!!workspaceRoute} inert={!!evidence}>
-      {data ? <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} onDataChange={setData} onAuthorizationFailure={authorizationFailure} onDirtyChange={onLayoutDirty} /> : error ? <section className="panorama" role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。")}
+      {data ? <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} onDataChange={setData} onAuthorizationFailure={authorizationFailure} onDirtyChange={onLayoutDirty}
+        renderOrganization={(active, onOpen) => <OrganizationLayout active={active} onOpen={onOpen} onAuthorizationFailure={authorizationFailure} />} /> : error ? <section className="panorama" role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。")}
     </div>
     {renderWorkspace && <div ref={workspaceHeading} tabIndex={-1} inert={!!evidence}><PanoramaWorkArea route={workspaceRoute} renderWorkspace={renderWorkspace} onClose={closeWorkspace} onDirty={value => { dirty.current = value; }} /></div>}
     {evidence && <section ref={evidencePanel} className="panorama-evidence" role="dialog" aria-modal="true" aria-label="事实依据" onKeyDown={event => {

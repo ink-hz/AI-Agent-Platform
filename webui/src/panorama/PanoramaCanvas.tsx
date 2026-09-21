@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { AiEngineeringDocumentSlug } from "../aiEngineeringApi";
 import type { PanoramaActionId, PanoramaData, PanoramaGroup, PanoramaNode } from "../panoramaTypes";
@@ -13,6 +13,7 @@ const ACTION_LABELS: Record<PanoramaActionId, string> = {
 const EXTERNAL_ACTIONS = new Set<PanoramaActionId>(["hr", "office", "voc", "fae"]);
 
 interface CanvasProps {
+  organization?: ReactNode;
   data: PanoramaData;
   selectedId: string | null;
   matchIds: Set<string>;
@@ -97,7 +98,9 @@ function relative(rect: DOMRect, root: DOMRect): PanoramaRect {
   return { left: rect.left - root.left, top: rect.top - root.top, right: rect.right - root.left, bottom: rect.bottom - root.top };
 }
 
-export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, onAction, onEvidence }: CanvasProps) {
+export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, onAction, onEvidence, organization }: CanvasProps) {
+  const workflowIndex = data.layers.map(layer => layer.kind).lastIndexOf("workflow");
+  const organizationAfter = workflowIndex >= 0 ? workflowIndex : data.layers.length - 1;
   const rootRef = useRef<HTMLDivElement>(null); const [paths, setPaths] = useState<Record<string, string>>({});
   const [structuralPaths, setStructuralPaths] = useState<Record<string, string>>({});
   const byId = useMemo(() => new Map(data.nodes.map((node) => [node.id, node])), [data.nodes]);
@@ -180,7 +183,7 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
         <title>{edge.label}</title>
       </g>)}
     </svg>}
-    {data.layers.map((layer) => <section className={`panorama-layer panorama-layer--${layer.kind}`} data-layer-id={layer.id} key={layer.id}>
+    {data.layers.map((layer, index) => <Fragment key={layer.id}><section className={`panorama-layer panorama-layer--${layer.kind}`} data-layer-id={layer.id}>
       <h2>{layer.title}</h2>
       <div className="panorama-layer__groups">
         {layer.groups.map((group) => <section className={`panorama-group panorama-group--${group.role}`} data-group-id={group.id} data-group-role={group.role} key={group.id}>
@@ -193,7 +196,8 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
           </div>
         </section>)}
       </div>
-    </section>)}
+    </section>{index === organizationAfter && organization}</Fragment>)}
+    {data.layers.length === 0 && organization}
     {selected && <DetailPanel data={data} isOwner={isOwner} node={selected} onAction={onAction} onClose={() => onSelect(null)} onEvidence={onEvidence} />}
   </div>;
 }
