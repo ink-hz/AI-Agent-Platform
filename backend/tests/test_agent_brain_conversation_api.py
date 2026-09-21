@@ -558,6 +558,27 @@ def test_direct_conversation_remains_available_while_brain_intake_is_disabled(
 
 
 @pytest.mark.postgres
+def test_saved_history_reads_remain_available_with_brain_intake_disabled(
+    conversation_database, repository,
+) -> None:
+    _environment, owner, other = conversation_database
+    brain = repository.start(owner, uuid4(), "已保存的助手工作").conversation
+    direct = repository.start(owner, uuid4(), "已保存的专业工作", mode="direct_agent", direct_agent_id="fae-bot").conversation
+    repository.start(other, uuid4(), "其他用户的私有工作")
+    app, auth, _ = _app(owner, repository, brain_enabled=False)
+    client = TestClient(app)
+    response = client.get("/api/v1/conversations?limit=20", **_credentials(auth))
+    assert response.status_code == 200
+    assert {item["conversation_id"] for item in response.json()["items"]} == {str(brain.conversation_id), str(direct.conversation_id)}
+    assert "no-store" in response.headers["cache-control"]
+    for item in response.json()["items"]:
+        detail = client.get("/api/v1/conversations/" + item["conversation_id"], **_credentials(auth))
+        assert detail.status_code == 200
+        assert detail.json()["conversation"]["conversation_id"] == item["conversation_id"]
+    assert client.get("/api/v1/conversations?limit=20").status_code == 401
+
+
+@pytest.mark.postgres
 def test_history_is_newest_first_paginated_and_cursor_is_owner_bound(
     conversation_database,
     repository,

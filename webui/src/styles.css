@@ -2991,3 +2991,8 @@ body {
 .permission-navigation-menu { position:absolute; z-index:10; right:0; top:100%; min-width:150px; padding:6px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px #18314a18; }
 .permission-navigation-menu button { display:block; width:100%; padding:10px; color:var(--ink-soft); font-size:14px; border-radius:4px; cursor:pointer; }
 .permission-navigation-menu button:hover, .permission-navigation-menu button[aria-pressed="true"] { background:var(--wash); color:#245e99; }
+
+.history-filter { display:flex; gap:8px; margin-bottom:20px; }
+.history-filter button { padding:8px 16px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink-soft); font:inherit; font-size:14px; cursor:pointer; }
+.history-filter button[aria-pressed="true"] { background:#245e99; border-color:#245e99; color:white; }
+.history-filter button:focus-visible { outline:2px solid #245e99; outline-offset:3px; }

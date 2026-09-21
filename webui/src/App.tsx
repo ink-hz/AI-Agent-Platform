@@ -121,7 +121,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       : <PendingPage title="AI 工程全景" description="请启用企业身份后阅读。" />;
     case "conversations": return <LegacyRedirect to="/brain" navigation="spa" />;
     case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
-    case "missions": return <MissionsPage />;
+    case "missions": return account ? <MissionsPage key={`${account.internal_user_id}:${account.role}`} /> : <PendingPage title="历史任务" description="请登录后查看。" />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;

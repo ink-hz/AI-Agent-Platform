@@ -1,19 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { listMissions } from "../brainApi";
-import type { Mission } from "../brainTypes";
-import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
+import { platformPath } from "../auth";
+import { ConversationApiError, listConversations } from "../conversationApi";
+import type { Conversation, ConversationStatus } from "../conversationTypes";
+import { EmptyState, LoadingState } from "../components/DataState";
 import { PlatformLink } from "../components/PlatformLink";
+import { professionalAgentLabel } from "../components/conversation/agentLabels";
 
-
-function statusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    planning: "分析中", delegated: "执行中", synthesizing: "整理中", completed: "已完成",
-    partially_completed: "部分完成", failed: "未完成", cancelled: "已停止", interrupted: "已中断",
-  };
-  return labels[status] ?? "处理中";
+type ReadError = "unavailable" | "unauthenticated" | "forbidden";
+function readError(error: unknown): ReadError {
+  if (error instanceof ConversationApiError && error.status === 401) return "unauthenticated";
+  if (error instanceof ConversationApiError && error.status === 403) return "forbidden";
+  return "unavailable";
 }
-
+function statusLabel(status: Conversation["activity_status"]): string | null {
+  if (!status) return null;
+  const labels: Record<string, string> = {
+    accepted: "排队中", running: "处理中", waiting_agents: "执行中", waiting_user: "需要补充",
+    waiting_confirmation: "待确认", completing: "整理中", completed: "已完成", failed: "未完成",
+    cancelled: "已停止", interrupted: "已中断", partially_completed: "部分完成",
+  };
+  return labels[status] ?? null;
+}
 function timeLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
@@ -23,43 +31,74 @@ function timeLabel(value: string): string {
 }
 
 export function MissionsPage() {
-  const [items, setItems] = useState<Mission[] | null>(null);
+  const [status, setStatus] = useState<ConversationStatus>("active");
+  return <div className="missions-page">
+    <header className="use-page-intro"><h1>历史任务</h1></header>
+    <nav className="history-filter" aria-label="历史范围">
+      <button type="button" aria-pressed={status === "active"} onClick={() => setStatus("active")}>最近</button>
+      <button type="button" aria-pressed={status === "archived"} onClick={() => setStatus("archived")}>已归档</button>
+    </nav>
+    <HistoryList key={status} status={status} />
+  </div>;
+}
+
+function HistoryList({ status }: { status: ConversationStatus }) {
+  const [items, setItems] = useState<Conversation[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<ReadError | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const request = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    setError(false);
-    listMissions(controller.signal).then((page) => { setItems(page.items); setCursor(page.next_cursor); })
-      .catch(() => { if (!controller.signal.aborted) setError(true); });
-    return () => controller.abort();
-  }, [attempt]);
+    request.current = controller;
+    setError(null); setItems(null); setCursor(null);
+    void listConversations(controller.signal, undefined, 20, undefined, status).then(page => {
+      if (controller.signal.aborted) return;
+      setItems(page.items); setCursor(page.next_cursor);
+    }).catch(failure => {
+      if (!controller.signal.aborted) setError(readError(failure));
+    }).finally(() => { if (request.current === controller) request.current = null; });
+    return () => { controller.abort(); request.current?.abort(); request.current = null; };
+  }, [attempt, status]);
 
   const more = async () => {
-    if (!cursor || loadingMore) return;
-    setLoadingMore(true);
+    if (!cursor || request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setLoadingMore(true); setError(null);
     try {
-      const page = await listMissions(undefined, cursor);
-      setItems((current) => [...(current ?? []), ...page.items]);
+      const page = await listConversations(controller.signal, cursor, 20, undefined, status);
+      if (controller.signal.aborted) return;
+      setItems(current => [...new Map([...(current ?? []), ...page.items].map(item => [item.conversation_id, item])).values()]);
       setCursor(page.next_cursor);
-    } catch {
-      setError(true);
+    } catch (failure) {
+      if (controller.signal.aborted) return;
+      const kind = readError(failure);
+      setError(kind);
+      if (kind !== "unavailable") { setItems(null); setCursor(null); }
     } finally {
-      setLoadingMore(false);
+      if (!controller.signal.aborted) setLoadingMore(false);
+      if (request.current === controller) request.current = null;
     }
   };
 
-  return <div className="missions-page">
-    <section className="use-page-intro"><p>YOUR WORK</p><h1>历史任务</h1><span>继续查看 AI 助手和专业 Agent 已保存的任务。</span></section>
-    {error && items === null ? <ErrorState onRetry={() => setAttempt((value) => value + 1)} />
-      : items === null ? <LoadingState label="正在读取历史任务" />
-      : items.length === 0 ? <EmptyState title="还没有历史任务" description="从 AI 助手发起第一个任务。" />
-      : <div className="mission-history-list">{items.map((mission) => <PlatformLink href={`/missions/${encodeURIComponent(mission.mission_id)}`} key={mission.mission_id}>
-        <div><span>{mission.mode === "direct_agent" ? mission.direct_agent_id ?? "专业 Agent" : "AI 助手"}</span><strong>{mission.prompt}</strong></div>
-        <p><b>{statusLabel(mission.status)}</b><time dateTime={mission.updated_at}>{timeLabel(mission.updated_at)}</time></p>
-      </PlatformLink>)}</div>}
-    {cursor && <button className="mission-load-more" disabled={loadingMore} onClick={() => void more()} type="button">{loadingMore ? "正在读取…" : "加载更早任务"}</button>}
-    {error && items !== null && <p className="mission-more-error" role="alert">更早任务暂时无法读取，请稍后重试。</p>}
-  </div>;
+  if (error && items === null) return <section className="data-state data-error" role="alert">
+    <strong>{error === "unauthenticated" ? "请重新登录" : error === "forbidden" ? "无权读取历史任务" : "历史任务暂时无法读取"}</strong>
+    {error === "unauthenticated" ? <a href={platformPath("/login?return_path=%2Fmissions")}>重新登录</a>
+      : error === "forbidden" ? <p>请联系苍渊。</p>
+      : <button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button>}
+  </section>;
+  if (items === null) return <LoadingState label="正在读取历史任务" />;
+  if (items.length === 0) return <EmptyState title={status === "archived" ? "暂无归档任务" : "还没有历史任务"} description="" />;
+  return <>
+    <div className="mission-history-list">{items.map(item => <PlatformLink href={`/conversations/${encodeURIComponent(item.conversation_id)}`} key={item.conversation_id}>
+      <div><span>{item.mode === "brain" ? "AI 助手" : professionalAgentLabel(item.direct_agent_id)}</span><strong>{item.title}</strong></div>
+      <p>{statusLabel(item.activity_status) && <b>{statusLabel(item.activity_status)}</b>}<time dateTime={item.updated_at}>{timeLabel(item.updated_at)}</time></p>
+    </PlatformLink>)}</div>
+    {error && <p className="mission-more-error" role="alert">更早任务暂时无法读取。</p>}
+    {cursor && <button className="mission-load-more" disabled={loadingMore} onClick={() => void more()} type="button">
+      {loadingMore ? "正在读取…" : error ? "重试加载" : "加载更早任务"}
+    </button>}
+  </>;
 }
