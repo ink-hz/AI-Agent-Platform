@@ -62,3 +62,36 @@ it('moves keyboard focus into detail and Escape returns it to the department', a
  await act(async () => panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
  expect(container.querySelector('[aria-label="部门详情"]')).toBeNull(); expect(document.activeElement?.textContent).toBe('示例甲部');
 });
+
+it('preserves expanded branches across reactivation, removes absent nodes and clears failed refreshes', async () => {
+ await render(); await click('展开示例甲部'); await render(false);
+ let finish!: (value: Response) => void;
+ fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })); await render();
+ expect(container.textContent).toContain('示例小组');
+ expect(container.querySelector<HTMLButtonElement>('.organization-name')?.disabled).toBe(true);
+ await act(async () => finish(response(tree)));
+ expect(container.textContent).toContain('示例小组');
+ expect(container.querySelector<HTMLButtonElement>('.organization-name')?.disabled).toBe(false);
+ await render(false);
+ fetchMock.mockResolvedValueOnce(response({ ...tree, generation_id: id(10), departments: tree.departments.filter(d => d.id !== id(2) && d.id !== id(4)) }));
+ await render(); expect(container.textContent).not.toContain('示例甲部'); expect(container.textContent).not.toContain('示例小组');
+ await render(false); fetchMock.mockResolvedValueOnce(response({}, 503)); await render();
+ expect(container.textContent).toContain('重试组织'); expect(container.textContent).not.toContain('示例乙部');
+});
+
+it('groups actual first-level branches with stable colors inherited by their descendants', async () => {
+ await render(); await click('展开示例甲部');
+ const groups = container.querySelectorAll<HTMLElement>('.organization-first-level > .organization-group');
+ expect(groups).toHaveLength(2);
+ const firstColor = groups[0].style.getPropertyValue('--org-accent');
+ expect(firstColor).toMatch(/^#[0-9a-f]{6}$/);
+ expect(groups[1].style.getPropertyValue('--org-accent')).not.toBe(firstColor);
+ expect(groups[0].textContent).toContain('示例甲部'); expect(groups[0].textContent).toContain('示例小组');
+ expect(groups[1].textContent).not.toContain('示例小组');
+ await render(false);
+ fetchMock.mockResolvedValueOnce(response({ ...tree, departments: [...tree.departments].reverse().map(d => d.id === id(2) ? { ...d, name: '改名示例部' } : d) }));
+ await render();
+ const renamed = [...container.querySelectorAll<HTMLElement>('.organization-group')].find(group => group.textContent?.includes('改名示例部'))!;
+ expect(renamed.style.getPropertyValue('--org-accent')).toBe(firstColor);
+ expect(renamed.textContent).toContain('示例小组');
+});
