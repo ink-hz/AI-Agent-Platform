@@ -18,3 +18,5 @@
 以上后续展示修订已于 2026-09-21 上线，当前应用 `c9e337e9`，见[修订发布记录](../operations/2026-09-21-permission-navigation-cleanup-release.md)。
 
 单页修订：删除默认分区重复的「平台管理员」标题；统一标题及页面容器，禁止把仅拦截原生链接刷新当成单页合并完成。
+
+单页修订已上线，当前应用 `1764b60a`，见[单页发布记录](../operations/2026-09-21-permissions-single-page-release.md)。
