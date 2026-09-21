@@ -2,6 +2,7 @@
 .page.is-panorama-page { max-width:none; padding:0; margin:0; width:100%; display:flex; flex-direction:column; }
 .platform-content > .page.is-panorama-page { min-height:0; overflow:hidden; }
 .page.is-panorama-page > .hard-stale-banner,.page.is-panorama-page > .cloud-replica-banner { flex:none; }
+.page.is-panorama-page > .ai-engineering-page { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:44px 24px 68px; }
 .panorama-home { flex:1; min-height:0; overflow:hidden; }
 .panorama-home [hidden] { display:none!important; }
 .panorama-view-stack { height:100%; min-height:0; }
@@ -17,7 +18,7 @@
 .panorama-evidence { position:fixed; z-index:90; inset:5vh max(20px,12vw); padding:24px; overflow:auto; background:white; border:1px solid #c6d3df; border-radius:16px; box-shadow:0 20px 100px #17345166; }
 .panorama-evidence header { display:flex; align-items:center; justify-content:space-between; gap:20px; position:sticky; top:-24px; padding:8px 0; background:white; }
 .panorama-evidence h2 { font-size:20px; }
-@media(max-width:700px) { .panorama-work-area { padding:12px; } .panorama-evidence { inset:12px; padding:16px; } .panorama-work-area-heading h2 { font-size:18px; } }
+@media(max-width:700px) { .panorama-work-area { padding:12px; } .panorama-evidence { inset:12px; padding:16px; } .panorama-work-area-heading h2 { font-size:18px; } .page.is-panorama-page > .ai-engineering-page { padding:20px 14px 42px; } }
 
 /* Only a visible graph in presentation mode hides the surrounding platform shell. */
 .app.is-panorama-shell:has(.panorama-home > .panorama-view-stack:not([hidden]) > .panorama-view-scroll:not([hidden]) > .panorama--presenting) > .topbar,

@@ -57,6 +57,17 @@ describe("LoginPage", () => {
     expect(onStartQr).toHaveBeenCalledWith("/admin/");
   });
 
+  it("carries the organization deep link into QR login", async () => {
+    window.history.replaceState({}, "", "/login?return_path=%2Forganization");
+    const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");
+    await act(async () => root.render(<LoginPage onStartQr={onStartQr} onNavigate={() => undefined} />));
+
+    const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("扫码登录"));
+    await act(async () => button?.click());
+
+    expect(onStartQr).toHaveBeenCalledWith("/organization");
+  });
+
   it("uses the exact validated office root for QR login", async () => {
     window.history.replaceState({}, "", "/login?return_path=%2Foffice%2F");
     const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");

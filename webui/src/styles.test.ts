@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+const panoramaStyles = readFileSync(new URL("./panoramaWorkspace.css", import.meta.url), "utf8");
 
 function rule(selector: string): string {
   const start = styles.indexOf(`${selector} {`);
@@ -48,6 +49,9 @@ function blockContaining(header: string, needle: string): string {
 
 
 describe("Executive Operations visual contract", () => {
+  it("keeps legacy panorama documents scrollable inside the bounded shell", () => {
+    expect(panoramaStyles).toMatch(/\.page\.is-panorama-page > \.ai-engineering-page\s*\{[^}]*flex:1;[^}]*min-height:0;[^}]*overflow-y:auto;/);
+  });
   it("gives the VOC workspace a clear draft boundary and responsive layout", () => {
     expect(rule(".voc-layout")).toContain("grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr)");
     expect(rule(".voc-draft-panel")).toContain("border: 1px solid #9fb9d5");

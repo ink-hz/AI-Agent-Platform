@@ -119,6 +119,7 @@ export type LoginReturnPath =
   | "/"
   | "/brain"
   | "/ai-engineering"
+  | "/organization"
   | `/ai-engineering?document=${string}`
   | "/account"
   | "/missions"
@@ -157,7 +158,7 @@ function canonicalEncodedDetailPath(value: string): boolean {
 
 
 function safeLoginReturnPath(value: string): boolean {
-  if (value === "/ai-engineering") return true;
+  if (value === "/ai-engineering" || value === "/organization") return true;
   if (["overview", "reading", "domains", "finance", "products", "assets"]
     .some((slug) => value === `/ai-engineering?document=${slug}`)) return true;
   if (["/hr/agent?", "/hr/?", "/hr?"].some(prefix => value.startsWith(prefix))) {

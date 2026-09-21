@@ -62,9 +62,12 @@ function accountResponse(): Response {
 describe("login return path", () => {
   it("returns to the panorama and Agent Brain through canonical prefixed-safe paths", () => {
     expect(loginReturnPath("?return_path=%2Fai-engineering%3Fdocument%3Dreading")).toBe("/ai-engineering");
+    expect(loginReturnPath("?return_path=%2Forganization")).toBe("/organization");
     expect(loginReturnPath("?return_path=%2Fbrain")).toBe("/brain");
     expect(loginReturnPath("?return_path=%2Fai-engineering%3Fdocument%3Dunknown")).toBe("/");
     for (const nonCanonical of [
+      "/organization/",
+      "/organization?view=people",
       "/ai-engineering?document=%64omains",
       "/ai-engineering?document=domains&",
       "/ai-engineering?document=domains&&",
