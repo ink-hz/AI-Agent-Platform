@@ -268,7 +268,7 @@ def is_public_request(
     # expired or missing browser Session enter the existing DingTalk login
     # flow and preserve its validated workspace return path.
     if method == "GET" and (
-        local in {"/brain", "/ai-engineering"}
+        local in {"/brain", "/ai-engineering", "/organization"}
         or _PUBLIC_HR_WORKSPACE_SHELL.fullmatch(local) is not None
         or _PUBLIC_MARKETING_WORKSPACE_SHELL.fullmatch(local) is not None
     ):

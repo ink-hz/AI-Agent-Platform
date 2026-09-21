@@ -248,6 +248,7 @@ def build_auth_router(
             )
         return response
 
+    @router.get("/organization", include_in_schema=False)
     @router.get("/ai-engineering", include_in_schema=False)
     async def ai_engineering_shell(request: Request):
         token = request.cookies.get(auth.cookie_name)

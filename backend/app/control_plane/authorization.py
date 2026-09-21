@@ -58,6 +58,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/ai-engineering/access"),
     ("GET", "/brain"),
     ("GET", "/ai-engineering"),
+    ("GET", "/organization"),
     ("GET", "/api/v1/account"),
     ("GET", "/api/v1/internal/session/subject"),
     ("GET", "/api/v1/internal/voc/browser-subject"),

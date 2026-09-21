@@ -198,7 +198,7 @@ def test_cloud_runtime_installs_cjk_font_for_png_export():
 def test_login_return_paths(prefix):
     from app.control_plane.auth import validate_return_path
     base = prefix.rstrip('/')
-    for path in ['/brain', '/ai-engineering', '/ai-engineering?document=domains']:
+    for path in ['/brain', '/ai-engineering', '/organization', '/ai-engineering?document=domains']:
         assert validate_return_path(base + path, route_prefix=prefix) == base + path.split('?')[0]
     for query in ['document=unknown', 'document=domains&document=reading', 'document=domains&x=1', 'document=%64omains']:
         with pytest.raises(ValueError):
@@ -340,7 +340,7 @@ def test_deep_link_shared_shell_reaches_login_without_private_content(tmp_path, 
     from app.control_plane.models import IdentityMode
     auth = FakeAuth(mode=IdentityMode.PREVIEW if prefix != '/' else IdentityMode.PRODUCTION, prefix=prefix)
     client = TestClient(_app(tmp_path, monkeypatch, auth), base_url='https://agent.example.test')
-    for path in ['/brain', '/ai-engineering?document=domains']:
+    for path in ['/brain', '/organization', '/ai-engineering?document=domains']:
         response = client.get(prefix.rstrip('/') + path)
         assert response.status_code == 200
         assert 'LOGIN SHELL' in response.text
@@ -351,7 +351,7 @@ def test_deep_link_shared_shell_reaches_login_without_private_content(tmp_path, 
 
 @pytest.mark.parametrize('role', list(Role))
 @pytest.mark.parametrize('prefix', ['/', '/_preview/dingtalk-r1/'])
-@pytest.mark.parametrize('path', ['', 'ai-engineering', 'ai-engineering?document=products'])
+@pytest.mark.parametrize('path', ['', 'ai-engineering', 'organization', 'ai-engineering?document=products'])
 def test_home_shell_is_admin_only_with_contact_notice(tmp_path, monkeypatch, role, prefix, path):
     from app.control_plane.models import IdentityMode
     auth = FakeAuth(mode=IdentityMode.PREVIEW if prefix != '/' else IdentityMode.PRODUCTION, prefix=prefix)
@@ -377,4 +377,5 @@ def test_home_shell_rechecks_revoked_role_on_the_same_session(tmp_path, monkeypa
     auth.context = AuthContext(auth.context.internal_user_id, Role.MEMBER, auth.context.session_id, False)
     assert client.get('/').status_code == 403
     assert client.get('/ai-engineering').status_code == 403
+    assert client.get('/organization').status_code == 403
     assert client.get('/hr/').status_code == 200

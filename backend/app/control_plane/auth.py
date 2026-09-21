@@ -41,7 +41,7 @@ _IN_CLIENT_APP_ID = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _SAFE_RETURN_ID = r"[A-Za-z0-9:._-]+"
 _SAFE_RETURN_EXACT = frozenset(
     {
-        "/brain", "/ai-engineering",
+        "/brain", "/ai-engineering", "/organization",
         "/", "/account", "/missions", "/conversations", "/agents",
         "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
         "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
