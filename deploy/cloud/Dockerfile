@@ -42,6 +42,9 @@ COPY --chown=10001:10001 deploy/cloud/registry.yaml /app/registry.yaml
 COPY --chown=10001:10001 deploy/cloud/metabot.runtime-contract.json /app/metabot.runtime-contract.json
 COPY --chown=10001:10001 deploy/cloud/brain-model.release.json /app/brain-model.release.json
 COPY --from=web-builder --chown=10001:10001 /src/webui/dist ./app/static
+# Release archives can be extracted with a private umask. Code must remain
+# traversable by the capability-restricted migration process as well as the app.
+RUN find ./app ./control_migrations ./migrations ./tools -type d -exec chmod 0755 {} +
 RUN install -d -o 10001 -g 10001 -m 700 /run/office-recipient \
     && install -o 10001 -g 10001 -m 600 /dev/null /run/office-recipient/platform-office-recipient-bearer
 USER platform:platform
