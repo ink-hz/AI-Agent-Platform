@@ -40,6 +40,7 @@ it('guards unsaved layout navigation and unload; saving releases that guard',asy
  await setup();await click('本地修改');vi.spyOn(window,'confirm').mockReturnValue(false);
  const warn=new Event('beforeunload',{cancelable:true});window.dispatchEvent(warn);expect(warn.defaultPrevented).toBe(true);
  expect(allowPanoramaNavigation('/brain')).toBe(false);expect(allowPanoramaNavigation('/')).toBe(true);
+ expect(allowPanoramaNavigation('/organization')).toBe(true);
  await click('保存完成');
  const clean=new Event('beforeunload',{cancelable:true});window.dispatchEvent(clean);expect(clean.defaultPrevented).toBe(false);
  expect(allowPanoramaNavigation('/brain')).toBe(true);

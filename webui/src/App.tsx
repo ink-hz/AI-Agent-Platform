@@ -109,6 +109,9 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "home": return account
       ? <AiEngineeringLanding account={account} direct fallback={null} />
       : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
+    case "organization": return account
+      ? <AiEngineeringLanding account={account} direct fallback={null} view="organization" />
+      : <PendingPage title="组织架构" description="请启用企业身份后使用。" />;
     case "brain": return account
       ? <BrainWorkspacePage account={account} />
       : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
@@ -201,7 +204,7 @@ export default function App() {
   }
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
   if (!legacyMode && account) {
-    const usageRoute = ["home", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
+    const usageRoute = ["home", "organization", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
     const faeManagementRoute = route.name.startsWith("fae-manage-");
     const ownerOnlyRoute = route.name === "admin-access";
     const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")
@@ -215,6 +218,7 @@ export default function App() {
     {account && <AccessEventReporter account={account} route={route} />}
     {panorama && account ? <AiEngineeringLanding account={account} direct fallback={null}
       onAccessDenied={denyPanoramaAccess}
+      view={route.name === "organization" ? "organization" : "business"}
       selectedDocument={route.name === "ai-engineering" ? route.documentSlug : undefined}
       workspaceRoute={workspaceGroup(route) ? route : undefined}
       renderWorkspace={selected => productPage(selected, account)} /> : productPage(route, account ?? undefined)}

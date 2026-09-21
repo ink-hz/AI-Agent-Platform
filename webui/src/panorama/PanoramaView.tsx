@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AiEngineeringApiError } from "../aiEngineeringApi";
 import { loadAccount, platformPath, PlatformApiError } from "../auth";
@@ -10,7 +10,6 @@ import { panoramaClient, parsePanorama } from "./panoramaApi";
 import "./panorama.css";
 
 interface Props {
-  renderOrganization?: (active: boolean, onOpen: () => void) => ReactNode;
   data: PanoramaData;
   onAction: (actionId: PanoramaActionId) => void;
   onEvidence: (slug: AiEngineeringDocumentSlug) => void;
@@ -44,7 +43,7 @@ function operationMessage(error: unknown): { text: string; locked: boolean } {
   return { text: "请求结果未知，本地修改仍保留。为避免重复写入，请先核对服务器状态。", locked: true };
 }
 
-export function PanoramaView({ data, onAction, onEvidence, isOwner = false, active = true, onDataChange, onAuthorizationFailure, onDirtyChange, renderOrganization }: Props) {
+export function PanoramaView({ data, onAction, onEvidence, isOwner = false, active = true, onDataChange, onAuthorizationFailure, onDirtyChange }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [presenting, setPresenting] = useState(false);
@@ -194,8 +193,7 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
     </header>
     {editorNotice && <p className="panorama-editor-notice" role="status">{editorNotice}</p>}
     {presenting && <button type="button" className="panorama-presentation-exit" onClick={() => setPresenting(false)}>退出展示</button>}
-    <PanoramaCanvas data={effectiveData} isOwner={isOwner} matchIds={matchIds} onAction={onAction} onEvidence={onEvidence} onSelect={setSelectedId} selectedId={selectedId}
-      organization={renderOrganization?.(active && !editor && !selectedId, () => setSelectedId(null))} />
+    <PanoramaCanvas data={effectiveData} isOwner={isOwner} matchIds={matchIds} onAction={onAction} onEvidence={onEvidence} onSelect={setSelectedId} selectedId={selectedId} />
     {editor && <PanoramaEditor
       busy={editor.busy} data={editor.local} dirty={editor.dirty} locked={editor.locked} message={editor.message}
       onChange={changeLocal} onClose={closeEditor} onDiscard={() => void mutate("discard")} onPreview={() => setEditor({ ...editor, preview: !editor.preview })}

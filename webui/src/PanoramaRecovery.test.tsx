@@ -18,6 +18,7 @@ beforeEach(()=>{
   if(url.endsWith('/api/v1/account'))return json({internal_user_id:'admin',display_name:'Admin',role:'platform_admin',departments:[],gender:null,observation_agent_ids:[],workspace_scopes:[],directory_freshness:'fresh',hard_stale_read_only:false,csrf_token:'csrf'});
   if(url.endsWith('/ai-engineering/access'))return json({allowed:permitted});
   if(url.endsWith('/ai-engineering/panorama'))return json(panorama);
+  if(url.endsWith('/ai-engineering/organization'))return json({generation_id:'10000000-0000-4000-8000-000000000001',completed_at:'2026-09-21T00:00:00Z',freshness:'fresh',scope:'visible_directory',root_id:'10000000-0000-4000-8000-000000000002',departments:[{id:'10000000-0000-4000-8000-000000000002',parent_id:null,name:'Organization'}]});
   if(url.includes('/api/v1/conversations')){
     if(init?.method==='POST'){requests.push(init);throw new TypeError('response lost after send');}
     return json({items:[],next_cursor:null});
@@ -61,4 +62,13 @@ it('revocation on focus removes both the panorama and retained private workspace
  // The denied panorama must not poison independently authorized member pages.
  await act(async()=>{window.history.replaceState({},'', '/brain');window.dispatchEvent(new PopStateEvent('popstate'));});
  expect(box.querySelector('#brain-request')).not.toBeNull();expect(box.textContent).not.toContain('请联系苍渊');
+});
+it('keeps an unsaved workspace mounted while switching between company canvases',async()=>{
+ const input=await openDraft();const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/organization"]')!.click());
+ expect(window.location.pathname).toBe('/organization');expect(confirm).not.toHaveBeenCalled();expect(box.querySelector('#brain-request')).toBe(input);expect(input.value).toBe('保留这条请求');
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/"]')!.click());
+ expect(window.location.pathname).toBe('/');expect(box.querySelector('#brain-request')).toBe(input);
+ await act(async()=>box.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
+ expect(window.location.pathname).toBe('/brain');expect(box.querySelector('#brain-request')).toBe(input);expect(input.value).toBe('保留这条请求');
 });

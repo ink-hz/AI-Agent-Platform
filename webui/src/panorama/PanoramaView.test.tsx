@@ -315,17 +315,4 @@ describe("PanoramaView", () => {
     expect(container.querySelector('[aria-label="全景布局编辑器"]')).toBeNull();
     expect(button(container, "调整布局").disabled).toBe(false);
   });
-  it("places live organization between workflow and support without including it in layout drafts", async () => {
-    const renderOrganization = vi.fn((active: boolean) => <section data-organization-active={String(active)}>公司组织</section>);
-    vi.spyOn(panoramaClient, "fetchEditorState").mockResolvedValue({ revision: 1, published: data, draft: null, previous: null });
-    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} renderOrganization={renderOrganization} />));
-    const org = container.querySelector('[data-organization-active="true"]')!;
-    expect(org).not.toBeNull();
-    expect(container.querySelector('[data-layer-id="workflow"]')!.compareDocumentPosition(org) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(org.compareDocumentPosition(container.querySelector('[data-layer-id="support"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    await act(async () => button(container, "调整布局").click());
-    expect(container.querySelector('[data-organization-active="false"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="全景布局编辑器"]')?.textContent).not.toContain('公司组织');
-  });
-
 });

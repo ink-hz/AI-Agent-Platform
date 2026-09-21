@@ -14,6 +14,7 @@ export type Route =
   | { name: "login" }
   | { name: "account" }
   | { name: "home" }
+  | { name: "organization" }
   | { name: "brain" }
   | { name: "ai-engineering"; documentSlug?: import("./aiEngineeringApi").AiEngineeringDocumentSlug }
   | { name: "conversations" }
@@ -214,6 +215,7 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (clean === "/login") return { name: "login" };
   if (clean === "/account") return { name: "account" };
   if (clean === "/") return { name: "home" };
+  if (clean === "/organization") return { name: "organization" };
   if (clean === "/brain") return { name: "brain" };
   if (clean === "/ai-engineering") {
     if (!search) return { name: "ai-engineering" };
@@ -398,6 +400,7 @@ export function routePath(route: Route): string {
     case "login": return "/login";
     case "account": return "/account";
     case "home": return "/";
+    case "organization": return "/organization";
     case "brain": return "/brain";
     case "ai-engineering": return `/ai-engineering${route.documentSlug ? `?document=${route.documentSlug}` : ""}`;
     case "conversations": return "/conversations";
@@ -473,7 +476,7 @@ export function navigate(path: string, options: NavigateOptions = {}): void {
   const destination = new URL(target, window.location.origin);
   const nextRoute = parseRoute(destination.pathname, destination.search);
   const inPanorama = (window.history.state?.panorama === true || (options.state as { panorama?: boolean } | undefined)?.panorama === true)
-    && (workspaceGroup(nextRoute) !== null || nextRoute.name === "home" || nextRoute.name === "ai-engineering");
+    && (workspaceGroup(nextRoute) !== null || nextRoute.name === "home" || nextRoute.name === "organization" || nextRoute.name === "ai-engineering");
   const state = { ...(typeof options.state === "object" && options.state !== null ? options.state : {}), ...(inPanorama ? { panorama: true } : {}) };
   if (!inPanorama) delete (state as { panorama?: boolean }).panorama;
   if (options.replace) {

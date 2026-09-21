@@ -24,6 +24,7 @@ describe("document titles", () => {
 
   it("uses contextual Orbbec Agent Platform titles", () => {
     expect(routeDocumentTitle({ name: "brain" })).toBe("AI 助手 · Orbbec Agent Platform");
+    expect(routeDocumentTitle({ name: "organization" })).toBe("组织架构 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "conversations" })).toBe("AI 助手 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "conversation", conversationId: "one" })).toBe("AI 助手 · Orbbec Agent Platform");
     expect(routeDocumentTitle({ name: "agents" })).toBe("Agent 目录 · Orbbec Agent Platform");

@@ -15,6 +15,13 @@ describe('panorama navigation boundary', () => {
    navigate('/admin', { state: { panorama: true } });
    navigate('/login'); expect(window.history.state?.panorama).not.toBe(true);
  });
+ it('treats both company canvases as one panorama session boundary', () => {
+   expect(isPanoramaLocation(parseRoute('/organization'))).toBe(true);
+   navigate('/organization', { state: { panorama: true } });
+   expect(window.history.state).toMatchObject({ panorama: true });
+   navigate('/');
+   expect(window.history.state).toMatchObject({ panorama: true });
+ });
  it('groups conversation with brain and excludes independent applications', () => {
    expect(workspaceGroup({ name: 'conversation', conversationId: 'c1' })).toBe('brain');
    expect(workspaceGroup({ name: 'admin-session', sessionKey: 's1' })).toBe('sessions');

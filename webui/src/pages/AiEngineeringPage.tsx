@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -107,6 +107,7 @@ function pageState(title: string, description: string, role: "status" | "alert" 
 
 interface LandingProps {
   account: Account;
+  view?: "business" | "organization";
   client?: AiEngineeringClient;
   direct?: boolean;
   fallback: ReactNode;
@@ -257,7 +258,20 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
 
 function documentActiveElement(): HTMLElement | null { return window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null; }
 
-function PanoramaSession({ account, client, direct = false, fallback, onNavigate, onAccessDenied, workspaceRoute, renderWorkspace }: SessionProps) {
+function RetainedScrollView({ active, view, children }: { active: boolean; view: "business" | "organization"; children: ReactNode }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const savedTop = useRef(0);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!active || !element) return;
+    element.scrollTop = savedTop.current;
+    const frame = window.requestAnimationFrame(() => { element.scrollTop = savedTop.current; });
+    return () => window.cancelAnimationFrame(frame);
+  }, [active]);
+  return <div className="panorama-view-scroll" data-panorama-view={view} hidden={!active} onScroll={event => { if (active) savedTop.current = event.currentTarget.scrollTop; }} ref={viewport}>{children}</div>;
+}
+
+function PanoramaSession({ account, client, direct = false, fallback, onNavigate, onAccessDenied, view = "business", workspaceRoute, renderWorkspace }: SessionProps) {
   const [access, setAccess] = useState<"checking" | "allowed" | "denied">("checking");
   useEffect(() => { if (access === "denied") onAccessDenied?.(); }, [access, onAccessDenied]);
   const [data, setData] = useState<PanoramaData | null>(null);
@@ -273,7 +287,7 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   const workspaceHeading = useRef<HTMLDivElement>(null);
   const graph = useRef<HTMLDivElement>(null);
   const evidencePanel = useRef<HTMLElement>(null);
-  useDocumentTitle(data ? `${data.title} · ${PLATFORM_TITLE}` : PLATFORM_TITLE);
+  useDocumentTitle(view === "organization" ? `组织架构 · ${PLATFORM_TITLE}` : data ? `${data.title} · ${PLATFORM_TITLE}` : PLATFORM_TITLE);
   const deny = useCallback(() => { setData(null); setDocument(null); setEvidence(null); setAccess("denied"); dirty.current = false; layoutDirty.current = false; }, []);
   const authorizationFailure = useCallback((failure: unknown) => {
     deny();
@@ -292,7 +306,7 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
     return () => { window.clearTimeout(timeout); controller.abort(); };
   }, [client, deny, authorizationFailure]);
   useEffect(() => {
-    if (access !== "allowed") return;
+    if (access !== "allowed" || view !== "business" || data) return;
     const controller = new AbortController();
     setError(false);
     void fetchPanorama(controller.signal).then(value => { if (!controller.signal.aborted) setData(value); }).catch(failure => {
@@ -300,7 +314,7 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
       if (isAuthorizationFailure(failure)) authorizationFailure(failure); else setError(true);
     });
     return () => controller.abort();
-  }, [access, attempt, deny, authorizationFailure]);
+  }, [access, attempt, data, view, authorizationFailure]);
   useEffect(() => {
     if (access !== "allowed") return;
     let pending: {controller: AbortController; timeout: number} | null = null;
@@ -344,9 +358,9 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   }, [evidence]);
   useEffect(() => registerPanoramaLeaveGuard(path => {
     // Returning to the graph keeps both workspaces mounted.
-    if (layoutDirty.current && path !== "/" && path !== "/ai-engineering"
+    if (layoutDirty.current && path !== "/" && path !== "/organization" && path !== "/ai-engineering"
       && !window.confirm("全景布局有未保存修改。确定离开？")) return false;
-    if (!dirty.current || path === "/" || path === "/ai-engineering" || path === lastWorkspace.current?.path) return true;
+    if (!dirty.current || path === "/" || path === "/organization" || path === "/ai-engineering" || path === lastWorkspace.current?.path) return true;
     if (!window.confirm("当前工作区有未保存输入或未确认的提交结果。确定离开？取消可保留原输入和重试请求。")) return false;
     dirty.current = false;
     return true;
@@ -368,12 +382,20 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   };
   if (access === "denied") return direct ? pageState("无权限", "请联系苍渊。", "alert") : <>{fallback}</>;
   if (access === "checking") return pageState("正在确认访问权限", "正在确认企业账号。");
+  const businessVisible = !workspaceRoute && view === "business";
+  const organizationVisible = !workspaceRoute && view === "organization";
+  const businessActive = businessVisible && !evidence;
+  const organizationActive = organizationVisible && !evidence;
   return <article className="panorama-home">
-    <div ref={graph} tabIndex={-1} hidden={!!workspaceRoute} inert={!!evidence}>
-      {data ? <PanoramaView data={data} active={!workspaceRoute && !evidence} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} onDataChange={setData} onAuthorizationFailure={authorizationFailure} onDirtyChange={onLayoutDirty}
-        renderOrganization={(active, onOpen) => <OrganizationLayout active={active} onOpen={onOpen} onAuthorizationFailure={authorizationFailure} />} /> : error ? <section className="panorama" role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。")}
+    <div className="panorama-view-stack" ref={graph} tabIndex={-1} hidden={!!workspaceRoute} inert={!!evidence}>
+      <RetainedScrollView active={businessVisible} view="business">
+        {data ? <PanoramaView data={data} active={businessActive} isOwner={account.role === "platform_owner"} onAction={openAction} onEvidence={setEvidence} onDataChange={setData} onAuthorizationFailure={authorizationFailure} onDirtyChange={onLayoutDirty} /> : error ? <section className="panorama" role="alert"><h1>AI 工程全景暂时不可用</h1><button onClick={() => setAttempt(value => value + 1)}>重试全景</button></section> : pageState("正在打开 AI 工程全景", "正在读取受保护内容。")}
+      </RetainedScrollView>
+      <RetainedScrollView active={organizationVisible} view="organization">
+        <OrganizationLayout active={organizationActive} onAuthorizationFailure={authorizationFailure} />
+      </RetainedScrollView>
     </div>
-    {renderWorkspace && <div ref={workspaceHeading} tabIndex={-1} inert={!!evidence}><PanoramaWorkArea route={workspaceRoute} renderWorkspace={renderWorkspace} onClose={closeWorkspace} onDirty={value => { dirty.current = value; }} /></div>}
+    {renderWorkspace && <div className="panorama-workspace-scroll" hidden={!workspaceRoute} ref={workspaceHeading} tabIndex={-1} inert={!!evidence}><PanoramaWorkArea route={workspaceRoute} renderWorkspace={renderWorkspace} onClose={closeWorkspace} onDirty={value => { dirty.current = value; }} /></div>}
     {evidence && <section ref={evidencePanel} className="panorama-evidence" role="dialog" aria-modal="true" aria-label="事实依据" onKeyDown={event => {
       if (event.key === "Escape") { event.stopPropagation(); setEvidence(null); }
       if (event.key === "Tab") {

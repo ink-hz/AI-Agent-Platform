@@ -30,7 +30,7 @@ export function workspaceGroup(route: Route): PanoramaActionId | null {
  }
 }
 export function isPanoramaLocation(route: Route): boolean {
- return route.name === 'home' || route.name === 'ai-engineering'
+ return route.name === 'home' || route.name === 'organization' || route.name === 'ai-engineering'
    || (window.history.state?.panorama === true && workspaceGroup(route) !== null);
 }
 

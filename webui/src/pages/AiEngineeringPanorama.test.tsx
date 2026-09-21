@@ -23,7 +23,7 @@ describe('panorama is the homepage',()=>{
   client.fetchAccess.mockResolvedValue({allowed:true});fetchPanorama.mockResolvedValue({title:'受保护总览'});client.fetchDocument.mockRejectedValue(new AiEngineeringApiError(403));
   await act(async()=>root.render(<AiEngineeringLanding account={account} client={client} direct fallback={null}/>));
   await act(async()=>[...box.querySelectorAll('button')].find(b=>b.textContent==='经营依据')!.click());
-  expect(box.textContent).not.toContain('受保护总览');expect(box.textContent).toContain('无权访问');
+  expect(box.textContent).not.toContain('受保护总览');expect(box.textContent).toContain('无权限');
  });
  it('does not fetch panorama until the server permits it',async()=>{
   client.fetchAccess.mockResolvedValue({allowed:false});

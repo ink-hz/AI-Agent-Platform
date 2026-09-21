@@ -30,6 +30,10 @@ it('places classified navigation outside main and keeps the topbar to brand and 
  expect(link('/hr/')?.textContent).toBe('人力资源');
  expect(link('/office/')?.textContent).toBe('行政服务');
  expect(link('/admin/voc')?.textContent).toBe('客户洞察');
+ expect(link('/')?.textContent).toBe('业务布局');
+ expect(link('/organization')?.textContent).toBe('组织架构');
+ expect(link('/')?.closest('section')?.getAttribute('aria-label')).toBe('公司全景');
+ expect(link('/organization')?.closest('section')).toBe(link('/')?.closest('section'));
  expect(link('/agents')?.closest('section')?.getAttribute('aria-label')).toBe('AI 工作');
  expect(link('/fae/manage/')?.closest('section')?.getAttribute('aria-label')).toBe('业务工作台');
  expect(link('/')?.closest('section')).not.toBe(link('/brain')?.closest('section'));
@@ -55,6 +59,15 @@ it('selects the containing destination on deep links without also selecting the 
  expect(box.querySelectorAll('.platform-sidebar [aria-current="page"]')).toHaveLength(1);
  await render('platform_owner',{name:'marketing-conversation',agentSlug:'voice',conversationId:'c'});
  expect(link('/agents')?.getAttribute('aria-current')).toBe('page');
+});
+it('selects exactly one company canvas link',async()=>{
+ await render('platform_owner',{name:'home'});
+ expect(link('/')?.getAttribute('aria-current')).toBe('page');
+ expect(link('/organization')?.getAttribute('aria-current')).toBeNull();
+ await render('platform_owner',{name:'organization'});
+ expect(link('/')?.getAttribute('aria-current')).toBeNull();
+ expect(link('/organization')?.getAttribute('aria-current')).toBe('page');
+ expect(box.querySelectorAll('.platform-sidebar [aria-current="page"]')).toHaveLength(1);
 });
 it('collapses and restores navigation without losing the current content',async()=>{
  await render();const button=box.querySelector<HTMLButtonElement>('[aria-controls="platform-navigation"]')!;

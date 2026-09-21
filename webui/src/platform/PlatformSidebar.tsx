@@ -22,7 +22,10 @@ function groupsFor(account?: Account | null, readOnly = false): Group[] {
   const faeManager = account?.role === 'platform_owner' || account?.workspace_scopes.includes('fae_workbench');
   const vocManager = manager || account?.role === 'management_viewer';
   const groups: Group[] = [
-    { label:'首页', hideHeading:true, items:[{label:'首页',path:'/',icon:Home,routes:['home','ai-engineering']}] },
+    { label:'公司全景', items:[
+      {label:'业务布局',path:'/',icon:Home,routes:['home','ai-engineering']},
+      {label:'组织架构',path:'/organization',icon:Building2,routes:['organization']},
+    ] },
     { label:'AI 工作', items:aiWork },
     { label:'业务工作台', items:[
       { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },

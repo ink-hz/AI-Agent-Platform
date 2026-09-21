@@ -17,6 +17,7 @@ const MARKETING_TITLE_BY_SLUG = {
 export function routeDocumentTitle(route: Route): string {
   switch (route.name) {
     case "home": return PLATFORM_TITLE;
+    case "organization": return `组织架构 · ${PLATFORM_TITLE}`;
     case "brain": return `AI 助手 · ${PLATFORM_TITLE}`;
     case "ai-engineering": return `AI 工程全景 · ${PLATFORM_TITLE}`;
     case "conversations": return `AI 助手 · ${PLATFORM_TITLE}`;

@@ -8,6 +8,7 @@ import { parseRoute, routePath, routeSection } from "./router";
 describe("Agent Brain route boundary", () => {
   it("makes use routes the primary product surface", () => {
     expect(parseRoute("/")).toEqual({ name: "home" });
+    expect(parseRoute("/organization")).toEqual({ name: "organization" });
     expect(parseRoute("/brain")).toEqual({ name: "brain" });
     expect(parseRoute("/ai-engineering", "?document=reading")).toEqual({ name: "ai-engineering", documentSlug: "reading" });
     expect(parseRoute("/ai-engineering", "?document=reading&next=https://evil.test")).toEqual({ name: "not-found" });
@@ -71,6 +72,7 @@ describe("Agent Brain route boundary", () => {
 
   it("generates canonical paths instead of legacy management URLs", () => {
     expect(routePath({ name: "home" })).toBe("/");
+    expect(routePath({ name: "organization" })).toBe("/organization");
     expect(routePath({ name: "brain" })).toBe("/brain");
     expect(routePath({ name: "ai-engineering", documentSlug: "reading" })).toBe("/ai-engineering?document=reading");
     expect(routePath({ name: "conversations" })).toBe("/conversations");
