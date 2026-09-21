@@ -28,10 +28,10 @@
 .organization-members li > span:last-child { flex-basis: 100%; color: #627b8f; }
 @media (max-width: 600px) { .organization-layout { padding: 14px; } .organization-chart ul ul { margin-left: 16px; padding-left: 16px; } .organization-chart ul ul > .organization-branch::before { left: -16px; width: 16px; } }
 .organization-root > .organization-node { display: flex; width: fit-content; margin: 0 auto; }
-.organization-chart .organization-first-level { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); align-items: start; gap: 22px 18px; margin: 24px 0 0; padding: 20px 0 0; border-left: 0; border-top: 1px solid #adc9da; }
+.organization-chart .organization-first-level { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); align-items: start; gap: 22px 18px; margin: 24px 0 0; padding: 16px; border: 1px solid #c5d9e6; border-radius: 12px; background: #edf4f8; }
 .organization-first-level::before { content: ''; position: absolute; left: 50%; top: -25px; height: 24px; border-left: 1px solid #adc9da; }
 .organization-chart .organization-first-level > .organization-branch { padding-bottom: 0; min-width: 0; }
-.organization-chart .organization-first-level > .organization-branch::before { top: -20px; left: 50%; height: 20px; width: 0; border-top: 0; border-left: 1px solid #adc9da; }
+.organization-chart .organization-first-level > .organization-branch::before { content: none; }
 .organization-first-level > .organization-branch > .organization-node { display: flex; width: 100%; box-sizing: border-box; }
 .organization-first-level > .organization-branch > .organization-node .organization-name { flex: 1; }
 @media (max-width: 600px) { .organization-detail { position: fixed; top: auto; right: 0; bottom: 0; width: 100%; max-height: 70dvh; margin: 0; border-radius: 16px 16px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); } }

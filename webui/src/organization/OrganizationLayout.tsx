@@ -4,7 +4,7 @@ import { fetchDepartment, fetchOrganization, type Department, type DepartmentDet
 import './organization.css';
 
 interface Props { active: boolean; onAuthorizationFailure: (error: AiEngineeringApiError) => void; onOpen?: () => void }
-const statuses = { active: '已激活', inactive: '未激活', disabled: '已禁用' };
+const statuses = { active: '目录有效', inactive: '目录非有效', disabled: '已禁用' };
 export function OrganizationLayout({ active, onAuthorizationFailure, onOpen }: Props) {
   const [tree, setTree] = useState<OrganizationTree | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
