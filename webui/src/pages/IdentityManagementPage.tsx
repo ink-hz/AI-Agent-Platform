@@ -22,7 +22,11 @@ import {
 } from "../pendingAdministrator";
 import { listAdministratorUsers, type AdministratorUser } from "../administratorDirectory";
 import { AdministratorSearch } from "../components/AdministratorSearch";
-import { PermissionNavigation } from "../components/PermissionNavigation";
+import { PermissionNavigation, type PermissionSection } from "../components/PermissionNavigation";
+import { FaeAccessPanel } from "../components/FaeAccessPanel";
+import { VocAccessPanel } from "../components/VocAccessPanel";
+import { PartnerAccessPanel } from "./PartnerAccessPanel";
+import { ObserverAccessPage } from "./ObserverAccessPage";
 
 
 function failureMessage(error: unknown): string {
@@ -57,11 +61,40 @@ function leavesAdministratorMutationOutcomeUncertain(error: unknown): boolean {
 }
 
 
-export function IdentityManagementPage({ account }: { account: Account }) {
-  if (account.role !== "platform_owner" && account.role !== "platform_admin") {
+function canViewSection(account: Account, section: PermissionSection): boolean {
+  return account.role === "platform_owner"
+    || (account.role === "platform_admin" && (section === "administrators" || section === "observers"));
+}
+
+export function IdentityManagementPage({ account, initialSection = "administrators" }: {
+  account: Account; initialSection?: PermissionSection;
+}) {
+  if (!canViewSection(account, initialSection)) {
     return <section className="permission-state" role="alert"><h1>无权访问</h1><p>请联系苍渊。</p></section>;
   }
-  return <AdministratorManagement key={`${account.internal_user_id}:${account.role}`} account={account} />;
+  return <PermissionsWorkspace key={`${account.internal_user_id}:${account.role}:${initialSection}`}
+    account={account} initialSection={initialSection} />;
+}
+
+function PermissionsWorkspace({ account, initialSection }: { account: Account; initialSection: PermissionSection }) {
+  const [section, setSection] = useState(initialSection);
+  const [visited, setVisited] = useState<PermissionSection[]>([initialSection]);
+  function select(next: PermissionSection) {
+    if (!canViewSection(account, next)) return;
+    setVisited(previous => previous.includes(next) ? previous : [...previous, next]);
+    setSection(next);
+  }
+  return <section className="permission-access-page">
+    <h1>账号与权限</h1>
+    <PermissionNavigation account={account} section={section} onSelect={select} />
+    {visited.map(key => <div key={key} className="permission-panel" hidden={section !== key}>
+      {key === "administrators" && <AdministratorManagement account={account} />}
+      {key === "fae" && <FaeAccessPanel account={account} />}
+      {key === "voc" && <VocAccessPanel account={account} />}
+      {key === "partners" && <PartnerAccessPanel account={account} />}
+      {key === "observers" && <ObserverAccessPage account={account} />}
+    </div>)}
+  </section>;
 }
 
 function AdministratorManagement({ account }: { account: Account }) {
@@ -306,11 +339,9 @@ function AdministratorManagement({ account }: { account: Account }) {
   const canManage = account.role === "platform_owner";
   const blocked = busy || administratorMutationBlocked || account.hard_stale_read_only;
   return <section className="identity-page administrator-page">
-    <header className="administrator-heading">
-      <h1>账号与权限</h1>
+    <div className="administrator-heading">
       {canManage && <button type="button" disabled={blocked || !loaded} onClick={() => setAdding(true)}>添加管理员</button>}
-    </header>
-    <PermissionNavigation account={account} section="administrators" />
+    </div>
     {message && <p className={`auth-message ${message.startsWith("变更成功") || message.startsWith("变更结果曾无法确认") || message.startsWith("变更已确认") ? "is-success" : "is-error"}`} role="status">{message}</p>}
     {pendingAdministrator && <button type="button" disabled={busy || account.hard_stale_read_only} onClick={() => void retryAdministrator()}>使用同一请求重试确认</button>}
     {(confirmedAdministrator || inflightAdministrator) && <button type="button" disabled={busy} onClick={() => void refreshNonReplayAdministrator()}>刷新当前角色</button>}
@@ -318,7 +349,6 @@ function AdministratorManagement({ account }: { account: Account }) {
     {!loaded && message && <button type="button" onClick={() => void load()}>重试</button>}
     {adding && canManage && <AdministratorSearch disabled={blocked} excludedIds={users.map(user => user.internal_user_id)}
       onSelect={user => void mutateAdministrator(user, false)} onClose={() => setAdding(false)} />}
-    <h2>平台管理员</h2>
     <div className="administrator-list">
       {users.map(user => <article key={user.internal_user_id}>
         <div><strong>{user.display_name}</strong>

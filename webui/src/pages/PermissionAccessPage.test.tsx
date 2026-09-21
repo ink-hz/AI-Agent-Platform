@@ -19,7 +19,7 @@ it.each(["fae", "voc"] as PermissionSection[])("mounts only the selected %s auth
   vi.stubGlobal("fetch", fetchMock);
   await act(async () => root.render(<PermissionAccessPage account={owner} section={section} />));
   expect(container.querySelector("h1")?.textContent).toBe("账号与权限");
-  expect(container.querySelector("nav[aria-label='权限分类'] a[aria-current='page']")?.textContent).toBe(section === "fae" ? "FAE 权限" : "VOC 权限");
+  expect(container.querySelector("nav[aria-label='权限分类'] button[aria-pressed='true']")?.textContent).toBe(section === "fae" ? "FAE 权限" : "VOC 权限");
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(String(fetchMock.mock.calls[0][0])).toBe(`/api/v1/manage/${section}-workbench/grants`);
 });
@@ -37,10 +37,10 @@ it("preserves observer management on its secondary page", async () => {
   vi.stubGlobal("fetch", fetchMock);
   await act(async () => root.render(<PermissionAccessPage account={{ ...owner, role: "platform_admin" }} section="observers" />));
   expect(container.querySelector("h1")?.textContent).toBe("账号与权限");
-  expect(container.querySelector("nav[aria-label='权限分类'] a[href='/fae/manage/access']")).toBeNull();
+  expect(container.querySelector("nav[aria-label='权限分类'] button[data-section='fae']")).toBeNull();
   expect(container.textContent).toContain("撤销 agent-one");
-  expect(container.querySelector("button")?.disabled).toBe(true);
+  expect(container.querySelector<HTMLButtonElement>(".identity-users button")?.disabled).toBe(true);
   const reason = container.querySelector("input[aria-label='变更原因']") as HTMLInputElement;
   await act(async () => { reason.value = "批准"; reason.dispatchEvent(new Event("input", { bubbles: true })); });
-  expect(container.querySelector("button")?.disabled).toBe(false);
+  expect(container.querySelector<HTMLButtonElement>(".identity-users button")?.disabled).toBe(false);
 });

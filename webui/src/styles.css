@@ -2947,11 +2947,11 @@ body {
 .hr-position-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 
 /* Account permissions: focused administrator list and on-demand search. */
-.administrator-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.administrator-heading { display: flex; align-items: center; justify-content: flex-end; margin-bottom:16px; }
+.administrator-heading:empty { display:none; }
 .administrator-page button { border: 1px solid var(--brand); border-radius: 9px; padding: 9px 14px; background: var(--brand); color: #fff; font: inherit; font-size: 13px; cursor: pointer; }
 .administrator-page button.is-secondary { background: var(--surface); border-color: var(--line); color: var(--ink-soft); }
 .administrator-page button:disabled { opacity: .5; cursor: not-allowed; }
-.administrator-page > h2 { margin: 28px 0 12px; font-size: 16px; }
 .administrator-list { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
 .administrator-list:empty { display: none; }
 .administrator-list article, .administrator-results article { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; }
@@ -2979,11 +2979,15 @@ body {
   .administrator-search-controls input { flex-basis: 100%; }
 }
 
+/* Navigation changes local sections without unmounting visited forms. */
+.permission-panel[hidden] { display:none; }
 .permission-navigation { display:flex; align-items:center; flex-wrap:wrap; gap:4px 20px; margin:18px 0 24px; border-bottom:1px solid var(--line); }
-.permission-navigation > a, .permission-navigation summary { display:block; padding:10px 2px; color:var(--ink-soft); font-size:14px; cursor:pointer; text-decoration:none; border-bottom:2px solid transparent; }
-.permission-navigation a:hover, .permission-navigation summary:hover { color:var(--ink); }
-.permission-navigation > a[aria-current="page"], .permission-navigation > .is-current > summary { color:#245e99; border-bottom-color:#245e99; font-weight:650; }
+.permission-navigation button { appearance:none; margin:0; background:transparent; border:0; border-radius:0; font:inherit; text-align:left; box-shadow:none; }
+.permission-navigation > button, .permission-navigation summary { display:block; padding:10px 2px; color:var(--ink-soft); font-size:14px; cursor:pointer; border-bottom:2px solid transparent; }
+.permission-navigation button:hover, .permission-navigation summary:hover { color:var(--ink); }
+.permission-navigation > button[aria-pressed="true"], .permission-navigation > .is-current > summary { color:#245e99; border-bottom-color:#245e99; font-weight:650; }
+.permission-navigation button:focus-visible, .permission-navigation summary:focus-visible { outline:2px solid #245e99; outline-offset:3px; }
 .permission-navigation details { position:relative; }
 .permission-navigation-menu { position:absolute; z-index:10; right:0; top:100%; min-width:150px; padding:6px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 24px #18314a18; }
-.permission-navigation-menu a { display:block; padding:10px; color:var(--ink-soft); text-decoration:none; font-size:14px; border-radius:4px; }
-.permission-navigation-menu a:hover, .permission-navigation-menu a[aria-current="page"] { background:var(--wash); color:#245e99; }
+.permission-navigation-menu button { display:block; width:100%; padding:10px; color:var(--ink-soft); font-size:14px; border-radius:4px; cursor:pointer; }
+.permission-navigation-menu button:hover, .permission-navigation-menu button[aria-pressed="true"] { background:var(--wash); color:#245e99; }

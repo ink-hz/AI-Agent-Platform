@@ -174,7 +174,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
     await act(async () => root.render(<IdentityManagementPage account={{ ...owner, hard_stale_read_only: true, directory_freshness: "hard_stale" }} />));
     expect(container.textContent).toContain("目标管理员");
-    expect([...container.querySelectorAll("button")].every(button => button.disabled)).toBe(true);
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")].every(button => button.disabled)).toBe(true);
   });
 
   it("renders backend permission and audit failures without optimistic success", async () => {
@@ -233,7 +233,7 @@ describe("IdentityManagementPage", () => {
     expect(container.querySelector("h1")?.textContent).toBe("账号与权限");
     expect(container.textContent).toContain("目标管理员");
     expect(container.textContent).not.toContain("测试成员");
-    expect(container.querySelectorAll("button")).toHaveLength(0);
+    expect(container.querySelectorAll<HTMLButtonElement>(".administrator-page button")).toHaveLength(0);
   });
 
   it("shows click-level administrator success only after the server confirms and refreshes", async () => {
@@ -414,7 +414,7 @@ describe("IdentityManagementPage", () => {
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
     expect(container.textContent).toContain("无法验证待处理的管理员操作；已停止新的管理员变更，请手动核查。");
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
     expect(container.textContent).not.toContain("使用同一请求重试确认");
@@ -469,7 +469,7 @@ describe("IdentityManagementPage", () => {
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(1);
     expect(container.textContent).toContain("管理员变更响应校验失败；已停止新的管理员变更，请手动核查。");
     expect(container.textContent).not.toContain("使用同一请求重试确认");
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
     const stored = String(sessionStorage.getItem(pendingAdministratorStorageKey));
@@ -644,7 +644,7 @@ describe("IdentityManagementPage", () => {
     expect(JSON.parse(String(persisted))).toMatchObject({
       version: 1, kind: "inflight_no_replay", request_id: requestId,
     });
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
@@ -672,7 +672,7 @@ describe("IdentityManagementPage", () => {
     expect(container.textContent).not.toContain("变更已确认");
     expect(container.textContent).toContain("人工核查治理审计");
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "POST")).toHaveLength(0);
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
     const refresh = [...container.querySelectorAll("button")]
@@ -711,7 +711,7 @@ describe("IdentityManagementPage", () => {
       version: 1, kind: "inflight_no_replay", request_id: requestId,
     });
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "DELETE")).toHaveLength(0);
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
@@ -831,7 +831,7 @@ describe("IdentityManagementPage", () => {
 
     expect(container.textContent).toContain("无法保存待处理的管理员操作；已停止新的管理员变更，请手动核查。");
     expect(container.textContent).not.toContain("使用同一请求重试确认");
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
@@ -958,7 +958,7 @@ describe("IdentityManagementPage", () => {
       request_id: requestId,
     });
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === method)).toHaveLength(1);
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
 
@@ -1012,7 +1012,7 @@ describe("IdentityManagementPage", () => {
 
     expect(container.textContent).toContain("管理员变更已由服务端确认，但刷新后的角色与预期不一致；请手动核查。");
     expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toEqual(expectedState);
-    expect([...container.querySelectorAll("button")]
+    expect([...container.querySelectorAll<HTMLButtonElement>(".administrator-page button")]
       .filter((button) => button.textContent?.includes("平台管理员"))
       .every((button) => button.hasAttribute("disabled"))).toBe(true);
 
@@ -1038,10 +1038,102 @@ it("exposes business permissions alongside the administrator list without loadin
   vi.stubGlobal("fetch", fetchMock);
   await act(async () => root.render(<IdentityManagementPage account={owner} />));
   const nav = container.querySelector("nav[aria-label='权限分类']");
-  expect(nav?.querySelector("a[href='/fae/manage/access']")?.textContent).toBe("FAE 权限");
-  expect(nav?.querySelector("a[href='/admin/voc/access']")?.textContent).toBe("VOC 权限");
-  expect(nav?.querySelector("a[aria-current='page']")?.textContent).toBe("平台管理员");
+  expect(nav?.querySelector("button[data-section='fae']")?.textContent).toBe("FAE 权限");
+  expect(nav?.querySelector("button[data-section='voc']")?.textContent).toBe("VOC 权限");
+  expect(nav?.querySelector("button[aria-pressed='true']")?.textContent).toBe("平台管理员");
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+  it("switches permissions in place, loads on first visit and retains form input", async () => {
+    const fetchMock = withPartnerReads(vi.fn().mockResolvedValue(usersResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const heading = container.querySelector("h1");
+    const href = window.location.href;
+    const historyLength = window.history.length;
+    expect(container.querySelector("nav[aria-label='权限分类'] a")).toBeNull();
+    expect(container.querySelector("h2")?.textContent).not.toBe("平台管理员");
+    const select = async (name: string) => {
+      const button = container.querySelector(`nav button[data-section='${name}']`) as HTMLButtonElement;
+      expect(button).not.toBeNull();
+      await act(async () => button.click());
+    };
+    await select("fae");
+    const panel = container.querySelector("[data-fae-access-panel]")!;
+    expect(panel.closest("[hidden]")).toBeNull();
+    expect(container.querySelector(".administrator-page")?.closest("[hidden]")).not.toBeNull();
+    const input = panel.querySelector("input") as HTMLInputElement;
+    await act(async () => { input.value = "合成花名"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await select("voc");
+    expect(container.querySelector("[data-voc-access-panel]")?.closest("[hidden]")).toBeNull();
+    expect(panel.closest("[hidden]")).not.toBeNull();
+    await select("fae");
+    expect(container.querySelector("[data-fae-access-panel] input")).toBe(input);
+    expect(input.value).toBe("合成花名");
+    expect(fetchMock.mock.calls.map(call => String(call[0]))).toEqual([
+      "/api/v1/manage/users?view=administrators", "/api/v1/manage/fae-workbench/grants", "/api/v1/manage/voc-workbench/grants",
+    ]);
+    expect(window.location.href).toBe(href);
+    expect(window.history.length).toBe(historyLength);
+    expect(container.querySelector("h1")).toBe(heading);
+  });
+
+  it("does not restart an in-flight grant after switching away and back", async () => {
+    let complete!: (response: Response) => void;
+    const grant = new Promise<Response>(resolve => { complete = resolve; });
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") return grant;
+      return Promise.resolve(String(input).includes("workbench")
+        ? new Response(JSON.stringify({ grants: [] })) : usersResponse());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const select = async (name: string) => {
+      const button = container.querySelector(`nav button[data-section='${name}']`) as HTMLButtonElement;
+      expect(button).not.toBeNull();
+      await act(async () => button.click());
+    };
+    await select("fae");
+    const panel = container.querySelector("[data-fae-access-panel]")!;
+    const input = panel.querySelector("input") as HTMLInputElement;
+    await act(async () => { input.value = "合成花名"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await act(async () => (panel.querySelector("button") as HTMLButtonElement).click());
+    await select("administrators");
+    await select("fae");
+    expect([...panel.querySelectorAll("button")].every(button => button.disabled)).toBe(true);
+    expect(fetchMock.mock.calls.filter(call => call[1]?.method === "POST")).toHaveLength(1);
+    await act(async () => complete(new Response(JSON.stringify({ status: "ok" }), { status: 200 })));
+    expect(panel.textContent).toContain("授权成功");
+  });
+
+  it("clears visited owner panels on a role change", async () => {
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const button = container.querySelector("nav button[data-section='fae']") as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    await act(async () => button.click());
+    expect(container.querySelector("[data-fae-access-panel]")).not.toBeNull();
+    await act(async () => root.render(<IdentityManagementPage account={{ ...owner, role: "platform_admin" }} />));
+    expect(container.querySelector("[data-fae-access-panel]")).toBeNull();
+    expect(container.querySelector("nav button[data-section='fae']")).toBeNull();
+    expect(container.querySelector("nav button[aria-pressed='true']")?.textContent).toBe("平台管理员");
+  });
+
+  it("switches other authorizations locally and clears forms when the account changes", async () => {
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    const menu = container.querySelector("nav details") as HTMLDetailsElement;
+    menu.open = true;
+    const button = menu.querySelector("button[data-section='observers']") as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    await act(async () => button.click());
+    expect(menu.open).toBe(false);
+    expect(container.querySelector("input[aria-label='变更原因']")?.closest("[hidden]")).toBeNull();
+    const input = container.querySelector("input[aria-label='变更原因']") as HTMLInputElement;
+    await act(async () => { input.value = "原账号草稿"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    await act(async () => root.render(<IdentityManagementPage account={{ ...owner, internal_user_id: "another-owner" }} />));
+    expect(container.querySelector("input[aria-label='变更原因']")).toBeNull();
+    expect(container.querySelector("nav button[aria-pressed='true']")?.textContent).toBe("平台管理员");
+  });
 
 });

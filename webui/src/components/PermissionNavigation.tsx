@@ -1,20 +1,28 @@
-import { platformPath, type Account } from "../auth";
+import type { Account } from "../auth";
 
-type Section = "administrators" | "fae" | "voc" | "observers" | "partners";
+export type PermissionSection = "administrators" | "fae" | "voc" | "observers" | "partners";
 
-export function PermissionNavigation({ account, section }: { account: Account; section: Section }) {
+export function PermissionNavigation({ account, section, onSelect }: {
+  account: Account;
+  section: PermissionSection;
+  onSelect: (section: PermissionSection) => void;
+}) {
   const owner = account.role === "platform_owner";
-  const link = (key: Section, label: string, path: string) => <a href={platformPath(path)}
-    aria-current={section === key ? "page" : undefined}>{label}</a>;
+  const button = (key: PermissionSection, label: string) => <button type="button" data-section={key}
+    aria-pressed={section === key} onClick={event => {
+      onSelect(key);
+      const menu = event.currentTarget.closest("details");
+      if (menu) { menu.open = false; menu.querySelector("summary")?.focus(); }
+    }}>{label}</button>;
   return <nav className="permission-navigation" aria-label="权限分类">
-    {link("administrators", "平台管理员", "/admin/identity")}
-    {owner && link("fae", "FAE 权限", "/fae/manage/access")}
-    {owner && link("voc", "VOC 权限", "/admin/voc/access")}
+    {button("administrators", "平台管理员")}
+    {owner && button("fae", "FAE 权限")}
+    {owner && button("voc", "VOC 权限")}
     <details className={section === "observers" || section === "partners" ? "is-current" : undefined}>
       <summary>其他授权</summary>
       <div className="permission-navigation-menu">
-        {link("observers", "观察者权限", "/admin/identity/observers")}
-        {owner && link("partners", "合作方权限", "/admin/identity/partners")}
+        {button("observers", "观察者权限")}
+        {owner && button("partners", "合作方权限")}
       </div>
     </details>
   </nav>;
