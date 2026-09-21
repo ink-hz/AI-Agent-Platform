@@ -67,6 +67,7 @@ export function FaeManagementWorkspace({
     : null;
 
   return <WorkspaceErrorBoundary title="技术支持工作台">
+    {account.role === "platform_owner" && <div className="workspace-access-link"><a href={platformPath("/fae/manage/access")}>访问权限</a></div>}
     {readOnlyNotice}
     {page}
   </WorkspaceErrorBoundary>;

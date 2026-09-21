@@ -1249,3 +1249,15 @@ def test_hr_intelligence_reauthentication_return_path() -> None:
     for suffix in ("?next=https://evil.test", "/../account", "#fragment", "/extra"):
         with pytest.raises(ValueError):
             validate_return_path("/hr/panorama" + suffix, route_prefix="/")
+
+
+@pytest.mark.parametrize("candidate", [
+    "/admin/identity/observers", "/admin/identity/partners",
+    "/fae/manage/access", "/admin/voc/access",
+])
+def test_permission_pages_preserve_login_return_path(candidate: str) -> None:
+    from app.control_plane.auth import validate_return_path
+
+    assert validate_return_path(candidate, route_prefix="/") == candidate
+    prefix = "/_preview/dingtalk-r1/"
+    assert validate_return_path(prefix.rstrip("/") + candidate, route_prefix=prefix) == prefix.rstrip("/") + candidate

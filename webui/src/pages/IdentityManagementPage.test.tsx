@@ -45,6 +45,14 @@ function articleFor(container: HTMLDivElement, name: string): HTMLElement {
   return article;
 }
 
+async function findMember(container: HTMLDivElement) {
+  await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent === "添加管理员")?.click());
+  const input = container.querySelector("input#administrator-query") as HTMLInputElement;
+  if (!input) throw new Error("missing administrator search");
+  await act(async () => { input.value = "测试成员"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+  await act(async () => container.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+}
+
 function usersResponse(users = managedUsers): Response {
   return new Response(JSON.stringify({ users }), {
     status: 200, headers: { "Content-Type": "application/json" },
@@ -61,6 +69,9 @@ function indeterminateResponse(requestId: string): Response {
 function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>): ReturnType<typeof vi.fn> {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
+    if (path.includes("view=candidates")) {
+      return Promise.resolve(new Response(JSON.stringify({ users: managedUsers.filter(user => user.role === "member" && user.status === "active").map(user => ({ ...user, departments: ["合成部门"] })), truncated: false }), { status: 200 }));
+    }
     if (!init?.method || init.method === "GET") {
       if (path.endsWith("/api/v1/manage/partners/organizations")) {
         return Promise.resolve(new Response(JSON.stringify({ organizations: [] }), {
@@ -88,7 +99,11 @@ function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>): ReturnType<typeo
         }));
       }
     }
-    return fetchMock(input, init);
+    return Promise.resolve(fetchMock(input, init)).then(async (response: Response) => {
+      if (!path.includes("view=administrators") || response.status !== 200) return response;
+      const body = await response.clone().json();
+      return new Response(JSON.stringify({ ...body, users: body.users.filter((user: {role: string}) => ["platform_admin", "platform_owner"].includes(user.role)).map((user: object) => ({ ...user, departments: ["合成部门"] })), truncated: false }), { status: 200 });
+    });
   });
 }
 
@@ -133,45 +148,33 @@ describe("IdentityManagementPage", () => {
     vi.unstubAllGlobals();
   });
 
-  it("places FAE and VOC grant panels only on the owner identity page", async () => {
-    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
-
+  it("shows only administrators by default without unrelated panels or directory labels", async () => {
+    const fetchMock = withPartnerReads(vi.fn().mockResolvedValue(usersResponse()));
+    vi.stubGlobal("fetch", fetchMock);
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
-    await act(async () => { await Promise.resolve(); });
-    expect(container.textContent).toContain("FAE 工作台访问");
-    expect(container.textContent).toContain("VOC 工作台访问");
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await act(async () => root.render(
-      <IdentityManagementPage account={administrator} />,
-    ));
-    await act(async () => { await Promise.resolve(); });
-    expect(container.textContent).not.toContain("FAE 工作台访问");
-    expect(container.textContent).not.toContain("VOC 工作台访问");
+    expect(container.querySelector("h1")?.textContent).toBe("账号与权限");
+    expect(container.textContent).toContain("目标管理员");
+    expect(container.textContent).toContain("苍渊");
+    for (const text of ["测试成员", "观察者的新 Agent 范围", "FAE 工作台访问", "VOC 工作台访问", "未授予 Agent 观察范围", "在职", "PLATFORM GOVERNANCE"]) {
+      expect(container.textContent).not.toContain(text);
+    }
+    expect(container.querySelector("input[aria-label='变更原因']")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/v1/manage/users?view=administrators");
+    expect([...container.querySelectorAll("button")].some(button => button.textContent === "添加管理员")).toBe(true);
   });
 
-  it("is owner-only and requires a reason before changing viewer access", async () => {
-    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: [{
-      internal_user_id: "9e378763-287e-4dda-88a8-0b338f629af3", display_name: "测试成员",
-      role: "member", status: "active", scopes: [],
-    }, {
-      internal_user_id: "7319a8c6-ee88-447e-bdce-dc9ee9e0a561", display_name: "观察者",
-      role: "management_viewer", status: "active", scopes: ["ai-fae-agent"],
-    }] }), { status: 200, headers: { "Content-Type": "application/json" } }))));
-    await act(async () => root.render(<IdentityManagementPage account={owner} />));
-    expect(container.textContent).toContain("账号与权限");
-    const action = [...container.querySelectorAll("button")].find((item) => item.textContent === "设为只读观察者");
-    expect(action?.hasAttribute("disabled")).toBe(true);
-    const reason = container.querySelector("input[aria-label='变更原因']") as HTMLInputElement;
-    await act(async () => {
-      reason.value = "管理层批准演示访问";
-      reason.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(action?.hasAttribute("disabled")).toBe(false);
-    expect(container.textContent).toContain("ai-fae-agent");
-    expect(container.querySelector("input[aria-label='观察者的新 Agent 范围']")).not.toBeNull();
-    expect([...container.querySelectorAll("button")].some((item) => item.textContent === "撤销 ai-fae-agent")).toBe(true);
+  it("does not request identity data for an unauthorized member", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<IdentityManagementPage account={{ ...owner, role: "member" }} />));
+    expect(container.textContent).toContain("无权访问"); expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps hard-stale administrator access read-only", async () => {
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
+    await act(async () => root.render(<IdentityManagementPage account={{ ...owner, hard_stale_read_only: true, directory_freshness: "hard_stale" }} />));
+    expect(container.textContent).toContain("目标管理员");
+    expect([...container.querySelectorAll("button")].every(button => button.disabled)).toBe(true);
   });
 
   it("renders backend permission and audit failures without optimistic success", async () => {
@@ -188,13 +191,13 @@ describe("IdentityManagementPage", () => {
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
+    await findMember(container);
     expect([...articleFor(container, "测试成员").querySelectorAll("button")]
       .map((button) => button.textContent)).toContain("设为平台管理员");
     expect([...articleFor(container, "目标管理员").querySelectorAll("button")]
       .map((button) => button.textContent)).toEqual(["撤销平台管理员"]);
     expect(articleFor(container, "苍渊").querySelector("button")).toBeNull();
-    expect([...articleFor(container, "观察者").querySelectorAll("button")]
-      .some((button) => button.textContent?.includes("平台管理员"))).toBe(false);
+    expect(container.textContent).not.toContain("观察者的新 Agent 范围");
   });
 
   it("lets the owner revoke an inactive administrator but never assign an inactive member", async () => {
@@ -221,35 +224,16 @@ describe("IdentityManagementPage", () => {
 
     expect([...articleFor(container, "离职管理员").querySelectorAll("button")]
       .map((button) => button.textContent)).toEqual(["撤销平台管理员"]);
-    expect([...articleFor(container, "离职成员").querySelectorAll("button")]
-      .some((button) => button.textContent?.includes("平台管理员"))).toBe(false);
+    expect(container.textContent).not.toContain("离职成员");
   });
 
-  it("lets an administrator manage viewers and scopes but never administrator roles", async () => {
-    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: managedUsers }), {
-      status: 200, headers: { "Content-Type": "application/json" },
-    }))));
-
+  it("lets an administrator read the list without administrator controls", async () => {
+    vi.stubGlobal("fetch", withPartnerReads(vi.fn().mockResolvedValue(usersResponse())));
     await act(async () => root.render(<IdentityManagementPage account={administrator} />));
-
-    expect(container.textContent).toContain("账号与权限");
-    expect([...container.querySelectorAll("button")]
-      .some((button) => button.textContent?.includes("平台管理员"))).toBe(false);
-    const memberViewerButton = [...articleFor(container, "测试成员").querySelectorAll("button")]
-      .find((button) => button.textContent === "设为只读观察者");
-    expect(memberViewerButton).toBeDefined();
-    expect(articleFor(container, "观察者").querySelector("input[aria-label='观察者的新 Agent 范围']")).not.toBeNull();
-    expect([...articleFor(container, "观察者").querySelectorAll("button")]
-      .some((button) => button.textContent === "撤销 ai-fae-agent")).toBe(true);
-    expect(articleFor(container, "目标管理员").querySelector("button")).toBeNull();
-    expect(articleFor(container, "苍渊").querySelector("button")).toBeNull();
-
-    const reason = container.querySelector("input[aria-label='变更原因']") as HTMLInputElement;
-    await act(async () => {
-      reason.value = "审批通过";
-      reason.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    expect(memberViewerButton?.hasAttribute("disabled")).toBe(false);
+    expect(container.querySelector("h1")?.textContent).toBe("账号与权限");
+    expect(container.textContent).toContain("目标管理员");
+    expect(container.textContent).not.toContain("测试成员");
+    expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 
   it("shows click-level administrator success only after the server confirms and refreshes", async () => {
@@ -264,6 +248,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -300,6 +285,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    if (targetName === "测试成员") await findMember(container);
     const action = [...articleFor(container, targetName).querySelectorAll("button")]
       .find((button) => button.textContent === actionLabel);
     await act(async () => action?.click());
@@ -313,7 +299,8 @@ describe("IdentityManagementPage", () => {
     expect(container.textContent).toContain("变更结果曾无法确认；已使用同一请求重试并刷新确认生效。");
     expect(container.querySelector("[role='status']")?.classList).toContain("is-success");
     expect(container.textContent).not.toContain("未执行任何变更");
-    expect([...articleFor(container, targetName).querySelectorAll("button")]
+    if (method === "DELETE") expect(container.textContent).not.toContain(targetName);
+    else expect([...articleFor(container, targetName).querySelectorAll("button")]
       .some((button) => button.textContent === refreshedAction)).toBe(true);
   });
 
@@ -336,6 +323,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -385,8 +373,7 @@ describe("IdentityManagementPage", () => {
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
 
-    const freshAction = [...articleFor(container, "测试成员").querySelectorAll("button")]
-      .find((button) => button.textContent === "设为平台管理员");
+    const freshAction = [...container.querySelectorAll("button")].find(button => button.textContent === "添加管理员");
     expect(freshAction?.hasAttribute("disabled")).toBe(true);
     const retry = [...container.querySelectorAll("button")]
       .find((button) => button.textContent === "使用同一请求重试确认");
@@ -451,6 +438,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -473,6 +461,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -516,6 +505,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -557,6 +547,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -600,6 +591,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -642,6 +634,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -732,6 +725,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -760,6 +754,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -868,6 +863,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -910,6 +906,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());
@@ -945,6 +942,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    if (targetName === "测试成员") await findMember(container);
     const action = [...articleFor(container, targetName).querySelectorAll("button")]
       .find((button) => button.textContent === actionLabel);
     await act(async () => action?.click());
@@ -970,7 +968,8 @@ describe("IdentityManagementPage", () => {
 
     expect(fetchMock.mock.calls.filter((call) => call[1]?.method === method)).toHaveLength(1);
     expect(container.textContent).toContain("变更已确认，当前角色已刷新。");
-    expect([...articleFor(container, targetName).querySelectorAll("button")]
+    if (method === "DELETE") expect(container.textContent).not.toContain(targetName);
+    else expect([...articleFor(container, targetName).querySelectorAll("button")]
       .some((button) => button.textContent === refreshedAction)).toBe(true);
     expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
   });
@@ -993,6 +992,7 @@ describe("IdentityManagementPage", () => {
     vi.stubGlobal("fetch", withPartnerReads(fetchMock));
 
     await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
     const action = [...articleFor(container, "测试成员").querySelectorAll("button")]
       .find((button) => button.textContent === "设为平台管理员");
     await act(async () => action?.click());

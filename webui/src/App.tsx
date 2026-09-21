@@ -26,6 +26,7 @@ import {
 } from "./auth";
 import { LoginPage } from "./pages/LoginPage";
 import { AccountPage } from "./pages/AccountPage";
+import { PermissionAccessPage } from "./pages/PermissionAccessPage";
 import { IdentityManagementPage } from "./pages/IdentityManagementPage";
 import { GovernancePage } from "./pages/GovernancePage";
 import { BrainWorkspacePage } from "./pages/BrainWorkspacePage";
@@ -139,6 +140,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-review": return <ReviewPage />;
     case "admin-activity": return <ActivityPage />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
+    case "admin-permissions": return account ? <PermissionAccessPage key={`${account.internal_user_id}:${account.role}:${route.section}`} account={account} section={route.section} /> : <PendingPage title="账号与权限" description="请登录后使用。" />;
     case "admin-governance": return <GovernancePage />;
     case "admin-access": return <AccessHistoryPage />;
     case "admin-voc": return <LegacyRedirect to="/voc/manage/" navigation="document" />;

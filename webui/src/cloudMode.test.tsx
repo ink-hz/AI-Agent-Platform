@@ -222,7 +222,7 @@ describe("cloud replica mode", () => {
         observation_agent_ids: [], workspace_scopes: ["fae_workbench"], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (url.endsWith("/api/v1/manage/users")) return new Response(JSON.stringify({ users: [] }), {
+      if (url.endsWith("/api/v1/manage/users") || url.includes("/api/v1/manage/users?view=administrators")) return new Response(JSON.stringify({ users: [], truncated: false }), {
         status: 200, headers: { "Content-Type": "application/json" },
       });
       return new Response(JSON.stringify({
@@ -486,7 +486,7 @@ describe("cloud replica mode", () => {
         observation_agent_ids: [], workspace_scopes: [], directory_freshness: "fresh",
         hard_stale_read_only: false, csrf_token: "csrf",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (url.endsWith("/api/v1/manage/users")) return new Response(JSON.stringify({ users: [] }), {
+      if (url.endsWith("/api/v1/manage/users") || url.includes("/api/v1/manage/users?view=administrators")) return new Response(JSON.stringify({ users: [], truncated: false }), {
         status: 200, headers: { "Content-Type": "application/json" },
       });
       return new Response(JSON.stringify({

@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 import re
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 import psycopg
 from psycopg.rows import dict_row
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from .audit import (
@@ -181,6 +181,76 @@ class ManagementRepository:
                 }
                 for row in rows
             ]
+        except psycopg.Error:
+            raise RuntimeError("identity management unavailable") from None
+
+    @staticmethod
+    def _project_directory_users(rows) -> list[dict[str, Any]]:
+        return [
+            {
+                "internal_user_id": row["internal_user_id"],
+                "display_name": row["display_name"],
+                "status": row["status"],
+                "role": row["role"],
+                "scopes": list(row["scopes"]),
+                "departments": list(row["departments"]),
+            }
+            for row in rows
+        ]
+
+    def list_administrator_users(self) -> list[dict[str, Any]]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "with selected_users as (select users.internal_user_id, "
+                    "users.display_name, users.status, users.role::text as role "
+                    "from platform_control.internal_users users where users.role "
+                    "in ('platform_owner', 'platform_admin') order by "
+                    "users.display_name, users.internal_user_id) select selected_users.*, "
+                    "coalesce(scopes.agent_ids, array[]::text[]) as scopes, "
+                    "platform_control.read_account_departments_v27("
+                    "selected_users.internal_user_id) as departments from selected_users "
+                    "left join lateral (select array_agg(grant_row.agent_id order by "
+                    "grant_row.agent_id) as agent_ids from "
+                    "platform_control.observation_grants grant_row where "
+                    "grant_row.viewer_internal_user_id = selected_users.internal_user_id "
+                    "and grant_row.revoked_at is null) scopes on true order by "
+                    "selected_users.display_name, selected_users.internal_user_id"
+                ).fetchall()
+            return self._project_directory_users(rows)
+        except psycopg.Error:
+            raise RuntimeError("identity management unavailable") from None
+
+    def search_administrator_candidates(
+        self, query: str, limit: int
+    ) -> tuple[list[dict[str, Any]], bool]:
+        if not query:
+            return [], False
+        escaped_query = (
+            query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "with selected_users as (select users.internal_user_id, "
+                    "users.display_name, users.status, users.role::text as role "
+                    "from platform_control.internal_users users where "
+                    "users.status = 'active' and users.role = 'member' and "
+                    "users.display_name ilike %s escape '\\' order by "
+                    "users.display_name, users.internal_user_id limit %s) select "
+                    "selected_users.*, coalesce(scopes.agent_ids, array[]::text[]) "
+                    "as scopes, platform_control.read_account_departments_v27("
+                    "selected_users.internal_user_id) as departments from selected_users "
+                    "left join lateral (select array_agg(grant_row.agent_id order by "
+                    "grant_row.agent_id) as agent_ids from "
+                    "platform_control.observation_grants grant_row where "
+                    "grant_row.viewer_internal_user_id = selected_users.internal_user_id "
+                    "and grant_row.revoked_at is null) scopes on true order by "
+                    "selected_users.display_name, selected_users.internal_user_id",
+                    (f"%{escaped_query}%", limit + 1),
+                ).fetchall()
+            truncated = len(rows) > limit
+            return self._project_directory_users(rows[:limit]), truncated
         except psycopg.Error:
             raise RuntimeError("identity management unavailable") from None
 
@@ -569,6 +639,49 @@ class ManagementService:
             context, "management_user_directory", value
         )
 
+    def list_administrator_users(
+        self, context: AuthContext
+    ) -> list[dict[str, Any]]:
+        return self._directory_read(
+            context,
+            "administrators",
+            lambda: (self.repository.list_administrator_users(), False),
+        )[0]
+
+    def search_administrator_candidates(
+        self, context: AuthContext, query: str, limit: int
+    ) -> tuple[list[dict[str, Any]], bool]:
+        return self._directory_read(
+            context,
+            "candidates",
+            lambda: self.repository.search_administrator_candidates(query, limit),
+        )
+
+    def _directory_read(self, context: AuthContext, view: str, read):
+        operation_id = uuid4()
+        requested = self._command(
+            "management_user_list_read_requested",
+            context,
+            "management_user_directory",
+            "all",
+            "privileged_read",
+            {"operation_id": str(operation_id), "result": "requested"},
+            operation_id,
+        )
+
+        def audited_read(_audit_event_id):
+            users, truncated = read()
+            return AppliedMutation(
+                (users, truncated),
+                {
+                    "operation_id": str(operation_id),
+                    "item_count": len(users),
+                },
+            )
+
+        value = self._execute(requested, audited_read)
+        return self._hard_stale_read(context, "management_user_directory", value)
+
     @staticmethod
     def _read_result(value, operation_id: UUID) -> AppliedMutation:
         return AppliedMutation(
@@ -788,8 +901,20 @@ class ManagementService:
 
 
 @router.get("/users")
-def list_users(context: Auth, service: Service) -> dict[str, Any]:
+def list_users(
+    context: Auth,
+    service: Service,
+    view: Literal["administrators", "candidates"] | None = None,
+    q: str = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> dict[str, Any]:
     _manager(context)
+    if view == "administrators":
+        return {"users": service.list_administrator_users(context), "truncated": False}
+    if view == "candidates":
+        _owner(context)
+        users, truncated = service.search_administrator_candidates(context, q, limit)
+        return {"users": users, "truncated": truncated}
     return {"users": service.list_users(context)}
 
 

@@ -86,6 +86,25 @@ class FakeManagementRepository:
     def list_users(self):
         return self.users
 
+    def list_administrator_users(self):
+        return [
+            {**user, "departments": ["Platform"]}
+            for user in self.users
+            if user["role"] in {"platform_owner", "platform_admin"}
+        ]
+
+    def search_administrator_candidates(self, query, limit):
+        if not query:
+            return [], False
+        matches = [
+            {**user, "departments": ["Product"]}
+            for user in self.users
+            if user["status"] == "active"
+            and user["role"] == "member"
+            and query.casefold() in user["display_name"].casefold()
+        ]
+        return matches[:limit], len(matches) > limit
+
     def viewer_state(self, target):
         return self.states.setdefault(
             target, {"role": "member", "row_version": 0, "scopes": []}
@@ -479,6 +498,198 @@ def test_owner_user_list_is_internal_and_sanitized() -> None:
         "scopes",
     }
     assert not set(payload) & {"provider_id", "mobile", "email"}
+
+
+def test_administrator_view_filters_roles_adds_departments_and_is_audited() -> None:
+    client, repository, audit = _client(ADMIN)
+    repository.users = [
+        {
+            "internal_user_id": uuid4(),
+            "display_name": "Owner",
+            "status": "active",
+            "role": "platform_owner",
+            "scopes": [],
+        },
+        {
+            "internal_user_id": uuid4(),
+            "display_name": "Administrator",
+            "status": "inactive",
+            "role": "platform_admin",
+            "scopes": [],
+        },
+        {
+            "internal_user_id": uuid4(),
+            "display_name": "Member",
+            "status": "active",
+            "role": "member",
+            "scopes": [],
+        },
+    ]
+
+    response = client.get("/api/v1/manage/users?view=administrators")
+
+    assert response.status_code == 200
+    assert [user["display_name"] for user in response.json()["users"]] == [
+        "Owner",
+        "Administrator",
+    ]
+    assert all(user["departments"] == ["Platform"] for user in response.json()["users"])
+    assert response.json()["truncated"] is False
+    assert any(
+        command.event_type == "management_user_list_read_requested"
+        for command in audit.commands
+    )
+
+
+def test_owner_candidate_search_is_literal_case_insensitive_and_sanitized() -> None:
+    client, repository, audit = _client(OWNER)
+    repository.users = [
+        {
+            "internal_user_id": uuid4(),
+            "display_name": "Foo%_Bar",
+            "status": "active",
+            "role": "member",
+            "scopes": [],
+        },
+        {
+            "internal_user_id": uuid4(),
+            "display_name": "中文Foo%_bar",
+            "status": "active",
+            "role": "member",
+            "scopes": [],
+        },
+        {
+            "internal_user_id": uuid4(),
+            "display_name": "FOO%_BAR ADMIN",
+            "status": "active",
+            "role": "platform_admin",
+            "scopes": [],
+        },
+        {
+            "internal_user_id": uuid4(),
+            "display_name": "foo%_bar inactive",
+            "status": "inactive",
+            "role": "member",
+            "scopes": [],
+        },
+    ]
+
+    response = client.get(
+        "/api/v1/manage/users",
+        params={"view": "candidates", "q": "fOo%_bAr"},
+    )
+
+    assert response.status_code == 200
+    assert [user["display_name"] for user in response.json()["users"]] == [
+        "Foo%_Bar",
+        "中文Foo%_bar",
+    ]
+    assert response.json()["truncated"] is False
+    assert set(response.json()["users"][0]) == {
+        "internal_user_id", "display_name", "status", "role", "scopes", "departments"
+    }
+    assert not set(response.json()["users"][0]) & {
+        "provider_id", "unionid", "real_name", "mobile", "email"
+    }
+    assert all("fOo%_bAr" not in str(command.metadata) for command in audit.commands)
+
+
+def test_candidate_search_empty_query_returns_no_users() -> None:
+    client, _, _ = _client(OWNER)
+
+    response = client.get("/api/v1/manage/users?view=candidates&q=")
+
+    assert response.status_code == 200
+    assert response.json() == {"users": [], "truncated": False}
+
+
+def test_candidate_search_defaults_to_twenty_and_reports_truncation() -> None:
+    client, repository, _ = _client(OWNER)
+    repository.users = [
+        {
+            "internal_user_id": uuid4(),
+            "display_name": f"Match {index:02d}",
+            "status": "active",
+            "role": "member",
+            "scopes": [],
+        }
+        for index in range(21)
+    ]
+
+    response = client.get("/api/v1/manage/users?view=candidates&q=match")
+
+    assert response.status_code == 200
+    assert len(response.json()["users"]) == 20
+    assert response.json()["truncated"] is True
+
+
+@pytest.mark.parametrize("limit", [0, 51])
+def test_candidate_search_rejects_out_of_range_limit(limit: int) -> None:
+    client, _, _ = _client(OWNER)
+    assert client.get(
+        "/api/v1/manage/users", params={"view": "candidates", "q": "x", "limit": limit}
+    ).status_code == 422
+
+
+def test_only_owner_can_search_administrator_candidates() -> None:
+    client, _, audit = _client(ADMIN)
+
+    response = client.get("/api/v1/manage/users?view=candidates&q=member")
+
+    assert response.status_code == 403
+    assert audit.commands == []
+
+
+def test_candidate_repository_escapes_like_wildcards_and_bounds_projection() -> None:
+    user_id = uuid4()
+
+    class Result:
+        def __init__(self) -> None:
+            self.sql = ""
+            self.parameters = None
+
+        def execute(self, sql, parameters=None):
+            self.sql = sql
+            self.parameters = parameters
+            return self
+
+        def fetchall(self):
+            return [
+                {
+                    "internal_user_id": user_id,
+                    "display_name": "A%_\\B",
+                    "status": "active",
+                    "role": "member",
+                    "scopes": [],
+                    "departments": ["研发"],
+                }
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    result = Result()
+    repository = ManagementRepository(
+        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
+        connect=lambda *_args, **_kwargs: result,
+    )
+
+    users, truncated = repository.search_administrator_candidates("A%_\\B", 20)
+
+    assert users[0]["departments"] == ["研发"]
+    assert truncated is False
+    assert result.parameters == ("%A\\%\\_\\\\B%", 21)
+    normalized_sql = " ".join(result.sql.split()).lower()
+    assert "users.status = 'active'" in normalized_sql
+    assert "users.role = 'member'" in normalized_sql
+    assert "ilike %s escape '\\'" in normalized_sql
+    assert normalized_sql.index("limit %s") < normalized_sql.index(
+        "read_account_departments_v27"
+    )
+    assert "A%_\\B" not in result.sql
 
 
 def test_owner_can_list_fae_workbench_grants_without_private_identity() -> None:
@@ -1095,6 +1306,129 @@ def test_governance_projection_includes_management_directory_reads(
         "management_user_list_read_requested",
         "management_user_list_read_completed",
     }
+
+
+@pytest.mark.postgres
+def test_real_management_directory_queries_are_literal_bounded_and_audited(
+    control_database,
+) -> None:
+    environment = control_database["environments"]["production"]
+    administrator_id = uuid4()
+    first_candidate_id = uuid4()
+    second_candidate_id = uuid4()
+    wildcard_decoy_id = uuid4()
+    generation_id = uuid4()
+    department_key = uuid4()
+    department_name = "平台研发"
+    users = (
+        (administrator_id, "Directory Administrator", "platform_admin"),
+        (first_candidate_id, "Needle%_\\One A", "member"),
+        (second_candidate_id, "Needle%_\\One B", "member"),
+        (wildcard_decoy_id, "NeedleXXAOne decoy", "member"),
+    )
+    with psycopg.connect(environment["admin"]) as connection:
+        for user in users:
+            connection.execute(
+                "insert into platform_control.internal_users "
+                "(internal_user_id,display_name,status,role) "
+                "values (%s,%s,'active',%s)",
+                user,
+            )
+        connection.execute(
+            "insert into platform_control.directory_generations "
+            "(generation_id,status,member_count,department_count,content_sha256,"
+            "completed_at) values (%s,'complete',%s,1,%s,now())",
+            (generation_id, len(users), generation_id.hex * 2),
+        )
+        connection.execute(
+            "insert into platform_control.directory_departments "
+            "(generation_id,department_key,lookup_hmac,lookup_key_version,"
+            "encrypted_provider_id,encryption_key_version,display_name) "
+            "values (%s,%s,%s,1,%s,1,%s)",
+            (generation_id, department_key, b"d" * 32, b"department" * 3, department_name),
+        )
+        for index, (internal_user_id, display_name, _role) in enumerate(users):
+            member_key = uuid4()
+            connection.execute(
+                "insert into platform_control.directory_members "
+                "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
+                "lookup_key_version,encrypted_provider_id,encryption_key_version,"
+                "display_name,status) values "
+                "(%s,%s,%s,'dingtalk_corporate',%s,1,%s,1,%s,'active')",
+                (
+                    generation_id,
+                    member_key,
+                    internal_user_id,
+                    bytes([index + 1]) * 32,
+                    bytes([index + 11]) * 29,
+                    display_name,
+                ),
+            )
+            connection.execute(
+                "insert into platform_control.member_departments "
+                "(generation_id,member_key,department_key) values (%s,%s,%s)",
+                (generation_id, member_key, department_key),
+            )
+        connection.execute(
+            "update platform_control.directory_state set active_generation_id=%s, "
+            "last_complete_at=now(),updated_at=now() where singleton",
+            (generation_id,),
+        )
+
+    repository = ManagementRepository(
+        environment["urls"]["platform_control_app"]
+    )
+    administrators = repository.list_administrator_users()
+    literal_candidates, literal_truncated = (
+        repository.search_administrator_candidates("nEeDlE%_\\oNe", 50)
+    )
+    candidates, truncated = repository.search_administrator_candidates(
+        "nEeDlE%_\\oNe", 1
+    )
+
+    assert any(
+        user["internal_user_id"] == administrator_id
+        and user["departments"] == [department_name]
+        for user in administrators
+    )
+    assert {
+        candidate["internal_user_id"] for candidate in literal_candidates
+    } == {first_candidate_id, second_candidate_id}
+    assert literal_truncated is False
+    assert len(candidates) == 1
+    assert candidates[0]["internal_user_id"] in {
+        first_candidate_id,
+        second_candidate_id,
+    }
+    assert candidates[0]["departments"] == [department_name]
+    assert truncated is True
+    assert wildcard_decoy_id not in {
+        candidate["internal_user_id"] for candidate in literal_candidates
+    }
+
+    service = ManagementService(
+        repository,
+        AuditWriter.from_database_url(
+            environment["urls"]["platform_audit_append"]
+        ),
+    )
+    audited_candidates, audited_truncated = service.search_administrator_candidates(
+        AuthContext(administrator_id, Role.PLATFORM_OWNER, uuid4(), False),
+        "nEeDlE%_\\oNe",
+        1,
+    )
+    assert audited_candidates == candidates
+    assert audited_truncated is True
+    with psycopg.connect(environment["admin"]) as connection:
+        metadata = connection.execute(
+            "select sanitized_before_after from platform_control.audit_events "
+            "where actor_internal_user_id=%s and event_type="
+            "'management_user_list_read_completed' order by occurred_at desc limit 1",
+            (administrator_id,),
+        ).fetchone()[0]
+    assert metadata["item_count"] == 1
+    assert "q" not in metadata
+    assert "nEeDlE%_\\oNe" not in json.dumps(metadata)
 
 
 @pytest.mark.postgres

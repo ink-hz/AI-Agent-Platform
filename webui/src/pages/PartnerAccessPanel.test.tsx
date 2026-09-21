@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account, PlatformRole } from "../auth";
-import { IdentityManagementPage } from "./IdentityManagementPage";
+import { PermissionAccessPage } from "./PermissionAccessPage";
 import { PartnerAccessPanel } from "./PartnerAccessPanel";
 
 
@@ -549,23 +549,11 @@ describe("PartnerAccessPanel", () => {
     });
   });
 
-  it("is embedded below enterprise identity controls without partner navigation", async () => {
+  it("is available on its separate permission page", async () => {
     vi.stubGlobal("fetch", safeFetch());
-
-    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await act(async () => root.render(<PermissionAccessPage account={owner} section="partners" />));
     await settle();
-
-    const enterprise = container.querySelector(".identity-page");
-    const partner = container.querySelector("[data-partner-access-panel]");
-    expect(enterprise).toBeTruthy();
-    expect(partner).toBeTruthy();
-    expect(
-      enterprise && partner
-        ? Boolean(enterprise.compareDocumentPosition(partner) & Node.DOCUMENT_POSITION_FOLLOWING)
-        : false,
-    ).toBe(true);
-    expect([...container.querySelectorAll("nav a")].some(
-      (item) => item.textContent?.includes("合作方"),
-    )).toBe(false);
+    expect(container.querySelector("[data-partner-access-panel]")).toBeTruthy();
+    expect(container.querySelector("a[href='/admin/identity']")?.textContent).toBe("返回账号与权限");
   });
 });

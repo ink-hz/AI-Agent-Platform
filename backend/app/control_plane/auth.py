@@ -47,6 +47,8 @@ _SAFE_RETURN_EXACT = frozenset(
         "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
         "/hr/chat", "/hr/agent", "/hr/panorama", "/hr/positions",
         "/marketing/", "/admin", "/admin/",
+        "/admin/identity/observers", "/admin/identity/partners",
+        "/fae/manage/access", "/admin/voc/access",
     }
 )
 _SAFE_RETURN_PATTERNS = tuple(

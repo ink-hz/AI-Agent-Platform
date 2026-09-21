@@ -6,10 +6,7 @@ import {
   PermissionDenied,
   PlatformApiError,
   changeAdministrator,
-  changeObservationScope,
-  changeViewer,
   createAdministratorMutation,
-  listManagedUsers,
   type Account,
   type AdministratorMutation,
   type ManagedUser,
@@ -23,9 +20,9 @@ import {
   storePendingAdministratorReplay,
   type PendingAdministratorState,
 } from "../pendingAdministrator";
-import { FaeAccessPanel } from "../components/FaeAccessPanel";
-import { VocAccessPanel } from "../components/VocAccessPanel";
-import { PartnerAccessPanel } from "./PartnerAccessPanel";
+import { listAdministratorUsers, type AdministratorUser } from "../administratorDirectory";
+import { AdministratorSearch } from "../components/AdministratorSearch";
+import { platformPath } from "../auth";
 
 
 function failureMessage(error: unknown): string {
@@ -61,8 +58,16 @@ function leavesAdministratorMutationOutcomeUncertain(error: unknown): boolean {
 
 
 export function IdentityManagementPage({ account }: { account: Account }) {
-  const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [reason, setReason] = useState("");
+  if (account.role !== "platform_owner" && account.role !== "platform_admin") {
+    return <section className="permission-state" role="alert"><h1>无权访问</h1><p>请联系苍渊。</p></section>;
+  }
+  return <AdministratorManagement key={`${account.internal_user_id}:${account.role}`} account={account} />;
+}
+
+function AdministratorManagement({ account }: { account: Account }) {
+  const [users, setUsers] = useState<AdministratorUser[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [pendingAdministratorState, setPendingAdministratorState] = useState<PendingAdministratorState>(() => (
@@ -80,10 +85,10 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     ? pendingAdministratorState.operation
     : null;
   const administratorMutationBlocked = pendingAdministratorState.kind !== "none";
-  const [scopeDrafts, setScopeDrafts] = useState<Record<string, string>>({});
   const refreshUsers = async () => {
-    const refreshed = await listManagedUsers();
+    const refreshed = await listAdministratorUsers();
     setUsers(refreshed);
+    setLoaded(true);
     return refreshed;
   };
   const load = async () => {
@@ -121,31 +126,15 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     }
   };
   useEffect(() => { void load(); }, []);
-  if (account.role !== "platform_owner" && account.role !== "platform_admin") {
-    return <section className="permission-state" role="alert"><h1>无权访问</h1><p>只有平台管理账号可以修改角色和观察范围。</p></section>;
-  }
-  const mutate = async (user: ManagedUser) => {
-    if (!reason.trim()) return;
-    setBusy(true);
-    setMessage("");
-    try {
-      await changeViewer(account, user, reason.trim());
-      setMessage("变更成功，服务端已记录审计事件。");
-      setReason("");
-      await load();
-    } catch (error) {
-      setMessage(failureMessage(error));
-    } finally { setBusy(false); }
-  };
   const expectedAdministratorRole = (operation: AdministratorMutation) => (
     operation.revoke ? "member" : "platform_admin"
   );
   const matchesAdministratorOutcome = (
     refreshed: ManagedUser[], operation: AdministratorMutation,
-  ) => refreshed.some((user) => (
-    user.internal_user_id === operation.targetInternalUserId
-    && user.role === expectedAdministratorRole(operation)
-  ));
+  ) => operation.revoke
+    ? !refreshed.some(user => user.internal_user_id === operation.targetInternalUserId)
+    : refreshed.some(user => user.internal_user_id === operation.targetInternalUserId
+      && user.role === expectedAdministratorRole(operation));
   const unknownAdministratorMessage = (refreshed: boolean) => refreshed
     ? "管理员变更结果仍未知；已刷新当前角色，请使用同一请求重试确认。"
     : "管理员变更结果仍未知；当前角色刷新失败，请使用同一请求重试确认。";
@@ -269,6 +258,7 @@ export function IdentityManagementPage({ account }: { account: Account }) {
     await dispatchInflightAdministrator(operation, true, false);
   }
   const mutateAdministrator = async (user: ManagedUser, revoke: boolean) => {
+    if (account.role !== "platform_owner" || account.hard_stale_read_only || busy || administratorMutationBlocked) return;
     const operation = createAdministratorMutation(user, revoke);
     setBusy(true);
     setMessage("");
@@ -313,59 +303,35 @@ export function IdentityManagementPage({ account }: { account: Account }) {
         : "管理员变更处于不可重放状态；当前角色刷新失败，请人工核查治理审计。");
     } finally { setBusy(false); }
   };
-  const mutateScope = async (user: ManagedUser, agentId: string, revoke = false) => {
-    if (!reason.trim()) return;
-    setBusy(true);
-    setMessage("");
-    try {
-      await changeObservationScope(account, user, agentId, reason.trim(), revoke);
-      setMessage("变更成功，服务端已记录审计事件。");
-      setScopeDrafts((current) => ({ ...current, [user.internal_user_id]: "" }));
-      setReason("");
-      await load();
-    } catch (error) {
-      setMessage(failureMessage(error));
-    } finally { setBusy(false); }
-  };
-  return (<>
-    <section className="identity-page">
-      <header><p>PLATFORM GOVERNANCE</p><h1>账号与权限</h1><span>管理平台账号、角色与可访问的 Agent 范围。</span></header>
-      <label className="identity-reason">变更原因
-        <input aria-label="变更原因" value={reason} onInput={(event) => setReason(event.currentTarget.value)} placeholder="填写审批或业务原因" />
-      </label>
-      {message && <p className={`auth-message ${message.startsWith("变更成功") || message.startsWith("变更结果曾无法确认") || message.startsWith("变更已确认") ? "is-success" : "is-error"}`} role="status">{message}</p>}
-      {pendingAdministrator && <button type="button" disabled={busy} onClick={() => void retryAdministrator()}>
-        使用同一请求重试确认
-      </button>}
-      {(confirmedAdministrator || inflightAdministrator) && <button type="button" disabled={busy} onClick={() => void refreshNonReplayAdministrator()}>
-        刷新当前角色
-      </button>}
-      <div className="identity-users">
-        {users.map((user) => <article key={user.internal_user_id}>
-          <div><strong>{user.display_name}</strong><span>{user.status === "active" ? "在职" : "不可用"}</span></div>
-          <p>{user.role === "management_viewer" ? "只读观察者" : user.role === "platform_admin" ? "平台管理员" : user.role === "platform_owner" ? "平台所有者" : "企业成员"}</p>
-          <small>{user.scopes.length ? `范围：${user.scopes.join("、")}` : "未授予 Agent 观察范围"}</small>
-          {account.role === "platform_owner" && (user.role === "platform_admin" || (user.role === "member" && user.status === "active")) && <button type="button" disabled={busy || administratorMutationBlocked} onClick={() => void mutateAdministrator(user, user.role === "platform_admin")}>
-            {user.role === "platform_admin" ? "撤销平台管理员" : "设为平台管理员"}
-          </button>}
-          {(user.role === "member" || user.role === "management_viewer") && <button type="button" disabled={busy || !reason.trim()} onClick={() => void mutate(user)}>
-            {user.role === "management_viewer" ? "撤销只读观察者" : "设为只读观察者"}
-          </button>}
-          {user.role === "management_viewer" && <div className="scope-controls">
-            <label>新增 Agent 范围<input
-              aria-label={`${user.display_name}的新 Agent 范围`}
-              value={scopeDrafts[user.internal_user_id] || ""}
-              onInput={(event) => setScopeDrafts((current) => ({ ...current, [user.internal_user_id]: event.currentTarget.value }))}
-              placeholder="精确 Agent ID"
-            /></label>
-            <button type="button" disabled={busy || !reason.trim() || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(scopeDrafts[user.internal_user_id] || "")} onClick={() => void mutateScope(user, scopeDrafts[user.internal_user_id] || "")}>授予范围</button>
-            {user.scopes.map((scope) => <button className="scope-revoke" type="button" key={scope} disabled={busy || !reason.trim()} onClick={() => void mutateScope(user, scope, true)}>撤销 {scope}</button>)}
-          </div>}
-        </article>)}
-      </div>
-    </section>
-    <FaeAccessPanel account={account} />
-    <VocAccessPanel account={account} />
-    {account.role === "platform_owner" && <PartnerAccessPanel account={account} />}
-  </>);
+  const canManage = account.role === "platform_owner";
+  const blocked = busy || administratorMutationBlocked || account.hard_stale_read_only;
+  return <section className="identity-page administrator-page">
+    <header className="administrator-heading">
+      <h1>账号与权限</h1>
+      {canManage && <button type="button" disabled={blocked || !loaded} onClick={() => setAdding(true)}>添加管理员</button>}
+    </header>
+    {message && <p className={`auth-message ${message.startsWith("变更成功") || message.startsWith("变更结果曾无法确认") || message.startsWith("变更已确认") ? "is-success" : "is-error"}`} role="status">{message}</p>}
+    {pendingAdministrator && <button type="button" disabled={busy || account.hard_stale_read_only} onClick={() => void retryAdministrator()}>使用同一请求重试确认</button>}
+    {(confirmedAdministrator || inflightAdministrator) && <button type="button" disabled={busy} onClick={() => void refreshNonReplayAdministrator()}>刷新当前角色</button>}
+    {!loaded && !message && <p role="status">正在加载…</p>}
+    {!loaded && message && <button type="button" onClick={() => void load()}>重试</button>}
+    {adding && canManage && <AdministratorSearch disabled={blocked} excludedIds={users.map(user => user.internal_user_id)}
+      onSelect={user => void mutateAdministrator(user, false)} onClose={() => setAdding(false)} />}
+    <h2>平台管理员</h2>
+    <div className="administrator-list">
+      {users.map(user => <article key={user.internal_user_id}>
+        <div><strong>{user.display_name}</strong>
+          {user.departments.length > 0 && <p>{user.departments.join("、")}</p>}
+          {user.status !== "active" && <small className="administrator-warning">账号不可用</small>}
+        </div>
+        {user.role === "platform_owner" ? <span className="administrator-owner">所有者</span>
+          : canManage && <button type="button" className="is-secondary" disabled={blocked} onClick={() => void mutateAdministrator(user, true)}>撤销平台管理员</button>}
+      </article>)}
+    </div>
+    {loaded && !users.length && <p>暂无管理员</p>}
+    <details className="identity-other-access"><summary>其他授权</summary>
+      <a href={platformPath("/admin/identity/observers")}>观察者权限</a>
+      {canManage && <a href={platformPath("/admin/identity/partners")}>合作方权限</a>}
+    </details>
+  </section>;
 }

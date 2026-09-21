@@ -292,7 +292,7 @@ async function responseDetail(response: Response): Promise<unknown> {
 }
 
 
-async function checked(response: Response): Promise<Response> {
+export async function checked(response: Response): Promise<Response> {
   if (response.status === 401) throw new AuthenticationRequired();
   if (response.status === 403) throw new PermissionDenied();
   if (response.status === 404) throw new IdentityDisabled();

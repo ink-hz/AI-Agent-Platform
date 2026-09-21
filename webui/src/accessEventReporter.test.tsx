@@ -106,3 +106,7 @@ describe("page access reporter", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+it.each(["observers", "partners", "fae", "voc"] as const)("records %s permissions under the existing identity access category", section => {
+  expect(accessEventForRoute({ name: "admin-permissions", section })).toEqual({ workspace_key: "admin", page_key: "admin.identity" });
+});

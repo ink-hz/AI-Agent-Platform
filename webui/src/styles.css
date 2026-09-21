@@ -2950,3 +2950,43 @@ body {
 .hr-standard-change > span { flex: 1; min-width: 0; }
 
 .hr-position-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* Account permissions: focused administrator list and on-demand search. */
+.administrator-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.administrator-page button { border: 1px solid var(--brand); border-radius: 9px; padding: 9px 14px; background: var(--brand); color: #fff; font: inherit; font-size: 13px; cursor: pointer; }
+.administrator-page button.is-secondary { background: var(--surface); border-color: var(--line); color: var(--ink-soft); }
+.administrator-page button:disabled { opacity: .5; cursor: not-allowed; }
+.administrator-page > h2 { margin: 28px 0 12px; font-size: 16px; }
+.administrator-list { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.administrator-list:empty { display: none; }
+.administrator-list article, .administrator-results article { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 20px; }
+.administrator-list article + article, .administrator-results article + article { border-top: 1px solid var(--line); }
+.administrator-list article > div, .administrator-results article > div { min-width: 0; overflow-wrap: anywhere; }
+.administrator-list article p, .administrator-results article p { margin: 5px 0 0; font-size: 13px; color: var(--ink-soft); }
+.administrator-list article button, .administrator-results article button { flex-shrink: 0; }
+.administrator-owner { color: var(--ink-soft); font-size: 12px; }
+.administrator-warning { display: block; margin-top: 5px; color: var(--ink-soft); }
+.administrator-search { margin-top: 24px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.administrator-search label { display: block; margin-bottom: 10px; font-size: 14px; font-weight: 650; }
+.administrator-search-controls { display: flex; gap: 10px; }
+.administrator-search-controls input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); padding: 10px 12px; font: inherit; }
+.administrator-search > p, .administrator-results small { font-size: 13px; color: var(--ink-soft); }
+.administrator-results { margin-top: 12px; }
+.administrator-results article { padding-left: 0; padding-right: 0; }
+.identity-other-access { margin-top: 28px; font-size: 13px; color: var(--ink-soft); }
+.identity-other-access summary { cursor: pointer; }
+.identity-other-access a { display: inline-block; margin: 12px 20px 0 0; color: var(--ink-soft); }
+.permission-access-page { max-width: 920px; margin: 0 auto; }
+.permission-back { display: inline-block; margin-bottom: 18px; color: var(--ink-soft); font-size: 13px; }
+.workspace-access-link { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.workspace-access-link a { color: var(--ink-soft); font-size: 13px; }
+.platform-nav-item { display: flex; align-items: center; min-width: 0; }
+.platform-nav-item > a:first-child { flex: 1; min-width: 0; }
+.platform-nav-item > .platform-nav-permission { flex: 0 0 auto; padding: 9px 7px; }
+@media (max-width: 600px) {
+  .administrator-heading { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  .administrator-list article, .administrator-results article { flex-wrap: wrap; padding: 14px; }
+  .administrator-search { padding: 14px; }
+  .administrator-search-controls { flex-wrap: wrap; }
+  .administrator-search-controls input { flex-basis: 100%; }
+}

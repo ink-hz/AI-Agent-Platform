@@ -50,6 +50,7 @@ export type Route =
   | { name: "admin-review" }
   | { name: "admin-activity" }
   | { name: "admin-identity" }
+  | { name: "admin-permissions"; section: import("./pages/PermissionAccessPage").PermissionSection }
   | { name: "admin-governance" }
   | { name: "admin-access" }
   | { name: "admin-voc" }
@@ -323,6 +324,10 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (clean === "/admin/review") return { name: "admin-review" };
   if (clean === "/admin/activity") return { name: "admin-activity" };
   if (clean === "/admin/operations") return { name: "legacy-redirect", to: "/admin", navigation: "spa" };
+  if (clean === "/admin/identity/observers") return { name: "admin-permissions", section: "observers" };
+  if (clean === "/admin/identity/partners") return { name: "admin-permissions", section: "partners" };
+  if (clean === "/fae/manage/access") return { name: "admin-permissions", section: "fae" };
+  if (clean === "/admin/voc/access") return { name: "admin-permissions", section: "voc" };
   if (clean === "/admin/identity") return { name: "admin-identity" };
   if (clean === "/admin/governance") return { name: "admin-governance" };
   if (clean === "/admin/access") return { name: "admin-access" };
@@ -442,6 +447,8 @@ export function routePath(route: Route): string {
     case "admin-review": return "/admin/review";
     case "admin-activity": return "/admin/activity";
     case "admin-identity": return "/admin/identity";
+    case "admin-permissions": return route.section === "fae" ? "/fae/manage/access"
+      : route.section === "voc" ? "/admin/voc/access" : `/admin/identity/${route.section}`;
     case "admin-governance": return "/admin/governance";
     case "admin-access": return "/admin/access";
     case "admin-voc": return "/admin/voc";

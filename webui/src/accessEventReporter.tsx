@@ -43,6 +43,7 @@ export function accessEventForRoute(route: Route): PageAccessEvent | null {
     case "admin-session": return { workspace_key: "admin", page_key: "admin.session_detail" };
     case "admin-review": return { workspace_key: "admin", page_key: "admin.review" };
     case "admin-activity": return { workspace_key: "admin", page_key: "admin.activity" };
+    case "admin-permissions":
     case "admin-identity": return { workspace_key: "admin", page_key: "admin.identity" };
     case "admin-governance": return { workspace_key: "admin", page_key: "admin.governance" };
     case "admin-access": return { workspace_key: "admin", page_key: "admin.access_history" };

@@ -258,3 +258,12 @@ it('keeps HR home context in the document URL', () => {
  }
  expect(parseRoute('/hr',`?work=${work}`)).toEqual({name:'legacy-redirect',to:'/hr/',navigation:'document'});
 });
+
+it.each([
+  ["/admin/identity/observers", "observers"],
+  ["/admin/identity/partners", "partners"],
+  ["/fae/manage/access", "fae"],
+  ["/admin/voc/access", "voc"],
+] as const)("keeps %s as a distinct permission page", (path, section) => {
+  expect(parseRoute(path)).toEqual({ name: "admin-permissions", section });
+});
