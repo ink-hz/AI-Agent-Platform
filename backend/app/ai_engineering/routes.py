@@ -6,11 +6,13 @@ import json
 import os
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from ..control_plane.models import AuthContext, Role
+from .organization import OrganizationDirectoryError
 from .exports import render_png, render_svg
 from .models import PanoramaValidationError, validate_panorama
 from .seed import PANORAMA_SEED
@@ -114,6 +116,41 @@ def build_ai_engineering_router():
             raise _failure(422, str(error)) from None
         except PanoramaUnavailable:
             raise _failure(503, "panorama state unavailable") from None
+
+    def organization(request):
+        allowed(request)
+        repository = getattr(request.app.state, "organization_directory", None)
+        if repository is None:
+            raise _failure(503, "organization directory unavailable")
+        return repository
+
+    def organization_response(call):
+        try:
+            return JSONResponse(call(), headers=_PRIVATE)
+        except OrganizationDirectoryError as error:
+            raise _failure(error.status_code, error.detail) from None
+
+    @router.get("/organization")
+    def organization_tree(request: Request):
+        return organization_response(organization(request).tree)
+
+    @router.get("/organization/departments/{department_id}")
+    def organization_department(department_id: str, request: Request,
+                               generation_id: str | None = None,
+                               cursor: str | None = None, limit: str = "50"):
+        allowed(request)
+        try:
+            department = UUID(department_id)
+            generation = UUID(generation_id or "")
+            after = UUID(cursor) if cursor is not None else None
+            page_limit = int(limit)
+            if not 1 <= page_limit <= 100:
+                raise ValueError
+        except (ValueError, TypeError, AttributeError):
+            raise _failure(422, "invalid organization request") from None
+        repository = organization(request)
+        return organization_response(lambda: repository.department(
+            department, generation, cursor=after, limit=page_limit))
 
     @router.get("/access")
     def access(request: Request):

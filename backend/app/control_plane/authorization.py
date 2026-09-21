@@ -35,6 +35,8 @@ _FAE_WORKBENCH_SHELL_ROUTES = frozenset({
 
 _AI_ENGINEERING_ROUTES = frozenset({
     ("GET", "/api/v1/ai-engineering"),
+    ("GET", "/api/v1/ai-engineering/organization"),
+    ("GET", "/api/v1/ai-engineering/organization/departments/{department_id}"),
     ("GET", "/api/v1/ai-engineering/panorama"),
     ("GET", "/api/v1/ai-engineering/export.svg"),
     ("GET", "/api/v1/ai-engineering/export.png"),

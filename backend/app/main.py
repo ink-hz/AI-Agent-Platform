@@ -34,6 +34,7 @@ from .agent_brain.turn_attempts import TurnAttemptRepository
 from .agent_brain.turn_result_projection import TurnResultProjector
 from .agent_brain.turn_snapshot import TurnSnapshotReader
 from .agent_catalog.routes import build_agent_catalog_router
+from .ai_engineering.organization import OrganizationDirectoryRepository
 from .ai_engineering.routes import build_ai_engineering_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
@@ -811,6 +812,7 @@ def create_app(
     agent_use_authorization=None,
     hr_position_scope=None,
     access_history_repository=None,
+    organization_directory=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -1388,6 +1390,11 @@ def create_app(
     app.state.artifact_output_service = artifact_output_service
     app.state.citation_service = citation_service
     app.state.replica_repository = replica_repository
+    if identity_enabled and organization_directory is None and owns_identity_auth:
+        organization_directory = OrganizationDirectoryRepository(
+            read_secret_file(config.control_plane.control_database_url_file)
+        )
+    app.state.organization_directory = organization_directory
     app.state.identity_auth = identity_auth
     app.state.execution_relay_repository = execution_relay_repository
     app.state.agent_brain_orchestrator = agent_brain_orchestrator
