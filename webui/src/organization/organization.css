@@ -24,8 +24,18 @@
 .organization-counts dt { color: #526d83; }
 .organization-counts dd { margin: 6px 0 0; font-size: 20px; font-weight: 600; }
 .organization-members { list-style: none; padding: 0; margin: 0; }
-.organization-members li { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid #e6eef4; overflow-wrap: anywhere; }
-.organization-members li > span:last-child { flex-basis: 100%; color: #627b8f; }
+.organization-members li { display: grid; grid-template-columns: minmax(90px, .7fr) minmax(0, 1fr); align-items: start; gap: 12px; padding: 12px 0; border-top: 1px solid #e6eef4; overflow-wrap: anywhere; }
+.organization-member-person { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.organization-member-departments { color: #627b8f; line-height: 1.5; }
+.organization-member-warning,.organization-stale { color: #805315; background: #fff3d9; border-radius: 4px; padding: 2px 5px; font-size: 12px; }
+.organization-close { flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #526d83; font-size: 24px !important; }
+.organization-close:hover { background: #edf3f7; }
+.organization-detail-footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e6eef4; color: #627b8f; font-size: 12px; }
+.organization-updated { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.organization-method { margin-top: 10px; }
+.organization-method summary { width: fit-content; cursor: pointer; }
+.organization-method summary:focus-visible { outline: 2px solid #337bb1; outline-offset: 3px; }
+.organization-method p { margin: 8px 0 0; }
 @media (max-width: 600px) { .organization-layout { padding: 14px; } .organization-chart ul ul { margin-left: 16px; padding-left: 16px; } .organization-chart ul ul > .organization-branch::before { left: -16px; width: 16px; } }
 .organization-root > .organization-node { display: flex; width: fit-content; margin: 0 auto; background: #244c78; color: #fff; border-color: #416a95; font-weight: 650; }
 .organization-chart .organization-first-level { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 22px 18px; margin: 24px 0 0; padding: 20px; border: 1px solid #bdcedf; border-radius: 16px; background: #d5e0ec; }

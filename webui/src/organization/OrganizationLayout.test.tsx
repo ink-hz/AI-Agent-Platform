@@ -21,7 +21,12 @@ it('loads only when active, shows every first level and separates expansion from
  await click('展开示例甲部'); expect(container.textContent).toContain('示例小组'); expect(fetchMock).toHaveBeenCalledTimes(1);
  fetchMock.mockResolvedValueOnce(response(detail())); await click('示例甲部');
  expect(container.querySelector('[aria-label="部门详情"]')?.textContent).toContain('虚构成员甲'); expect(container.querySelector('[aria-label="组织层级"]')?.textContent).not.toMatch(/虚构成员|人数|2026/);
- expect(container.textContent).toContain('职位尚未同步'); expect(container.textContent).toContain('公司组织 / 示例甲部');
+ expect(container.textContent).not.toMatch(/职位尚未同步|目录有效|目录非有效|人员（含下级/);
+ expect(container.querySelector('.organization-path')?.textContent).toBe('公司组织');
+ expect(container.querySelector('.organization-counts')?.textContent).toContain('总人数');
+ expect(container.querySelector('details')?.open).toBe(false);
+ expect(container.querySelector('details')?.textContent).toContain('同一人只计一次');
+ expect(container.querySelector('.organization-members')?.textContent).not.toContain('状态待核实');
 });
 it('appends cursor pages and provides native keyboard buttons in nested lists', async () => {
  await render(); fetchMock.mockResolvedValueOnce(response(detail(id(2), '虚构成员甲', id(6)))); await click('示例甲部');
@@ -44,12 +49,12 @@ it.each([401, 403])('clears all private data and reports authorization status %s
  await render(); fetchMock.mockResolvedValueOnce(response({}, status)); await click('示例甲部'); expect(denied).toHaveBeenCalledWith(expect.objectContaining({ status })); expect(container.textContent).not.toContain('示例甲部');
 });
 it('shows retry on failed detail without inventing zero counts', async () => {
- await render(); fetchMock.mockResolvedValueOnce(response({}, 503)); await click('示例甲部'); expect(container.textContent).toContain('重试详情'); expect(container.textContent).not.toContain('0 人');
+ await render(); fetchMock.mockResolvedValueOnce(response({}, 503)); await click('示例甲部'); expect(container.textContent).toContain('详情加载失败'); expect(container.textContent).not.toContain('0 人');
 });
 it('shows stale snapshot only in details and treats department names as text', async () => {
  fetchMock.mockResolvedValueOnce(response({ ...tree, freshness: 'hard_stale', departments: tree.departments.map(d => d.id === id(2) ? { ...d, name: '<img src=x onerror=alert(1)>' } : d) }));
  await render(); expect(container.querySelector('img')).toBeNull(); expect(container.textContent).not.toContain('24');
- fetchMock.mockResolvedValueOnce(response(detail())); await click('<img src=x onerror=alert(1)>'); expect(container.textContent).toContain('超过 24 小时未更新'); expect(container.querySelector('img')).toBeNull();
+ fetchMock.mockResolvedValueOnce(response(detail())); await click('<img src=x onerror=alert(1)>'); expect(container.textContent).toContain('数据已过期'); expect(container.textContent).not.toContain('超过 24 小时未更新'); expect(container.querySelector('img')).toBeNull();
 });
 it('can retry unavailable structure and aborts a pending detail on deactivation', async () => {
  fetchMock.mockResolvedValueOnce(response({}, 503)); await render(); expect(container.textContent).toContain('重试组织'); await click('重试组织');

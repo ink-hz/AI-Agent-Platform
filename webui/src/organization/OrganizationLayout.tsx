@@ -4,7 +4,8 @@ import { fetchDepartment, fetchOrganization, type Department, type DepartmentDet
 import './organization.css';
 
 interface Props { active: boolean; onAuthorizationFailure: (error: AiEngineeringApiError) => void; onOpen?: () => void }
-const statuses = { active: '目录有效', inactive: '目录非有效', disabled: '已禁用' };
+const updatedTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const fullUpdatedTime = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'full', timeStyle: 'short' });
 // Colors distinguish real branches, not inferred business functions.
 const branchColors = [
   ['#346bb4', '#dceaff', '#f0f5ff', '#b4cbee', '#24496f'],
@@ -90,20 +91,19 @@ export function OrganizationLayout({ active, onAuthorizationFailure, onOpen }: P
     {treeLoading && <p role="status">正在读取组织…</p>}
     {treeError && <p role="alert">组织目录暂不可用。<button type="button" onClick={() => setRevision(value => value + 1)}>重试组织</button></p>}
     {tree && <div className="organization-chart" aria-label="组织层级"><ul>{branch(byId.get(tree.root_id)!)}</ul></div>}
-    {active && selected && tree && <aside ref={panelRef} tabIndex={-1} className="organization-detail" aria-label="部门详情" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); clearDetail(true); } }}><header><h3>{path[path.length - 1]}</h3><button type="button" onClick={() => clearDetail(true)} aria-label="关闭部门详情">关闭</button></header>
-      <p className="organization-path">{path.join(' / ')}</p>
-      <p>通讯录更新：<time dateTime={tree.completed_at}>{new Date(tree.completed_at).toLocaleString('zh-CN')}</time></p>
-      <p>同步状态：{tree.freshness === 'fresh' ? '最新快照' : tree.freshness === 'warning' ? '超过 8 小时未更新' : '超过 24 小时未更新，数据已过期'}</p>
-      <p>范围：平台可读取的全部组织。目录状态不代表在职状态。</p>
-      {detail && <><dl className="organization-counts"><div><dt>直属人数</dt><dd>{detail.direct_count} 人</dd></div><div><dt>含下级人数（去重）</dt><dd>{detail.total_count} 人</dd></div></dl>
-        {selected === tree.root_id && <p>公司总人数包含未归部门人员。</p>}
-        <p>{Object.entries(detail.status_counts).map(([key, value]) => `${statuses[key as keyof typeof statuses]} ${value} 人`).join(' · ')}</p>
-        <p>职位尚未同步</p><h4>人员（含下级，去重）</h4>
-        {detail.members.length ? <ul className="organization-members">{detail.members.map(member => <li key={member.id}><strong>{member.name}</strong><span>{statuses[member.status]}</span><span>{member.departments.length ? member.departments.map(d => d.id === tree.root_id ? '公司组织' : d.name).join('、') : '未归部门'}</span></li>)}</ul> : <p>该范围暂无目录成员。</p>}
+    {active && selected && tree && <aside ref={panelRef} tabIndex={-1} className="organization-detail" aria-label="部门详情" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); clearDetail(true); } }}><header><h3>{path[path.length - 1]}</h3><button type="button" className="organization-close" onClick={() => clearDetail(true)} aria-label="关闭部门详情"><span aria-hidden="true">×</span></button></header>
+      {path.length > 1 && <p className="organization-path">{path.slice(0, -1).join(' / ')}</p>}
+      {detail && <><dl className="organization-counts"><div><dt>总人数</dt><dd>{detail.total_count}</dd></div><div><dt>直属</dt><dd>{detail.direct_count}</dd></div></dl>
+        <h4>成员</h4>
+        {detail.members.length ? <ul className="organization-members">{detail.members.map(member => <li key={member.id}><div className="organization-member-person"><strong>{member.name}</strong>{member.status !== 'active' && <span className="organization-member-warning" title={member.status === 'disabled' ? '通讯录中标记为已禁用，请核实人员信息。' : '通讯录中标记为非活跃，请核实人员信息。'}>状态待核实</span>}</div><span className="organization-member-departments">{member.departments.length ? member.departments.map(d => d.id === tree.root_id ? '公司组织' : d.name).join('、') : '未归部门'}</span></li>)}</ul> : <p>暂无成员</p>}
       </>}
-      {detailLoading && <p role="status">正在读取部门详情…</p>}
-      {detailError && <p role="alert">部门详情暂不可用。<button type="button" onClick={() => void loadDetail(selected, detail?.next_cursor ?? undefined)}>重试详情</button></p>}
+      {detailLoading && <p role="status">正在加载…</p>}
+      {detailError && <p role="alert">详情加载失败。<button type="button" onClick={() => void loadDetail(selected, detail?.next_cursor ?? undefined)}>重试</button></p>}
       {detail?.next_cursor && !detailError && <button type="button" disabled={detailLoading} onClick={() => void loadDetail(selected, detail.next_cursor!)}>加载更多</button>}
+      <footer className="organization-detail-footer">
+        <div className="organization-updated"><span>更新于 <time dateTime={tree.completed_at} title={`${fullUpdatedTime.format(new Date(tree.completed_at))}（北京时间）`}>{updatedTime.format(new Date(tree.completed_at))}</time></span>{tree.freshness === 'hard_stale' && <span className="organization-stale" role="status">数据已过期</span>}</div>
+        <details key={selected} className="organization-method"><summary>统计口径</summary><p>人数来自平台可读取的通讯录，不代表 HR 在职统计。总人数包含下级部门，同一人只计一次；直属仅统计本部门。</p>{selected === tree.root_id && <p>公司总人数包含未归部门人员。</p>}</details>
+      </footer>
     </aside>}
   </section>;
 }
