@@ -55,6 +55,7 @@ export function routeDocumentTitle(route: Route): string {
     case "login": return `登录 · ${PLATFORM_TITLE}`;
     case "account": return `企业账号 · ${PLATFORM_TITLE}`;
     case "admin-permissions": return `${({ observers: "观察者权限", partners: "合作方权限", fae: "技术支持权限", voc: "客户洞察权限" })[route.section]} · ${PLATFORM_TITLE}`;
+    case "admin-agent-designs": return `Agent 设计 · ${PLATFORM_TITLE}`;
     case "admin-identity": return `账号与权限 · ${PLATFORM_TITLE}`;
     case "admin-governance": return `审计日志 · ${PLATFORM_TITLE}`;
     case "admin-access": return `访问记录 · ${PLATFORM_TITLE}`;

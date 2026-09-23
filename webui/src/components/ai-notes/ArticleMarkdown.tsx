@@ -38,7 +38,7 @@ function safeUrl(url: string): string {
 type HeadingProps = ComponentPropsWithoutRef<"h1"> & { node?: unknown };
 
 
-export function ArticleMarkdown({ markdown }: { markdown: string }) {
+export function ArticleMarkdown({ markdown, headingIds }: { markdown: string; headingIds?: Readonly<Record<number, string>> }) {
   const headingCounts = new Map<string, number>();
   const heading = (Tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") => {
     return function ArticleHeading({ children, node, ...props }: HeadingProps) {
@@ -46,7 +46,8 @@ export function ArticleMarkdown({ markdown }: { markdown: string }) {
       const base = baseHeadingSlug(children);
       const count = (headingCounts.get(base) ?? 0) + 1;
       headingCounts.set(base, count);
-      const id = count === 1 ? base : `${base}-${count}`;
+      const line = (node as { position?: { start?: { line?: number } } })?.position?.start?.line;
+      const id = (line === undefined ? undefined : headingIds?.[line]) ?? (count === 1 ? base : `${base}-${count}`);
       return <Tag id={id} {...props}>{children}</Tag>;
     };
   };

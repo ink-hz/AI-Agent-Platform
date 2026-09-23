@@ -353,6 +353,8 @@ _FAE_WORKBENCH_MUTATION_ROUTES = frozenset(
 )
 
 _OWNER_ROUTES = frozenset({
+    ("GET", "/api/v1/manage/agent-designs"),
+    ("GET", "/api/v1/manage/agent-designs/{slug}"),
     *(route for route in VIEWER_R1_ROUTES),
     ("GET", "/api/deployment"),
     ("GET", "/api/health"),

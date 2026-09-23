@@ -385,8 +385,12 @@ class IdentitySecurityMiddleware:
             local_path == "/api/v1/ai-engineering"
             or local_path.startswith("/api/v1/ai-engineering/")
         )
+        agent_design_response = isinstance(local_path, str) and (
+            local_path == "/api/v1/manage/agent-designs" or local_path.startswith("/api/v1/manage/agent-designs/")
+        )
         identity_response = (
             ai_engineering_response
+            or agent_design_response
             or
             local_path in _IDENTITY_RESPONSE_PATHS
             or partner_namespace
@@ -412,7 +416,7 @@ class IdentitySecurityMiddleware:
                 response_headers = MutableHeaders(scope=message)
                 response_headers["Cache-Control"] = (
                     "private, no-store"
-                    if ai_engineering_response or local_path == "/api/v1/account"
+                    if ai_engineering_response or agent_design_response or local_path == "/api/v1/account"
                     or (local_path == "/" and message["status"] == 403)
                     or _is_conversation_attachment_response_path(local_path)
                     else "no-store"

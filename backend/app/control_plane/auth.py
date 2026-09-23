@@ -42,7 +42,7 @@ _SAFE_RETURN_ID = r"[A-Za-z0-9:._-]+"
 _SAFE_RETURN_EXACT = frozenset(
     {
         "/brain", "/ai-engineering", "/organization",
-        "/", "/account", "/missions", "/conversations", "/agents",
+        "/", "/admin/agent-designs", "/account", "/missions", "/conversations", "/agents",
         "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
         "/fae/", "/fae/manage/", "/hr", "/hr/", "/marketing",
         "/hr/chat", "/hr/agent", "/hr/panorama", "/hr/positions",

@@ -36,6 +36,7 @@ from .agent_brain.turn_snapshot import TurnSnapshotReader
 from .agent_catalog.routes import build_agent_catalog_router
 from .ai_engineering.organization import OrganizationDirectoryRepository
 from .ai_engineering.routes import build_ai_engineering_router
+from .agent_designs.routes import build_agent_designs_router
 from .ai_notes.repository import AiNotesContentError, AiNotesRepository
 from .ai_notes.routes import (
     AiNotesReader,
@@ -1540,6 +1541,8 @@ def create_app(
             build_ai_engineering_router(),
             prefix=identity_auth.route_prefix.rstrip("/"),
         )
+    if identity_enabled:
+        app.include_router(build_agent_designs_router())
     if identity_enabled and ai_notes_reader is not None:
         app.include_router(build_ai_notes_router(ai_notes_reader))
     if execution_relay_router is not None:

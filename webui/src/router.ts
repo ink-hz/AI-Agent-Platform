@@ -49,6 +49,7 @@ export type Route =
   | { name: "admin-session"; sessionKey: string }
   | { name: "admin-review" }
   | { name: "admin-activity" }
+  | { name: "admin-agent-designs" }
   | { name: "admin-identity" }
   | { name: "admin-permissions"; section: import("./pages/PermissionAccessPage").PermissionSection }
   | { name: "admin-governance" }
@@ -328,6 +329,7 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (clean === "/admin/identity/partners") return { name: "admin-permissions", section: "partners" };
   if (clean === "/fae/manage/access") return { name: "admin-permissions", section: "fae" };
   if (clean === "/admin/voc/access") return { name: "admin-permissions", section: "voc" };
+  if (clean === "/admin/agent-designs") return { name: "admin-agent-designs" };
   if (clean === "/admin/identity") return { name: "admin-identity" };
   if (clean === "/admin/governance") return { name: "admin-governance" };
   if (clean === "/admin/access") return { name: "admin-access" };
@@ -446,6 +448,7 @@ export function routePath(route: Route): string {
     case "admin-session": return `/admin/sessions/${encodeURIComponent(route.sessionKey)}`;
     case "admin-review": return "/admin/review";
     case "admin-activity": return "/admin/activity";
+    case "admin-agent-designs": return "/admin/agent-designs";
     case "admin-identity": return "/admin/identity";
     case "admin-permissions": return route.section === "fae" ? "/fae/manage/access"
       : route.section === "voc" ? "/admin/voc/access" : `/admin/identity/${route.section}`;

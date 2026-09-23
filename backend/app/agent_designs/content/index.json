@@ -1,0 +1,17 @@
+{
+  "documents": [
+    {
+      "slug": "hr",
+      "agent": "HR Agent",
+      "title": "总体架构设计",
+      "source": {
+        "repository": "AI-HR-Agent",
+        "path": "HR总体架构设计.md",
+        "commit": "063876aec2e22e432e175c486582448f846080ec",
+        "working_tree_modified": true,
+        "sha256": "390a2f5915c08253d63563f8fe04e56660fa24eec4760c2f2b35f6d8908b8a7f",
+        "captured_at": "2026-09-23T02:34:17.039474+00:00"
+      }
+    }
+  ]
+}

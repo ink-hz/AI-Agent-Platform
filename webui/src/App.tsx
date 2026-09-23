@@ -27,6 +27,7 @@ import {
 import { LoginPage } from "./pages/LoginPage";
 import { AccountPage } from "./pages/AccountPage";
 import { PermissionAccessPage } from "./pages/PermissionAccessPage";
+import { AgentDesignsPage } from "./pages/AgentDesignsPage";
 import { IdentityManagementPage } from "./pages/IdentityManagementPage";
 import { GovernancePage } from "./pages/GovernancePage";
 import { BrainWorkspacePage } from "./pages/BrainWorkspacePage";
@@ -139,6 +140,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "admin-session": return <SessionDetailPage sessionKey={route.sessionKey} />;
     case "admin-review": return <ReviewPage />;
     case "admin-activity": return <ActivityPage />;
+    case "admin-agent-designs": return account ? <AgentDesignsPage key={`${account.internal_user_id}:${account.role}`} /> : <PendingPage title="Agent 设计" description="请登录后阅读。" />;
     case "admin-identity": return account ? <IdentityManagementPage account={account} /> : <PendingPage title="身份管理" description="身份模式未启用。" />;
     case "admin-permissions": return account ? <PermissionAccessPage key={`${account.internal_user_id}:${account.role}:${route.section}`} account={account} section={route.section} /> : <PendingPage title="账号与权限" description="请登录后使用。" />;
     case "admin-governance": return <GovernancePage />;

@@ -267,3 +267,7 @@ it.each([
 ] as const)("keeps %s as a distinct permission page", (path, section) => {
   expect(parseRoute(path)).toEqual({ name: "admin-permissions", section });
 });
+it('round-trips the Agent design reader route',()=>{
+ expect(parseRoute('/admin/agent-designs')).toEqual({name:'admin-agent-designs'});
+ expect(routePath({name:'admin-agent-designs'})).toBe('/admin/agent-designs');
+});

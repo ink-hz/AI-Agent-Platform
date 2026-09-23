@@ -100,3 +100,9 @@ it('keeps review hidden until deployment is known on a direct assistant visit an
  await act(async()=>root.render(<AppShell route={{name:'agents'}} account={owner}><p>目录</p></AppShell>));
  expect(link('/admin/review')).toBeNull();
 });
+it('places Agent designs in AI work for managers only', async()=>{
+ await render('platform_admin',{name:'admin-agent-designs'});
+ expect(link('/admin/agent-designs')?.closest('section')?.getAttribute('aria-label')).toBe('AI 工作');
+ expect(link('/admin/agent-designs')?.getAttribute('aria-current')).toBe('page');
+ await render('member'); expect(link('/admin/agent-designs')).toBeNull();
+});
