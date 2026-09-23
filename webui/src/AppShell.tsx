@@ -31,6 +31,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
     || route.name === "hr-position" || route.name === "hr-position-section"
     || route.name === "hr-panorama";
   const aiNotesWorkspace = !panorama && (route.name === "ai-notes" || route.name === "ai-note");
+  const agentDesignWorkspace = route.name === "admin-agent-designs";
   const faeWorkspace = route.name.startsWith("fae-manage-");
   const accountCanReadDeployment = account?.role === "platform_owner" || account?.role === "platform_admin";
   const shouldLoadDeployment = accountCanReadDeployment || (current === "admin" && !account);
@@ -94,7 +95,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
       <div className="platform-body">
         {!hrWorkspace && <PlatformSidebar route={route} account={account} readOnly={!deploymentResolved || !deployment || Boolean(cloudReplica)} collapsed={navigationCollapsed}/>}
         <div className="platform-content">
-      <main className={`page${panorama ? " is-panorama-page" : ""}${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}`}>
+      <main className={`page${panorama ? " is-panorama-page" : ""}${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}${agentDesignWorkspace ? " is-agent-design-workspace" : ""}`}>
       {account?.hard_stale_read_only && !faeWorkspace && !hrWorkspace && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
