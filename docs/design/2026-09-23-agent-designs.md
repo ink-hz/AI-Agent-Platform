@@ -11,3 +11,5 @@ HR 文件是唯一维护来源。当前文件有未提交修改，按用户指�
 验证：HTTP 身份与角色边界、无公开缓存、未知 slug、正文与源字节一致；组件的目录跳转、页面内切换、失败/撤权清理；全部 Mermaid 源解析以及生产构建。页面视觉由用户验收。
 
 图表由 Mermaid 在浏览器渲染为经安全清理的 SVG，以本地 data URL 展示，不转为 PNG。放大复用同一 SVG，不对图片设置 `will-change: transform`，避免缩放缓存图层导致模糊；实际清晰度由用户浏览器验收。工程笔记复用同一图表组件。
+
+2026-09-23 新增 `AI-FAE-Agent/FAE总体架构设计.md`，以「FAE Agent · 总体架构设计」出现在现有选择器；保留 HR 为首篇。FAE 更新命令：`python3 scripts/sync-agent-design.py --agent fae --source-repo /path/to/AI-FAE-Agent`；HR 继续支持原命令或显式 `--agent hr`。更新只替换指定篇目，保持其他文档内容、来源与顺序。

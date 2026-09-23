@@ -21,17 +21,18 @@ def client_for(role):
                       authorization=AuthorizationService(NoManagementGrants()), routes=tuple(app.router.routes))
     return TestClient(app), auth
 
+@pytest.mark.parametrize('slug', ['hr', 'fae'])
 @pytest.mark.parametrize('role', [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
-def test_registered_design_is_readable_only_with_management_identity(role):
+def test_registered_design_is_readable_only_with_management_identity(role, slug):
     client, auth = client_for(role)
     index = client.get('/api/v1/manage/agent-designs', **_credentials(auth))
     assert index.status_code == 200
     assert index.json()['documents'][0]['slug'] == 'hr'
-    response = client.get('/api/v1/manage/agent-designs/hr', **_credentials(auth))
+    response = client.get('/api/v1/manage/agent-designs/' + slug, **_credentials(auth))
     assert response.status_code == 200
     assert 'private' in response.headers['cache-control'] and 'no-store' in response.headers['cache-control']
     data = response.json()
-    assert data['markdown'].encode() == (CONTENT / 'hr.md').read_bytes()
+    assert data['markdown'].encode() == (CONTENT / (slug + '.md')).read_bytes()
     assert hashlib.sha256(data['markdown'].encode()).hexdigest() == data['source']['sha256']
     assert '目标架构，未全部实施' in data['markdown']
     assert client.get('/api/v1/manage/agent-designs', cookies={}).status_code == 401
@@ -39,7 +40,7 @@ def test_registered_design_is_readable_only_with_management_identity(role):
 @pytest.mark.parametrize('role', [Role.MEMBER, Role.MANAGEMENT_VIEWER])
 def test_non_management_cannot_read_design_content(role):
     client, auth = client_for(role)
-    for suffix in ['', '/hr']:
+    for suffix in ['', '/hr', '/fae']:
         response = client.get('/api/v1/manage/agent-designs' + suffix, **_credentials(auth))
         assert response.status_code == 403
         assert 'Hannah' not in response.text

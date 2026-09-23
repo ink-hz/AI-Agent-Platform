@@ -12,6 +12,19 @@
         "sha256": "390a2f5915c08253d63563f8fe04e56660fa24eec4760c2f2b35f6d8908b8a7f",
         "captured_at": "2026-09-23T02:34:17.039474+00:00"
       }
+    },
+    {
+      "slug": "fae",
+      "agent": "FAE Agent",
+      "title": "总体架构设计",
+      "source": {
+        "repository": "AI-FAE-Agent",
+        "path": "FAE总体架构设计.md",
+        "commit": "66fd24f83e3bfeaa4fcdb890c50255fe1cf185da",
+        "working_tree_modified": false,
+        "sha256": "1bedd572d8c6a3fd54f31f9561bdfc0bcff882dcb925d0726e0611c5c0a18044",
+        "captured_at": "2026-09-23T12:33:48.802909+00:00"
+      }
     }
   ]
 }
