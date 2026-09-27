@@ -99,6 +99,86 @@ describe("PanoramaView", () => {
     expect([...container.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => node.dataset.nodeId)).toEqual(order);
   });
 
+  it("keeps exploration opt-in and highlights the selected question without moving business nodes", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    const order = [...container.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => node.dataset.nodeId);
+    expect(container.querySelector(".panorama-exploration")).toBeNull();
+    await act(async () => button(container, "AI 探索").click());
+    expect(container.querySelector(".panorama-exploration")?.textContent).toContain("探索假设");
+    expect(container.querySelector('[data-node-id="robotics"]')?.classList.contains("is-explored")).toBe(true);
+    expect(container.querySelector('[data-node-id="talent"]')?.classList.contains("is-explored")).toBe(false);
+    await act(async () => button(container, "产品研发").click());
+    expect(container.querySelector(".panorama-exploration")?.textContent).toContain("验证经验");
+    expect(container.querySelector('[data-node-id="chip-tech"]')?.classList.contains("is-explored")).toBe(true);
+    expect([...container.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => node.dataset.nodeId)).toEqual(order);
+    expect(container.querySelector('[data-edge-kind="exploration"]')).toBeNull();
+    await act(async () => button(container, "退出探索").click());
+    expect(container.querySelector(".panorama-exploration")).toBeNull();
+    expect(container.querySelector(".is-explored")).toBeNull();
+  });
+
+  it("preserves actual node actions and can return from node details to the exploration", async () => {
+    const onAction = vi.fn();
+    await act(async () => root.render(<PanoramaView data={data} onAction={onAction} onEvidence={vi.fn()} />));
+    await act(async () => button(container, "AI 探索").click());
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="integration"] button')!.click());
+    expect(container.querySelector('[data-action-id="fae"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="fae"]')!.click());
+    expect(onAction).toHaveBeenCalledWith("fae");
+    await act(async () => button(container, "返回探索思考").click());
+    expect(container.querySelector(".panorama-exploration")?.textContent).toContain("客户场景");
+    expect(container.querySelector('[data-action-id="fae"]')).toBeNull();
+  });
+
+  it("uses current node names and skips absent themes without recreating deleted nodes", async () => {
+    const customized = structuredClone(data);
+    customized.nodes.find((node) => node.id === "robotics")!.title = "机器人客户场景";
+    const removed = new Set(["talent", "projects", "research", "development", "integration"]);
+    customized.nodes = customized.nodes.filter((node) => !removed.has(node.id));
+    customized.layers.forEach((layer) => layer.groups.forEach((group) => { group.node_ids = group.node_ids.filter((id) => !removed.has(id)); }));
+    customized.edges = customized.edges.filter((edge) => !removed.has(edge.from) && !removed.has(edge.to));
+    await act(async () => root.render(<PanoramaView data={customized} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    await act(async () => button(container, "AI 探索").click());
+    expect(container.querySelector(".panorama-exploration__nodes")?.textContent).toContain("机器人客户场景");
+    expect(container.querySelector('.panorama-exploration-nav [data-topic-id="talent"]')).toBeNull();
+    expect(container.querySelector('[data-node-id="talent"]')).toBeNull();
+    await act(async () => root.render(<PanoramaView data={{ ...customized, nodes: [], layers: [], edges: [] }} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    expect(container.querySelector(".panorama-exploration")).toBeNull();
+    expect(button(container, "AI 探索").disabled).toBe(true);
+  });
+
+  it("closes exploration when editing opens and disables it during layout editing", async () => {
+    vi.spyOn(panoramaClient, "fetchEditorState").mockResolvedValue({ revision: 3, published: data, draft: null, previous: null });
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    await act(async () => button(container, "AI 探索").click());
+    await act(async () => button(container, "调整布局").click());
+    expect(container.querySelector(".panorama-exploration")).toBeNull();
+    expect(button(container, "AI 探索").disabled).toBe(true);
+  });
+
+  it("switches through the business questions and keeps hypotheses separate from actual capability", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    await act(async () => button(container, "AI 探索").click());
+    for (const title of ["客户场景", "产品研发", "市场与技术", "交付学习", "组织人才", "经营支撑", "共用平台"]) {
+      await act(async () => button(container, title).click());
+      expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe(title);
+      expect(container.querySelector(".panorama-exploration")?.textContent).toContain("探索假设");
+      expect(container.querySelector(".panorama-exploration")?.textContent).toContain("需要验证");
+    }
+  });
+
+  it("connects supply and quality exploration only to nodes present in the actual layout", async () => {
+    const complete = structuredClone(data);
+    complete.nodes.push({ id: "manufacturing", title: "量产交付", subtitle: "", detail: [], actions: [], source_ids: [] });
+    complete.layers[2].groups[1].node_ids.push("manufacturing");
+    await act(async () => root.render(<PanoramaView data={complete} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    await act(async () => button(container, "AI 探索").click());
+    await act(async () => button(container, "供应与质量").click());
+    expect(container.querySelector('[data-node-id="manufacturing"]')?.classList.contains("is-explored")).toBe(true);
+    expect(container.querySelector(".panorama-exploration__nodes")?.textContent).toBe("量产交付");
+    expect(container.querySelector(".panorama-exploration")?.textContent).toContain("文字相似不能认定根因");
+  });
+
   it("selecting technology finds its supported product and downstream application", async () => {
     await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
     await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="chip-tech"] button')!.click());

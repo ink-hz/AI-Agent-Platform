@@ -7,6 +7,8 @@ import type { PanoramaActionId, PanoramaData, PanoramaEditorState } from "../pan
 import { PanoramaCanvas } from "./PanoramaCanvas";
 import { PanoramaEditor } from "./PanoramaEditor";
 import { panoramaClient, parsePanorama } from "./panoramaApi";
+import { ExplorationNavigation } from "./PanoramaExploration";
+import { availableExplorations } from "./panoramaExplorations";
 import "./panorama.css";
 
 interface Props {
@@ -50,12 +52,16 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
   const [opening, setOpening] = useState(false);
   const [editorNotice, setEditorNotice] = useState("");
   const [editor, setEditor] = useState<Editing | null>(null);
+  const [explorationId, setExplorationId] = useState<string | null>(null);
   const queryRef = useRef<HTMLInputElement>(null);
   const operation = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const localDraft = useRef<PanoramaData | null>(null);
   const localEditGeneration = useRef(0);
   const effectiveData = editor?.local ?? data;
+  const explorationTopics = useMemo(() => availableExplorations(effectiveData), [effectiveData]);
+  const exploration = !editor ? explorationTopics.find((topic) => topic.id === explorationId) : undefined;
+  const exitExploration = () => { setExplorationId(null); setSelectedId(null); setQuery(""); };
   const matchIds = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase(); if (!needle) return new Set<string>();
     return new Set(effectiveData.nodes.filter((node) => [node.title, node.subtitle, ...node.detail].join(" ").toLocaleLowerCase().includes(needle)).map((node) => node.id));
@@ -82,7 +88,7 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (event.defaultPrevented || target?.isContentEditable || target?.closest("input, textarea, select")) return;
-      if (event.key === "Escape") { setSelectedId(null); setQuery(""); setPresenting(false); }
+      if (event.key === "Escape") { setSelectedId(null); setQuery(""); setPresenting(false); setExplorationId(null); }
       if (event.key === "/") { event.preventDefault(); queryRef.current?.focus(); }
     };
     document.addEventListener("keydown", onKeyDown); return () => document.removeEventListener("keydown", onKeyDown);
@@ -100,6 +106,7 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
       const local = cloneData(state.draft ?? state.published);
       localDraft.current = local; localEditGeneration.current = 0;
       setEditor({ csrf: account.csrf_token, state, local, dirty: false, busy: false, locked: false, preview: false, message: state.draft ? "已载入共享草稿。" : "正在预览当前发布版；修改后保存为共享草稿。" });
+      setExplorationId(null);
       setSelectedId(null); reportDirty(false);
     } catch (error) {
       if (controller.signal.aborted || !mounted.current) return;
@@ -185,6 +192,10 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
       <div><p className="panorama-eyebrow">AI ENGINEERING PANORAMA · {effectiveData.version}</p><h1>{effectiveData.title}</h1></div>
       <div className="panorama-toolbar">
         <label className="panorama-search"><span>搜索</span><input ref={queryRef} type="search" value={query} placeholder="产品、技术或场景…" onInput={(event) => setQuery(event.currentTarget.value)} /></label>
+        <button type="button" className="panorama-exploration-toggle" aria-pressed={!!exploration} disabled={!!editor || !explorationTopics.length}
+          onClick={() => { if (exploration) exitExploration(); else { setQuery(""); setSelectedId(null); setExplorationId(explorationTopics[0]?.id ?? null); } }}>
+          {exploration ? "退出探索" : "AI 探索"}
+        </button>
         <button type="button" onClick={openEditor} disabled={opening || !!editor}>{opening ? "读取布局…" : "调整布局"}</button>
         <button type="button" onClick={() => setPresenting(true)}>展示模式</button>
         <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.svg?version=${encodeURIComponent(data.version)}`)} download title="导出业务布局 SVG，不含实时组织目录">业务图 SVG</a>
@@ -193,7 +204,10 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
     </header>
     {editorNotice && <p className="panorama-editor-notice" role="status">{editorNotice}</p>}
     {presenting && <button type="button" className="panorama-presentation-exit" onClick={() => setPresenting(false)}>退出展示</button>}
-    <PanoramaCanvas data={effectiveData} isOwner={isOwner} matchIds={matchIds} onAction={onAction} onEvidence={onEvidence} onSelect={setSelectedId} selectedId={selectedId} />
+    {exploration && <ExplorationNavigation topics={explorationTopics} selectedId={exploration.id}
+      onChange={(id) => { setExplorationId(id); setSelectedId(null); setQuery(""); }} />}
+    <PanoramaCanvas data={effectiveData} isOwner={isOwner} matchIds={matchIds} onAction={onAction} onEvidence={onEvidence} onSelect={setSelectedId} selectedId={selectedId}
+      exploration={exploration} onExitExploration={exitExploration} />
     {editor && <PanoramaEditor
       busy={editor.busy} data={editor.local} dirty={editor.dirty} locked={editor.locked} message={editor.message}
       onChange={changeLocal} onClose={closeEditor} onDiscard={() => void mutate("discard")} onPreview={() => setEditor({ ...editor, preview: !editor.preview })}

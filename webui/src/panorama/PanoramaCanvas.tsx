@@ -3,6 +3,8 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AiEngineeringDocumentSlug } from "../aiEngineeringApi";
 import type { PanoramaActionId, PanoramaData, PanoramaGroup, PanoramaNode } from "../panoramaTypes";
 import { routePanoramaEdge, type PanoramaRect } from "../panoramaRouting";
+import { ExplorationPanel } from "./PanoramaExploration";
+import { explorationNodes, type PanoramaExploration } from "./panoramaExplorations";
 
 const ACTION_LABELS: Record<PanoramaActionId, string> = {
   brain: "AI 助手", agents: "Agent 目录", missions: "任务", sessions: "会话", operations: "运行概览",
@@ -20,6 +22,8 @@ interface CanvasProps {
   onSelect: (id: string | null) => void;
   onAction: (actionId: PanoramaActionId) => void;
   onEvidence: (slug: AiEngineeringDocumentSlug) => void;
+  exploration?: PanoramaExploration;
+  onExitExploration?: () => void;
 }
 
 interface StructuralEdge {
@@ -53,14 +57,14 @@ function groupNodes(group: PanoramaGroup, byId: Map<string, PanoramaNode>) {
   return group.node_ids.map((id) => byId.get(id)).filter((node): node is PanoramaNode => !!node);
 }
 
-function NodeCard({ node, selected, related, match, company, onSelect }: {
-  node: PanoramaNode; selected: boolean; related: boolean; match: boolean; company: boolean; onSelect: () => void;
+function NodeCard({ node, selected, related, match, company, explored, onSelect }: {
+  node: PanoramaNode; selected: boolean; related: boolean; match: boolean; company: boolean; explored: boolean; onSelect: () => void;
 }) {
   return <article
-    className={`panorama-node${company ? " panorama-node--company" : ""}${selected ? " is-selected" : ""}${related ? " is-related" : ""}${match ? " is-search-match" : ""}`}
+    className={`panorama-node${company ? " panorama-node--company" : ""}${selected ? " is-selected" : ""}${related ? " is-related" : ""}${match ? " is-search-match" : ""}${explored ? " is-explored" : ""}`}
     data-node-id={node.id}
   >
-    <button type="button" aria-pressed={selected} onClick={onSelect}>
+    <button type="button" aria-pressed={selected} aria-description={explored ? "当前 AI 探索涉及的节点" : undefined} onClick={onSelect}>
       <strong>{node.title}</strong>{company && node.subtitle && <span>{node.subtitle}</span>}
     </button>
   </article>;
@@ -72,14 +76,16 @@ function ActionButton({ id, onAction }: { id: PanoramaActionId; onAction: Canvas
   </button>;
 }
 
-function DetailPanel({ node, data, isOwner, onAction, onEvidence, onClose }: {
+function DetailPanel({ node, data, isOwner, onAction, onEvidence, onClose, onReturnExploration }: {
   node: PanoramaNode; data: PanoramaData; isOwner: boolean; onAction: CanvasProps["onAction"];
   onEvidence: CanvasProps["onEvidence"]; onClose: () => void;
+  onReturnExploration?: () => void;
 }) {
   const actions = node.actions.filter((id) => id !== "access" || isOwner);
   const relationships = data.edges.filter((edge) => edge.from === node.id || edge.to === node.id);
   return <aside className="panorama-detail" aria-label={`${node.title}详情`}>
     <header><div><span>节点详情</span><h2>{node.title}</h2>{node.subtitle && <p>{node.subtitle}</p>}</div><button type="button" onClick={onClose}>关闭</button></header>
+    {onReturnExploration && <button className="panorama-exploration-return" type="button" onClick={onReturnExploration}>返回探索思考</button>}
     {node.detail.length > 0 && <ul>{node.detail.map((item, index) => <li key={`${node.id}-detail-${index}`}>{item}</li>)}</ul>}
     {relationships.length > 0 && <dl className="panorama-detail__relations">{relationships.map((edge) => {
       const otherId = edge.from === node.id ? edge.to : edge.from; const other = data.nodes.find((item) => item.id === otherId);
@@ -97,7 +103,7 @@ function relative(rect: DOMRect, root: DOMRect): PanoramaRect {
   return { left: rect.left - root.left, top: rect.top - root.top, right: rect.right - root.left, bottom: rect.bottom - root.top };
 }
 
-export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, onAction, onEvidence }: CanvasProps) {
+export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, onAction, onEvidence, exploration, onExitExploration }: CanvasProps) {
   const rootRef = useRef<HTMLDivElement>(null); const [paths, setPaths] = useState<Record<string, string>>({});
   const [structuralPaths, setStructuralPaths] = useState<Record<string, string>>({});
   const byId = useMemo(() => new Map(data.nodes.map((node) => [node.id, node])), [data.nodes]);
@@ -105,6 +111,7 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
   const selectedSet = useMemo(() => new Set(selectedId ? [selectedId, ...relatedIds] : []), [relatedIds, selectedId]);
   const visibleEdges = useMemo(() => selectedId ? data.edges.filter((edge) => selectedSet.has(edge.from) && selectedSet.has(edge.to)) : [], [data.edges, selectedId, selectedSet]);
   const selected = selectedId ? byId.get(selectedId) : undefined;
+  const exploredIds = new Set(exploration ? explorationNodes(exploration, data).map((node) => node.id) : []);
   const structuralEdges = useMemo(() => {
     const result: StructuralEdge[] = [
       { id: "industry-upstream-company", from: { type: "role", id: "upstream" }, to: { type: "role", id: "company" }, fromRole: "upstream", toRole: "company", kind: "supply", label: "上游供给" },
@@ -187,13 +194,15 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
           <h3>{group.title}</h3>
           <div className={`panorama-group__nodes panorama-columns-${group.columns}`}>
             {groupNodes(group, byId).map((node) => <NodeCard
-              company={group.role === "company"} key={node.id} match={matchIds.has(node.id)} node={node}
+              company={group.role === "company"} explored={exploredIds.has(node.id)} key={node.id} match={matchIds.has(node.id)} node={node}
               onSelect={() => onSelect(selectedId === node.id ? null : node.id)} related={relatedIds.has(node.id)} selected={selectedId === node.id}
             />)}
           </div>
         </section>)}
       </div>
     </section>)}
-    {selected && <DetailPanel data={data} isOwner={isOwner} node={selected} onAction={onAction} onClose={() => onSelect(null)} onEvidence={onEvidence} />}
+    {selected && <DetailPanel data={data} isOwner={isOwner} node={selected} onAction={onAction} onClose={() => onSelect(null)} onEvidence={onEvidence}
+      onReturnExploration={exploration ? () => onSelect(null) : undefined} />}
+    {!selected && exploration && <ExplorationPanel topic={exploration} data={data} onSelect={onSelect} onClose={() => onExitExploration?.()} />}
   </div>;
 }

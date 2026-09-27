@@ -99,6 +99,24 @@
 .panorama-detail__sources { border-top: 1px solid #e5ebf1; margin-top: 12px; padding-top: 10px; }
 .panorama-detail__sources button { background: transparent; color: #59718b; }
 
+/* Explorations are editorial hypotheses, distinct from confirmed graph edges. */
+.panorama-toolbar > .panorama-exploration-toggle[aria-pressed="true"] { background: #eee6fa; border-color: #b39bd7; color: #644096; }
+.panorama-exploration-nav { align-items: center; display: flex; flex-wrap: wrap; gap: 7px; margin: 0 auto 18px; max-width: 1600px; }
+.panorama-exploration-legend { color: #644096; font-size: 12px; margin-right: 5px; }
+.panorama-exploration-nav button, .panorama-exploration__nodes button, .panorama-exploration-return { background: #f5f1fb; border: 1px solid #d5c7eb; border-radius: 8px; color: #644096; cursor: pointer; font: inherit; font-size: 12px; padding: 7px 10px; }
+.panorama-exploration-nav button[aria-pressed="true"] { background: #644096; border-color: #644096; color: #fff; }
+.panorama-node.is-explored > button { box-shadow: 0 0 0 3px #8256c566; }
+.panorama-exploration { border-top: 3px solid #8256c5; }
+.panorama-exploration header span { color: #644096; }
+.panorama-exploration p { color: #3e5369; font-size: 14px; line-height: 1.7; margin: 8px 0 16px; }
+.panorama-exploration .panorama-exploration__idea { color: #263c54; font-weight: 650; }
+.panorama-exploration h3 { color: #644096; font-size: 12px; margin: 0; }
+.panorama-exploration__nodes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
+.panorama-exploration__question { border-top: 1px solid #e5ebf1; padding-top: 14px; }
+.panorama-exploration__question p { margin-bottom: 0; }
+.panorama-exploration-return { margin-top: 12px; }
+.panorama-exploration-nav button:focus-visible, .panorama-exploration__nodes button:focus-visible, .panorama-exploration-return:focus-visible { outline: 2px solid #644096; outline-offset: 2px; }
+
 .panorama-footer { color: #52667e; display: flex; font-size: 9px; gap: 16px; justify-content: flex-end; margin: 8px auto 0; max-width: 1600px; }
 .panorama--presenting .panorama-toolbar, .panorama--presenting .panorama-footer { display: none; }
 .panorama-presentation-exit { background: #12365b; border: 1px solid #ffffff75; border-radius: 8px; box-shadow: 0 5px 18px #10233d30; color: #fff; cursor: pointer; padding: 9px 13px; position: fixed; right: 18px; top: 18px; z-index: 30; }
