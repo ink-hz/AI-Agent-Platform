@@ -10,6 +10,15 @@ export interface PanoramaExploration {
   nodeIds: readonly string[];
 }
 
+/** Overview of the eight hypotheses, not an additional business domain or runtime workflow. */
+export const MAINLINE_EXPLORATION: PanoramaExploration = {
+  id: "mainline", title: "工程主线",
+  idea: "从一件客户设计导入出发，把客户场景、验证条件、产品取舍与交付复用联系起来。先找到感知产品走向场景可用时最难推进的一步，再判断 AI 是否有帮助。",
+  direction: "已有 FAE/VOC 资产与产品资料提供起点。按实际阻碍选择专题：质量看验证遗漏，人才看判断能否交接，经营看长期承诺；共用平台从实际复用需求归纳，不同时铺开八个项目。",
+  question: "建议是否改变了下一次验证或产品判断，结论能否在明确条件下复用？公开资料推演可以先行，真实案例需要业务牵头确认目标与结果；资料整理完成不能证明业务有效。",
+  nodeIds: ["robotics", "camera", "software", "integration", "customer-use", "requirements", "development", "digital"],
+};
+
 export const PANORAMA_EXPLORATIONS: readonly PanoramaExploration[] = [
   {
     id: "customer", title: "客户场景",
@@ -79,5 +88,5 @@ export function explorationNodes(topic: PanoramaExploration, data: PanoramaData)
 }
 
 export function availableExplorations(data: PanoramaData) {
-  return PANORAMA_EXPLORATIONS.filter((topic) => explorationNodes(topic, data).length > 0);
+  return [MAINLINE_EXPLORATION, ...PANORAMA_EXPLORATIONS].filter((topic) => explorationNodes(topic, data).length > 0);
 }

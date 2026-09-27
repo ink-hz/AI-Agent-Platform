@@ -168,6 +168,34 @@ describe("PanoramaView", () => {
     }
   });
 
+  it("starts from the engineering mainline and returns after reviewing an individual business question", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    await act(async () => button(container, "AI 探索").click());
+    expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe("工程主线");
+    expect(container.querySelector(".panorama-exploration")?.textContent).toContain("设计导入");
+    await act(async () => button(container, "产品研发").click());
+    expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe("产品研发");
+    await act(async () => button(container, "工程主线").click());
+    expect(container.querySelector('[data-node-id="integration"]')?.classList.contains("is-explored")).toBe(true);
+    expect(container.querySelector(".panorama-exploration")?.textContent).toContain("探索假设");
+    expect(container.querySelector('[data-edge-kind="exploration"]')).toBeNull();
+  });
+
+  it("keeps independent support exploration available when all mainline nodes are removed", async () => {
+    const supportOnly = structuredClone(data);
+    supportOnly.layers = supportOnly.layers.filter((layer) => layer.kind === "support");
+    supportOnly.nodes = supportOnly.nodes.filter((node) => ["talent", "finance", "office"].includes(node.id));
+    supportOnly.layers[0].groups[0].node_ids = ["talent", "finance", "office"];
+    supportOnly.edges = [];
+    await act(async () => root.render(<PanoramaView data={supportOnly} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    await act(async () => button(container, "AI 探索").click());
+    expect(container.querySelector('.panorama-exploration-nav [data-topic-id="mainline"]')).toBeNull();
+    expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe("组织人才");
+    await act(async () => button(container, "经营支撑").click());
+    expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe("经营支撑");
+    expect(container.querySelector('[data-node-id="finance"]')?.classList.contains("is-explored")).toBe(true);
+  });
+
   it("connects supply and quality exploration only to nodes present in the actual layout", async () => {
     const complete = structuredClone(data);
     complete.nodes.push({ id: "manufacturing", title: "量产交付", subtitle: "", detail: [], actions: [], source_ids: [] });
