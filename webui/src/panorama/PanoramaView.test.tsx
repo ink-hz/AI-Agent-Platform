@@ -28,6 +28,7 @@ const nodes: PanoramaData["nodes"] = [
   { id: "talent", title: "组织人才", subtitle: "", detail: [], actions: ["hr"], source_ids: [] },
   { id: "digital", title: "数字化与知识", subtitle: "", detail: ["平台能力"], actions: ["brain", "access", "notes"], source_ids: [] },
   { id: "office", title: "行政保障", subtitle: "", detail: [], actions: ["office"], source_ids: [] },
+  { id: "finance", title: "财务经营", subtitle: "", detail: [], actions: [], source_ids: [] },
 ];
 const data: PanoramaData = {
   version: "v1.2", updated_at: "2026-09-20T00:00:00Z", title: "奥比中光 / 全景",
@@ -46,7 +47,7 @@ const data: PanoramaData = {
       { id: "delivery", title: "Technology", role: "delivery", columns: 2, node_ids: ["research", "integration"] },
     ] },
     { id: "support", title: "支撑体系", kind: "support", groups: [
-      { id: "support", title: "全公司共用能力", role: "support", columns: 3, node_ids: ["talent", "digital", "office"] },
+      { id: "support", title: "全公司共用能力", role: "support", columns: 4, node_ids: ["talent", "digital", "office", "finance"] },
     ] },
   ], nodes,
   edges: [
