@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useMemo, useState } from "react";
 
 import { BUSINESS_AGENT_LABELS } from "../platform/agentLabels";
@@ -88,7 +89,7 @@ export function AgentUseDirectoryPage({
   }), [agents]);
 
   return <div className="agent-use-directory">
-    <section className="use-page-intro"><h1>Agent 目录</h1><span>选择一个 Agent 开始工作。</span></section>
+    <PlatformPageHeader className="use-page-intro" title="Agent 目录" description="选择一个 Agent 开始工作。" />
     {error ? <ErrorState onRetry={() => setAttempt((value) => value + 1)} />
       : agents === null ? <LoadingState label="正在读取可用 Agent" />
       : orderedAgents.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="你仍可从 AI 助手完成通用对话和需求澄清。" />

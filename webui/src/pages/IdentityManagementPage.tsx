@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useState } from "react";
 
 import {
@@ -85,7 +86,7 @@ function PermissionsWorkspace({ account, initialSection }: { account: Account; i
     setSection(next);
   }
   return <section className="permission-access-page">
-    <h1>账号与权限</h1>
+    <PlatformPageHeader title="账号与权限" />
     <PermissionNavigation account={account} section={section} onSelect={select} />
     {visited.map(key => <div key={key} className="permission-panel" hidden={section !== key}>
       {key === "administrators" && <AdministratorManagement account={account} />}

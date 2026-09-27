@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useMemo, useState } from "react";
 import { AgentDesignError, getAgentDesign, listAgentDesigns, type AgentDesign, type AgentDesignDocument } from "../agentDesignsApi";
 import { prepareDesignMarkdown } from "../agentDesignMarkdown";
@@ -37,12 +38,10 @@ export function AgentDesignsPage() {
     return () => controller.abort();
   }, [selected, denied]);
   return <section className="agent-designs-page">
-    <header className="agent-designs-heading"><h1>Agent 设计</h1>
-      {index && index.length > 0 && <label><span className="sr-only">选择 Agent</span><select aria-label="选择 Agent" value={selected}
+    <PlatformPageHeader className="agent-designs-heading" title="Agent 设计" actions={index && index.length > 0 && <label><span className="sr-only">选择 Agent</span><select aria-label="选择 Agent" value={selected}
         onChange={event => { setArticle(null); setSelected(event.currentTarget.value); }}>
         {index.map(item => <option key={item.slug} value={item.slug}>{item.agent} · {item.title}</option>)}
-      </select></label>}
-    </header>
+      </select></label>} />
     {error ? <div className="agent-designs-state" role="alert">{error}{!denied && <button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button>}</div>
       : index?.length === 0 ? <p>暂无设计文档。</p>
       : !article || !content ? <p role="status">正在读取设计文档…</p>

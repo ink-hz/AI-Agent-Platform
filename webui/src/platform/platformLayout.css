@@ -1,0 +1,47 @@
+/* Page geometry belongs to the platform frame. Business applications have no layout attribute. */
+.platform-shell { --platform-page-gutter:24px; --platform-page-gap:24px; --platform-directory-width:230px; --platform-panel-radius:12px; }
+.platform-content > .page[data-platform-layout] { width:100%; max-width:none; min-width:0; margin:0; padding:var(--platform-page-gutter) var(--platform-page-gutter) 48px; }
+.platform-content > .page[data-platform-layout="canvas"] { padding:0; }
+.platform-content > .page[data-platform-layout] > :is(.account-page,.permission-access-page,.identity-page,.governance-page,.access-history-page,.missions-page,.mission-page,.agent-use-directory,.agent-use-page,.conversations-page) { width:100%; max-width:none; margin:0; }
+.page[data-platform-layout] .permission-panel > .identity-page { width:100%; max-width:none; margin:0; }
+.page[data-platform-layout] .platform-page-header { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:16px; min-height:0; margin:0 0 var(--platform-page-gap); padding:0; border:0; }
+.page[data-platform-layout] .platform-page-header h1 { margin:0; color:var(--ink); font-size:26px; line-height:1.35; letter-spacing:-.02em; }
+.page[data-platform-layout] .platform-page-header-copy { min-width:0; }
+.page[data-platform-layout] .platform-page-header-copy > p { max-width:760px; margin:8px 0 0; color:var(--ink-soft); font-size:13px; line-height:1.65; }
+.page[data-platform-layout] .platform-page-header-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.page[data-platform-layout] .platform-page-header-actions > strong { color:var(--ink-soft); font-size:14px; font-weight:600; letter-spacing:0; }
+.page[data-platform-layout] .platform-page-header-actions > strong span { display:inline; font-size:inherit; font-weight:inherit; color:inherit; }
+.page[data-platform-layout="standard"] :is(.runtime-detail-head,.session-detail-head) { padding:20px; border-radius:var(--platform-panel-radius); box-shadow:none; }
+.page[data-platform-layout="standard"] :is(.runtime-detail-head,.session-detail-head,.profile-identity) h1 { font-size:26px; line-height:1.35; }
+.page[data-platform-layout="standard"] :is(.account-card,.insight-card,.fleet-agent-card,.session-list-item,.runtime-fact) { border-radius:var(--platform-panel-radius); box-shadow:none; }
+.page[data-platform-layout] :is(.filter-bar,.access-history-filters,.agent-designs-heading) :is(input,select,button),
+.page[data-platform-layout] .platform-page-header-actions select { min-height:38px; border-radius:8px; font-size:13px; }
+/* Canvas edge and page header share the same frame origin. */
+.page[data-platform-layout="canvas"] :is(.panorama,.organization-layout) { padding:var(--platform-page-gutter); }
+.page[data-platform-layout="canvas"] :is(.panorama-header,.panorama-canvas) { max-width:none; }
+.page[data-platform-layout="canvas"] :is(.panorama-header,.organization-layout) h1 { font-size:26px; line-height:1.35; }
+/* Reading columns remain beside the global navigation, independent of prose line length. */
+.page[data-platform-layout="reading"] .ai-notes-layout { grid-template-columns:var(--platform-directory-width) minmax(0,1fr); gap:var(--platform-page-gap); background:transparent; }
+.page[data-platform-layout="reading"] .ai-notes-sidebar { border:1px solid #c6d2e1; border-radius:var(--platform-panel-radius); background:#d7e2ef; }
+.page[data-platform-layout="reading"] .ai-notes-tree { padding:16px 12px; }
+.page[data-platform-layout="reading"] .ai-notes-reader { border:1px solid var(--line); border-radius:var(--platform-panel-radius); }
+.page[data-platform-layout="reading"] .ai-note-article { max-width:none; margin:0; padding:24px 34px 48px; }
+.page[data-platform-layout="reading"] .agent-designs-layout { grid-template-columns:var(--platform-directory-width) minmax(0,1fr); gap:var(--platform-page-gap); }
+.page[data-platform-layout="reading"] .agent-designs-article { border-radius:var(--platform-panel-radius); }
+/* Conversation input keeps its deliberate reading width; the surrounding panes share frame spacing. */
+.page[data-platform-layout="workspace"] .brain-workspace { grid-template-columns:var(--platform-directory-width) minmax(0,1fr); gap:var(--platform-page-gap); }
+.page[data-platform-layout="workspace"] .conversation-sidebar { border:1px solid #c6d2e1; border-radius:var(--platform-panel-radius); background:#d7e2ef; }
+.page[data-platform-layout="workspace"] .brain-workspace-main { padding:0; }
+.platform-content > .page[data-platform-layout] + .site-foot { width:100%; margin:0; padding:16px var(--platform-page-gutter); border-top:0; }
+@media(max-width:1000px) {
+ .page[data-platform-layout="reading"] .agent-designs-layout { grid-template-columns:1fr; }
+}
+@media(max-width:720px) {
+ .platform-shell { --platform-page-gutter:16px; --platform-page-gap:20px; }
+ .page[data-platform-layout="reading"] .ai-notes-layout,
+ .page[data-platform-layout="workspace"] .brain-workspace { grid-template-columns:minmax(0,1fr); }
+ .page[data-platform-layout="reading"] .ai-note-article { padding:20px; }
+ .page[data-platform-layout] .platform-page-header h1 { font-size:24px; }
+}
+
+@media print { .platform-content > .page[data-platform-layout="reading"] { display:block; overflow:visible; } }

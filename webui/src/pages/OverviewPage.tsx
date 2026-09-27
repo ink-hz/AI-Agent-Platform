@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useMemo, useState } from "react";
 
 import { FleetAgentCard } from "../FleetAgentCard";
@@ -119,16 +120,13 @@ export function OverviewPage() {
   const usageReadable = Boolean(overview && usageIsReadable(overview.usage_source));
 
   return <>
-    <section className="hero">
-      <div><h1>{UI_COPY.hero.title}</h1><p className="hero-sub">{UI_COPY.hero.description}</p></div>
-      <div className={`team-light ${hasIncident ? "incident" : "nominal"}`}>
+    <PlatformPageHeader className="hero" title={UI_COPY.hero.title} description={UI_COPY.hero.description} actions={<div className={`team-light ${hasIncident ? "incident" : "nominal"}`}>
         <span aria-hidden="true" />
         {overview ? hasIncident
           ? UI_COPY.hero.attention(overview.summary.degraded_agents + overview.summary.offline_agents)
           : UI_COPY.hero.running(overview.summary.running_agents)
           : UI_COPY.hero.loading}
-      </div>
-    </section>
+      </div>} />
     {degraded && <div className="banner error-banner" role="status">{UI_COPY.failures.platform}</div>}
     {overview && (!overview.usage_source.healthy || overview.usage_source.stale) && <div className="banner source-banner" role="status">{UI_COPY.failures.usage}</div>}
 

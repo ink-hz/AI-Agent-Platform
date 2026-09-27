@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useState } from "react";
 
 import type { Account } from "../auth";
@@ -28,11 +29,7 @@ export function AccountPage({
   };
   return (
     <section className="account-page">
-      <header>
-        <p>企业账号</p>
-        <h1>{account.display_name}</h1>
-        <span>身份由钉钉组织验证，平台仅保存内部用户映射。</span>
-      </header>
+      <PlatformPageHeader title={account.display_name} description="身份由钉钉组织验证，平台仅保存内部用户映射。" />
       <div className="account-card">
         <dl>
           <div><dt>平台角色</dt><dd>{ROLE_LABEL[account.role]}</dd></div>

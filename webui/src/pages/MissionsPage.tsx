@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useRef, useState } from "react";
 
 import { platformPath } from "../auth";
@@ -33,7 +34,7 @@ function timeLabel(value: string): string {
 export function MissionsPage() {
   const [status, setStatus] = useState<ConversationStatus>("active");
   return <div className="missions-page">
-    <header className="use-page-intro"><h1>历史任务</h1></header>
+    <PlatformPageHeader className="use-page-intro" title="历史任务" />
     <nav className="history-filter" aria-label="历史范围">
       <button type="button" aria-pressed={status === "active"} onClick={() => setStatus("active")}>最近</button>
       <button type="button" aria-pressed={status === "archived"} onClick={() => setStatus("archived")}>已归档</button>

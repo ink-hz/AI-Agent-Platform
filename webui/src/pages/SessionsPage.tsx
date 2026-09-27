@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useState } from "react";
 
 import { agentsForSelector } from "../agentVisibility";
@@ -22,6 +23,7 @@ const PAGE_SIZE = 50;
 export interface SessionsViewProps {
   basePath: string;
   title: string;
+  platformHeader?: boolean;
   description: string;
   fixedScope?: Pick<SessionQuery, "agent_id" | "source_kind">;
   showScopeFilters: boolean;
@@ -34,6 +36,7 @@ export function SessionsView({
   basePath,
   title,
   description,
+  platformHeader = false,
   fixedScope,
   showScopeFilters,
   load,
@@ -140,7 +143,7 @@ export function SessionsView({
   };
 
   return <>
-    <section className="page-intro"><div><h1>{title}</h1><p>{description}</p></div>{page && <strong>{page.total}<span> 个会话</span></strong>}</section>
+    {platformHeader ? <PlatformPageHeader className="page-intro" title={title} description={description} actions={page && <strong>{page.total}<span> 个会话</span></strong>} /> : <section className="page-intro"><div><h1>{title}</h1><p>{description}</p></div>{page && <strong>{page.total}<span> 个会话</span></strong>}</section>}
     <form className="filter-bar" onSubmit={(event) => { event.preventDefault(); submit(); }}>
       <label><span>搜索</span><input name="q" value={draft.q} onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))} placeholder="用户提问或 Agent 回答" /></label>
       {showScopeFilters && <>
@@ -181,6 +184,7 @@ const genericDetailHref = (session: SessionSummary) => `/admin/sessions/${encode
 
 export function SessionsPage() {
   return <SessionsView
+    platformHeader
     basePath="/admin/sessions"
     title="会话记录"
     description="查看各 Agent 的会话和对话记录。"

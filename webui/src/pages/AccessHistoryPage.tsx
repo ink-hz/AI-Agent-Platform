@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
@@ -149,7 +150,7 @@ export function AccessHistoryPage({
   }
 
   return <section className="access-history-page">
-    <header className="access-history-heading"><p>OWNER AUDIT</p><h1>访问记录</h1><span>按企业花名查看登录和页面访问。部门来自当前钉钉通讯录，访问内容与业务参数不会被记录。</span></header>
+    <PlatformPageHeader className="access-history-heading" title="访问记录" description="按企业花名查看登录和页面访问。部门来自当前钉钉通讯录，访问内容与业务参数不会被记录。" />
     <form className="access-history-filters" onSubmit={submit}>
       <label>花名<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={128} placeholder="例如：苍渊" /></label>
       <label>产品<select value={workspace} onChange={(event) => setWorkspace(event.target.value)}>{WORKSPACES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>

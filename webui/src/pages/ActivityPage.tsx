@@ -1,3 +1,4 @@
+import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useMemo, useState } from "react";
 
 import { agentsForSelector } from "../agentVisibility";
@@ -263,12 +264,7 @@ export function ActivityPage() {
   const hasMore = total !== null && consumed < total;
 
   return <>
-    <section className="page-intro">
-      <div>
-        <h1>运行事件</h1>
-        <p>筛选 Agent 的部署、配置、运行状态和数据同步记录</p>
-      </div>
-    </section>
+    <PlatformPageHeader className="page-intro" title="运行事件" description="筛选 Agent 的部署、配置、运行状态和数据同步记录" />
     <form className="filter-bar activity-filter-bar" onSubmit={(event) => {
       event.preventDefault();
       const next = cleanFilters(draft);
