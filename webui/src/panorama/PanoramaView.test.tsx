@@ -91,6 +91,67 @@ describe("PanoramaView", () => {
     expect(container.querySelector<HTMLAnchorElement>('a[download][href*="export.svg"]')?.href).toContain("version=v1.2");
   });
 
+  it("shows the core AI direction on the default graph and opens deeper thinking on demand", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    expect(container.querySelector(".panorama-canvas .panorama-ai-core")?.textContent).toContain("待验证");
+    expect(container.querySelector('[data-node-id="talent"] .panorama-node__ai-core')?.textContent).toContain("判断传授");
+    expect(container.querySelector(".panorama-exploration")).toBeNull();
+    await act(async () => button(container, "场景可用").click());
+    expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe("客户场景");
+    await act(async () => button(container, "退出探索").click());
+    expect(container.querySelector(".panorama-ai-core")).not.toBeNull();
+    expect(container.querySelector(".panorama-exploration")).toBeNull();
+    await act(async () => button(container, "识别经验何时失效").click());
+    expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe("产品研发");
+  });
+
+  it("opens a node's AI direction separately from its original business detail and actions", async () => {
+    const onAction = vi.fn();
+    await act(async () => root.render(<PanoramaView data={data} onAction={onAction} onEvidence={vi.fn()} />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="integration"] .panorama-node__ai-core')!.click());
+    expect(container.querySelector(".panorama-exploration h2")?.textContent).toBe("客户场景");
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="integration"] .panorama-node__select')!.click());
+    expect(container.querySelector('[data-action-id="fae"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="fae"]')!.click());
+    expect(onAction).toHaveBeenCalledWith("fae");
+    expect(container.querySelector("button button")).toBeNull();
+  });
+
+  it("hides core annotations while editing and preserves a plain editable graph", async () => {
+    vi.spyOn(panoramaClient, "fetchEditorState").mockResolvedValue({ revision: 3, published: data, draft: null, previous: null });
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    expect(container.querySelector(".panorama-ai-core")).not.toBeNull();
+    await act(async () => button(container, "调整布局").click());
+    expect(container.querySelector(".panorama-ai-core")).toBeNull();
+    expect(container.querySelector(".panorama-node__ai-core")).toBeNull();
+    expect(container.querySelector(".panorama-layer__ai-core")).toBeNull();
+    expect(container.querySelector('[data-node-id="talent"]')).not.toBeNull();
+  });
+
+  it("finds visible core labels through search without restoring removed nodes", async () => {
+    const custom = structuredClone(data);
+    custom.nodes = custom.nodes.filter((node) => node.id !== "finance");
+    custom.layers[3].groups[0].node_ids = ["talent", "digital", "office"];
+    await act(async () => root.render(<PanoramaView data={custom} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    expect(container.querySelector('[data-node-id="finance"]')).toBeNull();
+    expect(container.textContent).not.toContain("看清定制的长期责任");
+    const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await act(async () => { input.value = "判断传授"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(container.querySelector('[data-node-id="talent"]')?.classList.contains("is-search-match")).toBe(true);
+  });
+
+  it("searches default mainline and portfolio captions through their current related nodes", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
+    const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await act(async () => { input.value = "识别经验何时失效"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(container.querySelector('[data-node-id="camera"]')?.classList.contains("is-search-match")).toBe(true);
+    expect(container.querySelector('[data-node-id="talent"]')?.classList.contains("is-search-match")).toBe(false);
+    await act(async () => { input.value = "场景可用"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(container.querySelector('[data-node-id="integration"]')?.classList.contains("is-search-match")).toBe(true);
+    await act(async () => { input.value = "让产品能力走到场景可用"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+    expect(container.querySelector('[data-node-id="orbbec"]')?.classList.contains("is-search-match")).toBe(true);
+  });
+
   it("keeps positions stable while revealing the representative robotics relation", async () => {
     await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} />));
     const order = [...container.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => node.dataset.nodeId);

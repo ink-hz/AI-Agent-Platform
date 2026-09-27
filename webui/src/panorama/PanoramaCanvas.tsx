@@ -4,7 +4,10 @@ import type { AiEngineeringDocumentSlug } from "../aiEngineeringApi";
 import type { PanoramaActionId, PanoramaData, PanoramaGroup, PanoramaNode } from "../panoramaTypes";
 import { routePanoramaEdge, type PanoramaRect } from "../panoramaRouting";
 import { ExplorationPanel } from "./PanoramaExploration";
-import { explorationNodes, type PanoramaExploration } from "./panoramaExplorations";
+import { availableExplorations, explorationNodes, type PanoramaExploration } from "./panoramaExplorations";
+
+import { AI_CORE_POINTS, AI_PORTFOLIO_CORE, portfolioCoreNodes, type AiCorePoint } from "./aiCoreContent";
+import { PanoramaAiCore } from "./PanoramaAiCore";
 
 const ACTION_LABELS: Record<PanoramaActionId, string> = {
   brain: "AI 助手", agents: "Agent 目录", missions: "任务", sessions: "会话", operations: "运行概览",
@@ -22,6 +25,8 @@ interface CanvasProps {
   onSelect: (id: string | null) => void;
   onAction: (actionId: PanoramaActionId) => void;
   onEvidence: (slug: AiEngineeringDocumentSlug) => void;
+  showAiCore?: boolean;
+  onExplore?: (id: string) => void;
   exploration?: PanoramaExploration;
   onExitExploration?: () => void;
 }
@@ -57,16 +62,18 @@ function groupNodes(group: PanoramaGroup, byId: Map<string, PanoramaNode>) {
   return group.node_ids.map((id) => byId.get(id)).filter((node): node is PanoramaNode => !!node);
 }
 
-function NodeCard({ node, selected, related, match, company, explored, onSelect }: {
+function NodeCard({ node, selected, related, match, company, explored, onSelect, core, onExplore }: {
   node: PanoramaNode; selected: boolean; related: boolean; match: boolean; company: boolean; explored: boolean; onSelect: () => void;
+  core?: AiCorePoint; onExplore?: (id: string) => void;
 }) {
   return <article
-    className={`panorama-node${company ? " panorama-node--company" : ""}${selected ? " is-selected" : ""}${related ? " is-related" : ""}${match ? " is-search-match" : ""}${explored ? " is-explored" : ""}`}
+    className={`panorama-node${core ? " has-ai-core" : ""}${company ? " panorama-node--company" : ""}${selected ? " is-selected" : ""}${related ? " is-related" : ""}${match ? " is-search-match" : ""}${explored ? " is-explored" : ""}`}
     data-node-id={node.id}
   >
-    <button type="button" aria-pressed={selected} aria-description={explored ? "当前 AI 探索涉及的节点" : undefined} onClick={onSelect}>
+    <button className="panorama-node__select" type="button" aria-pressed={selected} aria-description={explored ? "当前 AI 探索涉及的节点" : undefined} onClick={onSelect}>
       <strong>{node.title}</strong>{company && node.subtitle && <span>{node.subtitle}</span>}
     </button>
+    {core && <button type="button" className="panorama-node__ai-core" title="AI 方向 · 待验证，点击查看思考" onClick={() => onExplore?.(core.topicId)}>{core.label}</button>}
   </article>;
 }
 
@@ -103,10 +110,14 @@ function relative(rect: DOMRect, root: DOMRect): PanoramaRect {
   return { left: rect.left - root.left, top: rect.top - root.top, right: rect.right - root.left, bottom: rect.bottom - root.top };
 }
 
-export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, onAction, onEvidence, exploration, onExitExploration }: CanvasProps) {
+export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, onAction, onEvidence, exploration, onExitExploration, showAiCore = false, onExplore }: CanvasProps) {
   const rootRef = useRef<HTMLDivElement>(null); const [paths, setPaths] = useState<Record<string, string>>({});
   const [structuralPaths, setStructuralPaths] = useState<Record<string, string>>({});
   const byId = useMemo(() => new Map(data.nodes.map((node) => [node.id, node])), [data.nodes]);
+  const topics = useMemo(() => availableExplorations(data), [data]);
+  const topicIds = new Set(topics.map((topic) => topic.id));
+  const portfolioIds = new Set(portfolioCoreNodes(data).map((node) => node.id));
+  const coreVisible = showAiCore && !!onExplore;
   const relatedIds = useMemo(() => relatedWithinTwoSteps(data, selectedId), [data, selectedId]);
   const selectedSet = useMemo(() => new Set(selectedId ? [selectedId, ...relatedIds] : []), [relatedIds, selectedId]);
   const visibleEdges = useMemo(() => selectedId ? data.edges.filter((edge) => selectedSet.has(edge.from) && selectedSet.has(edge.to)) : [], [data.edges, selectedId, selectedSet]);
@@ -142,7 +153,7 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
     const measure = () => {
       const root = rootRef.current; if (!root) return;
       const bounds = root.getBoundingClientRect(); const next: Record<string, string> = {};
-      const obstacles = [...root.querySelectorAll<HTMLElement>("[data-node-id]")].map((node) => relative(node.getBoundingClientRect(), bounds));
+      const obstacles = [...root.querySelectorAll<HTMLElement>("[data-node-id], .panorama-ai-core, .panorama-layer__ai-core")].map((node) => relative(node.getBoundingClientRect(), bounds));
       for (const edge of visibleEdges) {
         const from = root.querySelector<HTMLElement>(`[data-node-id="${edge.from}"]`);
         const to = root.querySelector<HTMLElement>(`[data-node-id="${edge.to}"]`);
@@ -167,9 +178,10 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     if (rootRef.current) observer?.observe(rootRef.current);
     return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
-  }, [data, structuralEdges, visibleEdges]);
+  }, [data, structuralEdges, visibleEdges, coreVisible]);
 
   return <div className="panorama-canvas" ref={rootRef}>
+    {coreVisible && <PanoramaAiCore topicIds={topicIds} onExplore={onExplore!} />}
     <svg className="panorama-structure" aria-label="全景结构关系" width="100%" height="100%">
       <defs><marker id="panorama-structure-arrow" markerHeight="7" markerWidth="7" orient="auto-start-reverse" refX="6" refY="3.5"><path d="M0 0L7 3.5L0 7Z" /></marker></defs>
       {structuralEdges.map((edge) => <g
@@ -189,11 +201,14 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
     </svg>}
     {data.layers.map((layer) => <section className={`panorama-layer panorama-layer--${layer.kind}`} data-layer-id={layer.id} key={layer.id}>
       <h2>{layer.title}</h2>
+      {coreVisible && layer.kind === "portfolio" && layer.groups.some((group) => group.node_ids.some((id) => portfolioIds.has(id))) &&
+        <button type="button" className="panorama-layer__ai-core" title="AI 方向 · 待验证，点击查看思考" onClick={() => onExplore?.(AI_PORTFOLIO_CORE.topicId)}>{AI_PORTFOLIO_CORE.label}</button>}
       <div className="panorama-layer__groups">
         {layer.groups.map((group) => <section className={`panorama-group panorama-group--${group.role}`} data-group-id={group.id} data-group-role={group.role} key={group.id}>
           <h3>{group.title}</h3>
           <div className={`panorama-group__nodes panorama-columns-${group.columns}`}>
             {groupNodes(group, byId).map((node) => <NodeCard
+              core={coreVisible && topicIds.has(AI_CORE_POINTS[node.id]?.topicId) ? AI_CORE_POINTS[node.id] : undefined} onExplore={onExplore}
               company={group.role === "company"} explored={exploredIds.has(node.id)} key={node.id} match={matchIds.has(node.id)} node={node}
               onSelect={() => onSelect(selectedId === node.id ? null : node.id)} related={relatedIds.has(node.id)} selected={selectedId === node.id}
             />)}

@@ -4,6 +4,7 @@ import { AiEngineeringApiError } from "../aiEngineeringApi";
 import { loadAccount, platformPath, PlatformApiError } from "../auth";
 import type { AiEngineeringDocumentSlug } from "../aiEngineeringApi";
 import type { PanoramaActionId, PanoramaData, PanoramaEditorState } from "../panoramaTypes";
+import { aiCoreSearchMatches } from "./aiCoreContent";
 import { PanoramaCanvas } from "./PanoramaCanvas";
 import { PanoramaEditor } from "./PanoramaEditor";
 import { panoramaClient, parsePanorama } from "./panoramaApi";
@@ -61,11 +62,18 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
   const effectiveData = editor?.local ?? data;
   const explorationTopics = useMemo(() => availableExplorations(effectiveData), [effectiveData]);
   const exploration = !editor ? explorationTopics.find((topic) => topic.id === explorationId) : undefined;
+  const showAiCore = !editor;
+  const openExploration = (id: string) => {
+    if (!explorationTopics.some((topic) => topic.id === id)) return;
+    setExplorationId(id); setSelectedId(null); setQuery("");
+  };
   const exitExploration = () => { setExplorationId(null); setSelectedId(null); setQuery(""); };
   const matchIds = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase(); if (!needle) return new Set<string>();
-    return new Set(effectiveData.nodes.filter((node) => [node.title, node.subtitle, ...node.detail].join(" ").toLocaleLowerCase().includes(needle)).map((node) => node.id));
-  }, [effectiveData.nodes, query]);
+    const coreMatches = showAiCore ? aiCoreSearchMatches(effectiveData, needle) : new Set<string>();
+    const placed = new Set(effectiveData.layers.flatMap((layer) => layer.groups.flatMap((group) => group.node_ids)));
+    return new Set(effectiveData.nodes.filter((node) => placed.has(node.id) && (coreMatches.has(node.id) || [node.title, node.subtitle, ...node.detail].join(" ").toLocaleLowerCase().includes(needle))).map((node) => node.id));
+  }, [effectiveData, query, showAiCore]);
 
   const reportDirty = useCallback((value: boolean) => { onDirtyChange?.(value); }, [onDirtyChange]);
   const clearEditorForAuthorization = useCallback((error: AiEngineeringApiError) => {
@@ -198,16 +206,16 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
         </button>
         <button type="button" onClick={openEditor} disabled={opening || !!editor}>{opening ? "读取布局…" : "调整布局"}</button>
         <button type="button" onClick={() => setPresenting(true)}>展示模式</button>
-        <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.svg?version=${encodeURIComponent(data.version)}`)} download title="导出业务布局 SVG，不含实时组织目录">业务图 SVG</a>
-        <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.png?version=${encodeURIComponent(data.version)}`)} download title="导出业务布局 PNG，不含实时组织目录">业务图 PNG</a>
+        <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.svg?version=${encodeURIComponent(data.version)}`)} download title="导出业务布局 SVG，不含 AI 探索方向与实时组织目录">业务图 SVG</a>
+        <a className="panorama-export" href={platformPath(`/api/v1/ai-engineering/export.png?version=${encodeURIComponent(data.version)}`)} download title="导出业务布局 PNG，不含 AI 探索方向与实时组织目录">业务图 PNG</a>
       </div>
     </header>
     {editorNotice && <p className="panorama-editor-notice" role="status">{editorNotice}</p>}
     {presenting && <button type="button" className="panorama-presentation-exit" onClick={() => setPresenting(false)}>退出展示</button>}
     {exploration && <ExplorationNavigation topics={explorationTopics} selectedId={exploration.id}
-      onChange={(id) => { setExplorationId(id); setSelectedId(null); setQuery(""); }} />}
+      onChange={openExploration} />}
     <PanoramaCanvas data={effectiveData} isOwner={isOwner} matchIds={matchIds} onAction={onAction} onEvidence={onEvidence} onSelect={setSelectedId} selectedId={selectedId}
-      exploration={exploration} onExitExploration={exitExploration} />
+      showAiCore={showAiCore} onExplore={openExploration} exploration={exploration} onExitExploration={exitExploration} />
     {editor && <PanoramaEditor
       busy={editor.busy} data={editor.local} dirty={editor.dirty} locked={editor.locked} message={editor.message}
       onChange={changeLocal} onClose={closeEditor} onDiscard={() => void mutate("discard")} onPreview={() => setEditor({ ...editor, preview: !editor.preview })}
