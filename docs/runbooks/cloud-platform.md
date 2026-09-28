@@ -913,3 +913,9 @@ Office 收件人目录是标准生产发布的必需能力，不是发布后的�
 The HR workspace's private upload/download path is operated separately from the legacy Flywheel attachment API. Production keeps `PLATFORM_ATTACHMENT_ENABLED=0` and enables `PLATFORM_CONVERSATION_ATTACHMENT_ENABLED=1`. MinIO, ClamAV, and the attachment worker have no public listener; growing data is bind-mounted below `/data/orbbec-agent-platform`.
 
 Use [conversation-attachments.md](conversation-attachments.md) for credential rotation, 365-day retention, emergency erasure, object/database reconciliation, backup/restore, and feature rollback. This deployment must not change another application's routes or shared edge configuration.
+
+## 2026-09-28：平台 API 发布不得覆盖全景运行配置
+
+一次部署将平台 API 换成 2026-09-14 的旧镜像，而 `/current` 仍指向较新的全景源码，导致 AI 工程全景在页面上消失。恢复经过见[记录](../operations/2026-09-28-panorama-regression-restore.md)。排查实际功能时先检查 API 容器镜像中的 `PLATFORM_RELEASE_SHA`、前端资源及 Compose 输入，不能只看 Git HEAD 或 `/current`。
+
+当前 API 恢复使用的 Compose 输入清单位于 `/opt/orbbec-agent-platform/private/panorama-97284f7fd30b4ef68777fb83a376b412/future-maintenance.json`。后续发布须在现行 HR generation 输入之后叠加其中的 API 镜像/版本和全景持久化挂载，并在切换前比较候选配置与运行配置：除明确发布的 API 镜像/版本外，不得丢掉状态挂载或无意修改其他服务。该清单是当前实例的维护依据，不应把其中镜像永远固定为未来目标版本。
