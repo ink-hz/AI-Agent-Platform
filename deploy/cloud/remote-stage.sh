@@ -287,15 +287,20 @@ ai_admin_units=(
   ai-admin-shuttle-worker.service
 )
 capture_ai_admin_process_digest() {
-  local unit facts main_pid
+  local unit facts main_pid active_state
   for unit in "${ai_admin_units[@]}"; do
     facts="$(/usr/bin/systemctl show --no-pager \
-      --property=LoadState,ActiveState,MainPID,ActiveEnterTimestampMonotonic \
+      --property=LoadState,ActiveState,MainPID,Result,ActiveEnterTimestampMonotonic,InactiveEnterTimestampMonotonic \
       "$unit")" || return 1
     /usr/bin/grep -Fxq 'LoadState=loaded' <<<"$facts" || return 1
-    /usr/bin/grep -Fxq 'ActiveState=active' <<<"$facts" || return 1
+    /usr/bin/grep -Fxq 'Result=success' <<<"$facts" || return 1
+    active_state="$(/usr/bin/sed -n 's/^ActiveState=//p' <<<"$facts")"
     main_pid="$(/usr/bin/sed -n 's/^MainPID=//p' <<<"$facts")"
-    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    case "$active_state" in
+      active) [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || return 1 ;;
+      inactive) [[ "$main_pid" == "0" ]] || return 1 ;;
+      *) return 1 ;;
+    esac
     /usr/bin/printf '%s\n%s\n' "$unit" "$facts"
   done | /usr/bin/sha256sum | /usr/bin/awk '{print $1}'
 }
