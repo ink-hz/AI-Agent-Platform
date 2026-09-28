@@ -12,6 +12,9 @@ export interface PageAccessEvent {
 
 export function accessEventForRoute(route: Route): PageAccessEvent | null {
   switch (route.name) {
+    case "home": return { workspace_key: "platform", page_key: "platform.home" };
+    case "organization": return { workspace_key: "platform", page_key: "platform.organization" };
+    case "ai-engineering": return { workspace_key: "platform", page_key: "platform.ai_engineering" };
     case "brain": return { workspace_key: "platform", page_key: "platform.brain" };
     case "conversations": return { workspace_key: "platform", page_key: "platform.conversations" };
     case "conversation": return { workspace_key: "platform", page_key: "platform.conversation" };
@@ -26,6 +29,8 @@ export function accessEventForRoute(route: Route): PageAccessEvent | null {
     case "hr-chat": return { workspace_key: "hr", page_key: "hr.free_chat" };
     case "hr-positions": return { workspace_key: "hr", page_key: "hr.positions" };
     case "hr-position": return { workspace_key: "hr", page_key: "hr.position_detail" };
+    case "hr-position-section": return { workspace_key: "hr", page_key: `hr.position_${route.section}` };
+    case "hr-panorama": return { workspace_key: "hr", page_key: "hr.panorama" };
     case "marketing": return { workspace_key: "marketing", page_key: "marketing.workspace", agent_id: MARKETING_AGENT_ID_BY_SLUG[route.agentSlug] };
     case "marketing-conversation": return { workspace_key: "marketing", page_key: "marketing.conversation", agent_id: MARKETING_AGENT_ID_BY_SLUG[route.agentSlug] };
     case "fae-manage-overview": return { workspace_key: "fae", page_key: "fae.manage.overview" };
@@ -43,7 +48,8 @@ export function accessEventForRoute(route: Route): PageAccessEvent | null {
     case "admin-session": return { workspace_key: "admin", page_key: "admin.session_detail" };
     case "admin-review": return { workspace_key: "admin", page_key: "admin.review" };
     case "admin-activity": return { workspace_key: "admin", page_key: "admin.activity" };
-    case "admin-permissions":
+    case "admin-agent-designs": return { workspace_key: "admin", page_key: "admin.agent_designs" };
+    case "admin-permissions": return { workspace_key: "admin", page_key: `admin.permissions.${route.section}` };
     case "admin-identity": return { workspace_key: "admin", page_key: "admin.identity" };
     case "admin-governance": return { workspace_key: "admin", page_key: "admin.governance" };
     case "admin-access": return { workspace_key: "admin", page_key: "admin.access_history" };
@@ -56,6 +62,7 @@ export function AccessEventReporter({ account, route }: { account: Account; rout
   const workspaceKey = descriptor?.workspace_key;
   const pageKey = descriptor?.page_key;
   const agentId = descriptor?.agent_id;
+  const navigationKey = JSON.stringify(route);
 
   useEffect(() => {
     if (!workspaceKey || !pageKey) return;
@@ -74,6 +81,6 @@ export function AccessEventReporter({ account, route }: { account: Account; rout
         body: JSON.stringify(body),
       });
     }).catch(() => undefined);
-  }, [account.internal_user_id, agentId, pageKey, workspaceKey]);
+  }, [account.internal_user_id, agentId, navigationKey, pageKey, workspaceKey]);
   return null;
 }

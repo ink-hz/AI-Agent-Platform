@@ -57,8 +57,14 @@ describe("page access reporter", () => {
     expect(accessEventForRoute({ name: "admin-access" })).toEqual({
       workspace_key: "admin", page_key: "admin.access_history",
     });
-    expect(accessEventForRoute({ name: "home" })).toBeNull();
-    expect(accessEventForRoute({ name: "ai-engineering" })).toBeNull();
+    expect(accessEventForRoute({ name: "home" })).toEqual({ workspace_key: "platform", page_key: "platform.home" });
+    expect(accessEventForRoute({ name: "organization" })).toEqual({ workspace_key: "platform", page_key: "platform.organization" });
+    expect(accessEventForRoute({ name: "ai-engineering" })).toEqual({ workspace_key: "platform", page_key: "platform.ai_engineering" });
+    expect(accessEventForRoute({ name: "hr-panorama" })).toEqual({ workspace_key: "hr", page_key: "hr.panorama" });
+    expect(accessEventForRoute({ name: "admin-agent-designs" })).toEqual({ workspace_key: "admin", page_key: "admin.agent_designs" });
+    for (const section of ["chat", "context", "candidates", "artifacts"] as const) {
+      expect(accessEventForRoute({ name: "hr-position-section", positionId: "private", section })).toEqual({ workspace_key: "hr", page_key: `hr.position_${section}` });
+    }
     expect(accessEventForRoute({ name: "login" })).toBeNull();
     expect(JSON.stringify(accessEventForRoute({ name: "admin-session", sessionKey: "secret-session" }))).not.toContain("secret-session");
   });
@@ -98,6 +104,17 @@ describe("page access reporter", () => {
     expect(container.textContent).toBe("");
   });
 
+  it("records navigation between resources in one page category without sending resource ids", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<AccessEventReporter account={account} route={{ name: "conversation", conversationId: "private-a" }} />));
+    await act(async () => root.render(<AccessEventReporter account={account} route={{ name: "conversation", conversationId: "private-b" }} />));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, init] of fetchMock.mock.calls as [string, RequestInit][]) {
+      expect(JSON.stringify(init.body)).not.toMatch(/private-[ab]/);
+    }
+  });
+
   it("cannot break the product when event id generation is unavailable", async () => {
     vi.stubGlobal("crypto", { randomUUID: vi.fn(() => { throw new Error("unsupported"); }) });
     const fetchMock = vi.fn();
@@ -107,6 +124,6 @@ describe("page access reporter", () => {
   });
 });
 
-it.each(["observers", "partners", "fae", "voc"] as const)("records %s permissions under the existing identity access category", section => {
-  expect(accessEventForRoute({ name: "admin-permissions", section })).toEqual({ workspace_key: "admin", page_key: "admin.identity" });
+it.each(["observers", "partners", "fae", "voc"] as const)("records %s permissions as a distinct page", section => {
+  expect(accessEventForRoute({ name: "admin-permissions", section })).toEqual({ workspace_key: "admin", page_key: `admin.permissions.${section}` });
 });

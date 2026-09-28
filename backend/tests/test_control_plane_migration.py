@@ -240,7 +240,7 @@ PUBLISHED_MIGRATION_SHA256 = {
 def test_control_migration_versions_are_unique_and_contiguous() -> None:
     # HR migrations have independent deployment scopes; root must not absorb them.
     expected_by_scope = {
-        MIGRATIONS: [*range(1, 89), 100, *range(102, 109)],
+        MIGRATIONS: [*range(1, 89), 100, *range(102, 111)],
         MIGRATIONS / "hr_web": list(range(89, 96)),
         MIGRATIONS / "hr_agent": [*range(96, 100), 101],
     }
@@ -251,7 +251,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
         all_versions.extend(versions)
 
     assert len(all_versions) == len(set(all_versions))
-    assert sorted(all_versions) == list(range(1, 109))
+    assert sorted(all_versions) == list(range(1, 111))
 
 
 def test_hr_login_return_context_migration_changes_only_the_v2_path_guard() -> None:
@@ -383,6 +383,29 @@ def test_user_access_history_migration_defines_closed_page_catalog_and_functions
         assert f"'{page_key}'" in sql
 
 
+def test_access_page_coverage_migration_adds_only_fixed_visible_pages() -> None:
+    sql = migration_sql("110_access_page_coverage.sql")
+    expected = {
+        "platform.home", "platform.organization", "platform.ai_engineering",
+        "hr.panorama", "hr.position_chat", "hr.position_context",
+        "hr.position_candidates", "hr.position_artifacts",
+        "admin.agent_designs", "admin.permissions.observers",
+        "admin.permissions.partners", "admin.permissions.fae",
+        "admin.permissions.voc",
+        "office.workspaces", "office.workspace_admin", "office.meetings",
+        "office.meeting_admin", "office.floor_stations", "office.invitation_admin",
+        "office.service.workspaces", "office.service.meetings",
+        "office.service.floor_stations",
+    }
+    assert len(expected) == 22
+    for page_key in expected:
+        assert f"'{page_key}'" in sql
+    assert "insert into platform_control.access_page_catalog" in sql.lower()
+    assert "on conflict (page_key) do nothing" in sql.lower()
+    assert "delete from" not in sql.lower()
+    assert "update platform_control.user_access_events" not in sql.lower()
+
+
 def test_auth_rollback_window_migration_restores_legacy_session_issuer_execute() -> None:
     sql = migration_sql("068_auth_rollback_window.sql")
     normalized = " ".join(sql.split())
@@ -409,7 +432,7 @@ def test_user_access_history_database_enforces_catalog_and_role_boundaries(
                 "select page_key from platform_control.access_page_catalog"
             ).fetchall()
         }
-        assert len(page_keys) == 64
+        assert len(page_keys) == 86
         assert {
             "platform.brain",
             "hr.workspace",
