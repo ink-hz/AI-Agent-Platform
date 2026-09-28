@@ -37,6 +37,14 @@ def _bash_heredoc_function(script: str, name: str, terminator: str = "PY") -> st
     return f"{start}{body}\n{terminator}\n}}"
 
 
+def test_remote_stage_rejects_an_active_hr_overlay_before_stopping_platform_consumers():
+    stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
+    gate = stage.index("CLOUD_DEPLOY_HR_OVERLAY_REQUIRED")
+    stop = stage.index('"${previous_compose[@]}" stop "${previous_control_consumers[@]}"')
+    assert gate < stop
+    assert "PLATFORM_HR_AGENT_ENABLED=1" in stage[:stop]
+
+
 def test_compose_is_isolated_loopback_only_and_hardened():
     value = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
     services = value["services"]

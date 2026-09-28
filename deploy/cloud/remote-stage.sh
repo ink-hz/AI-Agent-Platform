@@ -322,6 +322,13 @@ public_listener_digest="$(/usr/bin/ss -H -lnt | /usr/bin/awk '$4 !~ /^(127\.0\.0
 [[ -n "$fae_container_id" && -n "$fae_image" && -n "$fae_image_id" && -n "$fae_started_at" && "$fae_restart_count" =~ ^[0-9]+$ ]] || fail
 
 existing_api="$(/usr/bin/docker ps --filter label=com.docker.compose.project=orbbec-agent-platform --filter label=com.docker.compose.service=platform-api --format '{{.ID}}' | /usr/bin/head -1)"
+if [[ -n "$existing_api" ]]; then
+  existing_api_environment="$(/usr/bin/docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$existing_api")" || fail
+  if /usr/bin/grep -Fxq 'PLATFORM_HR_AGENT_ENABLED=1' <<<"$existing_api_environment"; then
+    echo 'CLOUD_DEPLOY_HR_OVERLAY_REQUIRED' >&2
+    fail
+  fi
+fi
 control_secret_consumer_services=(
   platform-api
   platform-api-preview
