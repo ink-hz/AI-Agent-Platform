@@ -794,7 +794,7 @@ body {
 .session-detail-source { display: flex; min-width: 150px; align-items: flex-end; flex-direction: column; gap: 7px; }
 .session-detail-source > span { color: var(--brand); font-size: 12px; font-weight: 850; letter-spacing: .09em; }
 .session-detail-source > strong { font-size: 14px; }
-.session-detail-head > dl { display: grid; grid-column: 1 / -1; grid-template-columns: 1.6fr repeat(3, 1fr); gap: 1px; margin: 4px 0 0; overflow: hidden; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--line-soft); }
+.session-detail-head > dl { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr)); gap: 1px; margin: 4px 0 0; overflow: hidden; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--line-soft); }
 .session-detail-head dl div { min-width: 0; padding: 15px; background: var(--surface-soft); }
 .session-detail-head dt { color: var(--ink-faint); font-size: 11.5px; font-weight: 750; }
 .session-detail-head dd { overflow: hidden; margin: 7px 0 0; font-size: 14px; font-weight: 740; text-overflow: ellipsis; white-space: nowrap; }

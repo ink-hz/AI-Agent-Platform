@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:session-mobile": "node scripts/verify-session-identity-mobile.mjs"
   },
   "dependencies": {
     "dingtalk-jsapi": "3.2.9",
@@ -26,6 +27,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "jsdom": "^29.1.1",
+    "playwright": "^1.55.1",
     "typescript": "^5.6.0",
     "vite": "^7.0.0",
     "vitest": "3.2.6"
