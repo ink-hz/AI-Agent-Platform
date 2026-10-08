@@ -240,7 +240,7 @@ PUBLISHED_MIGRATION_SHA256 = {
 def test_control_migration_versions_are_unique_and_contiguous() -> None:
     # HR migrations have independent deployment scopes; root must not absorb them.
     expected_by_scope = {
-        MIGRATIONS: [*range(1, 89), 100, *range(102, 111)],
+        MIGRATIONS: [*range(1, 89), 100, *range(102, 112)],
         MIGRATIONS / "hr_web": list(range(89, 96)),
         MIGRATIONS / "hr_agent": [*range(96, 100), 101],
     }
@@ -251,7 +251,25 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
         all_versions.extend(versions)
 
     assert len(all_versions) == len(set(all_versions))
-    assert sorted(all_versions) == list(range(1, 111))
+    assert sorted(all_versions) == list(range(1, 112))
+
+
+def test_live_activation_event_is_allowed_by_the_durable_ingest_boundary() -> None:
+    original = migration_sql("021_durable_directory_events.sql")
+    replacement = migration_sql("111_directory_activation_event.sql")
+    function_header = "create function platform_control.insert_stream_event_v21("
+    original_function = function_header + original.split(function_header, 1)[1]
+    original_function = original_function.split("$function$;", 1)[0] + "$function$;"
+    expected = original_function.replace(
+        "create function ", "create or replace function ", 1
+    )
+    expected = expected.replace(
+        "'user_add_org','user_modify_org','user_leave_org','org_user_active',",
+        "'user_add_org','user_modify_org','user_leave_org','org_user_active',\n"
+        "       'user_active_org',",
+        1,
+    )
+    assert replacement.strip() == expected
 
 
 def test_hr_login_return_context_migration_changes_only_the_v2_path_guard() -> None:
@@ -1137,6 +1155,29 @@ def control_database():
             text=True,
         )
         shutil.rmtree(root, ignore_errors=True)
+
+
+@pytest.mark.postgres
+def test_stream_ingest_accepts_live_activation_after_migration(control_database) -> None:
+    environment = control_database["environments"]["production"]
+    event_key = uuid.uuid4().hex * 2
+    with psycopg.connect(
+        environment["urls"]["platform_stream_ingest"]
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select platform_control.insert_stream_event_v21(%s,%s,%s,%s)",
+                (event_key, "user_active_org", bytes(range(28)), 1),
+            )
+            assert cursor.fetchone() == (True,)
+    with psycopg.connect(environment["admin"]) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "select event_type,status from platform_control.stream_inbox "
+                "where event_key=%s",
+                (event_key,),
+            )
+            assert cursor.fetchone() == ("user_active_org", "pending")
 
 
 @pytest.mark.postgres

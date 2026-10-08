@@ -135,6 +135,44 @@ async def test_member_add_change_and_activation_use_targeted_refresh(event_type)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("event_type", ["user_add_org", "user_modify_org", "user_active_org", "user_leave_org"])
+async def test_stream_member_events_accept_live_lower_camel_user_id(event_type) -> None:
+    payload = _payload(event_type)
+    payload["data"] = {"userId": ["provider-user-sensitive"]}
+    repo = FakeRepository([_claimed(event_type)])
+    refresher = FakeRefresher()
+    worker = DirectoryEventWorker(
+        repo, FakeCipher(payload), member_refresher=refresher,
+        reconciler=FakeReconciler(),
+    )
+
+    await worker.process_once()
+
+    assert ("processed", 1) in repo.actions
+    assert not any(action[0] in {"retry", "dead"} for action in repo.actions)
+    if event_type == "user_leave_org":
+        assert any(action[0] == "departure" for action in repo.actions)
+    else:
+        assert refresher.users == ["provider-user-sensitive"]
+
+
+@pytest.mark.asyncio
+async def test_conflicting_user_id_spellings_fail_closed() -> None:
+    payload = _payload("user_add_org")
+    payload["data"]["userId"] = ["different-provider-user"]
+    repo = FakeRepository([_claimed("user_add_org")])
+    worker = DirectoryEventWorker(
+        repo, FakeCipher(payload), member_refresher=FakeRefresher(),
+        reconciler=FakeReconciler(),
+    )
+
+    await worker.process_once()
+
+    assert ("retry", 1, "payload_invalid", 2) in repo.actions
+    assert ("processed", 1) not in repo.actions
+
+
+@pytest.mark.asyncio
 async def test_targeted_refresh_verifies_member_then_promotes_an_atomic_snapshot() -> None:
     client = FakeDingTalkClient()
     reconciler = FakeReconciler()

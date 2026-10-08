@@ -829,7 +829,7 @@ async def test_worker_is_single_flight_and_releases_lease_after_failure() -> Non
 
 
 @pytest.mark.asyncio
-async def test_worker_survives_startup_failure_and_schedules_six_hour_retry() -> None:
+async def test_worker_survives_startup_failure_and_schedules_hourly_retry() -> None:
     from app.control_plane.directory_worker import DirectoryWorker
 
     class Lease:
@@ -860,7 +860,7 @@ async def test_worker_survives_startup_failure_and_schedules_six_hour_retry() ->
     with pytest.raises(asyncio.CancelledError):
         await worker.serve()
     assert reconciler.calls == 1
-    assert delays == [21_600]
+    assert delays == [3_600]
 
 
 def test_versioned_canonical_digest_has_golden_vector_and_covers_ciphertext() -> None:

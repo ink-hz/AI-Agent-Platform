@@ -49,6 +49,8 @@ def test_compose_is_isolated_loopback_only_and_hardened():
     value = yaml.safe_load((CLOUD / "compose.yaml").read_text(encoding="utf-8"))
     services = value["services"]
 
+    assert services["platform-api"]["environment"]["PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS"] == "3600"
+
     assert set(services) == {
         "platform-api",
         "platform-attachment-storage-init",

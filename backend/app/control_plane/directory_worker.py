@@ -385,19 +385,19 @@ class DirectoryWorkerRepository:
 
 
 class DirectoryWorker:
-    """Single-flight startup and six-hour scheduler with bounded jitter."""
+    """Single-flight startup and hourly scheduler with bounded jitter."""
 
     def __init__(
         self,
         reconciler: Any,
         repository: DirectoryWorkerRepository,
         *,
-        interval_seconds: int = 21_600,
+        interval_seconds: int = 3_600,
         jitter_seconds: int = 300,
         sleep=asyncio.sleep,
         random_source=random.SystemRandom(),
     ) -> None:
-        if interval_seconds != 21_600 or not 0 <= jitter_seconds <= 900:
+        if interval_seconds != 3_600 or not 0 <= jitter_seconds <= 900:
             raise ValueError("directory schedule invalid")
         self._reconciler = reconciler
         self._repository = repository

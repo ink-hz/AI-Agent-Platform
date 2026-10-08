@@ -32,6 +32,7 @@ APPROVED_ORGANIZATION_EVENT_TYPES = frozenset(
     {
         "user_add_org",
         "user_modify_org",
+        "user_active_org",
         "user_leave_org",
         "org_user_active",
         "org_dept_create",

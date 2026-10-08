@@ -531,7 +531,7 @@ def _load_control_plane_config() -> ControlPlaneConfig:
     ).strip()
 
     reconcile_interval_seconds = _positive_environment_int(
-        "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS", 21_600
+        "PLATFORM_IDENTITY_RECONCILE_INTERVAL_SECONDS", 3_600
     )
     warning_after_seconds = _positive_environment_int(
         "PLATFORM_IDENTITY_WARNING_AFTER_SECONDS", 28_800

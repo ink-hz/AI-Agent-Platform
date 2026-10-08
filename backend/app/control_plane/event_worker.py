@@ -18,7 +18,7 @@ from .stream_consumer import APPROVED_ORGANIZATION_EVENT_TYPES
 
 _LOG = logging.getLogger(__name__)
 _MEMBER_REFRESH_EVENTS = frozenset(
-    {"user_add_org", "user_modify_org", "org_user_active"}
+    {"user_add_org", "user_modify_org", "org_user_active", "user_active_org"}
 )
 _DEPARTMENT_EVENTS = frozenset(
     {"org_dept_create", "org_dept_modify", "org_dept_remove"}
@@ -351,7 +351,9 @@ class DirectoryEventWorker:
     @staticmethod
     def _userids(payload: dict) -> tuple[str, ...]:
         data = payload.get("data")
-        values = data.get("UserId") if isinstance(data, dict) else None
+        if not isinstance(data, dict) or ("UserId" in data) == ("userId" in data):
+            raise ValueError("stream event invalid")
+        values = data.get("userId", data.get("UserId"))
         if isinstance(values, str):
             values = [values]
         if (

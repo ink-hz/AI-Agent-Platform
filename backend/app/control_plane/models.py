@@ -93,7 +93,7 @@ class ControlPlaneConfig:
     encryption_keyring_file: str
     hmac_keyring_file: str
     rate_limit_hmac_keyring_file: str = ""
-    reconcile_interval_seconds: int = 21_600
+    reconcile_interval_seconds: int = 3_600
     warning_after_seconds: int = 28_800
     hard_stale_after_seconds: int = 86_400
     trusted_proxy_cidrs: tuple[str, ...] = ("127.0.0.1/32", "::1/128")

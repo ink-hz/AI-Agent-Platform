@@ -7,6 +7,7 @@ import pytest
 from dingtalk_stream import AckMessage, EventMessage
 
 from app.control_plane.crypto import IdentityKeyring
+from app.control_plane.event_worker import ClaimedStreamEvent, DirectoryEventWorker
 from app.control_plane.stream_consumer import (
     APPROVED_ORGANIZATION_EVENT_TYPES,
     DurableOrganizationEventHandler,
@@ -151,7 +152,64 @@ def test_payload_cipher_round_trips_with_event_metadata_as_aad() -> None:
 
 
 def test_organization_event_allowlist_is_exact() -> None:
-    assert APPROVED_ORGANIZATION_EVENT_TYPES == APPROVED_EVENTS
+    assert APPROVED_ORGANIZATION_EVENT_TYPES == APPROVED_EVENTS | {"user_active_org"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_type", ["user_add_org", "user_active_org", "user_leave_org"])
+async def test_live_stream_payload_reaches_directory_worker(event_type) -> None:
+    inbox = RecordingInbox()
+    cipher = StreamPayloadCipher(_keyring())
+    event = _event(event_type=event_type)
+    event.data = {"userId": ["provider-user-sensitive"], "timeStamp": 1_786_665_000_000}
+    await DurableOrganizationEventHandler(
+        inbox, cipher, expected_corp_id="corp-expected"
+    ).process(event)
+    stored = next(iter(inbox.rows.values()))
+    claimed = ClaimedStreamEvent(
+        inbox_id=1, event_key=stored["event_key"], event_type=stored["event_type"],
+        encrypted_payload=stored["encrypted_payload"],
+        encryption_key_version=stored["encryption_key_version"], attempts=1,
+    )
+
+    class DirectoryRepository:
+        actions = []
+
+        def claim_next(self):
+            return claimed
+
+        def apply_departure(self, **values):
+            self.actions.append("departure")
+            return "applied"
+
+        def mark_processed(self, inbox_id):
+            self.actions.append("processed")
+
+        def heartbeat(self, status, error_code=None):
+            self.actions.append(status)
+
+        def reschedule(self, *args):
+            self.actions.append("retry")
+
+    class Refresher:
+        users = []
+
+        async def refresh_user(self, userid):
+            self.users.append(userid)
+
+    repository, refresher = DirectoryRepository(), Refresher()
+    worker = DirectoryEventWorker(
+        repository, cipher, member_refresher=refresher, reconciler=None
+    )
+
+    await worker.process_once()
+
+    assert "processed" in repository.actions
+    assert "retry" not in repository.actions
+    if event_type == "user_leave_org":
+        assert "departure" in repository.actions
+    else:
+        assert refresher.users == ["provider-user-sensitive"]
 
 
 @pytest.mark.asyncio

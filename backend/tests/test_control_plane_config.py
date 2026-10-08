@@ -415,14 +415,14 @@ def test_route_prefix_rejects_ambiguous_paths(
         load_config()
 
 
-def test_freshness_defaults_are_six_eight_and_twenty_four_hours(
+def test_freshness_defaults_are_one_eight_and_twenty_four_hours(
     tmp_path, monkeypatch
 ) -> None:
     install_required_identity_environment(tmp_path, monkeypatch, mode="production")
 
     control_plane = load_config().control_plane
 
-    assert control_plane.reconcile_interval_seconds == 6 * 60 * 60
+    assert control_plane.reconcile_interval_seconds == 60 * 60
     assert control_plane.warning_after_seconds == 8 * 60 * 60
     assert control_plane.hard_stale_after_seconds == 24 * 60 * 60
     assert (
