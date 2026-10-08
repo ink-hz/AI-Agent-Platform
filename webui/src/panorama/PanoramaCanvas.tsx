@@ -6,7 +6,7 @@ import { routePanoramaEdge, type PanoramaRect } from "../panoramaRouting";
 import { ExplorationPanel } from "./PanoramaExploration";
 import { availableExplorations, explorationNodes, type PanoramaExploration } from "./panoramaExplorations";
 
-import { AI_CORE_POINTS, AI_PORTFOLIO_CORE, portfolioCoreNodes, type AiCorePoint } from "./aiCoreContent";
+import { AI_CORE_POINTS, AI_PORTFOLIO_CORE, portfolioCoreNodes, unanchoredCorePoints, type AiCorePoint } from "./aiCoreContent";
 import { PanoramaAiCore } from "./PanoramaAiCore";
 
 const ACTION_LABELS: Record<PanoramaActionId, string> = {
@@ -62,9 +62,9 @@ function groupNodes(group: PanoramaGroup, byId: Map<string, PanoramaNode>) {
   return group.node_ids.map((id) => byId.get(id)).filter((node): node is PanoramaNode => !!node);
 }
 
-function NodeCard({ node, selected, related, match, company, explored, onSelect, core, onExplore }: {
+function NodeCard({ node, selected, related, match, company, explored, onSelect, core, onExplore, coreActive }: {
   node: PanoramaNode; selected: boolean; related: boolean; match: boolean; company: boolean; explored: boolean; onSelect: () => void;
-  core?: AiCorePoint; onExplore?: (id: string) => void;
+  core?: AiCorePoint; onExplore?: (id: string) => void; coreActive?: boolean;
 }) {
   return <article
     className={`panorama-node${core ? " has-ai-core" : ""}${company ? " panorama-node--company" : ""}${selected ? " is-selected" : ""}${related ? " is-related" : ""}${match ? " is-search-match" : ""}${explored ? " is-explored" : ""}`}
@@ -73,7 +73,7 @@ function NodeCard({ node, selected, related, match, company, explored, onSelect,
     <button className="panorama-node__select" type="button" aria-pressed={selected} aria-description={explored ? "当前 AI 探索涉及的节点" : undefined} onClick={onSelect}>
       <strong>{node.title}</strong>{company && node.subtitle && <span>{node.subtitle}</span>}
     </button>
-    {core && <button type="button" className="panorama-node__ai-core" title="AI 方向 · 待验证，点击查看思考" onClick={() => onExplore?.(core.topicId)}>{core.label}</button>}
+    {core && <button type="button" className="panorama-node__ai-core" aria-pressed={!!coreActive} title="AI 方向 · 待验证，点击查看思考" onClick={() => onExplore?.(core.topicId)}>{core.label}</button>}
   </article>;
 }
 
@@ -181,7 +181,7 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
   }, [data, structuralEdges, visibleEdges, coreVisible]);
 
   return <div className="panorama-canvas" ref={rootRef}>
-    {coreVisible && <PanoramaAiCore topicIds={topicIds} onExplore={onExplore!} />}
+    {coreVisible && <PanoramaAiCore topicIds={topicIds} onExplore={onExplore!} active={exploration?.id === "mainline"} />}
     <svg className="panorama-structure" aria-label="全景结构关系" width="100%" height="100%">
       <defs><marker id="panorama-structure-arrow" markerHeight="7" markerWidth="7" orient="auto-start-reverse" refX="6" refY="3.5"><path d="M0 0L7 3.5L0 7Z" /></marker></defs>
       {structuralEdges.map((edge) => <g
@@ -202,13 +202,13 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
     {data.layers.map((layer) => <section className={`panorama-layer panorama-layer--${layer.kind}`} data-layer-id={layer.id} key={layer.id}>
       <h2>{layer.title}</h2>
       {coreVisible && layer.kind === "portfolio" && layer.groups.some((group) => group.node_ids.some((id) => portfolioIds.has(id))) &&
-        <button type="button" className="panorama-layer__ai-core" title="AI 方向 · 待验证，点击查看思考" onClick={() => onExplore?.(AI_PORTFOLIO_CORE.topicId)}>{AI_PORTFOLIO_CORE.label}</button>}
+        <button type="button" className="panorama-layer__ai-core" aria-pressed={exploration?.id === AI_PORTFOLIO_CORE.topicId} title="AI 方向 · 待验证，点击查看思考" onClick={() => onExplore?.(AI_PORTFOLIO_CORE.topicId)}>{AI_PORTFOLIO_CORE.label}</button>}
       <div className="panorama-layer__groups">
         {layer.groups.map((group) => <section className={`panorama-group panorama-group--${group.role}`} data-group-id={group.id} data-group-role={group.role} key={group.id}>
           <h3>{group.title}</h3>
           <div className={`panorama-group__nodes panorama-columns-${group.columns}`}>
             {groupNodes(group, byId).map((node) => <NodeCard
-              core={coreVisible && topicIds.has(AI_CORE_POINTS[node.id]?.topicId) ? AI_CORE_POINTS[node.id] : undefined} onExplore={onExplore}
+              core={coreVisible && topicIds.has(AI_CORE_POINTS[node.id]?.topicId) ? AI_CORE_POINTS[node.id] : undefined} coreActive={exploration?.id === AI_CORE_POINTS[node.id]?.topicId} onExplore={onExplore}
               company={group.role === "company"} explored={exploredIds.has(node.id)} key={node.id} match={matchIds.has(node.id)} node={node}
               onSelect={() => onSelect(selectedId === node.id ? null : node.id)} related={relatedIds.has(node.id)} selected={selectedId === node.id}
             />)}
@@ -218,6 +218,7 @@ export function PanoramaCanvas({ data, selectedId, matchIds, isOwner, onSelect, 
     </section>)}
     {selected && <DetailPanel data={data} isOwner={isOwner} node={selected} onAction={onAction} onClose={() => onSelect(null)} onEvidence={onEvidence}
       onReturnExploration={exploration ? () => onSelect(null) : undefined} />}
-    {!selected && exploration && <ExplorationPanel topic={exploration} data={data} onSelect={onSelect} onClose={() => onExitExploration?.()} />}
+    {!selected && exploration && <ExplorationPanel topic={exploration} data={data} onSelect={onSelect} onClose={() => onExitExploration?.()}
+      fallbackPoints={coreVisible ? unanchoredCorePoints(data).filter((point) => point.topicId !== exploration.id) : []} onExplore={onExplore} />}
   </div>;
 }

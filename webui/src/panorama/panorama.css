@@ -101,21 +101,20 @@
 
 /* Explorations are editorial hypotheses, distinct from confirmed graph edges. */
 .panorama-toolbar > .panorama-exploration-toggle[aria-pressed="true"] { background: #eee6fa; border-color: #b39bd7; color: #644096; }
-.panorama-exploration-nav { align-items: center; display: flex; flex-wrap: wrap; gap: 7px; margin: 0 auto 18px; max-width: 1600px; }
-.panorama-exploration-legend { color: #644096; font-size: 12px; margin-right: 5px; }
-.panorama-exploration-nav button, .panorama-exploration__nodes button, .panorama-exploration-return { background: #f5f1fb; border: 1px solid #d5c7eb; border-radius: 8px; color: #644096; cursor: pointer; font: inherit; font-size: 12px; padding: 7px 10px; }
-.panorama-exploration-nav button[aria-pressed="true"] { background: #644096; border-color: #644096; color: #fff; }
-.panorama-node.is-explored > .panorama-node__select { box-shadow: 0 0 0 3px #8256c566; }
+.panorama-node.is-explored > .panorama-node__select { outline: 3px solid #8256c5; outline-offset: 3px; box-shadow: 0 0 0 6px #8256c52b; }
 .panorama-exploration { border-top: 3px solid #8256c5; }
 .panorama-exploration header span { color: #644096; }
 .panorama-exploration p { color: #3e5369; font-size: 14px; line-height: 1.7; margin: 8px 0 16px; }
 .panorama-exploration .panorama-exploration__idea { color: #263c54; font-weight: 650; }
 .panorama-exploration h3 { color: #644096; font-size: 12px; margin: 0; }
 .panorama-exploration__nodes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
+.panorama-exploration__nodes button, .panorama-exploration-return, .panorama-exploration__fallback button { background: #f5f1fb; border: 1px solid #d5c7eb; border-radius: 8px; color: #644096; cursor: pointer; font: inherit; font-size: 12px; padding: 7px 10px; }
 .panorama-exploration__question { border-top: 1px solid #e5ebf1; padding-top: 14px; }
 .panorama-exploration__question p { margin-bottom: 0; }
+.panorama-exploration__fallback { border-top: 1px solid #e5ebf1; display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; padding-top: 14px; }
+.panorama-exploration__fallback h3 { flex-basis: 100%; }
 .panorama-exploration-return { margin-top: 12px; }
-.panorama-exploration-nav button:focus-visible, .panorama-exploration__nodes button:focus-visible, .panorama-exploration-return:focus-visible { outline: 2px solid #644096; outline-offset: 2px; }
+.panorama-exploration__nodes button:focus-visible, .panorama-exploration-return:focus-visible, .panorama-exploration__fallback button:focus-visible { outline: 2px solid #644096; outline-offset: 2px; }
 
 .panorama-footer { color: #52667e; display: flex; font-size: 9px; gap: 16px; justify-content: flex-end; margin: 8px auto 0; max-width: 1600px; }
 .panorama--presenting .panorama-toolbar, .panorama--presenting .panorama-footer { display: none; }
@@ -177,17 +176,18 @@
   .panorama-editor__node-main, .panorama-editor__edges > article { grid-template-columns: 1fr; }
 }
 
-/* Short hypotheses remain in the graph; detailed reasoning opens on demand. */
-.panorama-ai-core { align-items: center; background: #eee8f7; border: 1px solid #d8c9e9; border-radius: 12px; color: #60428a; display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 16px; padding: 10px 14px; position: relative; z-index: 2; }
-.panorama-ai-core button { background: transparent; border: 0; color: inherit; cursor: pointer; font-size: 13px; padding: 4px 0; }
-.panorama-ai-core__title { font-weight: 700; }
-.panorama-ai-core__status { font-size: 11px; color: #755b92; }
-.panorama-ai-core__steps { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-left: auto; }
-.panorama-ai-core button:hover, .panorama-node__ai-core:hover, .panorama-layer__ai-core:hover { text-decoration: underline; }
+/* A single engineering question and questions attached to their business positions. */
+.panorama-ai-core { background: linear-gradient(110deg, #e7dcf5, #f3eef9); border: 1px solid #bfa5df; border-left: 5px solid #7143ae; border-radius: 12px; margin-bottom: 14px; position: relative; z-index: 2; }
+.panorama-ai-core__title { align-items: baseline; background: transparent; border: 0; color: #503177; cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 11px 15px; text-align: left; width: 100%; }
+.panorama-ai-core__title span { font-size: 12px; font-weight: 750; }
+.panorama-ai-core__title strong { color: #362451; font-size: clamp(14px, 1.25vw, 18px); line-height: 1.4; }
+.panorama-ai-core__title small { color: #735b91; font-size: 11px; margin-left: auto; }
 .panorama-layer > h2 { display: inline-block; }
-.panorama .panorama-layer__ai-core { background: transparent; border: 0; color: #72509b; cursor: pointer; font-size: 12px; margin: 0 0 9px 14px; padding: 2px 0; position: relative; z-index: 2; }
-.panorama-node.has-ai-core > .panorama-node__select { min-height: 82px; padding-bottom: 35px; height: 100%; }
-.panorama-node--company.has-ai-core > .panorama-node__select { min-height: 126px; }
-.panorama .panorama-node__ai-core { position: absolute; bottom: 7px; left: 8px; right: 8px; background: transparent; border: 0; color: #72509b; cursor: pointer; font-size: 11px; line-height: 1.3; padding: 0; text-align: center; }
-.panorama .panorama-node--company .panorama-node__ai-core { color: #ede2ff; }
-.panorama-node__ai-core:focus-visible, .panorama-layer__ai-core:focus-visible, .panorama-ai-core button:focus-visible { outline: 2px solid #8256c5; outline-offset: 3px; }
+.panorama .panorama-layer__ai-core { background: #ede4f7; border: 1px solid #c4ace0; border-radius: 7px; color: #583681; cursor: pointer; font-size: 12px; font-weight: 650; line-height: 1.35; margin: 0 0 9px 14px; padding: 5px 8px; position: relative; z-index: 2; }
+.panorama-node.has-ai-core > .panorama-node__select { min-height: 100px; padding-bottom: 49px; height: 100%; }
+.panorama-node--company.has-ai-core > .panorama-node__select { min-height: 145px; }
+.panorama .panorama-node__ai-core { position: absolute; bottom: 7px; left: 7px; right: 7px; background: #efe8f8; border: 1px solid #d1bfea; border-radius: 7px; color: #56377e; cursor: pointer; font-size: 12px; font-weight: 650; line-height: 1.35; padding: 5px 6px; text-align: center; }
+.panorama .panorama-node--company .panorama-node__ai-core { background: #eee3fc; color: #392355; }
+.panorama .panorama-node__ai-core[aria-pressed="true"], .panorama .panorama-layer__ai-core[aria-pressed="true"], .panorama-ai-core__title[aria-pressed="true"] { border-color: #7648ac; box-shadow: 0 0 0 2px #7648ac55; }
+.panorama-node__ai-core:hover, .panorama-layer__ai-core:hover, .panorama-ai-core__title:hover { text-decoration: underline; }
+.panorama-node__ai-core:focus-visible, .panorama-layer__ai-core:focus-visible, .panorama-ai-core__title:focus-visible { outline: 2px solid #8256c5; outline-offset: 3px; }

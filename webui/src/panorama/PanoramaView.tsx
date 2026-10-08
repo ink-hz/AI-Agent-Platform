@@ -8,7 +8,6 @@ import { aiCoreSearchMatches } from "./aiCoreContent";
 import { PanoramaCanvas } from "./PanoramaCanvas";
 import { PanoramaEditor } from "./PanoramaEditor";
 import { panoramaClient, parsePanorama } from "./panoramaApi";
-import { ExplorationNavigation } from "./PanoramaExploration";
 import { availableExplorations } from "./panoramaExplorations";
 import "./panorama.css";
 
@@ -212,8 +211,6 @@ export function PanoramaView({ data, onAction, onEvidence, isOwner = false, acti
     </header>
     {editorNotice && <p className="panorama-editor-notice" role="status">{editorNotice}</p>}
     {presenting && <button type="button" className="panorama-presentation-exit" onClick={() => setPresenting(false)}>退出展示</button>}
-    {exploration && <ExplorationNavigation topics={explorationTopics} selectedId={exploration.id}
-      onChange={openExploration} />}
     <PanoramaCanvas data={effectiveData} isOwner={isOwner} matchIds={matchIds} onAction={onAction} onEvidence={onEvidence} onSelect={setSelectedId} selectedId={selectedId}
       showAiCore={showAiCore} onExplore={openExploration} exploration={exploration} onExitExploration={exitExploration} />
     {editor && <PanoramaEditor
