@@ -918,4 +918,4 @@ Use [conversation-attachments.md](conversation-attachments.md) for credential ro
 
 一次部署将平台 API 换成 2026-09-14 的旧镜像，而 `/current` 仍指向较新的全景源码，导致 AI 工程全景在页面上消失。恢复经过见[记录](../operations/2026-09-28-panorama-regression-restore.md)。排查实际功能时先检查 API 容器镜像中的 `PLATFORM_RELEASE_SHA`、前端资源及 Compose 输入，不能只看 Git HEAD 或 `/current`。
 
-当前 API 恢复使用的 Compose 输入清单位于 `/opt/orbbec-agent-platform/private/panorama-97284f7fd30b4ef68777fb83a376b412/future-maintenance.json`。后续发布须在现行 HR generation 输入之后叠加其中的 API 镜像/版本和全景持久化挂载，并在切换前比较候选配置与运行配置：除明确发布的 API 镜像/版本外，不得丢掉状态挂载或无意修改其他服务。该清单是当前实例的维护依据，不应把其中镜像永远固定为未来目标版本。
+当前 API 使用的 Compose 输入清单位于 `/opt/orbbec-agent-platform/private/panorama-22531d8e243ecd769aacc6f675e2e630/future-maintenance.json`。2026-10-08 的 API 限定发布将基础 Compose 固定在 `184b7d86` 的 release 路径，保留现行 HR generation、API 镜像覆盖和全景持久化挂载；新源码中的目录 worker 配置未随 API 切换。后续发布须以该四份输入为基线，在切换前比较候选配置与运行配置：除明确发布的服务镜像/版本外，不得丢掉状态挂载或无意修改其他服务。该清单是当前实例的维护依据，不应把其中镜像永远固定为未来目标版本。
