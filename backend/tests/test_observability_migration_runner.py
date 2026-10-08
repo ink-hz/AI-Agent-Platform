@@ -3,6 +3,7 @@ import socket
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 import psycopg
 import pytest
@@ -154,6 +155,28 @@ def test_runner_is_idempotent_records_checksum_and_applies_exact_grants(
             "select has_table_privilege('public', "
             "'platform_identity.session_subject_links', 'select')"
         ).fetchone() == (False,)
+
+
+@pytest.mark.postgres
+def test_runner_accepts_encoded_unix_socket_host(
+    observability_database: str, tmp_path: Path
+) -> None:
+    with psycopg.connect(observability_database) as connection:
+        socket_dir = connection.execute("show unix_socket_directories").fetchone()[0]
+    encoded_host = quote(socket_dir, safe="")
+    port = urlsplit(observability_database).port
+    dsn = f"postgresql://observability_test_admin@{encoded_host}:{port}/postgres"
+    dsn_file = tmp_path / "socket-owner-dsn"
+    dsn_file.write_text(dsn + "\n", encoding="utf-8")
+    dsn_file.chmod(0o600)
+
+    result = subprocess.run(
+        [str(RUNNER), str(dsn_file), str(MIGRATION)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.startswith("OBSERVABILITY_MIGRATION_OK version=011")
+    assert dsn not in result.stdout + result.stderr
 
 
 @pytest.mark.postgres

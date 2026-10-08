@@ -140,7 +140,7 @@ user = unquote(parsed.username or "")
 if not database or not user:
     raise SystemExit(1)
 fields = {
-    "host": query.get("host", [parsed.hostname or ""])[0],
+    "host": unquote(query.get("host", [parsed.hostname or ""])[0]),
     "port": query.get("port", [str(parsed.port or 5432)])[0],
     "dbname": database,
     "user": user,
