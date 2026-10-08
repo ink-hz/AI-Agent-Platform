@@ -918,4 +918,4 @@ Use [conversation-attachments.md](conversation-attachments.md) for credential ro
 
 一次部署将平台 API 换成 2026-09-14 的旧镜像，而 `/current` 仍指向较新的全景源码，导致 AI 工程全景在页面上消失。恢复经过见[记录](../operations/2026-09-28-panorama-regression-restore.md)。排查实际功能时先检查 API 容器镜像中的 `PLATFORM_RELEASE_SHA`、前端资源及 Compose 输入，不能只看 Git HEAD 或 `/current`。
 
-当前 API 使用的 Compose 输入清单位于 `/opt/orbbec-agent-platform/private/panorama-6dce36c38de2c5fd63b5e0474e9fc679/future-maintenance.json`。2026-10-08 的两次 API 限定发布将基础 Compose 固定在 `184b7d86` 的 release 路径，保留现行 HR generation，并顺序叠加 `587e7072` 与 `c7447fd7` 的 API 覆盖；运行配置中的目录对账间隔仍为 21600 秒，新源码基础 Compose 的 3600 秒配置未随 API 切换。后续发布须以该五份输入为基线，在切换前比较候选配置与运行配置：除明确发布的服务镜像/版本外，不得丢掉全景状态挂载或无意修改其他服务。该清单是当前实例的维护依据，不应把其中镜像永远固定为未来目标版本。
+当前 API 使用的 Compose 输入清单位于 `/opt/orbbec-agent-platform/private/panorama-9c3bae7d6d8cb0b9b41bd580a4feaa7e/future-maintenance.json`。2026-10-08 的 API 限定发布将基础 Compose 固定在 `184b7d86` 的 release 路径，保留现行 HR generation，并顺序叠加 `587e7072`、`c7447fd7` 与 `552c4bf9` 的 API 覆盖；运行配置中的目录对账间隔仍为 21600 秒，新源码基础 Compose 的 3600 秒配置未随 API 切换。后续发布须以该六份输入为基线，在切换前比较候选配置与运行配置：除明确发布的服务镜像/版本外，不得丢掉全景状态挂载或无意修改其他服务。该清单是当前实例的维护依据，不应把其中镜像永远固定为未来目标版本。
