@@ -141,11 +141,17 @@ def normalize_session_subject_link(
         internal_user_id = UUID(str(row.get("internal_user_id") or ""))
         verification_method = row.get("verification_method")
         verified_at = row.get("verified_at")
+        verified_time = (
+            datetime.fromisoformat(verified_at)
+            if isinstance(verified_at, str) else verified_at
+        )
         if (
             not native_session_id
             or verification_method != "platform_session"
-            or not isinstance(verified_at, (str, datetime))
-            or not str(verified_at).strip()
+            or not isinstance(verified_time, datetime)
+            or verified_time.tzinfo is None
+            or row.get("user_id") != str(internal_user_id)
+            or row.get("external_user_id") != f"platform:{internal_user_id}"
         ):
             return None
     except (TypeError, ValueError):

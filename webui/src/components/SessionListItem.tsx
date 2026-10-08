@@ -24,7 +24,9 @@ export function SessionListItem({
 }) {
   const sender = session.source_kind === "metabot"
     ? formatSenderIdentity(session.primary_sender_name, session.primary_sender_department)
-    : null;
+    : session.source_kind === "admin" && session.primary_sender_name
+      ? [session.primary_sender_name, session.primary_sender_department].filter(Boolean).join(" · ")
+      : null;
   const additionalParticipants = additionalParticipantLabel(session.participant_count);
   return (
     <PlatformLink className="session-row" href={detailHref} preserveSessionContext>

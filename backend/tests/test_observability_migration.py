@@ -7,6 +7,9 @@ MIGRATION = (
 SUBJECT_LINK_MIGRATION = (
     Path(__file__).parents[1] / "migrations/011_admin_session_subject_links.sql"
 )
+ADMIN_SENDER_MIGRATION = (
+    Path(__file__).parents[1] / "migrations/014_admin_verified_sender_view.sql"
+)
 
 
 def migration_sql() -> str:
@@ -74,3 +77,13 @@ def test_admin_session_subject_links_have_a_verified_unique_identity_boundary() 
     assert "verification_method text not null" in sql
     assert "verified_at timestamptz not null" in sql
     assert "grant select, insert, update, delete" in sql
+
+
+def test_admin_sender_name_requires_verified_subject_link() -> None:
+    sql = ADMIN_SENDER_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "platform_identity.session_subject_links" in sql
+    assert "base.source_kind = 'admin'" in sql
+    assert "link.internal_user_id is not null" in sql
+    assert "md5(link.internal_user_id::text)" in sql
+    assert "base.details->>'display_name'" in sql
+    assert "effective_name as primary_sender_name" in sql

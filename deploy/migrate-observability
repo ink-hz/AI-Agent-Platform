@@ -11,14 +11,17 @@ fail() {
 owner_dsn_file="$1"
 migration_file="$2"
 repository_root="$(cd "$(dirname "$0")/.." && pwd -P)"
-expected_migration="$repository_root/backend/migrations/011_admin_session_subject_links.sql"
+case "$migration_file" in
+  "$repository_root/backend/migrations/011_admin_session_subject_links.sql"|\
+  "$repository_root/backend/migrations/014_admin_verified_sender_view.sql") ;;
+  *) fail ;;
+esac
 
 [[ "$owner_dsn_file" == /* ]] || fail
 [[ -f "$owner_dsn_file" && ! -L "$owner_dsn_file" ]] || fail
 dsn_metadata="$(stat -f '%Lp %u' "$owner_dsn_file" 2>/dev/null || stat -c '%a %u' "$owner_dsn_file" 2>/dev/null)" || fail
 [[ "$dsn_metadata" == "600 $(id -u)" ]] || fail
 
-[[ "$migration_file" == "$expected_migration" ]] || fail
 [[ -f "$migration_file" && ! -L "$migration_file" ]] || fail
 [[ "$(basename "$migration_file")" =~ ^[0-9]{3}_[a-z0-9_]+\.sql$ ]] || fail
 command -v psql >/dev/null 2>&1 || fail
@@ -92,7 +95,17 @@ select exists (
   values (:'expected_version'::integer, :'expected_sha256', now());
 \endif
 
-select (to_regclass('platform_identity.session_subject_links') is not null)::int
+select (
+  case
+    when :'expected_version'::integer = 11 then
+      to_regclass('platform_identity.session_subject_links') is not null
+    when :'expected_version'::integer = 14 then
+      to_regclass('platform_read.sessions') is not null
+      and position('session_subject_links' in
+        pg_get_viewdef(to_regclass('platform_read.sessions'))) > 0
+    else false
+  end
+)::int
   as required_relation_ok \gset
 \if :required_relation_ok
 \else

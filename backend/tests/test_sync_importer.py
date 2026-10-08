@@ -31,6 +31,8 @@ def test_admin_session_uses_only_explicit_platform_verified_subject() -> None:
     row = {
         "id": "admin-session-1",
         "internal_user_id": "00000000-0000-4000-8000-000000000123",
+        "user_id": "00000000-0000-4000-8000-000000000123",
+        "external_user_id": "platform:00000000-0000-4000-8000-000000000123",
         "verification_method": "platform_session",
         "verified_at": "2026-08-24T09:00:00+00:00",
         "display_name": "钉钉临时名称",
@@ -52,6 +54,37 @@ def test_admin_session_uses_only_explicit_platform_verified_subject() -> None:
     }
 
 
+def test_admin_verified_sender_metadata_survives_session_import() -> None:
+    session = normalize_row(
+        "admin",
+        "admin_chat_sessions",
+        {
+            "id": "admin-session-1",
+            "external_session_id": "browser-session-1",
+            "channel": "admin",
+            "user_id": "00000000-0000-4000-8000-000000000123",
+            "external_user_id": "platform:00000000-0000-4000-8000-000000000123",
+            "internal_user_id": "00000000-0000-4000-8000-000000000123",
+            "verification_method": "platform_session",
+            "verified_at": "2026-08-24T09:00:00+00:00",
+            "metadata": {"display_name": "测试员工", "primary_department": "行政部"},
+        },
+        SYNCED_AT,
+    )
+    assert session.values["details"] == {
+        "display_name": "测试员工",
+        "primary_department": "行政部",
+    }
+    assert normalize_session_subject_link({
+        "id": "admin-session-1",
+        "user_id": session.values["user_id"],
+        "external_user_id": session.values["external_user_id"],
+        "internal_user_id": "00000000-0000-4000-8000-000000000123",
+        "verification_method": "platform_session",
+        "verified_at": "2026-08-24T09:00:00+00:00",
+    }, SYNCED_AT) is not None
+
+
 @pytest.mark.parametrize(
     "row",
     [
@@ -62,6 +95,14 @@ def test_admin_session_uses_only_explicit_platform_verified_subject() -> None:
             "id": "legacy",
             "internal_user_id": "00000000-0000-4000-8000-000000000123",
             "verification_method": "name_guess",
+            "verified_at": "2026-08-24T09:00:00+00:00",
+        },
+        {
+            "id": "mismatched",
+            "internal_user_id": "00000000-0000-4000-8000-000000000123",
+            "user_id": "00000000-0000-4000-8000-000000000456",
+            "external_user_id": "platform:00000000-0000-4000-8000-000000000123",
+            "verification_method": "platform_session",
             "verified_at": "2026-08-24T09:00:00+00:00",
         },
     ],
