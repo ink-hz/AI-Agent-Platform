@@ -22,12 +22,30 @@ def test_installs_only_one_forced_command_without_rewriting_existing_keys(tmp_pa
     assert MODULE.install(key, authorized, expected_uid=os.getuid()) is True
     installed = authorized.read_text()
     assert installed.startswith("ssh-ed25519 OTHER existing\n")
-    assert 'command="/opt/orbbec-agent-platform/current/deploy/cloud/forced-hr-position-import.sh"' in installed
+    assert 'command="/bin/bash /opt/orbbec-agent-platform/current/deploy/cloud/forced-hr-position-import.sh"' in installed
     assert MODULE.install(key, authorized, expected_uid=os.getuid()) is False
     assert authorized.read_text() == installed
     authorized.write_text(installed.replace(
-        'command="/opt/orbbec-agent-platform/current/deploy/cloud/forced-hr-position-import.sh"',
+        'command="/bin/bash /opt/orbbec-agent-platform/current/deploy/cloud/forced-hr-position-import.sh"',
         'command="/bin/false"',
     ))
     with pytest.raises(ValueError, match="different command"):
         MODULE.install(key, authorized, expected_uid=os.getuid())
+
+
+def test_upgrades_exact_prior_forced_command_without_touching_other_keys(tmp_path) -> None:
+    authorized = tmp_path / "authorized_keys"
+    key = "ssh-ed25519 " + "A" * 68 + " orbbec-hr-position-sync"
+    legacy = (
+        'restrict,command="/opt/orbbec-agent-platform/current/deploy/cloud/'
+        'forced-hr-position-import.sh",no-pty,no-agent-forwarding,'
+        f'no-port-forwarding,no-X11-forwarding {key}'
+    )
+    authorized.write_text(f"ssh-ed25519 OTHER existing\n{legacy}\n")
+    authorized.chmod(0o600)
+    assert MODULE.install(key, authorized, expected_uid=os.getuid()) is True
+    lines = authorized.read_text().splitlines()
+    assert lines[0] == "ssh-ed25519 OTHER existing"
+    assert len(lines) == 2
+    assert 'command="/bin/bash /opt/orbbec-agent-platform/current/' in lines[1]
+    assert MODULE.install(key, authorized, expected_uid=os.getuid()) is False

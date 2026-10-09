@@ -11,11 +11,13 @@ from pathlib import Path
 
 
 PUBLIC_KEY = re.compile(r"ssh-ed25519 ([A-Za-z0-9+/=]{60,120}) orbbec-hr-position-sync\Z")
-FORCED_COMMAND = "/opt/orbbec-agent-platform/current/deploy/cloud/forced-hr-position-import.sh"
+IMPORT_SCRIPT = "/opt/orbbec-agent-platform/current/deploy/cloud/forced-hr-position-import.sh"
+FORCED_COMMAND = f"/bin/bash {IMPORT_SCRIPT}"
 OPTIONS = (
     f'restrict,command="{FORCED_COMMAND}",no-pty,no-agent-forwarding,'
     "no-port-forwarding,no-X11-forwarding"
 )
+LEGACY_OPTIONS = OPTIONS.replace(FORCED_COMMAND, IMPORT_SCRIPT)
 
 
 def install(public_line: str, authorized_keys: Path, *, expected_uid: int = 0) -> bool:
@@ -30,12 +32,16 @@ def install(public_line: str, authorized_keys: Path, *, expected_uid: int = 0) -
     original = authorized_keys.read_text(encoding="utf-8")
     key_blob = match.group(1)
     desired = f"{OPTIONS} {public_line.strip()}"
-    for line in original.splitlines():
-        if key_blob in line and line != desired:
-            raise ValueError("key already installed with a different command")
-    if desired in original.splitlines():
+    matching = [line for line in original.splitlines() if key_blob in line]
+    legacy = f"{LEGACY_OPTIONS} {public_line.strip()}"
+    if len(matching) > 1 or (matching and matching[0] not in (desired, legacy)):
+        raise ValueError("key already installed with a different command")
+    if matching == [desired]:
         return False
-    next_text = original + ("" if not original or original.endswith("\n") else "\n") + desired + "\n"
+    if matching == [legacy]:
+        next_text = original.replace(legacy, desired, 1)
+    else:
+        next_text = original + ("" if not original or original.endswith("\n") else "\n") + desired + "\n"
     temporary = authorized_keys.with_name(".authorized_keys.hr-position-sync.tmp")
     descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     try:
