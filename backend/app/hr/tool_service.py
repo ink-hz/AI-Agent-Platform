@@ -176,13 +176,14 @@ class HrToolService:
                 raise HrToolError('source_unavailable', '本轮未记录所请求版本')
         status = 'current'
         if request.resource_kind == 'official_position':
-            row = connection.execute('select v.* from platform_hr.positions p join platform_hr.official_position_versions v '
+            row = connection.execute('select v.*,p.source_synced_at as current_source_synced_at from platform_hr.positions p join platform_hr.official_position_versions v '
                 'on v.official_position_version_id=p.current_official_version_id and v.owner_internal_user_id=p.owner_internal_user_id '
                 'where p.owner_internal_user_id=%s and p.position_id=%s', (scope.owner_id, position)).fetchone()
             if row is None:
                 raise HrToolError('source_unavailable', '该岗位没有可用官网快照')
             document = {key: value for key,value in row.items() if key not in {'owner_internal_user_id','client_request_id','evidence'}}
-            expired = datetime.now(timezone.utc)-row['source_snapshot_at']>timedelta(hours=24) or row['official_status']=='suspected_inactive'
+            observed_at = row['current_source_synced_at'] or row['source_snapshot_at']
+            expired = datetime.now(timezone.utc)-observed_at>timedelta(hours=24) or row['official_status']=='suspected_inactive'
             if official_observation == {'verification':'unavailable'}:
                 status = 'degraded'
                 document['verification_warning'] = '官网使用前校验未完成；以下为平台最后有效快照，请勿视为已核实现行事实'

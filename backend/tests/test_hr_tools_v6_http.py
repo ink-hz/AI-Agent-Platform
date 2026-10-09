@@ -234,7 +234,7 @@ def confirm_selected_standard(loop,signer,grant,service,lease,ids):
 
 @pytest.mark.parametrize('tool_loop',[True],indirect=True)
 def test_candidate_read_scoped_and_official_verification_fallback(tool_loop):
-    from datetime import datetime,timezone
+    from datetime import datetime,timezone,timedelta
     from app.hr.position_intelligence_models import ProjectOfficialVersion
     from app.hr.position_intelligence_repository import PositionIntelligenceRepository
     from test_hr_position_importers import _job
@@ -253,8 +253,16 @@ def test_candidate_read_scoped_and_official_verification_fallback(tool_loop):
     repository=PositionIntelligenceRepository(loop.environment['urls']['platform_control_app'])
     repository.project_official_version(ProjectOfficialVersion(uuid4(),ids['owner'],ids['position'],uuid4(),'J11014',
         'Engineer','研发',('深圳',),'研发',None,1,None,'全职','面议','Build.','Test.','registry-1',now,'a'*64,
-        now,now,'active','published',{'snapshot':'registry-1'}))
+        now,now,'active','published',{'snapshot':'registry-1'},
+        source_snapshot_at=now-timedelta(days=2)))
+    with psycopg.connect(loop.environment['admin']) as connection:
+        connection.execute('update platform_hr.positions set source_synced_at=%s where position_id=%s',
+                           (now,ids['position']))
     read={**candidate,'operationId':str(uuid4()),'resourceKind':'official_position','resourceId':str(ids['position']),'readMode':'reverify'}
+    refreshed=post(loop,signer,grant,'query',read)
+    assert refreshed.status_code==200,refreshed.text
+    assert refreshed.json()['verification']=='current'
+    read['operationId']=str(uuid4())
     reply=post(loop,signer,grant,'official-verifications',{'request':read,'observation':{'verification':'unavailable'}})
     assert reply.status_code==200,reply.text
     assert reply.json()['verification']=='degraded'
