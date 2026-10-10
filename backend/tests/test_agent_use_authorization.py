@@ -119,6 +119,40 @@ def test_postgres_authorization_passes_all_callable_ids_as_text_array(
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("role", (Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN))
+def test_active_privileged_account_can_use_hr_without_explicit_agent_grant(
+    control_database, role,
+) -> None:
+    environment = control_database["environments"]["production"]
+    with psycopg.connect(environment["admin"]) as connection:
+        user_id, _root, _child, _generation = _seed_active_directory(connection)
+        connection.execute(
+            "update platform_control.internal_users set role=%s "
+            "where internal_user_id=%s",
+            (role.value, user_id),
+        )
+    authorization = AgentUseAuthorization(
+        environment["urls"]["platform_control_app"]
+    )
+    assert authorization.decide_for_user_id(user_id, "hr-bot").allowed
+    assert not authorization.decide_for_user_id(user_id, "marketing-gtm-bot").allowed
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.internal_users set role='member' "
+            "where internal_user_id=%s",
+            (user_id,),
+        )
+    assert not authorization.decide_for_user_id(user_id, "hr-bot").allowed
+    with psycopg.connect(environment["admin"]) as connection:
+        connection.execute(
+            "update platform_control.internal_users set role=%s, status='inactive' "
+            "where internal_user_id=%s",
+            (role.value, user_id),
+        )
+    assert not authorization.decide_for_user_id(user_id, "hr-bot").allowed
+
+
+@pytest.mark.postgres
 def test_postgres_brain_worker_can_list_authorized_agents(control_database) -> None:
     environment = control_database["environments"]["production"]
     with psycopg.connect(environment["admin"]) as connection:
