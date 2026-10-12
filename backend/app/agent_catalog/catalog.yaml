@@ -210,11 +210,11 @@ agents:
   - agent_id: ai-daq-fae-agent
     display_name: AI 数采 FAE Agent
     domain_group: 技术支持
-    mission: 提供数采设备规格、组合连接、软件兼容与现场排障支持。
-    capabilities: [基于已审核资料回答数采产品规格, 核对设备组合与连接条件, 提供软件兼容与排障证据]
-    exclusions: [不把未审核原始资料作为确定答案, 不执行现场设备或生产环境变更]
+    mission: 首发试点核对数采设备型号与规格，并说明资料尚未覆盖的条件。
+    capabilities: [核对已发布产品与变体, 回答已按来源核对的规格, 明确未收录资料的缺口]
+    exclusions: [组合流程与软件兼容尚未发布, 不提供未经核对的下载链接, 不执行现场设备或生产环境变更]
     required_inputs: [设备型号与硬件版本, 连接组合或软件版本, 问题现象与已完成的排查]
-    example_tasks: [核对数采设备在指定条件下的规格, 梳理组合连接及故障排查步骤]
+    example_tasks: [核对 EGO 指定分辨率版本的视场角, 查询数采 HUB 的端口规格]
     interaction_modes: [external_workspace]
     workspace_url: /daq/
     supports_persistent_session: false
@@ -223,5 +223,5 @@ agents:
     supports_thinking_summary: false
     supports_cancel: false
     supports_attachments: false
-    typical_latency_seconds: 30
+    typical_latency_seconds: 60
     capability_version: 1
