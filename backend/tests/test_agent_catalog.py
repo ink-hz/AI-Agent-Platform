@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+
 from app.agent_catalog import (
     CANONICAL_AGENT_IDS,
     AgentCatalogRepository,
@@ -18,6 +19,7 @@ EXPECTED_IDS = {
     "marketing-gtm-bot",
     "ai-admin-agent",
     "ai-fae-agent",
+    "ai-daq-fae-agent",
 }
 
 
@@ -26,7 +28,7 @@ def _payload() -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_catalog_contains_exactly_the_nine_product_agents() -> None:
+def test_catalog_contains_exactly_the_ten_product_agents() -> None:
     cards = load_agent_catalog()
 
     assert set(CANONICAL_AGENT_IDS) == EXPECTED_IDS
@@ -43,7 +45,9 @@ def test_catalog_contains_exactly_the_nine_product_agents() -> None:
 def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> None:
     repository = AgentCatalogRepository()
 
-    for agent_id in EXPECTED_IDS - {"ai-admin-agent", "ai-fae-agent", "voc"}:
+    for agent_id in EXPECTED_IDS - {
+        "ai-admin-agent", "ai-fae-agent", "ai-daq-fae-agent", "voc"
+    }:
         card = repository.require(agent_id)
         assert card.interaction_modes == ("direct_chat", "brain_delegation")
         assert card.adapter_kind == "metabot_local"
@@ -52,6 +56,7 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
 
     admin = repository.require("ai-admin-agent")
     fae = repository.require("ai-fae-agent")
+    daq = repository.require("ai-daq-fae-agent")
     voc = repository.require("voc")
     assert admin.interaction_modes == ("external_workspace",)
     assert admin.workspace_url == "/office/?view=services"
@@ -60,6 +65,10 @@ def test_catalog_expresses_direct_delegated_and_external_modes_explicitly() -> N
     assert fae.workspace_url == "/fae/"
     assert fae.adapter_kind is None
     assert fae.dispatchable is False
+    assert daq.interaction_modes == ("external_workspace",)
+    assert daq.workspace_url == "/daq/"
+    assert daq.adapter_kind is None
+    assert daq.dispatchable is False
     assert voc.interaction_modes == ("external_workspace",)
     assert voc.workspace_url == "/voc/"
     assert voc.capabilities == (
@@ -129,7 +138,7 @@ def test_delegated_agents_declare_the_executor_they_contend_for() -> None:
     assert {card.pool_concurrency for card in pooled} == {1}
     assert len(pooled) == 6
 
-    for agent_id in ("ai-admin-agent", "ai-fae-agent", "voc"):
+    for agent_id in ("ai-admin-agent", "ai-fae-agent", "ai-daq-fae-agent", "voc"):
         assert cards[agent_id].execution_pool is None
         assert cards[agent_id].pool_concurrency is None
 

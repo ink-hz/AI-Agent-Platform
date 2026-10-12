@@ -24,6 +24,10 @@ _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _FAE_AGENT_ID = "ai-fae-agent"
 _FAE_LAUNCH_BASE = "https://agent.orbbec.com.cn/fae/"
 _FAE_PARTNER_LAUNCH_BASE = "https://fae.orbbec.com.cn/app/"
+_ENTERPRISE_LAUNCH_BASES = {
+    _FAE_AGENT_ID: _FAE_LAUNCH_BASE,
+    "ai-daq-fae-agent": "https://agent.orbbec.com.cn/daq/",
+}
 _LAUNCH_CODE = re.compile(r"[A-Za-z0-9_-]{32,256}\Z")
 # The frozen private back-channel contract, checked in under
 # contracts/fae_identity_v1. Adding the marker is rolling-deploy safe: an older
@@ -247,18 +251,23 @@ class AgentLaunchService:
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def issue(self, context: AuthContext, agent_id: str) -> IssuedAgentLaunch:
-        if agent_id != _FAE_AGENT_ID:
+        if agent_id not in _ENTERPRISE_LAUNCH_BASES:
             raise AgentLaunchError("agent_denied", 403)
-        return self.issue_enterprise(context)
+        return self.issue_enterprise(context, agent_id=agent_id)
 
-    def issue_enterprise(self, context: AuthContext) -> IssuedAgentLaunch:
+    def issue_enterprise(
+        self, context: AuthContext, *, agent_id: str = _FAE_AGENT_ID
+    ) -> IssuedAgentLaunch:
+        launch_base = _ENTERPRISE_LAUNCH_BASES.get(agent_id)
+        if launch_base is None:
+            raise AgentLaunchError("agent_denied", 403)
         if not isinstance(context, AuthContext):
             raise AgentLaunchError("authentication_required", 401)
         if context.hard_stale_read_only:
             raise AgentLaunchError("directory_stale", 503)
         try:
             decision = self._authorization.decide_for_user_id(
-                context.internal_user_id, _FAE_AGENT_ID
+                context.internal_user_id, agent_id
             )
         except AgentUseAuthorizationUnavailable:
             raise AgentLaunchError("authorization_unavailable") from None
@@ -269,7 +278,8 @@ class AgentLaunchService:
             subject_type="enterprise_member",
             source_session_id=context.session_id,
             internal_user_id=context.internal_user_id,
-            launch_base=_FAE_LAUNCH_BASE,
+            agent_id=agent_id,
+            launch_base=launch_base,
             launch_parameter="platform_launch",
         )
 
@@ -282,6 +292,7 @@ class AgentLaunchService:
             subject_type="partner_operator",
             source_session_id=None,
             internal_user_id=None,
+            agent_id=_FAE_AGENT_ID,
             launch_base=_FAE_PARTNER_LAUNCH_BASE,
             launch_parameter="partner_launch",
         )
@@ -293,6 +304,7 @@ class AgentLaunchService:
         subject_type: Literal["enterprise_member", "partner_operator"],
         source_session_id: UUID | None,
         internal_user_id: UUID | None,
+        agent_id: str,
         launch_base: str,
         launch_parameter: str,
     ) -> IssuedAgentLaunch:
@@ -306,7 +318,7 @@ class AgentLaunchService:
             subject_type=subject_type,
             source_session_id=source_session_id,
             internal_user_id=internal_user_id,
-            agent_id=_FAE_AGENT_ID,
+            agent_id=agent_id,
             binding_id=binding_id,
             now=now,
             ttl_seconds=60,
@@ -362,7 +374,7 @@ class AgentLaunchService:
     async def validate_binding(
         self, binding_id: UUID, agent_id: str
     ) -> AgentBindingValidation:
-        if agent_id != _FAE_AGENT_ID:
+        if agent_id not in _ENTERPRISE_LAUNCH_BASES:
             return AgentBindingValidation(None, None, binding_id, agent_id, False)
         row = self._repository.validate_binding(
             binding_id=binding_id,
@@ -383,6 +395,8 @@ class AgentLaunchService:
             ) = row
         except (TypeError, ValueError):
             raise AgentLaunchError("binding_unavailable") from None
+        if selected_binding_id != binding_id or selected_agent_id != agent_id:
+            return AgentBindingValidation(None, None, binding_id, agent_id, False)
         partner_display_name = None
         if active and subject_type == "partner_operator":
             projection = await self._require_partner(

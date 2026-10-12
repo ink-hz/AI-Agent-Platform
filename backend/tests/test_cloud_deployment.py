@@ -371,6 +371,20 @@ def test_formal_edge_routes_each_fae_family_to_exactly_one_owner():
     )
 
 
+def test_daq_edge_routes_keep_browser_and_api_on_one_independent_backend():
+    value = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
+    assert "location = /daq {" in value
+    assert "return 308 /daq/$is_args$args;" in value
+    assert "location = /daq/health {" in value
+    assert "location ^~ /daq/api/ {" in value
+    assert "rewrite ^/daq/api(/.*)$ $1 break;" in value
+    assert "location ^~ /daq/ {" in value
+    for selector in ("location ^~ /daq/api/ {", "location ^~ /daq/ {"):
+        block = value.split(selector, 1)[1].split("\n    location ", 1)[0]
+        assert "proxy_pass http://127.0.0.1:8081;" in block
+        assert "proxy_set_header Authorization \"\";" in block
+
+
 def test_local_deploy_preflight_is_clean_noninteractive_and_manifest_bound():
     script = (CLOUD / "deploy.sh").read_text(encoding="utf-8")
 

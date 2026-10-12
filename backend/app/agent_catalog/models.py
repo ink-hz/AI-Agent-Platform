@@ -26,11 +26,13 @@ CANONICAL_AGENT_IDS = (
     "marketing-gtm-bot",
     "ai-admin-agent",
     "ai-fae-agent",
+    "ai-daq-fae-agent",
 )
 
 _WORKSPACE_URLS = {
     "ai-admin-agent": "/office/?view=services",
     "ai-fae-agent": "/fae/",
+    "ai-daq-fae-agent": "/daq/",
     "voc": "/voc/",
 }
 

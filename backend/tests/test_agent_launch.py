@@ -289,6 +289,51 @@ def _service(*, allowed: bool = True):
 
 
 @pytest.mark.asyncio
+async def test_daq_enterprise_launch_uses_its_own_agent_and_rejects_camera_binding() -> None:
+    from app.control_plane.agent_launch import AgentLaunchService
+
+    repository = GenericFakeRepository()
+    authorization = FakeAuthorization()
+    service = AgentLaunchService(
+        repository=repository,
+        secrets=FakeSecrets(),
+        authorization=authorization,
+        clock=lambda: NOW,
+    )
+    context = AuthContext(USER_ID, Role.MEMBER, SESSION_ID, False)
+
+    issued = service.issue(context, "ai-daq-fae-agent")
+    assert issued.launch_url == (
+        "https://agent.orbbec.com.cn/daq/"
+        "#platform_launch=single-use-agent-launch-code-123456"
+    )
+    assert authorization.calls == [(USER_ID, "ai-daq-fae-agent")]
+    assert repository.issued[0]["agent_id"] == "ai-daq-fae-agent"
+
+    repository.validations.append(
+        (USER_ID, "enterprise_member", BINDING_ID, "ai-daq-fae-agent", USER_ID,
+         "Launch User", True)
+    )
+    assert not (await service.validate_binding(BINDING_ID, "ai-fae-agent")).active
+    repository.validations.append(
+        (USER_ID, "enterprise_member", BINDING_ID, "ai-daq-fae-agent", USER_ID,
+         "Launch User", True)
+    )
+    assert (await service.validate_binding(BINDING_ID, "ai-daq-fae-agent")).active
+
+
+def test_daq_launch_denies_without_its_own_grant() -> None:
+    from app.control_plane.agent_launch import AgentLaunchError
+
+    service, repository, authorization = _service(allowed=False)
+    context = AuthContext(USER_ID, Role.MEMBER, SESSION_ID, False)
+    with pytest.raises(AgentLaunchError, match="^agent_denied$"):
+        service.issue(context, "ai-daq-fae-agent")
+    assert authorization.calls == [(USER_ID, "ai-daq-fae-agent")]
+    assert repository.issued == []
+
+
+@pytest.mark.asyncio
 async def test_launch_code_is_opaque_single_use_and_agent_authorized() -> None:
     from app.control_plane.agent_launch import AgentLaunchError
 
