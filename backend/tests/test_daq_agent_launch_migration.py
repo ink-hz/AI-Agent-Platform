@@ -46,6 +46,34 @@ def test_daq_launch_requires_own_grant_and_binding_rejects_camera_id(
         )
         _insert_grant(
             admin,
+            agent_id="ai-fae-agent",
+            target_kind="user",
+            actor_id=user_id,
+            user_id=user_id,
+        )
+
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app, pytest.raises(
+        psycopg.errors.InsufficientPrivilege
+    ):
+        app.execute(
+            "select platform_control.issue_agent_launch_v57("
+            "%s,%s,1,%s,'enterprise_member',%s,%s,'ai-daq-fae-agent',%s,60)",
+            (uuid4(), hashlib.sha256(uuid4().bytes).digest(), user_id,
+             session_id, user_id, uuid4()),
+        )
+
+    with psycopg.connect(environment["urls"]["platform_control_app"]) as app, pytest.raises(
+        psycopg.errors.CheckViolation
+    ):
+        app.execute(
+            "select platform_control.issue_agent_launch_v57("
+            "%s,%s,1,%s,'partner_operator',null,null,'ai-daq-fae-agent',%s,60)",
+            (uuid4(), hashlib.sha256(uuid4().bytes).digest(), uuid4(), uuid4()),
+        )
+
+    with psycopg.connect(environment["admin"]) as admin:
+        _insert_grant(
+            admin,
             agent_id="ai-daq-fae-agent",
             target_kind="user",
             actor_id=user_id,

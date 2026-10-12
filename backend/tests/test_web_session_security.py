@@ -92,6 +92,9 @@ def test_safe_return_path_allows_only_the_exact_office_entry(candidate: str) -> 
     [
         "/fae/",
         "/fae/conversations/fae:one",
+        "/daq/",
+        "/daq/conversations/daq:one",
+        "/daq/conversations/daq%3Aone",
         "/fae/manage/",
         "/fae/manage/sessions",
         "/fae/manage/sessions/fae:one",
@@ -131,6 +134,9 @@ def test_safe_return_path_accepts_canonical_workspace_paths(candidate: str) -> N
     "candidate",
     [
         "/fae/conversations/unsafe/path",
+        "/daq/conversations/unsafe/path",
+        "/daq/api/chat",
+        "/daq//",
         "/fae/manage/unknown",
         "/voc/unknown",
         "/hr/conversations/unsafe/path",
