@@ -46,3 +46,13 @@
 - 复查根盘可用 `63,850,885,120` 字节、使用率 `37%`；ClickHouse `system` 活跃数据约 `48 MB`。ClickHouse healthy、Langfuse 首页 HTTP 200；`default` 业务表重建前后均为 19 个活跃 part、29,734 行、`6,191,930` 字节。平台 API 与 loopback healthy；平台 brain 容器在清理前已是 unhealthy，清理后状态未变。
 
 容量门槛现在满足。**SDK 仍未上线**：正式禅道与服务凭据、单元及真机证据、企业会话验收等原发布门槛仍未完成。
+
+## 2026-10-19 晚间发布复核
+
+- 新年度计划 CSV 共有 67 条任务、2 条仅分类标题、17 个栏目；任务计划缺少正式需求所需的场景、设备/平台和验收标准。原始表保持本地，已生成含原字段、栏目、逻辑记录号和物理起始行号的待梳理清单。CSV 接入设计见 `docs/superpowers/specs/2026-10-19-sdk-plan-csv-intake-design.md`；没有向禅道或生产数据库导入任务。
+- 生产 API 当前实际镜像为 `sha256:79f8bcd40a04854319575c93f4036898e67bd9da5176a1516be7ae17ff85b064`，其 `PLATFORM_RELEASE_SHA=7bce35f0c334f1028b6f8090b2dcee2d1549606b`；容器内无 `app.sdk_workbench` 模块。`current` 链接仍指向 `2c6111bd…`，不能以该链接或最新主线代替实际运行版本。生产控制库最高迁移 113、预览 112，未应用 SDK 114/115。
+- Brain 候选解析 lane 生产角色缺少切换表 `SELECT`，且 HR 切到 `cloud` 时暂停被误报为故障。已在生产最小授权 `platform_brain_worker` 读取切换表；完整迁移 116、异常分类与心跳修复见主线 `9c1136e2`，相关 76 项后端测试通过。运行容器未更新，Brain 仍 unhealthy；不能把数据库授权视为完整修复上线。
+- 在干净工作树从 `9c1136e2` 调用正式 `deploy/cloud/deploy.sh`，发布在切换前因 `CLOUD_DEPLOY_HR_OVERLAY_REQUIRED` 停止。现行 API 的 Compose 还叠加 HR generation、四层全景覆盖与 DAQ 覆盖；标准脚本只用基础 Compose，会丢失这些维护输入。已核实当前 release、API、loopback 未切换；按 helper 丢弃暂存 keyring、释放 deploy-input 与 Brain action 锁。不得删掉门禁或仅以基础 Compose 强制重建。后续发布要以实际容器的完整有序 Compose 输入为基线，逐项比对服务配置和挂载，只变更明确的 SDK、Brain 镜像/网络/密钥，再做受控切换与回滚验证。
+- 正式禅道镜像需使用云主机 `linux/amd64` 摘要；已解析官方 `hub.zentao.net/app/zentao:22.6` 的 amd64 摘要为 `sha256:99dd899fd99a370d3ddf9a50fecc6cf66f61ad879d70c350a1700a5730c4ff7f`。MariaDB 10.6 的官方 registry 从云主机超时，本机 amd64 镜像下载中断，未落地容器或数据卷。22.6 有已公开的评论授权绕过漏洞，因此原生禅道入口只能保持本机/私网，不能作为公网入口。
+
+结论：容量问题已解，但生产应用、依赖、迁移、覆盖配置与真实身份验收尚未闭环，**不能宣布 SDK 平台上线可用或 CSV 已可直接导入**。
