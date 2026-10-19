@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed unless an SDK plan Compose overlay changes only the API image and flag."""
+"""Fail closed unless an SDK plan overlay changes the API image, release ID and flag."""
 
 from __future__ import annotations
 
@@ -33,6 +33,9 @@ def compare_configs(baseline: dict, candidate: dict, current_image: str, target_
         new_api = new["services"]["platform-api"]
         if old_api.pop("image") != current_image or new_api.pop("image") != target_image:
             raise OverlayGuardError("image_mismatch")
+        if new_api["environment"].pop("PLATFORM_RELEASE_SHA") != target_image.rsplit(":", 1)[1]:
+            raise OverlayGuardError("release_sha_mismatch")
+        old_api.get("environment", {}).pop("PLATFORM_RELEASE_SHA", None)
         if new_api["environment"].pop(PLAN_FLAG) != "1":
             raise OverlayGuardError("plan_flag_disabled")
         old_api.get("environment", {}).pop(PLAN_FLAG, None)
@@ -55,7 +58,8 @@ def preflight(overlay_path: Path, target_image: str, expected_container_id: str)
         raise OverlayGuardError("overlay_file_invalid")
     if re.fullmatch(r"[0-9a-f]{64}", expected_container_id) is None:
         raise OverlayGuardError("container_id_invalid")
-    expected_overlay = {"services": {"platform-api": {"image": target_image, "environment": {PLAN_FLAG: "1"}}}}
+    expected_overlay = {"services": {"platform-api": {"image": target_image, "environment": {
+        "PLATFORM_RELEASE_SHA": target_image.rsplit(":", 1)[1], PLAN_FLAG: "1"}}}}
     if json.loads(overlay_path.read_text(encoding="utf-8")) != expected_overlay:
         raise OverlayGuardError("overlay_content_invalid")
     environment = {key: value for key, value in os.environ.items()

@@ -6,17 +6,17 @@
 
 在生产主机记录 API、Brain、loopback 的容器 ID、镜像 ID、健康状态；从 API 的 `com.docker.compose.project.config_files` 标签获取**有序的全部** Compose 路径，并记录每个文件 SHA-256。记录 `/opt/orbbec-agent-platform/private/platform.env` 摘要、`PLATFORM_HR_AGENT_MODEL` 实际运行值，以及控制库与预览库最高迁移版本。不得用 `current/deploy/cloud/compose.yaml` 单文件重建；现行 HR generation、全景与 DAQ 覆盖需要保留。
 
-将 `platform.env` 原件以 `0600 root:root` 复制到本次独立备份目录。对 `agent_platform_control`、`agent_platform_control_preview` 分别执行 `pg_dump -U platform_owner --format=custom --no-password`，检查 `pg_restore -l` 可读。数据库备份和环境文件不得进入公开目录。保留旧 API 镜像，确认新镜像构建和备份后再切换。
+将 `platform.env` 原件以 `0600 root:root` 复制到本次独立备份目录。对 `agent_platform_control`、`agent_platform_control_preview` 分别执行 `pg_dump -U platform_owner --format=custom --no-password`，用 PostgreSQL 17 容器内的 `pg_restore -l` 检查备份可读（主机自带 PostgreSQL 16 工具不支持该备份格式）。数据库备份和环境文件不得进入公开目录。保留旧 API 镜像，确认新镜像构建和备份后再切换。
 
 ## 镜像与配置预检
 
 将已推送主线准确提交归档到 `/opt/orbbec-agent-platform/releases/<SHA>`，用该目录的 `deploy/cloud/Dockerfile` 构建 `orbbec-agent-platform:<SHA>`，传入 `--build-arg RELEASE_SHA=<SHA>`；构建后核对镜像中的 `PLATFORM_RELEASE_SHA` 与 `<SHA>`。生成权限 `0600` 的 JSON 覆盖文件，内容严格如下：
 
 ```json
-{"services":{"platform-api":{"image":"orbbec-agent-platform:<SHA>","environment":{"PLATFORM_SDK_PLAN_ENABLED":"1"}}}}
+{"services":{"platform-api":{"image":"orbbec-agent-platform:<SHA>","environment":{"PLATFORM_RELEASE_SHA":"<SHA>","PLATFORM_SDK_PLAN_ENABLED":"1"}}}}
 ```
 
-把 `<SHA>` 换为真实 40 位提交。先用当前版本 `cloud_env.py apply` 和权限 `0600` 的 SDK 设置文件原子写入五项关闭的禅道配置及 `PLATFORM_SDK_PLAN_ENABLED=1`；此操作自带平台发布锁。随后取得同一平台发布锁，在锁内重新读取 API 容器 ID，**在任何 `up` 之前**调用本目录 `overlay_guard.py`，传入覆盖文件绝对路径、目标镜像名和刚读取的 API 完整容器 ID：
+把 `<SHA>` 换为真实 40 位提交。取得平台现有 `agent-brain-action.lock` 操作锁，在锁内用当前 `cloud_env.py` 的 `_apply_locked` 和权限 `0600` 的 SDK 设置文件原子写入五项关闭的禅道配置及 `PLATFORM_SDK_PLAN_ENABLED=1`；这避免在更新环境文件与 Compose 切换之间释放发布锁。然后重新读取 API 容器 ID，**在任何 `up` 之前**调用本目录 `overlay_guard.py`，传入覆盖文件绝对路径、目标镜像名和刚读取的 API 完整容器 ID：
 
 ```bash
 /usr/bin/python3 /opt/orbbec-agent-platform/releases/<SHA>/deploy/sdk/overlay_guard.py \
@@ -25,7 +25,7 @@
   <切换前API完整容器ID>
 ```
 
-要求输出 `SDK_OVERLAY_CONFIG_OK`，记录其中的 `container_id`、`compose_files`、`services`、`current_image`、`target_image`、`runtime_overrides`。脚本从实际容器标签取有序 Compose 文件，比较叠加前后有效配置，只有 API 镜像与计划开关可变；同时核对现行运行环境与渲染环境。`PLATFORM_HR_AGENT_MODEL` 是现行 API 的运行时 Compose 变量，脚本按实际容器值参与两侧渲染；执行下文 `up` 时必须传入**同一值**。若检查失败，不进行迁移或切换。
+要求输出 `SDK_OVERLAY_CONFIG_OK`，记录其中的 `container_id`、`compose_files`、`services`、`current_image`、`target_image`、`runtime_overrides`。脚本从实际容器标签取有序 Compose 文件，比较叠加前后有效配置，只有 API 镜像、对应的 `PLATFORM_RELEASE_SHA` 与计划开关可变；同时核对现行运行环境与渲染环境。`PLATFORM_HR_AGENT_MODEL` 是现行 API 的运行时 Compose 变量，脚本按实际容器值参与两侧渲染；执行下文 `up` 时必须传入**同一值**。若检查失败，不进行迁移或切换，并从备份恢复原环境文件。
 
 ## 迁移与切换
 
