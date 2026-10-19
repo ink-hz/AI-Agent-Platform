@@ -93,3 +93,21 @@ it("can open older batches beyond the first twenty", async () => {
   expect(api.planImports).toHaveBeenCalledWith(2);
   expect(container.textContent).toContain("oldest.csv");
 });
+
+it("keeps an older matching batch selected after a duplicate CSV upload", async () => {
+  const api = client();
+  const old = { id: 1, filename: "oldest.csv", sha256: "a".repeat(64), row_count: 69,
+    task_count: 67, module_count: 17, created_at: "2026-10-19", uploaded_by: account.internal_user_id };
+  vi.mocked(api.planImports).mockResolvedValue({ items: [{ ...old, id: 21, filename: "latest.csv" }], page: 1, total: 21 });
+  vi.mocked(api.uploadPlan).mockResolvedValue(old);
+  await act(async () => root.render(<SdkWorkbench account={account} client={api} />));
+  const file = new File(["平台,任务\nSDK,测试"], "oldest.csv", { type: "text/csv" });
+  const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+  Object.defineProperty(input, "files", { value: [file] });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  await act(async () => Array.from(container.querySelectorAll("button")).find(button => button.textContent === "导入 CSV")!.click());
+  const select = container.querySelector(".sdk-plan-batch select") as HTMLSelectElement;
+  expect(select.value).toBe("1");
+  expect(container.textContent).toContain("oldest.csv");
+  expect(api.planRows).toHaveBeenCalledWith(1, 1, expect.any(Object));
+});

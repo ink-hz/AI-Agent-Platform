@@ -732,7 +732,8 @@ done
 
 sdk_environment="$(/usr/bin/python3 "$release_path/deploy/sdk/cloud_env.py" render "$environment_path")" || fail
 unset PLATFORM_SDK_WORKBENCH_ENABLED PLATFORM_SDK_ZENTAO_BASE_URL PLATFORM_SDK_ZENTAO_ACCOUNT \
-  PLATFORM_SDK_ZENTAO_PRODUCT_ID PLATFORM_SDK_ZENTAO_EXECUTION_ID PLATFORM_SDK_ZENTAO_PASSWORD_FILE
+  PLATFORM_SDK_ZENTAO_PRODUCT_ID PLATFORM_SDK_ZENTAO_EXECUTION_ID PLATFORM_SDK_ZENTAO_PASSWORD_FILE \
+  PLATFORM_SDK_PLAN_ENABLED
 if /usr/bin/grep -Fxq 'PLATFORM_SDK_WORKBENCH_ENABLED=1' <<<"$sdk_environment"; then
   /usr/bin/docker run --rm --network none \
     -v orbbec-agent-platform-sdk-secrets:/run/sdk-secrets:ro alpine:3.22 \

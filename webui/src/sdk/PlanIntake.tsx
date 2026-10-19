@@ -14,6 +14,7 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
   const [batches, setBatches] = useState<PlanBatch[]>([]);
   const [batchPage, setBatchPage] = useState(1);
   const [batchTotal, setBatchTotal] = useState(0);
+  const [pinnedBatch, setPinnedBatch] = useState<PlanBatch | null>(null);
   const [batchId, setBatchId] = useState<number | null>(null);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [page, setPage] = useState(1);
@@ -32,10 +33,10 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
       if (!live) return;
       setBatches(result.items);
       setBatchTotal(result.total);
-      setBatchId(current => result.items.some(item => item.id === current) ? current : result.items[0]?.id ?? null);
+      setBatchId(current => result.items.some(item => item.id === current) || pinnedBatch?.id === current ? current : result.items[0]?.id ?? null);
     }).catch(() => { if (live) setError("无法读取年度计划批次。"); });
     return () => { live = false; };
-  }, [client, batchPage]);
+  }, [client, batchPage, pinnedBatch?.id]);
 
   useEffect(() => {
     if (batchId === null) { setRows([]); setTotal(0); return; }
@@ -56,7 +57,8 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
       const imported = await client.uploadPlan(file, csrfToken);
       const updated = await client.planImports(1);
       setBatchPage(1); setBatchTotal(updated.total);
-      setBatches(updated.items.some(item => item.id === imported.id) ? updated.items : [imported, ...updated.items]);
+      setBatches(updated.items);
+      setPinnedBatch(updated.items.some(item => item.id === imported.id) ? null : imported);
       setBatchId(imported.id); setPage(1); clearSelection();
       setNotice(`已读取 ${imported.row_count} 条来源记录，其中 ${imported.task_count} 条任务。`);
     } catch { setError("导入失败，请核对文件格式、权限和大小。"); }
@@ -68,7 +70,8 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
     catch { setError("无法读取来源行。"); }
   }
 
-  const batch = batches.find(item => item.id === batchId);
+  const visibleBatches = pinnedBatch && !batches.some(item => item.id === pinnedBatch.id) ? [pinnedBatch, ...batches] : batches;
+  const batch = visibleBatches.find(item => item.id === batchId);
   return <section className="sdk-panel sdk-plan">
     <h2>2026 SDK 年度计划</h2>
     <p>原始任务计划，用于梳理需求；来源状态与责任人按文件原文展示。</p>
@@ -78,11 +81,11 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
       <label>选择年度计划 CSV <input type="file" accept=".csv,text/csv" onChange={event => setFile(event.target.files?.[0] ?? null)} /></label>
       <button type="submit">导入 CSV</button>
     </form>}
-    {batches.length > 0 && <>
+    {visibleBatches.length > 0 && <>
       <label className="sdk-plan-batch">来源批次 <select value={batchId ?? ""} onChange={event => { setBatchId(Number(event.target.value)); setPage(1); clearSelection(); }}>
-        {batches.map(item => <option key={item.id} value={item.id}>{item.filename} · {item.created_at.slice(0, 10)}</option>)}
+        {visibleBatches.map(item => <option key={item.id} value={item.id}>{item.filename} · {item.created_at.slice(0, 10)}</option>)}
       </select></label>
-      <div className="sdk-pagination"><button type="button" disabled={batchPage <= 1} onClick={() => { clearSelection(); setBatchPage(batchPage - 1); }}>上一批次页</button><span>批次第 {batchPage} 页，共 {batchTotal} 批</span><button type="button" disabled={batchPage * 20 >= batchTotal} onClick={() => { clearSelection(); setBatchPage(batchPage + 1); }}>下一批次页</button></div>
+      <div className="sdk-pagination"><button type="button" disabled={batchPage <= 1} onClick={() => { clearSelection(); setPinnedBatch(null); setBatchPage(batchPage - 1); }}>上一批次页</button><span>批次第 {batchPage} 页，共 {batchTotal} 批</span><button type="button" disabled={batchPage * 20 >= batchTotal} onClick={() => { clearSelection(); setPinnedBatch(null); setBatchPage(batchPage + 1); }}>下一批次页</button></div>
       {batch && <p className="sdk-id">{batch.row_count} 条来源记录 · {batch.task_count} 条任务 · {batch.module_count} 个栏目 · SHA-256 {batch.sha256}</p>}
       <div className="sdk-plan-filters">
         <input aria-label="按栏目筛选" placeholder="栏目" value={module} onChange={event => { setModule(event.target.value); setPage(1); clearSelection(); }} />
@@ -101,6 +104,6 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
         <p>{selected.story_id ? `已关联正式需求 #${selected.story_id}` : selected.conversion_state ? `转需求状态：${selected.conversion_state}` : "尚未形成正式需求"}</p>
       </div>}
     </>}
-    {batches.length === 0 && <p>尚未导入年度计划。</p>}
+    {visibleBatches.length === 0 && <p>尚未导入年度计划。</p>}
   </section>;
 }

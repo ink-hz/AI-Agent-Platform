@@ -69,17 +69,25 @@ def preflight(overlay_path: Path, target_image: str, expected_container_id: str)
     paths = labels.get("com.docker.compose.project.config_files", "").split(",")
     if len(paths) < 2 or any(not Path(path).is_absolute() or not Path(path).is_file() or Path(path).is_symlink() for path in paths):
         raise OverlayGuardError("compose_files_invalid")
+    actual_environment = dict(entry.split("=", 1) for entry in inspection["Config"]["Env"] if "=" in entry)
+    # HR's model selection was supplied at its original Compose invocation rather
+    # than persisted in platform.env. Keep that runtime choice during this release.
+    if "PLATFORM_HR_AGENT_MODEL" in actual_environment:
+        environment["PLATFORM_HR_AGENT_MODEL"] = actual_environment["PLATFORM_HR_AGENT_MODEL"]
     command = ["docker", "compose", "--project-name", PROJECT, "--env-file", ENV_FILE]
     for path in paths:
         command.extend(["-f", path])
     baseline = json.loads(_run([*command, "config", "--format", "json"], environment=environment))
     candidate = json.loads(_run([*command, "-f", str(overlay_path), "config", "--format", "json"], environment=environment))
-    service_count = compare_configs(baseline, candidate, inspection["Image"], target_image)
-    actual_environment = dict(entry.split("=", 1) for entry in inspection["Config"]["Env"] if "=" in entry)
+    configured_image = inspection["Config"]["Image"]
+    if _run(["docker", "image", "inspect", configured_image, "--format", "{{.Id}}"], environment=environment).strip() != inspection["Image"]:
+        raise OverlayGuardError("running_image_reference_drift")
+    service_count = compare_configs(baseline, candidate, configured_image, target_image)
     if any(actual_environment.get(key) != str(value) for key, value in baseline["services"]["platform-api"]["environment"].items()):
         raise OverlayGuardError("running_environment_drift")
     return {"services": service_count, "compose_files": len(paths), "current_image": inspection["Image"],
-            "target_image": target_image, "container_id": inspection["Id"]}
+            "target_image": target_image, "container_id": inspection["Id"],
+            "runtime_overrides": ["PLATFORM_HR_AGENT_MODEL"] if "PLATFORM_HR_AGENT_MODEL" in actual_environment else []}
 
 
 def main(args: list[str]) -> int:

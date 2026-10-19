@@ -36,6 +36,9 @@ def test_sdk_plan_overlay_allows_only_api_image_and_plan_flag():
     module = guard()
     old, new = configs()
     assert module.compare_configs(old, new, "sha256:old", "orbbec-agent-platform:" + "a" * 40) == 2
+    old["services"]["platform-api"]["image"] = "orbbec-agent-platform:" + "b" * 40
+    assert module.compare_configs(old, new, "orbbec-agent-platform:" + "b" * 40,
+                                  "orbbec-agent-platform:" + "a" * 40) == 2
 
 
 @pytest.mark.parametrize("mutation", ["hr_mount", "brain_image", "extra_environment", "wrong_flag", "wrong_image"])

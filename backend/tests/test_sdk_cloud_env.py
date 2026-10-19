@@ -222,3 +222,4 @@ def test_release_stage_renders_sdk_state_before_replacing_platform_env() -> None
     append = stage.index('"$sdk_environment" >> "$environment_path"')
     assert render < replace < append
     assert stage.index("unset PLATFORM_SDK_WORKBENCH_ENABLED") < stage.index("previous_compose=(")
+    assert stage.index("PLATFORM_SDK_PLAN_ENABLED\n") < stage.index("previous_compose=(")
