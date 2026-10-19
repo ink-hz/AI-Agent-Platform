@@ -10,6 +10,7 @@ from app.hr.candidate_models import (
     AttachCandidateDraftExecution,
     CreateCandidateDraftBatch,
 )
+from app.hr import candidate_repository
 from app.hr.candidate_repository import (
     CandidateConflict,
     CandidateNotFound,
@@ -17,6 +18,7 @@ from app.hr.candidate_repository import (
     CandidateUnavailable,
     _analysis,
 )
+from app.hr_agent.cutover import CutoverRejected
 
 NOW = datetime.now(UTC)
 
@@ -192,6 +194,12 @@ def test_repository_conceals_database_failures(error, expected) -> None:
 
     with pytest.raises(expected):
         repository.draft_for_owner(uuid4(), uuid4())
+
+
+def test_cutover_pause_keeps_a_distinct_candidate_parser_signal() -> None:
+    assert hasattr(candidate_repository, "CandidateParserPaused")
+    with pytest.raises(candidate_repository.CandidateParserPaused):
+        CandidateRepository._raise_repository_error(CutoverRejected())
 
 
 def test_repository_refuses_missing_or_malformed_rows() -> None:

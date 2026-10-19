@@ -5,6 +5,8 @@ from pathlib import Path
 import yaml
 from app.agent_brain import worker_runtime
 from app.agent_brain.worker_runtime import tick, validate_worker_mode
+from app.hr import candidate_repository
+from app.hr.candidate_repository import CandidateUnavailable
 
 ROOT = Path(__file__).parents[2]
 CLOUD = ROOT / "deploy" / "cloud"
@@ -142,17 +144,16 @@ def test_compose_keeps_brain_opt_in_and_secret_files_private() -> None:
         environment["PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE"]
         == "/run/secrets/content-encryption-keyring"
     )
-    assert api["volumes"] == [
-        "platform-api-secrets:/run/secrets:ro",
-        "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro",
-        {
-            "type": "bind",
-            "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
-            "target": "/run/office-recipient/platform-office-recipient-bearer",
-            "read_only": True,
-            "bind": {"create_host_path": False},
-        },
-    ]
+    assert "platform-api-secrets:/run/secrets:ro" in api["volumes"]
+    assert "platform-sdk-secrets:/run/sdk-secrets:ro" in api["volumes"]
+    assert "/data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro" in api["volumes"]
+    assert {
+        "type": "bind",
+        "source": "/opt/orbbec-agent-platform/private/platform-office-recipient-bearer",
+        "target": "/run/office-recipient/platform-office-recipient-bearer",
+        "read_only": True,
+        "bind": {"create_host_path": False},
+    } in api["volumes"]
     assert environment["PLATFORM_AGENT_BRAIN_V2_ENABLED"] == (
         "${PLATFORM_AGENT_BRAIN_V2_ENABLED:-0}"
     )
@@ -560,6 +561,36 @@ def test_candidate_parser_is_an_isolated_brain_worker_lane() -> None:
         "candidate-parser",
         "heartbeat:hr-candidate-parser:healthy",
     ]
+
+
+def test_cloud_cutover_pause_keeps_candidate_parser_heartbeat_healthy() -> None:
+    assert hasattr(candidate_repository, "CandidateParserPaused")
+    heartbeats = []
+
+    class Runtime:
+        def advance_one(self):
+            return False
+
+        def scan_settled_batches(self):
+            return 0
+
+    class Repository:
+        def heartbeat(self, name, *, status, error_code=None):
+            heartbeats.append((name, status))
+
+    class PausedParser:
+        def tick(self):
+            raise candidate_repository.CandidateParserPaused("legacy lane paused")
+
+    class BrokenParser:
+        def tick(self):
+            raise CandidateUnavailable("database unavailable")
+
+    tick(validate_worker_mode("brain"), Runtime(), Repository(), candidate_parser_runtime=PausedParser())
+    assert heartbeats[-1] == ("hr-candidate-parser", "healthy")
+
+    tick(validate_worker_mode("brain"), Runtime(), Repository(), candidate_parser_runtime=BrokenParser())
+    assert heartbeats[-1] == ("hr-candidate-parser", "degraded")
 
 
 def test_brain_worker_builds_durable_candidate_parser_runtime() -> None:

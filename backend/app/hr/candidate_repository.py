@@ -54,6 +54,10 @@ class CandidateUnavailable(CandidateRepositoryError):
     pass
 
 
+class CandidateParserPaused(CandidateUnavailable):
+    """The legacy candidate parser is idle after an HR lane cutover."""
+
+
 def _draft(row: dict[str, Any]) -> CandidateDraft:
     identities = row["identity_candidates"]
     if not isinstance(identities, (list, tuple)):
@@ -217,10 +221,10 @@ class CandidateRepository:
     @staticmethod
     def _raise_repository_error(error: Exception) -> None:
         if isinstance(error, CutoverRejected):
-            logging.getLogger(__name__).info("candidate_repository_unavailable kind=cutover_paused sqlstate=none", extra={
+            logging.getLogger(__name__).info("candidate_parser_paused kind=cutover_paused sqlstate=none", extra={
                 "failure_kind": "cutover_paused", "sqlstate": None,
             })
-            raise CandidateUnavailable("candidate repository unavailable") from None
+            raise CandidateParserPaused("candidate parser paused by cutover") from None
         if isinstance(error, psycopg.errors.NoDataFound):
             raise CandidateNotFound("candidate resource not found") from None
         if isinstance(

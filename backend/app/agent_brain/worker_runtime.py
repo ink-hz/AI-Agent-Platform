@@ -44,7 +44,7 @@ from app.hr.candidate_parser_runtime import (
     CandidateParserRuntime,
     PostgresCandidateParserResultReader,
 )
-from app.hr.candidate_repository import CandidateRepository
+from app.hr.candidate_repository import CandidateParserPaused, CandidateRepository
 from app.local_secrets import read_secret_file
 from app.voc_extension.client import VocTaskClient
 from app.voc_extension.identity import PlatformVocTokenSigner
@@ -369,6 +369,11 @@ def tick(
             changed = operation()
             repository.heartbeat(name, status="healthy")
             return changed
+        except CandidateParserPaused:
+            if name != "hr-candidate-parser":
+                raise
+            repository.heartbeat(name, status="healthy")
+            return 0
         except Exception:
             try:
                 repository.heartbeat(
