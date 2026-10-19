@@ -58,10 +58,10 @@
 
 **Interfaces:**
 - Consumes: `PLATFORM_SDK_WORKBENCH_ENABLED`, `PLATFORM_SDK_ZENTAO_*` from `backend/app/config.py`; shared `platform-api-secrets` volume.
-- Produces: disabled-by-default cloud API configuration that can read `/run/secrets/sdk-zentao-password` when enabled.
+- Produces: disabled-by-default cloud API configuration that can read `/run/sdk-secrets/password` when enabled.
 
 - [ ] **Step 1:** Add a Compose configuration regression test that renders cloud Compose with SDK disabled and asserts the SDK flag defaults to `0`; render with enabled test values and assert base URL, account, password path, product ID and execution ID propagate only to `platform-api`.
-- [ ] **Step 2:** Add the six SDK environment keys under `platform-api` in `deploy/cloud/compose.yaml`, using defaults that keep startup disabled: `PLATFORM_SDK_WORKBENCH_ENABLED: "${PLATFORM_SDK_WORKBENCH_ENABLED:-0}"`, `PLATFORM_SDK_ZENTAO_BASE_URL: "${PLATFORM_SDK_ZENTAO_BASE_URL:-}"`, `PLATFORM_SDK_ZENTAO_ACCOUNT: "${PLATFORM_SDK_ZENTAO_ACCOUNT:-}"`, `PLATFORM_SDK_ZENTAO_PASSWORD_FILE: /run/secrets/sdk-zentao-password`, and default `0` for product/execution IDs. The existing `platform-api-secrets` volume supplies the file only when enabled.
+- [ ] **Step 2:** Add the six SDK environment keys under `platform-api` in `deploy/cloud/compose.yaml`, using defaults that keep startup disabled: `PLATFORM_SDK_WORKBENCH_ENABLED: "${PLATFORM_SDK_WORKBENCH_ENABLED:-0}"`, `PLATFORM_SDK_ZENTAO_BASE_URL: "${PLATFORM_SDK_ZENTAO_BASE_URL:-}"`, `PLATFORM_SDK_ZENTAO_ACCOUNT: "${PLATFORM_SDK_ZENTAO_ACCOUNT:-}"`, `PLATFORM_SDK_ZENTAO_PASSWORD_FILE: /run/sdk-secrets/password`, and default `0` for product/execution IDs. Mount a dedicated `platform-sdk-secrets` volume on `platform-api` only; the shared `platform-api` YAML environment anchor also feeds `platform-hr-web-worker`, so explicitly keep SDK disabled with blank credentials there.
 - [ ] **Step 3:** Re-run SDK HTTP/PostgreSQL tests, Compose config rendering, front-end relevant tests and build. In the isolated instance, use actual ZenTao IDs with a local platform API/temporary control database to create requirement → review → task → candidate; record `blocked` for hardware not present and assert gate stays closed. Do not turn the test data into a production release.
 - [ ] **Step 4:** Commit the cloud configuration and updated runbook after review.
 

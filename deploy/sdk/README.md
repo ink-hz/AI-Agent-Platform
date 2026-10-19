@@ -2,15 +2,34 @@
 
 本目录只提供隔离试运行配置，不修改现有云生产服务。禅道数据与原平台数据库分开。镜像版本锁在禅道开源版 22.6，MariaDB 10.6；正式发布前应记录实际镜像 digest 并备份两个卷。
 
+## 本地真实接口试验
+
+先确认 Docker context 指向本机。在**本机 Docker**中创建试验专用内部网络 `orbbec-agent-platform-internal`（正式云上已有同名网络），使用随机值写入被 Git 忽略、权限 `0600` 的 `deploy/sdk/.env`，仅包含 `SDK_DB_PASSWORD` 和 `SDK_DB_ROOT_PASSWORD`。然后执行：
+
+```bash
+docker compose --env-file deploy/sdk/.env -f deploy/sdk/compose.yaml up -d
+docker compose --env-file deploy/sdk/.env -f deploy/sdk/compose.yaml ps
+```
+
+首次在本机 `http://127.0.0.1:18131/` 完成禅道安装，创建独立测试产品、项目与执行，并给测试账号授予该范围内创建/查看需求与任务的权限。将该账号密码写入本机权限 `0600` 的文件，在执行测试的终端设置 `SDK_LIVE_ACCEPT=1`、`SDK_LIVE_ZENTAO_URL=http://127.0.0.1:18131`、`SDK_LIVE_ZENTAO_ACCOUNT`、`SDK_LIVE_ZENTAO_PASSWORD_FILE`、`SDK_LIVE_PRODUCT_ID`、`SDK_LIVE_EXECUTION_ID`，再运行：
+
+```bash
+backend/.venv/bin/python -m pytest -q backend/tests/test_sdk_zentao_live.py
+```
+
+该测试会在隔离产品留下带 `SDK-V1-ACCEPT-` 前缀的真实需求与任务，核对读回的 ID、正文、验收标准和关联执行。测试失败要保留首个失败状态及对应记录，不能自动重发创建请求。记录实际镜像 digest、产品/执行 ID 与结果；密码和 Token 不进入记录。结束后可停容器保留卷复查：`docker compose --env-file deploy/sdk/.env -f deploy/sdk/compose.yaml stop`。清理卷前先备份或确认测试记录已转存。
+
+平台完整验收还需 SDK 源码清单、实际构建日志与产物摘要、单测和硬件报告。没有设备或报告时，在平台记录 `blocked` 并确认审批门槛仍关闭；接口试验成功不能替代此业务证据。正式平台员工入口为 `https://agent.orbbec.com.cn/sdk/`。
+
 1. 在有 Docker Compose 且已有 `orbbec-agent-platform-internal` 网络的试运行主机上，创建仅当前用户可读的 `.env`，设置 `SDK_DB_PASSWORD` 和 `SDK_DB_ROOT_PASSWORD`，文件权限为 `0600`。不要把 `.env` 加入仓库。数据库和禅道均没有公网监听；禅道安装界面仅绑定主机 `127.0.0.1:18131`。
-2. 执行 `docker compose --env-file .env -f deploy/sdk/compose.yaml up -d`。通过 SSH 端口转发访问 `127.0.0.1:18131` 完成初次安装。产品创建为 OpenOrbbecSDK，执行项目使用单独的 SDK 工作区。创建仅有该产品/执行范围 API 权限的 `sdk-api` 账号。
-3. 将平台服务可读、权限 `0600` 的服务账号密码文件挂载到平台容器，例如 `/run/secrets/sdk-zentao-password`。在**待审核的正式部署变更**中给平台 API 配置：
+2. 从仓库根目录执行 `docker compose --env-file deploy/sdk/.env -f deploy/sdk/compose.yaml up -d`。通过 SSH 端口转发访问 `127.0.0.1:18131` 完成初次安装。产品创建为 OpenOrbbecSDK，执行项目使用单独的 SDK 工作区。创建仅有该产品/执行范围 API 权限的 `sdk-api` 账号。
+3. 将服务账号密码放入独立的 `orbbec-agent-platform-sdk-secrets` 卷，卷内文件为 `password`，归属平台 API 的 UID/GID `10001:10001`，权限为 `0600`。该卷只挂载到 `platform-api:/run/sdk-secrets:ro`，不挂载到 HR Worker。密码不得写入 `.env` 或提交到仓库。在**待审核的正式部署变更**中给平台 API 配置：
 
    ```text
    PLATFORM_SDK_WORKBENCH_ENABLED=1
    PLATFORM_SDK_ZENTAO_BASE_URL=http://zentao:80
    PLATFORM_SDK_ZENTAO_ACCOUNT=sdk-api
-   PLATFORM_SDK_ZENTAO_PASSWORD_FILE=/run/secrets/sdk-zentao-password
+   PLATFORM_SDK_ZENTAO_PASSWORD_FILE=/run/sdk-secrets/password
    PLATFORM_SDK_ZENTAO_PRODUCT_ID=<安装后实际产品 ID>
    PLATFORM_SDK_ZENTAO_EXECUTION_ID=<安装后实际执行 ID>
    ```

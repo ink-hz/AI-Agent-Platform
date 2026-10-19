@@ -101,6 +101,12 @@ services:
       PLATFORM_VOC_EXTENSION_SIGNING_KEY_FILE: /run/secrets/voc-extension-signing-key
       PLATFORM_VOC_SERVICE_BEARER_FILE: /run/secrets/voc-service-bearer
       PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS: "10"
+      PLATFORM_SDK_WORKBENCH_ENABLED: "${PLATFORM_SDK_WORKBENCH_ENABLED:-0}"
+      PLATFORM_SDK_ZENTAO_BASE_URL: "${PLATFORM_SDK_ZENTAO_BASE_URL:-}"
+      PLATFORM_SDK_ZENTAO_ACCOUNT: "${PLATFORM_SDK_ZENTAO_ACCOUNT:-}"
+      PLATFORM_SDK_ZENTAO_PASSWORD_FILE: /run/sdk-secrets/password
+      PLATFORM_SDK_ZENTAO_PRODUCT_ID: "${PLATFORM_SDK_ZENTAO_PRODUCT_ID:-0}"
+      PLATFORM_SDK_ZENTAO_EXECUTION_ID: "${PLATFORM_SDK_ZENTAO_EXECUTION_ID:-0}"
       # FAE partner operator identity is production-disabled: no real Partner
       # Provider has been selected yet. These values are deliberately empty so
       # the release gate fails closed and no Partner start or callback route is
@@ -111,8 +117,9 @@ services:
       PLATFORM_PARTNER_PROVIDER_KIND: ""
       PLATFORM_PARTNER_PROVIDER_RELEASE_FILE: ""
       PLATFORM_PARTNER_PROVIDER_RELEASE_SHA256: ""
-    volumes: &platform-api-volumes
+    volumes:
       - platform-api-secrets:/run/secrets:ro
+      - platform-sdk-secrets:/run/sdk-secrets:ro
       - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro
       - /data/orbbec-agent-platform/hr-role-packages:/data/agent-platform/hr-role-packages:ro
       - /data/orbbec-agent-platform/hr-knowledge:/data/agent-platform/hr-knowledge:ro
@@ -214,8 +221,25 @@ services:
         test -n "$$PLATFORM_DINGTALK_CORP_ID"
         export PLATFORM_DINGTALK_APP_KEY PLATFORM_DINGTALK_AGENT_ID PLATFORM_DINGTALK_CORP_ID
         exec python -m app.agent_brain.direct_worker
-    environment: *platform-api-environment
-    volumes: *platform-api-volumes
+    environment:
+      <<: *platform-api-environment
+      PLATFORM_SDK_WORKBENCH_ENABLED: "0"
+      PLATFORM_SDK_ZENTAO_BASE_URL: ""
+      PLATFORM_SDK_ZENTAO_ACCOUNT: ""
+      PLATFORM_SDK_ZENTAO_PASSWORD_FILE: ""
+      PLATFORM_SDK_ZENTAO_PRODUCT_ID: "0"
+      PLATFORM_SDK_ZENTAO_EXECUTION_ID: "0"
+    volumes:
+      - platform-api-secrets:/run/secrets:ro
+      - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro
+      - /data/orbbec-agent-platform/hr-role-packages:/data/agent-platform/hr-role-packages:ro
+      - /data/orbbec-agent-platform/hr-knowledge:/data/agent-platform/hr-knowledge:ro
+      - type: bind
+        source: /opt/orbbec-agent-platform/private/platform-office-recipient-bearer
+        target: /run/office-recipient/platform-office-recipient-bearer
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       platform-internal: {}
       platform-edge:
@@ -517,6 +541,8 @@ volumes:
   platform-api-secrets:
     name: orbbec-agent-platform-api-secrets
     external: true
+  platform-sdk-secrets:
+    name: orbbec-agent-platform-sdk-secrets
   platform-directory-secrets:
     name: orbbec-agent-platform-directory-secrets
     external: true
