@@ -4,6 +4,7 @@ import type { Account } from "../auth";
 import { navigate } from "../router";
 import { sdkApi, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole } from "./sdkApi";
 import { RequestIdentity } from "./requestIdentity";
+import { CandidateWorkspace } from "./CandidateWorkspace";
 import "./sdkWorkbench.css";
 
 type Props = { account: Account; storyId?: number; client?: SdkApi };
@@ -142,6 +143,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
         </>}
       </div>
     </div>
+    {me.role && <CandidateWorkspace account={account} role={me.role} readOnly={me.read_only} client={client} storyId={storyId} taskIds={detail?.tasks.map(task => task.task_id)} />}
     {me.can_manage && <section className="sdk-panel sdk-members"><h2>成员权限</h2><ul>{members.map(member => <li key={member.internal_user_id}>{member.internal_user_id} · {member.role}</li>)}</ul>
       {!me.read_only && <form className="sdk-form" onSubmit={event => { event.preventDefault(); void submit(async () => {
         const input = { internal_user_id: memberId, role: memberRole };

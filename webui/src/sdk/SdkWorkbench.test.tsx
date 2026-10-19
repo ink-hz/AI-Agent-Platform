@@ -36,6 +36,7 @@ it("shows live requirements and the selected story without a second login", asyn
     me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false }),
     requirements: vi.fn().mockResolvedValue({ items: [{ id: 12, title: "USB 稳定性", status: "active" }], page: 1, total: 1 }),
     requirement: vi.fn().mockResolvedValue({ story: { id: "12", product: "7", title: "USB 稳定性", verify: "连续运行", status: "active" }, reviews: [], tasks: [{ story_id: 12, task_id: 31 }] }),
+    candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
   } as unknown as SdkApi;
 
   await act(async () => root.render(<SdkWorkbench account={account} storyId={12} client={client} />));

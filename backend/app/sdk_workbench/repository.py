@@ -56,18 +56,19 @@ class SdkRepository:
         try:
             with self._connection() as connection:
                 with connection.transaction():
-                    prior = connection.execute(
-                        "select target_user_id, role from sdk.member_events where actor_id=%s and request_id=%s",
-                        (actor, request_id),
+                    inserted = connection.execute(
+                        "insert into sdk.member_events(actor_id,request_id,target_user_id,role) values (%s,%s,%s,%s) "
+                        "on conflict do nothing returning request_id",
+                        (actor, request_id, target, role),
                     ).fetchone()
-                    if prior:
+                    if not inserted:
+                        prior = connection.execute(
+                            "select target_user_id,role from sdk.member_events where actor_id=%s and request_id=%s",
+                            (actor, request_id),
+                        ).fetchone()
                         if prior["target_user_id"] != target or prior["role"] != role:
                             raise HTTPException(409, "sdk_request_id_collision")
                         return {"internal_user_id": str(target), "role": role}
-                    connection.execute(
-                        "insert into sdk.member_events(actor_id,request_id,target_user_id,role) values (%s,%s,%s,%s)",
-                        (actor, request_id, target, role),
-                    )
                     connection.execute(
                         "insert into sdk.members(internal_user_id,role,granted_by) values (%s,%s,%s) "
                         "on conflict (internal_user_id) do update set role=excluded.role,granted_by=excluded.granted_by,granted_at=clock_timestamp()",
@@ -104,7 +105,7 @@ class SdkRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select state,result,kind,story_id,created_at from sdk.write_intents where actor_id=%s and request_id=%s",
+                    "select state,result,kind,story_id,created_at,digest from sdk.write_intents where actor_id=%s and request_id=%s",
                     (actor, request_id),
                 ).fetchone()
             return dict(row) if row else None

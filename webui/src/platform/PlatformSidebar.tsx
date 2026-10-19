@@ -1,7 +1,8 @@
-import type { MouseEvent } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { Activity, BookOpen, Bot, Boxes, ClipboardList, Code2, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
+import { sdkApi } from '../sdk/sdkApi';
 
 interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; routes: readonly string[] }
 interface Group { label: string; items: Item[]; hideHeading?: boolean }
@@ -17,7 +18,7 @@ const runtime: Item[] = [
   { label:'运行事件', path:'/admin/activity', icon:ListChecks, routes:['admin-activity'] },
   { label:'任务复审', path:'/admin/review', icon:ScanEye, routes:['admin-review'] },
 ];
-function groupsFor(account?: Account | null, readOnly = false): Group[] {
+function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = false): Group[] {
   const manager = account?.role === 'platform_owner' || account?.role === 'platform_admin';
   const faeManager = account?.role === 'platform_owner' || account?.workspace_scopes.includes('fae_workbench');
   const vocManager = manager || account?.role === 'management_viewer';
@@ -28,7 +29,7 @@ function groupsFor(account?: Account | null, readOnly = false): Group[] {
     ] },
     { label:'AI 工作', items:manager ? [...aiWork.slice(0,2), {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}, ...aiWork.slice(2)] : aiWork },
     { label:'业务工作台', items:[
-      { label:'SDK 开发管理', path:'/sdk/', icon:Code2, routes:['sdk'] },
+      ...(sdkAvailable ? [{ label:'SDK 开发管理', path:'/sdk/', icon:Code2, routes:['sdk'] }] : []),
       { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
       { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },
       { label:'行政服务', path:'/office/', icon:Building2, external:true, routes:[] },
@@ -54,9 +55,17 @@ function follow(event: MouseEvent<HTMLAnchorElement>, item: Item) {
   navigate(item.path);
 }
 export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route;account?:Account|null;readOnly:boolean;collapsed:boolean}) {
+  const [sdkAvailable, setSdkAvailable] = useState(false);
+  useEffect(() => {
+    if (!account) { setSdkAvailable(false); return; }
+    let live = true;
+    void sdkApi.me().then(me => { if (live) setSdkAvailable(Boolean(me.role || me.can_manage)); })
+      .catch(() => { if (live) setSdkAvailable(false); });
+    return () => { live = false; };
+  }, [account?.internal_user_id]);
   return <aside id="platform-navigation" className="platform-sidebar" hidden={collapsed}>
     <nav aria-label="主导航">
-      {groupsFor(account,readOnly).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
+      {groupsFor(account,readOnly,sdkAvailable).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
         {!group.hideHeading && <h2>{group.label}</h2>}
         {group.items.map(item => {
           const current = item.routes.includes(route.name)

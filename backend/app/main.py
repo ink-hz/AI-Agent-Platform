@@ -223,6 +223,8 @@ from .review.replay import ReplayRunner
 from .review.repository import PsycopgReviewRepository
 from .review.service import ReviewService, UnavailableReviewService
 from .sdk_workbench.repository import SdkRepository
+from .sdk_workbench.evidence_repository import EvidenceRepository
+from .sdk_workbench.evidence_service import EvidenceService
 from .sdk_workbench.routes import build_sdk_router
 from .sdk_workbench.service import SdkService
 from .sdk_workbench.zentao import ZenTaoClient
@@ -797,6 +799,7 @@ def create_app(
     identity_auth=None,
     voc_extension_client=None,
     sdk_service=None,
+    sdk_evidence_service=None,
     voc_submitter_directory=None,
     ai_notes_reader: AiNotesReader | None = None,
     agent_launch_service: AgentLaunchService | None = None,
@@ -1314,11 +1317,16 @@ def create_app(
             config.sdk_zentao_account,
             config.sdk_zentao_password_file,
         )
+        sdk_repository = SdkRepository(control_database_url)
         sdk_service = SdkService(
-            SdkRepository(control_database_url),
+            sdk_repository,
             sdk_zentao_client,
             product_id=config.sdk_zentao_product_id,
             execution_id=config.sdk_zentao_execution_id,
+        )
+        sdk_evidence_service = EvidenceService(
+            sdk_repository, sdk_zentao_client, EvidenceRepository(control_database_url),
+            product_id=config.sdk_zentao_product_id,
         )
     if config.voc_extension_enabled and identity_enabled:
         bot_subject_resolver = getattr(
@@ -1433,6 +1441,7 @@ def create_app(
     app.state.agent_use_authorization = agent_use_authorization
     app.state.voc_extension_client = voc_extension_client
     app.state.sdk_service = sdk_service
+    app.state.sdk_evidence_service = sdk_evidence_service
     app.state.voc_submitter_directory = voc_submitter_directory
     app.state.voc_service_authorizer = voc_service_authorizer
     app.state.ai_notes_reader = ai_notes_reader

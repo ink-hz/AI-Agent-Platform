@@ -224,6 +224,20 @@ async def test_changed_story_version_needs_new_review_before_task():
 
 
 @pytest.mark.asyncio
+async def test_task_request_replay_survives_later_story_version_change():
+    repo, zentao = Repository(), ZenTao()
+    repo.reviews.append({"story_id": 12, "story_version": "1", "decision": "approved"})
+    body = {"request_id": str(uuid4()), "name": "开发", "description": "x"}
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
+        first = await client.post("/api/v1/sdk/requirements/12/tasks", json=body)
+        zentao.version = "2"
+        replay = await client.post("/api/v1/sdk/requirements/12/tasks", json=body)
+    assert first.status_code == replay.status_code == 201
+    assert first.json() == replay.json() == {"id": 31}
+    assert len(zentao.created) == 1
+
+
+@pytest.mark.asyncio
 async def test_only_platform_owner_can_manage_sdk_members():
     repo, zentao = Repository(), ZenTao()
     target = uuid4()

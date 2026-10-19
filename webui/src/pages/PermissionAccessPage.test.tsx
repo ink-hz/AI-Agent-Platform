@@ -32,6 +32,13 @@ it("groups every permission route under account permissions", async () => {
   await act(async () => root.render(<PlatformSidebar route={{ name: "admin-identity" }} account={{ ...owner, role: "platform_admin" }} collapsed={false} readOnly={false} />));
   expect(container.querySelector("a[aria-label='技术支持权限']")).toBeNull();
 });
+it("shows SDK navigation only when the workbench grants access", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ role: "viewer", can_manage: false, read_only: false })));
+  vi.stubGlobal("fetch", fetchMock);
+  await act(async () => root.render(<PlatformSidebar route={{ name: "home" }} account={owner} collapsed={false} readOnly={false} />));
+  expect(container.querySelector("a[href='/sdk/']")?.textContent).toContain("SDK 开发管理");
+  expect(String(fetchMock.mock.calls[0][0])).toBe("/api/v1/sdk/me");
+});
 it("preserves observer management on its secondary page", async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: [{ internal_user_id: "viewer", display_name: "合成观察者", role: "management_viewer", status: "active", scopes: ["agent-one"] }] })));
   vi.stubGlobal("fetch", fetchMock);

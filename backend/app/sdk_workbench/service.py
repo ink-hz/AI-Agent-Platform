@@ -134,9 +134,23 @@ class SdkService:
         story = await self._story(story_id)
         return {"story": story, "reviews": self.repository.list_reviews(story_id), "tasks": self.repository.list_tasks(story_id)}
 
-    def _intent(self, actor: AuthContext, request_id: UUID, kind: str, payload: dict) -> dict | None:
+    @staticmethod
+    def _digest(kind: str, payload: dict) -> str:
         canonical = json.dumps({"kind": kind, "payload": payload}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _replay(self, actor: AuthContext, request_id: UUID, kind: str, payload: dict) -> dict | None:
+        intent = self.repository.get_intent(actor.internal_user_id, request_id)
+        if intent is None:
+            return None
+        if intent["digest"] != self._digest(kind, payload):
+            raise HTTPException(409, "sdk_request_id_collision")
+        if intent["state"] == "succeeded" and isinstance(intent["result"], dict):
+            return intent["result"]
+        raise HTTPException(409, "sdk_reconcile_required")
+
+    def _intent(self, actor: AuthContext, request_id: UUID, kind: str, payload: dict) -> dict | None:
+        digest = self._digest(kind, payload)
         intent, fresh = self.repository.reserve(actor.internal_user_id, request_id, digest, kind, payload.get("story_id"))
         if fresh:
             return None
@@ -167,11 +181,14 @@ class SdkService:
 
     async def create_task(self, actor: AuthContext, story_id: int, request_id: UUID, name: str, description: str) -> dict:
         self.require(actor, frozenset({"contributor"}), write=True)
+        payload = {"story_id": story_id, "name": name, "description": description}
+        replay = self._replay(actor, request_id, "create_task", payload)
+        if replay is not None:
+            return replay
         story = await self._story(story_id)
         reviews = self.repository.list_reviews(story_id)
         if not reviews or reviews[-1]["decision"] != "approved" or reviews[-1]["story_version"] != str(story["version"]):
             raise HTTPException(409, "sdk_requirement_review_required")
-        payload = {"story_id": story_id, "name": name, "description": description}
         replay = self._intent(actor, request_id, "create_task", payload)
         if replay is not None:
             return replay
@@ -189,9 +206,13 @@ class SdkService:
 
     async def review(self, actor: AuthContext, story_id: int, request_id: UUID, decision: str, reason: str) -> dict:
         self.require(actor, frozenset({"reviewer"}), write=True)
+        payload = {"story_id": story_id, "decision": decision, "reason": reason}
+        replay = self._replay(actor, request_id, "review_requirement", payload)
+        if replay is not None:
+            return replay
         story = await self._story(story_id)
         story_version = str(story["version"])
-        replay = self._intent(actor, request_id, "review_requirement", {"story_id": story_id, "story_version": story_version, "decision": decision, "reason": reason})
+        replay = self._intent(actor, request_id, "review_requirement", payload)
         if replay is not None:
             return replay
         result = self.repository.add_review(actor.internal_user_id, story_id, story_version, decision, reason, request_id)

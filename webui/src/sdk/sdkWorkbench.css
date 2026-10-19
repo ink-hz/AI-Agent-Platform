@@ -20,4 +20,8 @@
 .sdk-notice { background: #eff6ff; color: #1e40af; padding: 12px; border-radius: 8px; }
 .sdk-pre { white-space: pre-wrap; }
 .sdk-members { margin-top: 18px; }
+.sdk-candidate-layout { display: grid; grid-template-columns: minmax(220px, .6fr) minmax(400px, 1.4fr); gap: 20px; }
+.sdk-candidates code { overflow-wrap: anywhere; }
+.sdk-module-grid { display: grid; grid-template-columns: repeat(2, minmax(200px, 1fr)); gap: 12px; }
 @media (max-width: 800px) { .sdk-columns { grid-template-columns: 1fr; } .sdk-workbench { padding: 16px; } }
+@media (max-width: 800px) { .sdk-candidate-layout, .sdk-module-grid { grid-template-columns: 1fr; } }
