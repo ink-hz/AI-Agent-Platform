@@ -80,19 +80,20 @@ class SdkRepository:
         except psycopg.Error as error:
             self._unavailable(error)
 
-    def reserve(self, actor: UUID, request_id: UUID, digest: str, kind: str, story_id: int | None = None, payload: dict | None = None) -> tuple[dict, bool]:
+    def reserve(self, actor: UUID, request_id: UUID, digest: str, kind: str, story_id: int | None = None, payload: dict | None = None, *, plan_row_id: int | None = None) -> tuple[dict, bool]:
         try:
             with self._connection() as connection:
                 with connection.transaction():
                     inserted = connection.execute(
-                        "insert into sdk.write_intents(actor_id,request_id,digest,kind,story_id,request_payload,state) "
-                        "values (%s,%s,%s,%s,%s,%s,'pending') on conflict do nothing returning state,digest,result,kind,story_id,request_payload",
-                        (actor, request_id, digest, kind, story_id, psycopg.types.json.Jsonb(payload or {})),
+                        "insert into sdk.write_intents(actor_id,request_id,digest,kind,story_id,request_payload,plan_row_id,state) "
+                        "values (%s,%s,%s,%s,%s,%s,%s,'pending') on conflict (actor_id,request_id) do nothing "
+                        "returning state,digest,result,kind,story_id,request_payload,plan_row_id",
+                        (actor, request_id, digest, kind, story_id, psycopg.types.json.Jsonb(payload or {}), plan_row_id),
                     ).fetchone()
                     if inserted:
                         return dict(inserted), True
                     row = connection.execute(
-                        "select state,digest,result,kind,story_id,request_payload from sdk.write_intents where actor_id=%s and request_id=%s for update",
+                        "select state,digest,result,kind,story_id,request_payload,plan_row_id from sdk.write_intents where actor_id=%s and request_id=%s for update",
                         (actor, request_id),
                     ).fetchone()
                     if row and row["state"] == "rejected" and row["digest"] == digest:
@@ -104,6 +105,8 @@ class SdkRepository:
             if row is None:
                 raise HTTPException(503, "sdk_store_unavailable")
             return dict(row), False
+        except psycopg.errors.UniqueViolation:
+            raise HTTPException(409, "sdk_plan_row_already_converting") from None
         except psycopg.Error as error:
             self._unavailable(error)
 
@@ -111,7 +114,7 @@ class SdkRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select state,result,kind,story_id,created_at,digest,request_payload from sdk.write_intents where actor_id=%s and request_id=%s",
+                    "select state,result,kind,story_id,plan_row_id,created_at,digest,request_payload from sdk.write_intents where actor_id=%s and request_id=%s",
                     (actor, request_id),
                 ).fetchone()
             return dict(row) if row else None
