@@ -222,6 +222,10 @@ from .review.database import resolve_review_database_url
 from .review.replay import ReplayRunner
 from .review.repository import PsycopgReviewRepository
 from .review.service import ReviewService, UnavailableReviewService
+from .sdk_workbench.repository import SdkRepository
+from .sdk_workbench.routes import build_sdk_router
+from .sdk_workbench.service import SdkService
+from .sdk_workbench.zentao import ZenTaoClient
 from .spa import SpaStaticFiles, load_public_asset_manifest
 from .voc_extension.client import VocExtensionClient
 from .voc_extension.directory import VocSubmitterDirectory
@@ -792,6 +796,7 @@ def create_app(
     citation_service=None,
     identity_auth=None,
     voc_extension_client=None,
+    sdk_service=None,
     voc_submitter_directory=None,
     ai_notes_reader: AiNotesReader | None = None,
     agent_launch_service: AgentLaunchService | None = None,
@@ -828,6 +833,8 @@ def create_app(
     owns_voc_extension_client = (
         voc_extension_client is None and config.voc_extension_enabled
     )
+    owns_sdk_zentao_client = sdk_service is None and config.sdk_workbench_enabled
+    sdk_zentao_client = None
     identity_enabled = (
         identity_auth is not None
         or config.control_plane.mode is not IdentityMode.DISABLED
@@ -1295,6 +1302,24 @@ def create_app(
                 config.control_plane.control_database_url_file
             )
         voc_submitter_directory = VocSubmitterDirectory(control_database_url)
+    if owns_sdk_zentao_client:
+        if not identity_enabled:
+            raise RuntimeError("SDK workbench requires enterprise identity")
+        if control_database_url is None:
+            control_database_url = read_secret_file(
+                config.control_plane.control_database_url_file
+            )
+        sdk_zentao_client = ZenTaoClient(
+            config.sdk_zentao_base_url,
+            config.sdk_zentao_account,
+            config.sdk_zentao_password_file,
+        )
+        sdk_service = SdkService(
+            SdkRepository(control_database_url),
+            sdk_zentao_client,
+            product_id=config.sdk_zentao_product_id,
+            execution_id=config.sdk_zentao_execution_id,
+        )
     if config.voc_extension_enabled and identity_enabled:
         bot_subject_resolver = getattr(
             identity_auth, "voc_bot_subject_resolver", None
@@ -1368,6 +1393,8 @@ def create_app(
                 await identity_auth.aclose()
             if owns_voc_extension_client and voc_extension_client is not None:
                 await voc_extension_client.aclose()
+            if sdk_zentao_client is not None:
+                await sdk_zentao_client.close()
 
     app = FastAPI(title="Orbbec AI Agent Platform", version="0.1.0", lifespan=lifespan)
     app.state.repo = repo
@@ -1405,6 +1432,7 @@ def create_app(
     app.state.action_command_service = action_command_service
     app.state.agent_use_authorization = agent_use_authorization
     app.state.voc_extension_client = voc_extension_client
+    app.state.sdk_service = sdk_service
     app.state.voc_submitter_directory = voc_submitter_directory
     app.state.voc_service_authorizer = voc_service_authorizer
     app.state.ai_notes_reader = ai_notes_reader
@@ -1528,6 +1556,7 @@ def create_app(
         include_in_schema=False,
     )
     app.include_router(build_voc_extension_router())
+    app.include_router(build_sdk_router())
     if voc_internal_router is not None:
         app.include_router(voc_internal_router)
     if office_recipient_router is not None:

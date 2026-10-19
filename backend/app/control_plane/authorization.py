@@ -33,6 +33,22 @@ _FAE_WORKBENCH_SHELL_ROUTES = frozenset({
     ("GET", "/fae/manage/{client_path:path}"),
 })
 
+_SDK_WORKBENCH_ROUTES = frozenset({
+    ("GET", "/sdk"),
+    ("GET", "/sdk/"),
+    ("GET", "/sdk/{client_path:path}"),
+    ("GET", "/api/v1/sdk/me"),
+    ("GET", "/api/v1/sdk/members"),
+    ("POST", "/api/v1/sdk/members"),
+    ("GET", "/api/v1/sdk/reconciliation"),
+    ("POST", "/api/v1/sdk/reconciliation/{actor_id}/{target_request_id}/bind"),
+    ("GET", "/api/v1/sdk/requirements"),
+    ("POST", "/api/v1/sdk/requirements"),
+    ("GET", "/api/v1/sdk/requirements/{story_id}"),
+    ("POST", "/api/v1/sdk/requirements/{story_id}/tasks"),
+    ("POST", "/api/v1/sdk/requirements/{story_id}/reviews"),
+})
+
 _AI_ENGINEERING_ROUTES = frozenset({
     ("GET", "/api/v1/ai-engineering"),
     ("GET", "/api/v1/ai-engineering/organization"),
@@ -456,6 +472,9 @@ class AuthorizationService:
             if auth.hard_stale_read_only and key in _HARD_STALE_SELF_MUTATION_ROUTES:
                 return self._deny(503, "hard_stale_read_only")
             return AuthorizationDecision(True, 200, "self_service", None)
+        if key in _SDK_WORKBENCH_ROUTES:
+            # SDK membership and fine-grained roles are checked in its route service.
+            return AuthorizationDecision(True, 200, "sdk_workbench_route", None)
         if key in _AI_ENGINEERING_ROUTES:
             # Reuse platform management roles; sub-application routes are independent.
             if auth.role not in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:

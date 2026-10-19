@@ -94,6 +94,12 @@ class Config:
     voc_extension_base_url: str
     voc_extension_signing_key_file: str
     voc_extension_timeout_seconds: float
+    sdk_workbench_enabled: bool
+    sdk_zentao_base_url: str
+    sdk_zentao_account: str
+    sdk_zentao_password_file: str
+    sdk_zentao_product_id: int
+    sdk_zentao_execution_id: int
     content_encryption_keyring_file: str
     execution_relay_lease_seconds: int
     execution_relay_max_body_bytes: int
@@ -772,6 +778,21 @@ def _validate_voc_extension_config(config: Config) -> None:
         raise RuntimeError("VOC extension signing key is unavailable") from error
 
 
+def _validate_sdk_workbench_config(config: Config) -> None:
+    if os.getenv("PLATFORM_SDK_ZENTAO_PASSWORD"):
+        raise ValueError("SDK ZenTao password must use a secret file")
+    if not config.sdk_workbench_enabled:
+        return
+    from .sdk_workbench.zentao import _private_origin
+
+    _private_origin(config.sdk_zentao_base_url)
+    if not config.sdk_zentao_account:
+        raise ValueError("SDK ZenTao account is required")
+    if config.sdk_zentao_product_id < 1 or config.sdk_zentao_execution_id < 1:
+        raise ValueError("SDK ZenTao product and execution IDs are required")
+    _validate_private_file(config.sdk_zentao_password_file, "SDK ZenTao password")
+
+
 def _validate_partner_release_config(config: Config) -> None:
     """Production partner identity requires validated Provider release evidence.
 
@@ -1008,6 +1029,12 @@ def load_config() -> Config:
         voc_extension_timeout_seconds=float(
             os.getenv("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "10")
         ),
+        sdk_workbench_enabled=_strict_flag("PLATFORM_SDK_WORKBENCH_ENABLED", "sdk_workbench_flag_invalid"),
+        sdk_zentao_base_url=os.getenv("PLATFORM_SDK_ZENTAO_BASE_URL", "").strip(),
+        sdk_zentao_account=os.getenv("PLATFORM_SDK_ZENTAO_ACCOUNT", "").strip(),
+        sdk_zentao_password_file=os.getenv("PLATFORM_SDK_ZENTAO_PASSWORD_FILE", "").strip(),
+        sdk_zentao_product_id=int(os.getenv("PLATFORM_SDK_ZENTAO_PRODUCT_ID", "0")),
+        sdk_zentao_execution_id=int(os.getenv("PLATFORM_SDK_ZENTAO_EXECUTION_ID", "0")),
         content_encryption_keyring_file=content_encryption_keyring_file,
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,
@@ -1043,5 +1070,6 @@ def load_config() -> Config:
     _validate_brain_model_config(config)
     _validate_office_recipient_directory_config(config)
     _validate_voc_extension_config(config)
+    _validate_sdk_workbench_config(config)
     _validate_partner_release_config(config)
     return config

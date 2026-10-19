@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { Activity, BookOpen, Bot, Boxes, ClipboardList, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
+import { Activity, BookOpen, Bot, Boxes, ClipboardList, Code2, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
 
@@ -28,6 +28,7 @@ function groupsFor(account?: Account | null, readOnly = false): Group[] {
     ] },
     { label:'AI 工作', items:manager ? [...aiWork.slice(0,2), {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}, ...aiWork.slice(2)] : aiWork },
     { label:'业务工作台', items:[
+      { label:'SDK 开发管理', path:'/sdk/', icon:Code2, routes:['sdk'] },
       { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
       { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },
       { label:'行政服务', path:'/office/', icon:Building2, external:true, routes:[] },

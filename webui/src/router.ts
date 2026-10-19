@@ -22,6 +22,7 @@ export type Route =
   | { name: "missions" }
   | { name: "mission"; missionId: string }
   | { name: "agents" }
+  | { name: "sdk"; storyId?: number }
   | { name: "voc-workspace" }
   | { name: "hr"; positionId?: string; workId?: string }
   | { name: "hr-chat" }
@@ -58,7 +59,7 @@ export type Route =
   | { name: "legacy-redirect"; to: string; navigation: "spa" | "document" }
   | { name: "not-found" };
 
-export type RouteSection = "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "fae" | "admin";
+export type RouteSection = "brain" | "conversations" | "agents" | "missions" | "ai-notes" | "account" | "fae" | "sdk" | "admin";
 
 export type NavigateOptions = {
   replace?: boolean;
@@ -229,6 +230,12 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (clean === "/conversations") return { name: "conversations" };
   if (clean === "/missions") return { name: "missions" };
   if (clean === "/agents") return { name: "agents" };
+  if (clean === "/sdk") return { name: "sdk" };
+  const sdkStory = /^\/sdk\/requirements\/([1-9]\d*)$/.exec(clean);
+  if (sdkStory) {
+    const storyId = Number(sdkStory[1]);
+    return Number.isSafeInteger(storyId) ? { name: "sdk", storyId } : { name: "not-found" };
+  }
   if (clean === "/agents/voc" || clean === "/agents/voc/workspace") {
     return { name: "legacy-redirect", to: "/voc/", navigation: "document" };
   }
@@ -415,6 +422,7 @@ export function routePath(route: Route): string {
     case "missions": return "/missions";
     case "mission": return `/missions/${encodeURIComponent(route.missionId)}`;
     case "agents": return "/agents";
+    case "sdk": return route.storyId ? `/sdk/requirements/${route.storyId}` : "/sdk/";
     case "voc-workspace": return "/agents/voc/workspace";
 
     case "hr-chat": return "/hr/chat";
@@ -469,6 +477,7 @@ export function routeSection(route: Route): RouteSection | null {
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
   if (route.name === "account") return "account";
+  if (route.name === "sdk") return "sdk";
   if (route.name.startsWith("fae-manage-")) return "fae";
   if (route.name.startsWith("admin-")) return "admin";
   return null;

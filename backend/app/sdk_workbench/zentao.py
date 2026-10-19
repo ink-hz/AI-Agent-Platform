@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -11,6 +11,7 @@ import httpx
 
 
 _MAX_BYTES = 1_048_576
+_DOCKER_PRIVATE_NETWORKS = tuple(ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 
 
 class ZenTaoUnavailable(RuntimeError):
@@ -30,7 +31,9 @@ def _private_origin(value: str) -> str:
         parsed = urlparse(value)
         host = parsed.hostname
         address = ip_address(host) if host else None
-        allowed_host = host == "zentao" or (address is not None and address.is_private)
+        allowed_host = host == "zentao" or (address is not None and (
+            address.is_loopback or any(address in network for network in _DOCKER_PRIVATE_NETWORKS)
+        ))
         port = parsed.port
     except ValueError:
         allowed_host = False
@@ -164,6 +167,15 @@ class ZenTaoClient:
         if not isinstance(story, dict) or str(story.get("id")) != str(story_id):
             raise ZenTaoProtocolError("zentao_invalid_story")
         return story
+
+    async def get_task(self, task_id: int) -> dict:
+        if task_id < 1:
+            raise ValueError("zentao_invalid_task_id")
+        body = await self._request("GET", f"tasks/{task_id}")
+        task = body.get("task")
+        if not isinstance(task, dict) or str(task.get("id")) != str(task_id):
+            raise ZenTaoProtocolError("zentao_invalid_task")
+        return task
 
     async def create_story(self, product_id: int, title: str, spec: str, verify: str) -> int:
         body = await self._request(

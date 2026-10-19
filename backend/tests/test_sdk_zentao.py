@@ -33,6 +33,8 @@ async def test_login_and_exact_story_task_contract(password_file):
             return httpx.Response(200, json={"status": "success", "stories": [{"id": "12", "title": "USB 稳定性"}], "page": 2, "total": 1})
         if request.url.path.endswith("/stories/12"):
             return httpx.Response(200, json={"status": "success", "story": {"id": "12", "title": "USB 稳定性", "verify": "连续运行"}})
+        if request.url.path.endswith("/tasks/31"):
+            return httpx.Response(200, json={"status": "success", "task": {"id": "31", "story": "12", "execution": "9", "name": "修复断流"}})
         if request.url.path.endswith("/stories"):
             assert json.loads(request.content) == {"productID": 7, "title": "USB 稳定性", "spec": "客户现场", "verify": "连续运行"}
             return httpx.Response(200, json={"status": "success", "id": 12})
@@ -45,6 +47,7 @@ async def test_login_and_exact_story_task_contract(password_file):
     try:
         assert (await client.list_stories(7, 2))["stories"][0]["id"] == "12"
         assert (await client.get_story(12))["title"] == "USB 稳定性"
+        assert (await client.get_task(31))["story"] == "12"
         assert await client.create_story(7, "USB 稳定性", "客户现场", "连续运行") == 12
         assert await client.create_task(9, 12, "修复断流", "检查枚举") == 31
     finally:
@@ -95,5 +98,7 @@ def test_requires_fixed_private_origin_and_password_file(password_file):
         ZenTaoClient("https://example.com", "sdk-api", password_file)
     with pytest.raises(ValueError):
         ZenTaoClient("http://127.0.0.1:18131/attacker", "sdk-api", password_file)
+    with pytest.raises(ValueError):
+        ZenTaoClient("http://169.254.169.254:80", "sdk-api", password_file)
     with pytest.raises(ValueError):
         ZenTaoClient("http://127.0.0.1:18131", "sdk-api", password_file.parent / "missing")

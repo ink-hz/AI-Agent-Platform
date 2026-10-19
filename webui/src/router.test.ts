@@ -19,6 +19,12 @@ afterEach(() => {
 
 
 describe("Platform router", () => {
+  it("keeps SDK requirement and detail routes inside the Platform shell", () => {
+    expect(parseRoute("/sdk/")).toEqual({ name: "sdk" });
+    expect(parseRoute("/sdk/requirements/12")).toEqual({ name: "sdk", storyId: 12 });
+    expect(parseRoute("/sdk/requirements/not-an-id")).toEqual({ name: "not-found" });
+    expect(routePath({ name: "sdk", storyId: 12 })).toBe("/sdk/requirements/12");
+  });
   it.each([
     ["/hr/", ""],
     ["/hr/chat", "?conversation=one&source=directory"],

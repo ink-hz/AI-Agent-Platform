@@ -30,6 +30,27 @@ STALE_ADMIN = AuthContext(uuid4(), Role.PLATFORM_ADMIN, uuid4(), True)
 STALE_MEMBER = AuthContext(uuid4(), Role.MEMBER, uuid4(), True)
 STALE_VIEWER = AuthContext(uuid4(), Role.MANAGEMENT_VIEWER, uuid4(), True)
 
+
+@pytest.mark.parametrize("actor", [MEMBER, VIEWER, ADMIN, OWNER])
+def test_sdk_routes_delegate_member_authorization_to_sdk_service(actor):
+    authorization = AuthorizationService(grants=None)
+    for method, route in (
+        ("GET", "/api/v1/sdk/me"),
+        ("GET", "/api/v1/sdk/requirements"),
+        ("POST", "/api/v1/sdk/requirements"),
+        ("GET", "/api/v1/sdk/requirements/{story_id}"),
+        ("POST", "/api/v1/sdk/requirements/{story_id}/reviews"),
+        ("POST", "/api/v1/sdk/requirements/{story_id}/tasks"),
+        ("GET", "/api/v1/sdk/members"),
+        ("POST", "/api/v1/sdk/members"),
+        ("GET", "/api/v1/sdk/reconciliation"),
+        ("POST", "/api/v1/sdk/reconciliation/{actor_id}/{target_request_id}/bind"),
+        ("GET", "/sdk/"),
+        ("GET", "/sdk/{client_path:path}"),
+    ):
+        assert authorization.decide(actor, method, route, ()).allowed
+        assert not authorization.decide(None, method, route, ()).allowed
+
 AI_ENGINEERING_PROTECTED_ROUTES = (
     "/api/v1/ai-engineering/panorama",
     "/api/v1/ai-engineering/export.svg",
