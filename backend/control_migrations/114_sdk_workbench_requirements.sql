@@ -26,6 +26,16 @@ create table sdk.write_intents (
 create unique index sdk_write_intents_external_id on sdk.write_intents(kind, ((result->>'id')::bigint))
   where state='succeeded' and kind in ('create_requirement','create_task');
 
+create table sdk.write_rejection_events (
+  id bigint generated always as identity primary key,
+  actor_id uuid not null,
+  request_id uuid not null,
+  reason text not null check (reason in ('sdk_zentao_auth_required','sdk_zentao_rejected')),
+  created_at timestamptz not null default clock_timestamp(),
+  foreign key (actor_id, request_id) references sdk.write_intents(actor_id, request_id)
+);
+create index sdk_write_rejection_events_request on sdk.write_rejection_events(actor_id,request_id,id);
+
 create table sdk.review_events (
   actor_id uuid not null references platform_control.internal_users(internal_user_id),
   request_id uuid not null,
@@ -82,8 +92,10 @@ begin
   end if;
   execute format('grant usage on schema sdk to %I', selected_app);
   execute format('grant select, insert, update on sdk.members, sdk.write_intents to %I', selected_app);
+  execute format('grant select, insert on sdk.write_rejection_events to %I', selected_app);
   execute format('grant select, insert on sdk.review_events, sdk.member_events to %I', selected_app);
   execute format('grant select, insert on sdk.task_links to %I', selected_app);
   execute format('grant select, insert on sdk.reconciliation_events to %I', selected_app);
+  execute format('grant usage, select on all sequences in schema sdk to %I', selected_app);
 end
 $migration$;

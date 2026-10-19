@@ -195,14 +195,21 @@ class SdkRepository:
         except psycopg.Error as error:
             self._unavailable(error)
 
-    def reject(self, actor: UUID, request_id: UUID) -> None:
+    def reject(self, actor: UUID, request_id: UUID, reason: str) -> None:
         try:
             with self._connection() as connection:
-                connection.execute(
-                    "update sdk.write_intents set state='rejected',updated_at=clock_timestamp() "
-                    "where actor_id=%s and request_id=%s and state='pending'",
-                    (actor, request_id),
-                )
+                with connection.transaction():
+                    row = connection.execute(
+                        "update sdk.write_intents set state='rejected',updated_at=clock_timestamp() "
+                        "where actor_id=%s and request_id=%s and state='pending' returning request_id",
+                        (actor, request_id),
+                    ).fetchone()
+                    if row is None:
+                        raise HTTPException(409, "sdk_reconcile_required")
+                    connection.execute(
+                        "insert into sdk.write_rejection_events(actor_id,request_id,reason) values (%s,%s,%s)",
+                        (actor, request_id, reason),
+                    )
         except psycopg.Error as error:
             self._unavailable(error)
 

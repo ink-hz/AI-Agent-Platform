@@ -68,7 +68,7 @@ export function CandidateWorkspace({ account, role, readOnly, client, storyId, t
       if (!live) return;
       setItems(list.items);
       setCandidateTotal(list.total);
-      setSelectedId(list.items[0]?.id ?? null);
+      setSelectedId(current => current != null && list.items.some(item => item.id === current) ? current : (list.items[0]?.id ?? null));
     }).catch(error => { if (live) setError(errorText(error)); });
     return () => { live = false; };
   }, [client, candidatePage]);
@@ -84,9 +84,9 @@ export function CandidateWorkspace({ account, role, readOnly, client, storyId, t
     return () => { live = false; };
   }, [client, selectedId]);
 
-  async function refresh(id: number) {
-    const [list, candidate] = await Promise.all([client.candidates(1), client.candidate(id)]);
-    setCandidatePage(1); setItems(list.items); setCandidateTotal(list.total); setSelectedId(id); setDetail(candidate);
+  async function refresh(id: number, page = candidatePage) {
+    const [list, candidate] = await Promise.all([client.candidates(page), client.candidate(id)]);
+    setCandidatePage(page); setItems(list.items); setCandidateTotal(list.total); setSelectedId(id); setDetail(candidate);
     try { setGate(await client.gate(id)); }
     catch (error) { setGate(null); setError(errorText(error)); }
   }
@@ -107,7 +107,7 @@ export function CandidateWorkspace({ account, role, readOnly, client, storyId, t
     const input = { story_id: storyId, task_ids: taskIds, manifest, targets };
     try {
       const result = await client.createCandidate({ request_id: createRequest.forPayload(input), ...input }, account.csrf_token);
-      createRequest.clear(); await refresh(result.id); setNotice(`候选 #${result.id} 已冻结；源码清单由人工登记，待核对。`);
+      createRequest.clear(); await refresh(result.id, 1); setNotice(`候选 #${result.id} 已冻结；源码清单由人工登记，待核对。`);
     } catch (error) { setError(errorText(error)); }
   }
 

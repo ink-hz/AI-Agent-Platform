@@ -42,7 +42,7 @@ class Repository:
     def reconcile(self, actor, request_id):
         self.intents[(actor, request_id)]["state"] = "reconcile_required"
 
-    def reject(self, actor, request_id):
+    def reject(self, actor, request_id, reason):
         self.intents[(actor, request_id)]["state"] = "rejected"
 
     def list_reconciliation(self):
@@ -220,8 +220,9 @@ async def test_story_outside_configured_product_cannot_be_used():
     zentao.get_story = foreign_story
     async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
         detail = await client.get("/api/v1/sdk/requirements/12")
+        history = await client.get("/api/v1/sdk/requirements/12/reviews")
         task = await client.post("/api/v1/sdk/requirements/12/tasks", json={"request_id": str(uuid4()), "name": "偷看", "description": "x"})
-    assert detail.status_code == task.status_code == 404
+    assert detail.status_code == history.status_code == task.status_code == 404
     assert zentao.created == []
 
 

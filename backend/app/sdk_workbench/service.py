@@ -143,8 +143,9 @@ class SdkService:
         story = await self._story(story_id)
         return {"story": story, "reviews": self.repository.list_reviews(story_id), "tasks": self.repository.list_tasks(story_id)}
 
-    def reviews(self, actor: AuthContext, story_id: int, page: int) -> dict:
+    async def reviews(self, actor: AuthContext, story_id: int, page: int) -> dict:
         self._role(actor)
+        await self._story(story_id)
         return {"items": self.repository.list_reviews(story_id, page), "page": page}
 
     @staticmethod
@@ -185,8 +186,9 @@ class SdkService:
         try:
             story_id = await self.zentao.create_story(self.product_id, title, spec, acceptance)
         except (ZenTaoAuthenticationError, ZenTaoRequestRejected) as error:
-            self.repository.reject(actor.internal_user_id, request_id)
-            raise self._translate(error) from None
+            translated = self._translate(error)
+            self.repository.reject(actor.internal_user_id, request_id, translated.detail)
+            raise translated from None
         except (ZenTaoUnavailable, ZenTaoRejected, ZenTaoProtocolError):
             self.repository.reconcile(actor.internal_user_id, request_id)
             raise HTTPException(503, "sdk_reconcile_required") from None
@@ -213,8 +215,9 @@ class SdkService:
         try:
             task_id = await self.zentao.create_task(self.execution_id, story_id, name, description)
         except (ZenTaoAuthenticationError, ZenTaoRequestRejected) as error:
-            self.repository.reject(actor.internal_user_id, request_id)
-            raise self._translate(error) from None
+            translated = self._translate(error)
+            self.repository.reject(actor.internal_user_id, request_id, translated.detail)
+            raise translated from None
         except (ZenTaoUnavailable, ZenTaoRejected, ZenTaoProtocolError):
             self.repository.reconcile(actor.internal_user_id, request_id)
             raise HTTPException(503, "sdk_reconcile_required") from None

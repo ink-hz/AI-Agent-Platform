@@ -187,7 +187,7 @@ def build_sdk_router() -> APIRouter:
     async def reviews(request: Request, story_id: int, page: int = Query(1, ge=1, le=1000)):
         if story_id < 1:
             raise HTTPException(404, "sdk_requirement_not_found")
-        return JSONResponse(_service(request).reviews(_actor(request), story_id, page), headers=_NO_STORE)
+        return JSONResponse(await _service(request).reviews(_actor(request), story_id, page), headers=_NO_STORE)
 
     @router.get("/candidates")
     async def candidates(request: Request, page: int = Query(1, ge=1, le=1000)):

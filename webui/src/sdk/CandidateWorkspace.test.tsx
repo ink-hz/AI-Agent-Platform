@@ -61,3 +61,25 @@ it("can reach older candidate pages", async () => {
   await act(async () => next!.click());
   expect(node.textContent).toContain("候选 #2");
 });
+
+it("keeps an older candidate selected after recording its approval", async () => {
+  const client = {
+    candidates: vi.fn().mockImplementation(async (page = 1) => ({ items: [{ id: page === 1 ? 40 : 20, story_id: 12 }], page, total: 40 })),
+    candidate: vi.fn().mockImplementation(async id => ({ id, story_id: 12, story_version: "1", evidence_version: 3,
+      creator_id: "22222222-2222-4222-8222-222222222222", task_ids: [31],
+      manifest: { packaging_sha: "a".repeat(40), sdk_version: "1.0", script_path: "build.sh", modules: {} },
+      targets: [{ os: "linux", arch: "x86_64" }], builds: [], tests: [], approvals: [], releases: [] })),
+    gate: vi.fn().mockResolvedValue({ ready: true, reasons: [], evidence_version: 3, approved: false, approval_id: null }),
+    approve: vi.fn().mockResolvedValue({ id: 9 }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<CandidateWorkspace account={account} role="release_manager" readOnly={false} client={client} />));
+  const button = Array.from(node.querySelectorAll("button")).find(item => item.textContent === "下一页")!;
+  await act(async () => button.click());
+  expect(node.textContent).toContain("候选 #20 · SDK 1.0");
+  const note = node.querySelector("textarea")!;
+  await act(async () => { note.value = "证据已核对"; note.dispatchEvent(new Event("input", { bubbles: true })); });
+  const submit = Array.from(node.querySelectorAll("button")).find(item => item.textContent === "批准当前证据版本")!;
+  await act(async () => submit.click());
+  expect(node.textContent).toContain("候选 #20 · SDK 1.0");
+  expect(node.textContent).toContain("第 2 页");
+});

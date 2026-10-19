@@ -38,10 +38,25 @@ def test_sdk_members_intents_and_reviews_persist_through_app_role(control_databa
 
     rejected_id = uuid.uuid4()
     repository.reserve(target, rejected_id, "9" * 64, "create_requirement")
-    repository.reject(target, rejected_id)
+    repository.reject(target, rejected_id, "sdk_zentao_auth_required")
     assert repository.get_intent(target, rejected_id)["state"] == "rejected"
     retried, fresh = repository.reserve(target, rejected_id, "9" * 64, "create_requirement")
     assert fresh and retried["state"] == "pending"
+    repository.reject(target, rejected_id, "sdk_zentao_rejected")
+    with psycopg.connect(environment["admin"]) as connection:
+        rejection_reasons = connection.execute(
+            "select reason from sdk.write_rejection_events where actor_id=%s and request_id=%s order by id",
+            (target, rejected_id),
+        ).fetchall()
+    assert rejection_reasons == [("sdk_zentao_auth_required",), ("sdk_zentao_rejected",)]
+    repository.reserve(target, rejected_id, "9" * 64, "create_requirement")
+    repository.complete(target, rejected_id, {"id": 73})
+    assert repository.get_intent(target, rejected_id)["result"] == {"id": 73}
+    with psycopg.connect(environment["admin"]) as connection:
+        assert connection.execute(
+            "select count(*) from sdk.write_rejection_events where actor_id=%s and request_id=%s",
+            (target, rejected_id),
+        ).fetchone()[0] == 2
 
     review_request = uuid.uuid4()
     repository.reserve(target, review_request, "c" * 64, "review_requirement", 71)
