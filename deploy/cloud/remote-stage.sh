@@ -701,6 +701,7 @@ image_name="orbbec-agent-platform:$release_sha"
 for volume_name in \
   orbbec-agent-platform-postgres-secrets \
   orbbec-agent-platform-api-secrets \
+  orbbec-agent-platform-sdk-secrets \
   orbbec-agent-platform-migrate-secrets \
   orbbec-agent-platform-import-secrets \
   orbbec-agent-platform-brain-secrets \
@@ -728,6 +729,15 @@ done
   -v orbbec-agent-platform-import-secrets:/target \
   -v "$private_path:/source:ro" alpine:3.22 \
   sh -ceu 'cp /source/replica-import-database-url /target/replica-database-url; cp /source/replica-encryption-key /source/replica-signing-public-key /target/; chown 10001:10001 /target/*; chmod 600 /target/replica-database-url; chmod 600 /target/replica-encryption-key; chmod 600 /target/replica-signing-public-key'
+
+sdk_environment="$(/usr/bin/python3 "$release_path/deploy/sdk/cloud_env.py" render "$environment_path")" || fail
+unset PLATFORM_SDK_WORKBENCH_ENABLED PLATFORM_SDK_ZENTAO_BASE_URL PLATFORM_SDK_ZENTAO_ACCOUNT \
+  PLATFORM_SDK_ZENTAO_PRODUCT_ID PLATFORM_SDK_ZENTAO_EXECUTION_ID PLATFORM_SDK_ZENTAO_PASSWORD_FILE
+if /usr/bin/grep -Fxq 'PLATFORM_SDK_WORKBENCH_ENABLED=1' <<<"$sdk_environment"; then
+  /usr/bin/docker run --rm --network none \
+    -v orbbec-agent-platform-sdk-secrets:/run/sdk-secrets:ro alpine:3.22 \
+    sh -ceu 'file=/run/sdk-secrets/password; test -f "$file" && test ! -L "$file" && test -s "$file" && test "$(stat -c "%u:%g:%a" "$file")" = "10001:10001:600"' || fail
+fi
 
 if [[ -n "$previous_release" && -f "$environment_path" ]]; then
   previous_compose=(/usr/bin/docker compose --env-file "$environment_path" -f "$previous_release/deploy/cloud/compose.yaml")
@@ -789,6 +799,7 @@ PLATFORM_HR_PANORAMA_OWNER_ID="${PLATFORM_HR_PANORAMA_OWNER_ID:-}"
 [[ -z "$PLATFORM_HR_PANORAMA_OWNER_ID" || "$PLATFORM_HR_PANORAMA_OWNER_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || fail
 /usr/bin/printf 'PLATFORM_IMAGE=%s\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\nPLATFORM_DIRECT_AGENT_ENABLED=%s\nPLATFORM_AGENT_BRAIN_ENABLED=%s\nPLATFORM_AGENT_BRAIN_V2_ENABLED=%s\nPLATFORM_HR_PANORAMA_OWNER_ID=%s\n' \
   "$image_name" "$PLATFORM_DIRECT_AGENT_ENABLED" "$PLATFORM_AGENT_BRAIN_ENABLED" "$PLATFORM_AGENT_BRAIN_V2_ENABLED" "$PLATFORM_HR_PANORAMA_OWNER_ID" > "$environment_path"
+/usr/bin/printf '%s\n' "$sdk_environment" >> "$environment_path"
 /bin/chown root:root "$environment_path"
 /bin/chmod 600 "$environment_path"
 export PLATFORM_DIRECT_AGENT_ENABLED PLATFORM_AGENT_BRAIN_ENABLED PLATFORM_AGENT_BRAIN_V2_ENABLED

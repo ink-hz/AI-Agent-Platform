@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -20,6 +21,7 @@ async def test_real_zentao_story_and_task_contract() -> None:
         "SDK_LIVE_ZENTAO_ACCOUNT",
         "SDK_LIVE_ZENTAO_PASSWORD_FILE",
         "SDK_LIVE_PRODUCT_ID",
+        "SDK_LIVE_PRODUCT_NAME",
         "SDK_LIVE_EXECUTION_ID",
     )
     if os.getenv("SDK_LIVE_ACCEPT") != "1":
@@ -47,22 +49,51 @@ async def test_real_zentao_story_and_task_contract() -> None:
 
     client = ZenTaoClient(base_url, os.environ["SDK_LIVE_ZENTAO_ACCOUNT"], password_file)
     try:
+        product_body = await client._request("GET", f"products/{product_id}")
+        product = product_body.get("product")
+        assert isinstance(product, dict)
+        assert str(product.get("id")) == str(product_id)
+        assert os.environ["SDK_LIVE_PRODUCT_NAME"].startswith("SDK-V1-ACCEPT-")
+        assert product.get("name") == os.environ["SDK_LIVE_PRODUCT_NAME"]
+        execution_body = await client._request("GET", f"executions/{execution_id}")
+        execution = execution_body.get("execution")
+        assert isinstance(execution, dict)
+        assert str(execution.get("id")) == str(execution_id)
+        assert str(execution.get("name", "")).startswith("SDK-V1-ACCEPT-")
+
         story_id = await client.create_story(product_id, title, spec, verify)
         story = await client.get_story(story_id)
         assert str(story["product"]) == str(product_id)
         assert story["title"] == title
         assert story["spec"] == spec
         assert story["verify"] == verify
+        assert story["status"] == "active"
         assert int(story["version"]) >= 1
 
-        listed = await client.list_stories(product_id, 1)
-        assert isinstance(listed["stories"], list)
-        assert any(str(item.get("id")) == str(story_id) for item in listed["stories"])
+        found = False
+        for page in range(1, 11):
+            listed = await client.list_stories(product_id, page)
+            stories = listed["stories"]
+            if any(str(item.get("id")) == str(story_id) for item in stories):
+                found = True
+                break
+            if len(stories) < 50:
+                break
+        assert found, "new requirement missing from first ten product story pages"
         task_id = await client.create_task(execution_id, story_id, task_name, task_desc)
         task = await client.get_task(task_id)
         assert str(task["story"]) == str(story_id)
         assert str(task["execution"]) == str(execution_id)
         assert task["name"] == task_name
         assert task["desc"] == task_desc
+        print(json.dumps({
+            "trial": "SDK-V1-ACCEPT",
+            "product_id": product_id,
+            "execution_id": execution_id,
+            "story_id": story_id,
+            "story_version": int(story["version"]),
+            "task_id": task_id,
+            "validated_http_status": 200,
+        }, sort_keys=True))
     finally:
         await client.close()

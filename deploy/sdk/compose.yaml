@@ -2,7 +2,7 @@ name: orbbec-sdk-workbench-trial
 
 services:
   zentao-db:
-    image: mariadb:10.6
+    image: ${SDK_DB_IMAGE:-mariadb:10.6}
     restart: unless-stopped
     environment:
       MARIADB_DATABASE: zentao
@@ -21,7 +21,7 @@ services:
       start_period: 40s
 
   zentao:
-    image: hub.zentao.net/app/zentao:22.6
+    image: ${SDK_ZENTAO_IMAGE:-hub.zentao.net/app/zentao:22.6}
     restart: unless-stopped
     environment:
       MYSQL_INTERNAL: "false"
@@ -37,7 +37,8 @@ services:
       - "127.0.0.1:18131:80"
     networks:
       - sdk-private
-      - platform-internal
+      - sdk-bridge
+      - sdk-admin
     depends_on:
       zentao-db:
         condition: service_healthy
@@ -45,9 +46,11 @@ services:
 networks:
   sdk-private:
     internal: true
-  platform-internal:
+  sdk-admin:
+    internal: false
+  sdk-bridge:
     external: true
-    name: orbbec-agent-platform-internal
+    name: orbbec-agent-platform-sdk
 
 volumes:
   zentao-db:

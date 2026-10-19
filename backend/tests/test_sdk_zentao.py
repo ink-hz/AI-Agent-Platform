@@ -38,7 +38,7 @@ async def test_login_and_exact_story_task_contract(password_file):
         if request.url.path.endswith("/tasks/31"):
             return httpx.Response(200, json={"status": "success", "task": {"id": "31", "story": "12", "execution": "9", "name": "修复断流"}})
         if request.url.path.endswith("/stories"):
-            assert json.loads(request.content) == {"productID": 7, "title": "USB 稳定性", "spec": "客户现场", "verify": "连续运行"}
+            assert json.loads(request.content) == {"productID": 7, "title": "USB 稳定性", "spec": "客户现场", "verify": "连续运行", "needNotReview": 1}
             return httpx.Response(200, json={"status": "success", "id": 12})
         if request.url.path.endswith("/tasks"):
             assert json.loads(request.content) == {"executionID": 9, "story": 12, "name": "修复断流", "desc": "检查枚举"}

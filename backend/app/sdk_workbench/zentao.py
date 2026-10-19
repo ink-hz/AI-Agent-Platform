@@ -193,7 +193,8 @@ class ZenTaoClient:
     async def create_story(self, product_id: int, title: str, spec: str, verify: str) -> int:
         body = await self._request(
             "POST", "stories",
-            payload={"productID": product_id, "title": title, "spec": spec, "verify": verify},
+            # The workbench owns requirement review; ZenTao must keep this story active.
+            payload={"productID": product_id, "title": title, "spec": spec, "verify": verify, "needNotReview": 1},
         )
         return self._positive_id(body)
 

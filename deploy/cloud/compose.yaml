@@ -137,6 +137,8 @@ services:
         gw_priority: 1
       voc-extension:
         ipv4_address: 172.29.0.2
+      sdk-bridge:
+        ipv4_address: 172.28.0.2
     depends_on:
       platform-postgres:
         condition: service_healthy
@@ -512,6 +514,13 @@ services:
       start_period: 15s
 
 networks:
+  sdk-bridge:
+    name: orbbec-agent-platform-sdk
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.28.0.0/29
+          gateway: 172.28.0.1
   voc-extension:
     name: orbbec-agent-voc-extension
     internal: true
