@@ -7,11 +7,13 @@ type Props = {
   csrfToken: string;
   role: SdkRole;
   readOnly: boolean;
-  onSelect: (row: PlanRow) => void;
+  onSelect: (row: PlanRow | null) => void;
 };
 
 export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Props) {
   const [batches, setBatches] = useState<PlanBatch[]>([]);
+  const [batchPage, setBatchPage] = useState(1);
+  const [batchTotal, setBatchTotal] = useState(0);
   const [batchId, setBatchId] = useState<number | null>(null);
   const [rows, setRows] = useState<PlanRow[]>([]);
   const [page, setPage] = useState(1);
@@ -26,13 +28,14 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
 
   useEffect(() => {
     let live = true;
-    void client.planImports().then(result => {
+    void client.planImports(batchPage).then(result => {
       if (!live) return;
       setBatches(result.items);
-      setBatchId(current => current ?? result.items[0]?.id ?? null);
+      setBatchTotal(result.total);
+      setBatchId(current => result.items.some(item => item.id === current) ? current : result.items[0]?.id ?? null);
     }).catch(() => { if (live) setError("无法读取年度计划批次。"); });
     return () => { live = false; };
-  }, [client]);
+  }, [client, batchPage]);
 
   useEffect(() => {
     if (batchId === null) { setRows([]); setTotal(0); return; }
@@ -43,14 +46,18 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
     return () => { live = false; };
   }, [client, batchId, page, module, priority, owner]);
 
+  function clearSelection() { setSelected(null); onSelect(null); }
+
   async function upload(event: FormEvent) {
     event.preventDefault(); setError(""); setNotice("");
     if (!file) { setError("请先选择 CSV 文件。"); return; }
     if (!file.name.toLowerCase().endsWith(".csv")) { setError("请选择 CSV 文件。"); return; }
     try {
       const imported = await client.uploadPlan(file, csrfToken);
-      const updated = await client.planImports();
-      setBatches(updated.items); setBatchId(imported.id); setPage(1); setSelected(null);
+      const updated = await client.planImports(1);
+      setBatchPage(1); setBatchTotal(updated.total);
+      setBatches(updated.items.some(item => item.id === imported.id) ? updated.items : [imported, ...updated.items]);
+      setBatchId(imported.id); setPage(1); clearSelection();
       setNotice(`已读取 ${imported.row_count} 条来源记录，其中 ${imported.task_count} 条任务。`);
     } catch { setError("导入失败，请核对文件格式、权限和大小。"); }
   }
@@ -72,14 +79,15 @@ export function PlanIntake({ client, csrfToken, role, readOnly, onSelect }: Prop
       <button type="submit">导入 CSV</button>
     </form>}
     {batches.length > 0 && <>
-      <label className="sdk-plan-batch">来源批次 <select value={batchId ?? ""} onChange={event => { setBatchId(Number(event.target.value)); setPage(1); setSelected(null); }}>
+      <label className="sdk-plan-batch">来源批次 <select value={batchId ?? ""} onChange={event => { setBatchId(Number(event.target.value)); setPage(1); clearSelection(); }}>
         {batches.map(item => <option key={item.id} value={item.id}>{item.filename} · {item.created_at.slice(0, 10)}</option>)}
       </select></label>
+      <div className="sdk-pagination"><button type="button" disabled={batchPage <= 1} onClick={() => { clearSelection(); setBatchPage(batchPage - 1); }}>上一批次页</button><span>批次第 {batchPage} 页，共 {batchTotal} 批</span><button type="button" disabled={batchPage * 20 >= batchTotal} onClick={() => { clearSelection(); setBatchPage(batchPage + 1); }}>下一批次页</button></div>
       {batch && <p className="sdk-id">{batch.row_count} 条来源记录 · {batch.task_count} 条任务 · {batch.module_count} 个栏目 · SHA-256 {batch.sha256}</p>}
       <div className="sdk-plan-filters">
-        <input aria-label="按栏目筛选" placeholder="栏目" value={module} onChange={event => { setModule(event.target.value); setPage(1); }} />
-        <input aria-label="按优先级筛选" placeholder="优先级" value={priority} onChange={event => { setPriority(event.target.value); setPage(1); }} />
-        <input aria-label="按原责任人筛选" placeholder="原责任人" value={owner} onChange={event => { setOwner(event.target.value); setPage(1); }} />
+        <input aria-label="按栏目筛选" placeholder="栏目" value={module} onChange={event => { setModule(event.target.value); setPage(1); clearSelection(); }} />
+        <input aria-label="按优先级筛选" placeholder="优先级" value={priority} onChange={event => { setPriority(event.target.value); setPage(1); clearSelection(); }} />
+        <input aria-label="按原责任人筛选" placeholder="原责任人" value={owner} onChange={event => { setOwner(event.target.value); setPage(1); clearSelection(); }} />
       </div>
       <ul className="sdk-plan-rows">{rows.map(row => <li key={row.id}>
         <button type="button" onClick={() => { void select(row); }}>{row.kind === "heading" ? "栏目：" : "任务："}{row.cells[1] || row.module}</button>

@@ -61,6 +61,11 @@ def test_plan_repository_import_replay_source_and_link(control_database):
     changed = parse_plan_csv(("平台,任务,责任人,版本,开始时间,结束时间,优先级,风险点,完成情况,备注\n"
                              "模块A,新任务,,,,,,,,\n").encode())
     assert repo.import_plan(actor, "2026.csv", changed)["id"] != first["id"]
+    long_module = "长" * 1200
+    long_plan = parse_plan_csv(("平台,任务,责任人,版本,开始时间,结束时间,优先级,风险点,完成情况,备注\n"
+                                f"{long_module},新任务,,,,,,,,\n").encode())
+    long_batch = repo.import_plan(actor, "long.csv", long_plan)
+    assert repo.list_rows(long_batch["id"])["items"][0]["module"] == long_module
 
 
 @pytest.mark.postgres

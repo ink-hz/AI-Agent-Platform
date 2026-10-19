@@ -38,7 +38,20 @@ def test_missing_previous_env_defaults_to_disabled(tmp_path: Path) -> None:
         "PLATFORM_SDK_ZENTAO_ACCOUNT=",
         "PLATFORM_SDK_ZENTAO_PRODUCT_ID=0",
         "PLATFORM_SDK_ZENTAO_EXECUTION_ID=0",
+        "PLATFORM_SDK_PLAN_ENABLED=0",
     ]
+
+
+def test_plan_only_state_survives_zentao_switch_and_release_render(tmp_path: Path) -> None:
+    current = tmp_path / "platform.env"
+    settings = tmp_path / "sdk.env"
+    _private_file(current, "PLATFORM_IMAGE=platform:old\nPLATFORM_SDK_PLAN_ENABLED=1\n")
+    rendered = _run("render", str(current))
+    assert rendered.returncode == 0 and "PLATFORM_SDK_PLAN_ENABLED=1" in rendered.stdout
+    _private_file(settings, "PLATFORM_SDK_WORKBENCH_ENABLED=0\nPLATFORM_SDK_ZENTAO_BASE_URL=\nPLATFORM_SDK_ZENTAO_ACCOUNT=\nPLATFORM_SDK_ZENTAO_PRODUCT_ID=0\nPLATFORM_SDK_ZENTAO_EXECUTION_ID=0\n")
+    applied = _run("apply", str(current), str(settings))
+    assert applied.returncode == 0, applied.stderr
+    assert current.read_text().count("PLATFORM_SDK_PLAN_ENABLED=1") == 1
 
 
 def test_apply_then_render_preserves_enabled_sdk_values_and_other_settings(tmp_path: Path) -> None:
@@ -61,7 +74,7 @@ def test_apply_then_render_preserves_enabled_sdk_values_and_other_settings(tmp_p
     assert current.read_text().startswith("PLATFORM_IMAGE=platform:old\nPLATFORM_CLOUD_AUTH_MODE=dingtalk\n")
     rendered = _run("render", str(current))
     assert rendered.returncode == 0, rendered.stderr
-    assert rendered.stdout == settings.read_text()
+    assert rendered.stdout == settings.read_text() + "PLATFORM_SDK_PLAN_ENABLED=0\n"
     assert _run("apply", str(current), str(settings)).returncode == 0
     assert current.read_text().count("PLATFORM_SDK_WORKBENCH_ENABLED=") == 1
     assert not (tmp_path / "agent-brain-action.lock").exists()

@@ -7,6 +7,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -146,7 +147,8 @@ def build_sdk_router() -> APIRouter:
 
     @router.get("/me")
     async def me(request: Request):
-        return JSONResponse(_access(request).me(_actor(request)), headers=_NO_STORE)
+        return JSONResponse({**_access(request).me(_actor(request)),
+                             "plan_enabled": getattr(request.app.state, "sdk_plan_service", None) is not None}, headers=_NO_STORE)
 
     @router.get("/members")
     async def members(request: Request):
@@ -172,11 +174,12 @@ def build_sdk_router() -> APIRouter:
             payload.extend(chunk)
             if len(payload) > MAX_BYTES:
                 raise HTTPException(413, "sdk_plan_csv_too_large")
-        return JSONResponse(plan.import_plan(actor, filename, bytes(payload)), status_code=201, headers=_NO_STORE)
+        result = await run_in_threadpool(plan.import_plan, actor, filename, bytes(payload))
+        return JSONResponse(result, status_code=201, headers=_NO_STORE)
 
     @router.get("/plan-imports/{import_id}/rows")
     async def plan_rows(request: Request, import_id: int, page: int = Query(1, ge=1, le=1000),
-                        module: str | None = Query(None, max_length=1000),
+                        module: str | None = Query(None),
                         priority: str | None = Query(None, max_length=100),
                         owner: str | None = Query(None, max_length=200)):
         return JSONResponse(_plan(request).list_rows(_actor(request), import_id, page, module, priority, owner), headers=_NO_STORE)

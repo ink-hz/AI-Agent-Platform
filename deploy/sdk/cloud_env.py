@@ -21,8 +21,9 @@ FIELDS = (
     "PLATFORM_SDK_ZENTAO_ACCOUNT",
     "PLATFORM_SDK_ZENTAO_PRODUCT_ID",
     "PLATFORM_SDK_ZENTAO_EXECUTION_ID",
+    "PLATFORM_SDK_PLAN_ENABLED",
 )
-DEFAULTS = ("0", "", "", "0", "0")
+DEFAULTS = ("0", "", "", "0", "0", "0")
 ACCOUNT = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 POSITIVE_ID = re.compile(r"[1-9][0-9]{0,9}\Z")
 
@@ -58,14 +59,16 @@ def _settings(text: str, *, complete: bool) -> tuple[str, ...]:
         if name not in FIELDS or name in found:
             raise ValueError("field")
         found[name] = value
-    if complete and set(found) != set(FIELDS):
+    if complete and not set(FIELDS[:5]).issubset(found):
         raise ValueError("missing_field")
     values = tuple(found.get(name, fallback) for name, fallback in zip(FIELDS, DEFAULTS))
-    enabled, base_url, account, product_id, execution_id = values
+    enabled, base_url, account, product_id, execution_id, plan_enabled = values
     if enabled not in {"0", "1"}:
         raise ValueError("flag")
+    if plan_enabled not in {"0", "1"}:
+        raise ValueError("plan_flag")
     if enabled == "0":
-        if values != DEFAULTS:
+        if values[:5] != DEFAULTS[:5]:
             raise ValueError("disabled_values")
     elif (
         base_url != "http://zentao:80"
@@ -121,7 +124,10 @@ def _apply_locked(current: Path, settings: Path) -> None:
     assert previous is not None and proposed is not None
     if any(line and not line.startswith("PLATFORM_SDK_") for line in proposed.splitlines()):
         raise ValueError("extra_field")
+    previous_values = _settings(previous, complete=False)
     values = _settings(proposed, complete=True)
+    if "PLATFORM_SDK_PLAN_ENABLED=" not in proposed:
+        values = (*values[:5], previous_values[5])
     retained = []
     for line in previous.splitlines():
         if not line.startswith("PLATFORM_SDK_"):

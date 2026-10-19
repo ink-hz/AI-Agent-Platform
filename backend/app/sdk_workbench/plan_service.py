@@ -32,6 +32,7 @@ class PlanService:
         return {"role": role if role in _READ_ROLES else None,
                 "can_manage": actor.role is Role.PLATFORM_OWNER,
                 "read_only": actor.hard_stale_read_only,
+                "plan_enabled": True,
                 "requirements_enabled": False}
 
     def list_members(self, actor: AuthContext) -> dict:

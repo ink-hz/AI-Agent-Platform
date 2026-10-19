@@ -48,6 +48,17 @@ it("shows live requirements and the selected story without a second login", asyn
   expect(client.requirement).toHaveBeenCalledWith(12);
 });
 
+it("does not call plan endpoints when the plan feature is disabled", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "viewer", can_manage: false, read_only: false, requirements_enabled: true, plan_enabled: false }),
+    requirements: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+    candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+    planImports: vi.fn(),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  expect(client.planImports).not.toHaveBeenCalled();
+});
+
 it("can browse beyond the first page of requirements", async () => {
   const client = {
     me: vi.fn().mockResolvedValue({ role: "viewer", can_manage: false, read_only: false }),

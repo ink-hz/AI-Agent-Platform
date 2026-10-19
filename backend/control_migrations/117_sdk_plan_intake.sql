@@ -16,7 +16,7 @@ create table sdk.plan_rows (
   record_number integer not null check (record_number >= 2),
   physical_line integer not null check (physical_line >= 2),
   kind text not null check (kind in ('task','heading')),
-  module text not null check (length(module) between 1 and 1000),
+  module text not null check (length(module) >= 1),
   cells jsonb not null check (jsonb_typeof(cells) = 'array' and jsonb_array_length(cells) = 10),
   unique (import_id, record_number)
 );

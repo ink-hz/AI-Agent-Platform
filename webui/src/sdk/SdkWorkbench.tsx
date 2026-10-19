@@ -127,8 +127,8 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     {me.read_only && <p className="sdk-notice">当前身份为只读状态。</p>}
     {error && <p className="sdk-error" role="alert">{error}</p>}
     {notice && <p className="sdk-notice" role="status">{notice}</p>}
-    {me.role && typeof client.planImports === "function" && <PlanIntake client={client} csrfToken={account.csrf_token} role={me.role} readOnly={me.read_only} onSelect={row => {
-      if (row.kind !== "task") return;
+    {me.role && me.plan_enabled === true && <PlanIntake client={client} csrfToken={account.csrf_token} role={me.role} readOnly={me.read_only} onSelect={row => {
+      if (row?.kind !== "task") { setSelectedPlanRow(null); setTitle(""); setScenario(""); setDevicePlatform(""); setAcceptance(""); requirementRequest.clear(); return; }
       setSelectedPlanRow(row); setTitle(row.cells[1]); setScenario(""); setDevicePlatform(""); setAcceptance(""); requirementRequest.clear();
     }} />}
     {me.requirements_enabled === false && <p className="sdk-notice">年度计划已可阅读；正式需求功能等待禅道服务配置。</p>}
@@ -136,6 +136,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
       <div className="sdk-panel">
         <h2>需求</h2>
         {selectedPlanRow && <p className="sdk-notice">正在整理来源：{selectedPlanRow.module} · 原文件第 {selectedPlanRow.physical_line} 行。请人工补全场景、设备与验收标准。</p>}
+        {selectedPlanRow && <p className="sdk-pre">来源备注：{selectedPlanRow.cells[9] || "未填写"}</p>}
         <ul className="sdk-list">{list.items.map(item => <li key={item.id}><button type="button" onClick={() => navigate(`/sdk/requirements/${item.id}`)} className={storyId === item.id ? "selected" : ""}>#{item.id} {item.title}</button><span>{item.status || "待定"}</span></li>)}</ul>
         {list.items.length === 0 && <p>还没有需求。</p>}
         <div className="sdk-pagination"><button type="button" disabled={list.page <= 1} onClick={() => { void requirementPage(list.page - 1); }}>上一页</button><span>第 {list.page} 页</span><button type="button" disabled={list.total == null ? list.items.length < 50 : list.page * 50 >= Number(list.total)} onClick={() => { void requirementPage(list.page + 1); }}>下一页</button></div>
