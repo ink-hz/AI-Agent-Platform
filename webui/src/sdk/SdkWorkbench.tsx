@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
 import { navigate } from "../router";
-import { sdkApi, SdkApiError, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole } from "./sdkApi";
+import { sdkApi, SdkApiError, type PlanRow, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole } from "./sdkApi";
 import { RequestIdentity } from "./requestIdentity";
 import { CandidateWorkspace } from "./CandidateWorkspace";
+import { PlanIntake } from "./PlanIntake";
 import "./sdkWorkbench.css";
 
 type Props = { account: Account; storyId?: number; client?: SdkApi };
@@ -32,6 +33,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [title, setTitle] = useState("");
+  const [selectedPlanRow, setSelectedPlanRow] = useState<PlanRow | null>(null);
   const [scenario, setScenario] = useState("");
   const [devicePlatform, setDevicePlatform] = useState("");
   const [acceptance, setAcceptance] = useState("");
@@ -57,14 +59,14 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     void client.me().then(async identity => {
       if (!live) return;
       setMe(identity);
-      if (identity.role) {
+      if (identity.role && identity.requirements_enabled !== false) {
         const requirements = await client.requirements();
         if (live) setList(requirements);
       }
       else setList({ items: [], page: 1, total: 0 });
       if (identity.can_manage) {
         void client.members().then(value => { if (live) setMembers(value.items); }).catch(error => { if (live) setError(message(error)); });
-        void client.reconciliation().then(value => { if (live) setReconciliation(value.items); }).catch(error => { if (live) setError(message(error)); });
+        if (identity.requirements_enabled !== false) void client.reconciliation().then(value => { if (live) setReconciliation(value.items); }).catch(error => { if (live) setError(message(error)); });
       }
     }).catch(error => { if (live) setError(message(error)); });
     return () => { live = false; };
@@ -91,7 +93,10 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     setError(""); setNotice("");
     try {
       const input = { title, scenario, device_platform: devicePlatform, acceptance };
-      const created = await client.createRequirement({ request_id: requirementRequest.forPayload(input), ...input }, account.csrf_token);
+      const request_id = requirementRequest.forPayload({ ...input, plan_row_id: selectedPlanRow?.id });
+      const created = selectedPlanRow
+        ? await client.createPlanRequirement(selectedPlanRow.id, { request_id, ...input }, account.csrf_token)
+        : await client.createRequirement({ request_id, ...input }, account.csrf_token);
       requirementRequest.clear();
       setList(await client.requirements());
       navigate(`/sdk/requirements/${created.id}`);
@@ -122,9 +127,15 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     {me.read_only && <p className="sdk-notice">当前身份为只读状态。</p>}
     {error && <p className="sdk-error" role="alert">{error}</p>}
     {notice && <p className="sdk-notice" role="status">{notice}</p>}
+    {me.role && typeof client.planImports === "function" && <PlanIntake client={client} csrfToken={account.csrf_token} role={me.role} readOnly={me.read_only} onSelect={row => {
+      if (row.kind !== "task") return;
+      setSelectedPlanRow(row); setTitle(row.cells[1]); setScenario(""); setDevicePlatform(""); setAcceptance(""); requirementRequest.clear();
+    }} />}
+    {me.requirements_enabled === false && <p className="sdk-notice">年度计划已可阅读；正式需求功能等待禅道服务配置。</p>}
     <div className="sdk-columns">
       <div className="sdk-panel">
         <h2>需求</h2>
+        {selectedPlanRow && <p className="sdk-notice">正在整理来源：{selectedPlanRow.module} · 原文件第 {selectedPlanRow.physical_line} 行。请人工补全场景、设备与验收标准。</p>}
         <ul className="sdk-list">{list.items.map(item => <li key={item.id}><button type="button" onClick={() => navigate(`/sdk/requirements/${item.id}`)} className={storyId === item.id ? "selected" : ""}>#{item.id} {item.title}</button><span>{item.status || "待定"}</span></li>)}</ul>
         {list.items.length === 0 && <p>还没有需求。</p>}
         <div className="sdk-pagination"><button type="button" disabled={list.page <= 1} onClick={() => { void requirementPage(list.page - 1); }}>上一页</button><span>第 {list.page} 页</span><button type="button" disabled={list.total == null ? list.items.length < 50 : list.page * 50 >= Number(list.total)} onClick={() => { void requirementPage(list.page + 1); }}>下一页</button></div>
@@ -133,7 +144,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
           <label>场景<textarea required maxLength={4000} value={scenario} onChange={event => setScenario(event.target.value)} /></label>
           <label>设备与平台<input required maxLength={500} value={devicePlatform} onChange={event => setDevicePlatform(event.target.value)} /></label>
           <label>验收标准<textarea required maxLength={4000} value={acceptance} onChange={event => setAcceptance(event.target.value)} /></label>
-          <button type="submit">创建需求</button>
+          <button type="submit" disabled={me.requirements_enabled === false || !!selectedPlanRow?.story_id || (selectedPlanRow?.conversion_state != null && selectedPlanRow.conversion_state !== "rejected")}>创建需求</button>
         </form>}
       </div>
       <div className="sdk-panel">
@@ -172,7 +183,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
         </>}
       </div>
     </div>
-    {me.role && <CandidateWorkspace account={account} role={me.role} readOnly={me.read_only} client={client} storyId={storyId} taskIds={detail?.tasks.map(task => task.task_id)} />}
+    {me.role && me.requirements_enabled !== false && <CandidateWorkspace account={account} role={me.role} readOnly={me.read_only} client={client} storyId={storyId} taskIds={detail?.tasks.map(task => task.task_id)} />}
     {me.can_manage && <section className="sdk-panel sdk-members"><h2>成员权限</h2><ul>{members.map(member => <li key={member.internal_user_id}>{member.internal_user_id} · {member.role}</li>)}</ul>
       {!me.read_only && <form className="sdk-form" onSubmit={event => { event.preventDefault(); void submit(async () => {
         const input = { internal_user_id: memberId, role: memberRole };
@@ -185,7 +196,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
         <button type="submit">保存成员权限</button>
       </form>}
     </section>}
-    {me.can_manage && <section className="sdk-panel sdk-members"><h2>待核对写入</h2>
+    {me.can_manage && me.requirements_enabled !== false && <section className="sdk-panel sdk-members"><h2>待核对写入</h2>
       <p>先在禅道核对实际记录，再绑定 ID。未确认前不得重新创建。</p>
       <ul>{reconciliation.map(intent => <li key={`${intent.actor_id}:${intent.request_id}`}>
         {intent.kind} · {intent.request_payload?.title || intent.request_payload?.name || "无摘要"} · {intent.request_id} · 操作者 {intent.actor_id}

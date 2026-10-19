@@ -25,11 +25,11 @@ class Repository:
     def role_for(self, actor):
         return self.roles.get(actor)
 
-    def reserve(self, actor, request_id, digest, kind, story_id=None, payload=None):
+    def reserve(self, actor, request_id, digest, kind, story_id=None, payload=None, *, plan_row_id=None):
         key = (actor, request_id)
         previous = self.intents.get(key)
         if previous is None:
-            self.intents[key] = {"digest": digest, "state": "pending", "result": None, "kind": kind, "story_id": story_id, "request_payload": payload or {}}
+            self.intents[key] = {"digest": digest, "state": "pending", "result": None, "kind": kind, "story_id": story_id, "request_payload": payload or {}, "plan_row_id": plan_row_id}
             return self.intents[key].copy(), True
         if previous["state"] == "rejected" and previous["digest"] == digest:
             previous["state"] = "pending"

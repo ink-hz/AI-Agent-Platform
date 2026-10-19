@@ -1,7 +1,10 @@
 import { platformPath } from "../auth";
 
 export type SdkRole = "viewer" | "contributor" | "reviewer" | "release_manager";
-export type SdkMe = { role: SdkRole | null; can_manage: boolean; read_only: boolean };
+export type SdkMe = { role: SdkRole | null; can_manage: boolean; read_only: boolean; requirements_enabled?: boolean };
+export type PlanBatch = { id: number; uploaded_by: string; filename: string; sha256: string; row_count: number; task_count: number; module_count: number; created_at: string };
+export type PlanRow = { id: number; import_id: number; record_number: number; physical_line: number; kind: "task" | "heading"; module: string; cells: string[]; sha256: string; filename: string; conversion_state: string | null; story_id: number | null; actor_id: string | null; request_id: string | null };
+export type PlanFilter = { module?: string; priority?: string; owner?: string };
 export type RequirementSummary = { id: number; title: string; status: string };
 export type RequirementList = { items: RequirementSummary[]; page: number; total: number | null };
 export type RequirementDetail = {
@@ -46,8 +49,22 @@ async function request<T>(path: string, payload?: object, csrfToken?: string): P
   return body as T;
 }
 
+async function uploadPlanFile(file: File, csrfToken: string): Promise<PlanBatch> {
+  const response = await fetch(platformPath(`/api/v1/sdk/plan-imports?filename=${encodeURIComponent(file.name)}`), {
+    credentials: "same-origin", method: "POST", headers: { Accept: "application/json", "Content-Type": "text/csv", "X-CSRF-Token": csrfToken }, body: file,
+  });
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok) throw new SdkApiError(response.status, typeof body?.detail === "string" ? body.detail : "sdk_request_failed");
+  return body as PlanBatch;
+}
+
 export interface SdkApi {
   me(): Promise<SdkMe>;
+  planImports(page?: number): Promise<{ items: PlanBatch[]; page: number; total: number }>;
+  planRows(importId: number, page?: number, filter?: PlanFilter): Promise<{ items: PlanRow[]; page: number; total: number }>;
+  planRow(id: number): Promise<PlanRow>;
+  uploadPlan(file: File, csrfToken: string): Promise<PlanBatch>;
+  createPlanRequirement(rowId: number, input: RequirementInput, csrfToken: string): Promise<{ id: number }>;
   requirements(page?: number): Promise<RequirementList>;
   requirement(storyId: number): Promise<RequirementDetail>;
   createRequirement(input: RequirementInput, csrfToken: string): Promise<{ id: number }>;
@@ -70,6 +87,17 @@ export interface SdkApi {
 
 export const sdkApi: SdkApi = {
   me: () => request("/me"),
+  planImports: (page = 1) => request(`/plan-imports?page=${page}`),
+  planRows: (importId, page = 1, filter = {}) => {
+    const query = new URLSearchParams({ page: String(page) });
+    if (filter.module) query.set("module", filter.module);
+    if (filter.priority) query.set("priority", filter.priority);
+    if (filter.owner) query.set("owner", filter.owner);
+    return request(`/plan-imports/${importId}/rows?${query.toString()}`);
+  },
+  planRow: id => request(`/plan-rows/${id}`),
+  uploadPlan: uploadPlanFile,
+  createPlanRequirement: (rowId, input, csrf) => request(`/plan-rows/${rowId}/requirements`, input, csrf),
   requirements: (page = 1) => request(`/requirements?page=${page}`),
   requirement: storyId => request(`/requirements/${storyId}`),
   createRequirement: (input, csrf) => request("/requirements", input, csrf),

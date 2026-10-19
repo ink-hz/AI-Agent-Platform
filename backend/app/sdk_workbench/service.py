@@ -46,6 +46,7 @@ class SdkService:
             "role": role if role in _READ_ROLES else None,
             "can_manage": actor.role is Role.PLATFORM_OWNER,
             "read_only": actor.hard_stale_read_only,
+            "requirements_enabled": True,
         }
 
     def list_members(self, actor: AuthContext) -> dict:
@@ -167,7 +168,8 @@ class SdkService:
 
     def _intent(self, actor: AuthContext, request_id: UUID, kind: str, payload: dict) -> dict | None:
         digest = self._digest(kind, payload)
-        intent, fresh = self.repository.reserve(actor.internal_user_id, request_id, digest, kind, payload.get("story_id"), payload)
+        reserve_args = {"plan_row_id": payload["plan_row_id"]} if "plan_row_id" in payload else {}
+        intent, fresh = self.repository.reserve(actor.internal_user_id, request_id, digest, kind, payload.get("story_id"), payload, **reserve_args)
         if fresh:
             return None
         if intent["digest"] != digest:
@@ -176,9 +178,11 @@ class SdkService:
             return intent["result"]
         raise HTTPException(409, "sdk_reconcile_required")
 
-    async def create_requirement(self, actor: AuthContext, request_id: UUID, title: str, scenario: str, device_platform: str, acceptance: str) -> dict:
+    async def create_requirement(self, actor: AuthContext, request_id: UUID, title: str, scenario: str, device_platform: str, acceptance: str, *, plan_row_id: int | None = None) -> dict:
         self.require(actor, frozenset({"contributor"}), write=True)
         payload = {"title": title, "scenario": scenario, "device_platform": device_platform, "acceptance": acceptance}
+        if plan_row_id is not None:
+            payload["plan_row_id"] = plan_row_id
         replay = self._intent(actor, request_id, "create_requirement", payload)
         if replay is not None:
             return replay

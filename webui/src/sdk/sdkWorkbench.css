@@ -26,5 +26,19 @@
 .sdk-pagination { display: flex; align-items: center; gap: 10px; margin: 10px 0 18px; font-size: 13px; }
 .sdk-pagination button { border: 1px solid #cad5e3; border-radius: 6px; background: #fff; padding: 6px 10px; cursor: pointer; }
 .sdk-pagination button:disabled { opacity: .45; cursor: default; }
+.sdk-plan { margin-top: 20px; }
+.sdk-plan-upload, .sdk-plan-filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
+.sdk-plan-upload label, .sdk-plan-batch { display: grid; gap: 6px; font-size: 14px; }
+.sdk-plan-upload button { background: #1d4ed8; border: 0; border-radius: 7px; padding: 9px 16px; color: white; cursor: pointer; }
+.sdk-plan-filters input, .sdk-plan-batch select { border: 1px solid #cad5e3; border-radius: 7px; padding: 9px 10px; font: inherit; }
+.sdk-plan-rows { list-style: none; padding: 0; max-height: 390px; overflow: auto; }
+.sdk-plan-rows li { border-bottom: 1px solid #edf2f7; padding: 9px 0; display: flex; gap: 12px; justify-content: space-between; align-items: center; }
+.sdk-plan-rows button { border: 0; background: transparent; color: #1647a1; cursor: pointer; text-align: left; font: inherit; }
+.sdk-plan-rows span { color: #64748b; font-size: 13px; }
+.sdk-plan-detail { border-top: 1px solid #e5eaf0; margin-top: 16px; padding-top: 12px; }
+.sdk-plan-detail dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; }
+.sdk-plan-detail dt { font-weight: 700; font-size: 13px; }
+.sdk-plan-detail dd { margin: 3px 0 0; overflow-wrap: anywhere; }
 @media (max-width: 800px) { .sdk-columns { grid-template-columns: 1fr; } .sdk-workbench { padding: 16px; } }
 @media (max-width: 800px) { .sdk-candidate-layout, .sdk-module-grid { grid-template-columns: 1fr; } }
+@media (max-width: 800px) { .sdk-plan-detail dl { grid-template-columns: 1fr; } .sdk-plan-rows li { align-items: flex-start; flex-direction: column; } }

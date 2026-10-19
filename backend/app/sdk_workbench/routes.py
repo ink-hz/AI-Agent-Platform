@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.control_plane.models import AuthContext
+from .plan_csv import MAX_BYTES
 
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
@@ -129,20 +130,67 @@ def _evidence(request: Request):
     return service
 
 
+def _plan(request: Request):
+    service = getattr(request.app.state, "sdk_plan_service", None)
+    if service is None:
+        raise HTTPException(503, "sdk_plan_unavailable")
+    return service
+
+
+def _access(request: Request):
+    return getattr(request.app.state, "sdk_service", None) or _plan(request)
+
+
 def build_sdk_router() -> APIRouter:
     router = APIRouter(prefix="/api/v1/sdk", tags=["sdk-workbench"])
 
     @router.get("/me")
     async def me(request: Request):
-        return JSONResponse(_service(request).me(_actor(request)), headers=_NO_STORE)
+        return JSONResponse(_access(request).me(_actor(request)), headers=_NO_STORE)
 
     @router.get("/members")
     async def members(request: Request):
-        return JSONResponse(_service(request).list_members(_actor(request)), headers=_NO_STORE)
+        return JSONResponse(_access(request).list_members(_actor(request)), headers=_NO_STORE)
 
     @router.post("/members")
     async def grant_member(request: Request, body: MemberBody):
-        result = _service(request).grant_member(_actor(request), body.internal_user_id, body.role, body.request_id)
+        result = _access(request).grant_member(_actor(request), body.internal_user_id, body.role, body.request_id)
+        return JSONResponse(result, status_code=201, headers=_NO_STORE)
+
+    @router.get("/plan-imports")
+    async def plan_imports(request: Request, page: int = Query(1, ge=1, le=1000)):
+        return JSONResponse(_plan(request).list_batches(_actor(request), page), headers=_NO_STORE)
+
+    @router.post("/plan-imports")
+    async def import_plan(request: Request, filename: str = Query(..., min_length=1, max_length=255)):
+        actor = _actor(request)
+        plan = _plan(request)
+        if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() not in ("text/csv", "application/vnd.ms-excel"):
+            raise HTTPException(415, "sdk_plan_content_type")
+        payload = bytearray()
+        async for chunk in request.stream():
+            payload.extend(chunk)
+            if len(payload) > MAX_BYTES:
+                raise HTTPException(413, "sdk_plan_csv_too_large")
+        return JSONResponse(plan.import_plan(actor, filename, bytes(payload)), status_code=201, headers=_NO_STORE)
+
+    @router.get("/plan-imports/{import_id}/rows")
+    async def plan_rows(request: Request, import_id: int, page: int = Query(1, ge=1, le=1000),
+                        module: str | None = Query(None, max_length=1000),
+                        priority: str | None = Query(None, max_length=100),
+                        owner: str | None = Query(None, max_length=200)):
+        return JSONResponse(_plan(request).list_rows(_actor(request), import_id, page, module, priority, owner), headers=_NO_STORE)
+
+    @router.get("/plan-rows/{row_id}")
+    async def plan_row(request: Request, row_id: int):
+        return JSONResponse(_plan(request).row(_actor(request), row_id), headers=_NO_STORE)
+
+    @router.post("/plan-rows/{row_id}/requirements")
+    async def create_plan_requirement(request: Request, row_id: int, body: RequirementBody):
+        actor = _actor(request)
+        _plan(request).conversion_row(actor, row_id, body.request_id)
+        result = await _service(request).create_requirement(actor, body.request_id, body.title, body.scenario,
+                                                             body.device_platform, body.acceptance, plan_row_id=row_id)
         return JSONResponse(result, status_code=201, headers=_NO_STORE)
 
     @router.get("/reconciliation")

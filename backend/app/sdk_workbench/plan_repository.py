@@ -18,7 +18,8 @@ _ROW_SELECT = (
     "i.sha256,i.filename,w.state as conversion_state,w.result->>'id' as story_id,"
     "w.actor_id,w.request_id from sdk.plan_rows r "
     "join sdk.plan_imports i on i.id=r.import_id "
-    "left join sdk.write_intents w on w.plan_row_id=r.id "
+    "left join lateral (select state,result,actor_id,request_id from sdk.write_intents "
+    "where plan_row_id=r.id order by (state <> 'rejected') desc,updated_at desc limit 1) w on true "
 )
 
 

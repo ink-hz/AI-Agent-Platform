@@ -95,6 +95,7 @@ class Config:
     voc_extension_signing_key_file: str
     voc_extension_timeout_seconds: float
     sdk_workbench_enabled: bool
+    sdk_plan_enabled: bool
     sdk_zentao_base_url: str
     sdk_zentao_account: str
     sdk_zentao_password_file: str
@@ -1030,6 +1031,7 @@ def load_config() -> Config:
             os.getenv("PLATFORM_VOC_EXTENSION_TIMEOUT_SECONDS", "10")
         ),
         sdk_workbench_enabled=_strict_flag("PLATFORM_SDK_WORKBENCH_ENABLED", "sdk_workbench_flag_invalid"),
+        sdk_plan_enabled=_strict_flag("PLATFORM_SDK_PLAN_ENABLED", "sdk_plan_flag_invalid"),
         sdk_zentao_base_url=os.getenv("PLATFORM_SDK_ZENTAO_BASE_URL", "").strip(),
         sdk_zentao_account=os.getenv("PLATFORM_SDK_ZENTAO_ACCOUNT", "").strip(),
         sdk_zentao_password_file=os.getenv("PLATFORM_SDK_ZENTAO_PASSWORD_FILE", "").strip(),

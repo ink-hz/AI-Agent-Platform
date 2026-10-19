@@ -26,6 +26,8 @@ alter table sdk.write_intents add column plan_row_id bigint references sdk.plan_
 alter table sdk.write_intents add constraint sdk_plan_row_requirement_only
   check (plan_row_id is null or kind = 'create_requirement');
 create unique index sdk_write_intents_one_per_plan_row on sdk.write_intents(plan_row_id)
+  where plan_row_id is not null and state <> 'rejected';
+create index sdk_write_intents_plan_history on sdk.write_intents(plan_row_id, updated_at desc)
   where plan_row_id is not null;
 
 do $migration$

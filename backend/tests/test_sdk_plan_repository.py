@@ -50,6 +50,14 @@ def test_plan_repository_import_replay_source_and_link(control_database):
     with pytest.raises(HTTPException) as duplicate:
         sdk.reserve(actor, uuid.uuid4(), "b" * 64, "create_requirement", payload={}, plan_row_id=row_id)
     assert duplicate.value.status_code == 409
+    rejected_row_id = rows["items"][1]["id"]
+    sdk.reserve(actor, uuid.uuid4(), "c" * 64, "create_requirement", payload={}, plan_row_id=rejected_row_id)
+    rejected_request_id = repo.row(rejected_row_id)["request_id"]
+    sdk.reject(actor, uuid.UUID(rejected_request_id), "sdk_zentao_rejected")
+    assert repo.row(rejected_row_id)["conversion_state"] == "rejected"
+    replacement, fresh = sdk.reserve(actor, uuid.uuid4(), "d" * 64, "create_requirement", payload={}, plan_row_id=rejected_row_id)
+    assert fresh and replacement["state"] == "pending"
+    assert repo.row(rejected_row_id)["conversion_state"] == "pending"
     changed = parse_plan_csv(("平台,任务,责任人,版本,开始时间,结束时间,优先级,风险点,完成情况,备注\n"
                              "模块A,新任务,,,,,,,,\n").encode())
     assert repo.import_plan(actor, "2026.csv", changed)["id"] != first["id"]

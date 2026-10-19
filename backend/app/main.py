@@ -223,6 +223,8 @@ from .review.replay import ReplayRunner
 from .review.repository import PsycopgReviewRepository
 from .review.service import ReviewService, UnavailableReviewService
 from .sdk_workbench.repository import SdkRepository
+from .sdk_workbench.plan_repository import PlanRepository
+from .sdk_workbench.plan_service import PlanService
 from .sdk_workbench.evidence_repository import EvidenceRepository
 from .sdk_workbench.evidence_service import EvidenceService
 from .sdk_workbench.routes import build_sdk_router
@@ -799,6 +801,7 @@ def create_app(
     identity_auth=None,
     voc_extension_client=None,
     sdk_service=None,
+    sdk_plan_service=None,
     sdk_evidence_service=None,
     voc_submitter_directory=None,
     ai_notes_reader: AiNotesReader | None = None,
@@ -1328,6 +1331,16 @@ def create_app(
             sdk_repository, sdk_zentao_client, EvidenceRepository(control_database_url),
             product_id=config.sdk_zentao_product_id,
         )
+    if sdk_plan_service is None and config.sdk_plan_enabled:
+        if not identity_enabled:
+            raise RuntimeError("SDK plan requires enterprise identity")
+        if control_database_url is None:
+            control_database_url = read_secret_file(
+                config.control_plane.control_database_url_file
+            )
+        sdk_plan_service = PlanService(
+            SdkRepository(control_database_url), PlanRepository(control_database_url)
+        )
     if config.voc_extension_enabled and identity_enabled:
         bot_subject_resolver = getattr(
             identity_auth, "voc_bot_subject_resolver", None
@@ -1441,6 +1454,7 @@ def create_app(
     app.state.agent_use_authorization = agent_use_authorization
     app.state.voc_extension_client = voc_extension_client
     app.state.sdk_service = sdk_service
+    app.state.sdk_plan_service = sdk_plan_service
     app.state.sdk_evidence_service = sdk_evidence_service
     app.state.voc_submitter_directory = voc_submitter_directory
     app.state.voc_service_authorizer = voc_service_authorizer
