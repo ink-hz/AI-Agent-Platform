@@ -80,21 +80,27 @@ class SdkRepository:
         except psycopg.Error as error:
             self._unavailable(error)
 
-    def reserve(self, actor: UUID, request_id: UUID, digest: str, kind: str, story_id: int | None = None) -> tuple[dict, bool]:
+    def reserve(self, actor: UUID, request_id: UUID, digest: str, kind: str, story_id: int | None = None, payload: dict | None = None) -> tuple[dict, bool]:
         try:
             with self._connection() as connection:
                 with connection.transaction():
                     inserted = connection.execute(
-                        "insert into sdk.write_intents(actor_id,request_id,digest,kind,story_id,state) "
-                        "values (%s,%s,%s,%s,%s,'pending') on conflict do nothing returning state,digest,result,kind,story_id",
-                        (actor, request_id, digest, kind, story_id),
+                        "insert into sdk.write_intents(actor_id,request_id,digest,kind,story_id,request_payload,state) "
+                        "values (%s,%s,%s,%s,%s,%s,'pending') on conflict do nothing returning state,digest,result,kind,story_id,request_payload",
+                        (actor, request_id, digest, kind, story_id, psycopg.types.json.Jsonb(payload or {})),
                     ).fetchone()
                     if inserted:
                         return dict(inserted), True
                     row = connection.execute(
-                        "select state,digest,result,kind,story_id from sdk.write_intents where actor_id=%s and request_id=%s",
+                        "select state,digest,result,kind,story_id,request_payload from sdk.write_intents where actor_id=%s and request_id=%s for update",
                         (actor, request_id),
                     ).fetchone()
+                    if row and row["state"] == "rejected" and row["digest"] == digest:
+                        connection.execute(
+                            "update sdk.write_intents set state='pending',updated_at=clock_timestamp() where actor_id=%s and request_id=%s",
+                            (actor, request_id),
+                        )
+                        return {**dict(row), "state": "pending"}, True
             if row is None:
                 raise HTTPException(503, "sdk_store_unavailable")
             return dict(row), False
@@ -105,7 +111,7 @@ class SdkRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select state,result,kind,story_id,created_at,digest from sdk.write_intents where actor_id=%s and request_id=%s",
+                    "select state,result,kind,story_id,created_at,digest,request_payload from sdk.write_intents where actor_id=%s and request_id=%s",
                     (actor, request_id),
                 ).fetchone()
             return dict(row) if row else None
@@ -116,7 +122,7 @@ class SdkRepository:
         try:
             with self._connection() as connection:
                 rows = connection.execute(
-                    "select actor_id,request_id,kind,story_id,created_at from sdk.write_intents "
+                    "select actor_id,request_id,kind,story_id,request_payload,created_at from sdk.write_intents "
                     "where state='reconcile_required' or (state='pending' and created_at <= clock_timestamp()-interval '60 seconds') "
                     "order by created_at limit 500"
                 ).fetchall()
@@ -189,10 +195,27 @@ class SdkRepository:
         except psycopg.Error as error:
             self._unavailable(error)
 
+    def reject(self, actor: UUID, request_id: UUID) -> None:
+        try:
+            with self._connection() as connection:
+                connection.execute(
+                    "update sdk.write_intents set state='rejected',updated_at=clock_timestamp() "
+                    "where actor_id=%s and request_id=%s and state='pending'",
+                    (actor, request_id),
+                )
+        except psycopg.Error as error:
+            self._unavailable(error)
+
     def add_review(self, actor: UUID, story_id: int, story_version: str, decision: str, reason: str, request_id: UUID) -> dict:
         try:
             with self._connection() as connection:
                 with connection.transaction():
+                    # Serialize review changes with approval/release transactions through candidate_state.
+                    connection.execute(
+                        "select s.candidate_id from sdk.candidate_state s join sdk.candidates c on c.id=s.candidate_id "
+                        "where c.story_id=%s order by s.candidate_id for update of s",
+                        (story_id,),
+                    ).fetchall()
                     row = connection.execute(
                         "insert into sdk.review_events(actor_id,request_id,story_id,story_version,decision,reason) "
                         "values (%s,%s,%s,%s,%s,%s) returning created_at",
@@ -206,19 +229,36 @@ class SdkRepository:
                     ).fetchone()
                     if completed is None:
                         raise HTTPException(409, "sdk_reconcile_required")
+                    connection.execute(
+                        "update sdk.candidate_state s set evidence_version=evidence_version+1 "
+                        "from sdk.candidates c where c.id=s.candidate_id and c.story_id=%s",
+                        (story_id,),
+                    )
             return result
         except psycopg.Error as error:
             self._unavailable(error)
 
-    def list_reviews(self, story_id: int) -> list[dict]:
+    def list_reviews(self, story_id: int, page: int = 1) -> list[dict]:
         try:
             with self._connection() as connection:
                 rows = connection.execute(
                     "select actor_id,request_id,story_id,story_version,decision,reason,created_at "
-                    "from sdk.review_events where story_id=%s order by created_at,request_id limit 500",
-                    (story_id,),
+                    "from sdk.review_events where story_id=%s order by created_at desc,request_id desc limit 50 offset %s",
+                    (story_id, (page - 1) * 50),
                 ).fetchall()
-            return [{**dict(row), "actor_id": str(row["actor_id"]), "request_id": str(row["request_id"]), "created_at": row["created_at"].isoformat()} for row in rows]
+            return [{**dict(row), "actor_id": str(row["actor_id"]), "request_id": str(row["request_id"]), "created_at": row["created_at"].isoformat()} for row in reversed(rows)]
+        except psycopg.Error as error:
+            self._unavailable(error)
+
+    def latest_review(self, story_id: int) -> dict | None:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select actor_id,request_id,story_id,story_version,decision,reason,created_at "
+                    "from sdk.review_events where story_id=%s order by created_at desc,request_id desc limit 1",
+                    (story_id,),
+                ).fetchone()
+            return {**dict(row), "actor_id": str(row["actor_id"]), "request_id": str(row["request_id"]), "created_at": row["created_at"].isoformat()} if row else None
         except psycopg.Error as error:
             self._unavailable(error)
 

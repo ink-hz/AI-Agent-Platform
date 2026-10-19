@@ -23,5 +23,8 @@
 .sdk-candidate-layout { display: grid; grid-template-columns: minmax(220px, .6fr) minmax(400px, 1.4fr); gap: 20px; }
 .sdk-candidates code { overflow-wrap: anywhere; }
 .sdk-module-grid { display: grid; grid-template-columns: repeat(2, minmax(200px, 1fr)); gap: 12px; }
+.sdk-pagination { display: flex; align-items: center; gap: 10px; margin: 10px 0 18px; font-size: 13px; }
+.sdk-pagination button { border: 1px solid #cad5e3; border-radius: 6px; background: #fff; padding: 6px 10px; cursor: pointer; }
+.sdk-pagination button:disabled { opacity: .45; cursor: default; }
 @media (max-width: 800px) { .sdk-columns { grid-template-columns: 1fr; } .sdk-workbench { padding: 16px; } }
 @media (max-width: 800px) { .sdk-candidate-layout, .sdk-module-grid { grid-template-columns: 1fr; } }

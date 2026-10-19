@@ -42,14 +42,14 @@ class EvidenceRepository:
         except psycopg.Error:
             raise HTTPException(503, "sdk_store_unavailable") from None
 
-    def _write(self, actor: UUID, request_id: UUID, digest: str, action) -> dict:
+    def _write(self, actor: UUID, request_id: UUID, digest: str, kind: str, action) -> dict:
         try:
             with self._connection() as connection:
                 with connection.transaction():
                     inserted = connection.execute(
-                        "insert into sdk.evidence_requests(actor_id,request_id,digest,result) "
-                        "values (%s,%s,%s,'{}'::jsonb) on conflict do nothing returning request_id",
-                        (actor, request_id, digest),
+                        "insert into sdk.evidence_requests(actor_id,request_id,digest,kind,result) "
+                        "values (%s,%s,%s,%s,'{}'::jsonb) on conflict do nothing returning request_id",
+                        (actor, request_id, digest, kind),
                     ).fetchone()
                     if not inserted:
                         old = connection.execute(
@@ -61,8 +61,8 @@ class EvidenceRepository:
                         return old["result"]
                     result = action(connection)
                     connection.execute(
-                        "update sdk.evidence_requests set result=%s where actor_id=%s and request_id=%s",
-                        (Jsonb(result), actor, request_id),
+                        "update sdk.evidence_requests set result=%s,object_id=%s where actor_id=%s and request_id=%s",
+                        (Jsonb(result), result["id"], actor, request_id),
                     )
                     return result
         except psycopg.errors.ForeignKeyViolation:
@@ -74,13 +74,13 @@ class EvidenceRepository:
                          task_ids: list[int], manifest: dict, targets: list[dict]) -> dict:
         def action(connection):
             row = connection.execute(
-                "insert into sdk.candidates(story_id,story_version,task_ids,manifest,targets,creator_id) "
-                "values (%s,%s,%s,%s,%s,%s) returning id",
-                (story_id, story_version, Jsonb(task_ids), Jsonb(manifest), Jsonb(targets), actor),
+                "insert into sdk.candidates(story_id,story_version,task_ids,manifest,targets,creator_id,request_id) "
+                "values (%s,%s,%s,%s,%s,%s,%s) returning id",
+                (story_id, story_version, Jsonb(task_ids), Jsonb(manifest), Jsonb(targets), actor, request_id),
             ).fetchone()
             connection.execute("insert into sdk.candidate_state(candidate_id) values (%s)", (row["id"],))
             return {"id": row["id"]}
-        return self._write(actor, request_id, digest, action)
+        return self._write(actor, request_id, digest, "candidate", action)
 
     def list_candidates(self, page: int) -> dict:
         try:
@@ -137,13 +137,13 @@ class EvidenceRepository:
         def action(connection):
             self._bump(connection, candidate_id)
             row = connection.execute(
-                "insert into sdk.builds(candidate_id,actor_id,os,arch,status,command,log_uri,artifact_name,artifact_sha256,artifact_size,artifact_uri) "
-                "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id",
-                (candidate_id, actor, body["os"], body["arch"], body["status"], body["command"], body["log_uri"],
+                "insert into sdk.builds(candidate_id,actor_id,request_id,os,arch,status,command,log_uri,artifact_name,artifact_sha256,artifact_size,artifact_uri) "
+                "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id",
+                (candidate_id, actor, request_id, body["os"], body["arch"], body["status"], body["command"], body["log_uri"],
                  body.get("artifact_name"), body.get("artifact_sha256"), body.get("artifact_size"), body.get("artifact_uri")),
             ).fetchone()
             return {"id": row["id"]}
-        return self._write(actor, request_id, digest, action)
+        return self._write(actor, request_id, digest, "build", action)
 
     def add_test(self, actor: UUID, request_id: UUID, digest: str, build_id: int, body: dict) -> dict:
         def action(connection):
@@ -152,13 +152,13 @@ class EvidenceRepository:
                 raise HTTPException(409, "sdk_artifact_required")
             self._bump(connection, build["candidate_id"])
             row = connection.execute(
-                "insert into sdk.test_runs(build_id,actor_id,suite,status,passed,failed,skipped,report_uri,device,firmware) "
-                "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id",
-                (build_id, actor, body["suite"], body["status"], body["passed"], body["failed"], body["skipped"],
+                "insert into sdk.test_runs(build_id,actor_id,request_id,suite,status,passed,failed,skipped,report_uri,device,firmware) "
+                "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) returning id",
+                (build_id, actor, request_id, body["suite"], body["status"], body["passed"], body["failed"], body["skipped"],
                  body["report_uri"], body["device"], body["firmware"]),
             ).fetchone()
             return {"id": row["id"]}
-        return self._write(actor, request_id, digest, action)
+        return self._write(actor, request_id, digest, "test", action)
 
     def add_approval(self, actor: UUID, request_id: UUID, digest: str, candidate_id: int, version: int, note: str) -> dict:
         def action(connection):
@@ -166,11 +166,11 @@ class EvidenceRepository:
             if not state or state["evidence_version"] != version:
                 raise HTTPException(409, "sdk_evidence_changed")
             row = connection.execute(
-                "insert into sdk.approvals(candidate_id,actor_id,evidence_version,note) values (%s,%s,%s,%s) returning id",
-                (candidate_id, actor, version, note),
+                "insert into sdk.approvals(candidate_id,actor_id,request_id,evidence_version,note) values (%s,%s,%s,%s,%s) returning id",
+                (candidate_id, actor, request_id, version, note),
             ).fetchone()
             return {"id": row["id"], "evidence_version": version}
-        return self._write(actor, request_id, digest, action)
+        return self._write(actor, request_id, digest, "approval", action)
 
     def add_release(self, actor: UUID, request_id: UUID, digest: str, candidate_id: int, approval_id: int,
                     version: int, channel: str, rollback_uri: str, released_at: datetime, sha256s: list[str]) -> dict:
@@ -182,9 +182,9 @@ class EvidenceRepository:
             if not latest or latest["id"] != approval_id or latest["evidence_version"] != version:
                 raise HTTPException(409, "sdk_approval_required")
             row = connection.execute(
-                "insert into sdk.releases(candidate_id,approval_id,actor_id,channel,rollback_uri,released_at,artifact_sha256s) "
-                "values (%s,%s,%s,%s,%s,%s,%s) returning id",
-                (candidate_id, approval_id, actor, channel, rollback_uri, released_at, Jsonb(sha256s)),
+                "insert into sdk.releases(candidate_id,approval_id,actor_id,request_id,channel,rollback_uri,released_at,artifact_sha256s) "
+                "values (%s,%s,%s,%s,%s,%s,%s,%s) returning id",
+                (candidate_id, approval_id, actor, request_id, channel, rollback_uri, released_at, Jsonb(sha256s)),
             ).fetchone()
             return {"id": row["id"]}
-        return self._write(actor, request_id, digest, action)
+        return self._write(actor, request_id, digest, "release", action)

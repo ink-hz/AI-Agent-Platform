@@ -7,6 +7,7 @@ create table sdk.candidates (
   manifest jsonb not null check (jsonb_typeof(manifest) = 'object'),
   targets jsonb not null check (jsonb_typeof(targets) = 'array'),
   creator_id uuid not null references platform_control.internal_users(internal_user_id),
+  request_id uuid not null,
   created_at timestamptz not null default clock_timestamp()
 );
 create index sdk_candidates_story on sdk.candidates(story_id, id desc);
@@ -20,6 +21,7 @@ create table sdk.builds (
   id bigint generated always as identity primary key,
   candidate_id bigint not null references sdk.candidates(id),
   actor_id uuid not null references platform_control.internal_users(internal_user_id),
+  request_id uuid not null,
   os text not null,
   arch text not null,
   status text not null check (status in ('success','failed','cancelled','timeout')),
@@ -38,6 +40,7 @@ create table sdk.test_runs (
   id bigint generated always as identity primary key,
   build_id bigint not null references sdk.builds(id),
   actor_id uuid not null references platform_control.internal_users(internal_user_id),
+  request_id uuid not null,
   suite text not null check (suite in ('unit','hardware')),
   status text not null check (status in ('passed','failed','blocked','skipped')),
   passed integer not null check (passed >= 0),
@@ -54,6 +57,7 @@ create table sdk.approvals (
   id bigint generated always as identity primary key,
   candidate_id bigint not null references sdk.candidates(id),
   actor_id uuid not null references platform_control.internal_users(internal_user_id),
+  request_id uuid not null,
   evidence_version bigint not null check (evidence_version > 0),
   note text not null,
   created_at timestamptz not null default clock_timestamp()
@@ -65,6 +69,7 @@ create table sdk.releases (
   candidate_id bigint not null references sdk.candidates(id),
   approval_id bigint not null references sdk.approvals(id),
   actor_id uuid not null references platform_control.internal_users(internal_user_id),
+  request_id uuid not null,
   channel text not null,
   rollback_uri text not null,
   released_at timestamptz not null,
@@ -77,10 +82,19 @@ create table sdk.evidence_requests (
   actor_id uuid not null references platform_control.internal_users(internal_user_id),
   request_id uuid not null,
   digest char(64) not null check (digest ~ '^[0-9a-f]{64}$'),
+  kind text not null check (kind in ('candidate','build','test','approval','release')),
+  object_id bigint check (object_id > 0),
   result jsonb not null,
   created_at timestamptz not null default clock_timestamp(),
   primary key (actor_id, request_id)
 );
+create unique index sdk_evidence_requests_object on sdk.evidence_requests(kind,object_id) where object_id is not null;
+
+alter table sdk.candidates add constraint sdk_candidates_request_fk foreign key (creator_id,request_id) references sdk.evidence_requests(actor_id,request_id);
+alter table sdk.builds add constraint sdk_builds_request_fk foreign key (actor_id,request_id) references sdk.evidence_requests(actor_id,request_id);
+alter table sdk.test_runs add constraint sdk_tests_request_fk foreign key (actor_id,request_id) references sdk.evidence_requests(actor_id,request_id);
+alter table sdk.approvals add constraint sdk_approvals_request_fk foreign key (actor_id,request_id) references sdk.evidence_requests(actor_id,request_id);
+alter table sdk.releases add constraint sdk_releases_request_fk foreign key (actor_id,request_id) references sdk.evidence_requests(actor_id,request_id);
 
 do $migration$
 declare selected_app name;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
 import { navigate } from "../router";
-import { sdkApi, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole } from "./sdkApi";
+import { sdkApi, SdkApiError, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole } from "./sdkApi";
 import { RequestIdentity } from "./requestIdentity";
 import { CandidateWorkspace } from "./CandidateWorkspace";
 import "./sdkWorkbench.css";
@@ -10,6 +10,15 @@ import "./sdkWorkbench.css";
 type Props = { account: Account; storyId?: number; client?: SdkApi };
 
 function message(error: unknown): string {
+  if (error instanceof SdkApiError) {
+    if (error.detail === "sdk_reconcile_required") return "提交结果需要管理员核对，请勿重复创建。";
+    if (error.detail === "sdk_requirement_review_required") return "当前需求版本尚未评审通过，不能创建任务。";
+    if (error.detail === "sdk_zentao_auth_required") return "禅道服务账号认证失败，请联系平台管理员；可在恢复后重试同一提交。";
+    if (error.detail === "sdk_external_mismatch") return "禅道记录与原提交内容不一致，不能绑定。";
+    if (error.status === 403) return "当前账号没有执行此操作的 SDK 权限。";
+    if (error.status === 422) return "输入不符合要求，请检查必填项与格式。";
+    if (error.status === 409) return `状态冲突：${error.detail}`;
+  }
   if (error instanceof Error && error.message === "sdk_reconcile_required") return "提交结果需要管理员核对，请勿重复创建。";
   return "暂时无法连接 SDK 工作台，请稍后重试。";
 }
@@ -18,6 +27,8 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const [me, setMe] = useState<SdkMe | null>(null);
   const [list, setList] = useState<RequirementList | null>(null);
   const [detail, setDetail] = useState<RequirementDetail | null>(null);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [hasOlderReviews, setHasOlderReviews] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [title, setTitle] = useState("");
@@ -63,7 +74,8 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     if (!storyId) { setDetail(null); return; }
     let live = true;
     setError("");
-    void client.requirement(storyId).then(value => { if (live) setDetail(value); })
+    setReviewPage(1); setHasOlderReviews(false);
+    void client.requirement(storyId).then(value => { if (live) { setDetail(value); setHasOlderReviews(value.reviews.length === 50); } })
       .catch(error => { if (live) setError(message(error)); });
     return () => { live = false; };
   }, [client, storyId]);
@@ -86,6 +98,21 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     } catch (error) { setError(message(error)); }
   }
 
+  async function requirementPage(page: number) {
+    try { setError(""); setList(await client.requirements(page)); }
+    catch (error) { setError(message(error)); }
+  }
+
+  async function olderReviews() {
+    if (!storyId || !detail) return;
+    try {
+      const page = reviewPage + 1;
+      const older = await client.reviews(storyId, page);
+      setDetail({ ...detail, reviews: [...older.items, ...detail.reviews] });
+      setReviewPage(page); setHasOlderReviews(older.items.length === 50);
+    } catch (error) { setError(message(error)); }
+  }
+
   if (error && !me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p role="alert">{error}</p></section>;
   if (!me || !list) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取需求…</p></section>;
   if (!me.role && !me.can_manage) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>当前账号没有 SDK 工作台权限。</p></section>;
@@ -100,6 +127,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
         <h2>需求</h2>
         <ul className="sdk-list">{list.items.map(item => <li key={item.id}><button type="button" onClick={() => navigate(`/sdk/requirements/${item.id}`)} className={storyId === item.id ? "selected" : ""}>#{item.id} {item.title}</button><span>{item.status || "待定"}</span></li>)}</ul>
         {list.items.length === 0 && <p>还没有需求。</p>}
+        <div className="sdk-pagination"><button type="button" disabled={list.page <= 1} onClick={() => { void requirementPage(list.page - 1); }}>上一页</button><span>第 {list.page} 页</span><button type="button" disabled={list.total == null ? list.items.length < 50 : list.page * 50 >= Number(list.total)} onClick={() => { void requirementPage(list.page + 1); }}>下一页</button></div>
         {me.role === "contributor" && !me.read_only && <form onSubmit={createRequirement} className="sdk-form"><h3>创建需求</h3>
           <label>标题<input required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} /></label>
           <label>场景<textarea required maxLength={4000} value={scenario} onChange={event => setScenario(event.target.value)} /></label>
@@ -118,6 +146,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
           <h4>描述</h4><p className="sdk-pre">{detail.story.spec || "未填写"}</p>
           <h4>验收标准</h4><p className="sdk-pre">{detail.story.verify || "未填写"}</p>
           <h4>SDK 评审记录</h4>
+          {hasOlderReviews && <button type="button" onClick={() => { void olderReviews(); }}>查看更早评审</button>}
           <ul>{detail.reviews.map((review, index) => <li key={index}>{review.decision} · {review.reason} · {review.created_at || ""}</li>)}</ul>
           <h4>开发任务</h4>
           <ul>{detail.tasks.map(task => <li key={task.task_id}>开发任务 #{task.task_id}</li>)}</ul>
@@ -159,7 +188,8 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     {me.can_manage && <section className="sdk-panel sdk-members"><h2>待核对写入</h2>
       <p>先在禅道核对实际记录，再绑定 ID。未确认前不得重新创建。</p>
       <ul>{reconciliation.map(intent => <li key={`${intent.actor_id}:${intent.request_id}`}>
-        {intent.kind} · {intent.request_id} · 操作者 {intent.actor_id}
+        {intent.kind} · {intent.request_payload?.title || intent.request_payload?.name || "无摘要"} · {intent.request_id} · 操作者 {intent.actor_id}
+        {intent.story_id && <> · 需求 #{intent.story_id}</>}
         <button type="button" onClick={() => { setSelectedIntent(intent); setExternalId(""); }}>选择</button>
       </li>)}</ul>
       {reconciliation.length === 0 && <p>没有待核对写入。</p>}

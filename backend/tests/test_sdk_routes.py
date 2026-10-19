@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from app.control_plane.models import AuthContext, Role
 from app.sdk_workbench.routes import build_sdk_router
 from app.sdk_workbench.service import SdkService
-from app.sdk_workbench.zentao import ZenTaoUnavailable
+from app.sdk_workbench.zentao import ZenTaoAuthenticationError, ZenTaoRequestRejected, ZenTaoUnavailable
 
 
 ACTOR = UUID("11111111-1111-4111-8111-111111111111")
@@ -25,12 +25,15 @@ class Repository:
     def role_for(self, actor):
         return self.roles.get(actor)
 
-    def reserve(self, actor, request_id, digest, kind, story_id=None):
+    def reserve(self, actor, request_id, digest, kind, story_id=None, payload=None):
         key = (actor, request_id)
         previous = self.intents.get(key)
         if previous is None:
-            self.intents[key] = {"digest": digest, "state": "pending", "result": None, "kind": kind, "story_id": story_id}
+            self.intents[key] = {"digest": digest, "state": "pending", "result": None, "kind": kind, "story_id": story_id, "request_payload": payload or {}}
             return self.intents[key].copy(), True
+        if previous["state"] == "rejected" and previous["digest"] == digest:
+            previous["state"] = "pending"
+            return previous.copy(), True
         return previous.copy(), False
 
     def complete(self, actor, request_id, result):
@@ -38,6 +41,9 @@ class Repository:
 
     def reconcile(self, actor, request_id):
         self.intents[(actor, request_id)]["state"] = "reconcile_required"
+
+    def reject(self, actor, request_id):
+        self.intents[(actor, request_id)]["state"] = "rejected"
 
     def list_reconciliation(self):
         return [{"actor_id": str(actor), "request_id": str(request_id), **intent} for (actor, request_id), intent in self.intents.items() if intent["state"] == "reconcile_required"]
@@ -57,8 +63,12 @@ class Repository:
         self.complete(actor, request_id, self.reviews[-1])
         return self.reviews[-1]
 
-    def list_reviews(self, story_id):
+    def list_reviews(self, story_id, page=1):
         return [row for row in self.reviews if row["story_id"] == story_id]
+
+    def latest_review(self, story_id):
+        reviews = self.list_reviews(story_id)
+        return reviews[-1] if reviews else None
 
     def add_task_link(self, actor, story_id, task_id, request_id):
         self.tasks.append({"story_id": story_id, "task_id": task_id})
@@ -88,7 +98,10 @@ class ZenTao:
         return {"status": "success", "stories": [{"id": "12", "title": "USB 稳定性"}], "page": page, "total": 1}
 
     async def get_story(self, story_id):
-        return {"id": str(story_id), "product": "7", "version": self.version, "title": "USB 稳定性", "verify": "连续运行", "status": "active"}
+        created = next((entry for entry in reversed(self.created) if entry[0] == "story"), None)
+        return {"id": str(story_id), "product": "7", "version": self.version,
+                "title": created[1] if created else "USB 稳定性", "spec": created[2] if created else "场景：客户现场\n设备/平台：Linux",
+                "verify": created[3] if created else "连续运行", "status": "active"}
 
     async def create_story(self, product_id, title, spec, verify):
         self.created.append(("story", title, spec, verify))
@@ -101,7 +114,8 @@ class ZenTao:
         return 31
 
     async def get_task(self, task_id):
-        return {"id": str(task_id), "story": "12", "execution": "9"}
+        created = next((entry for entry in reversed(self.created) if entry[0] == "task"), None)
+        return {"id": str(task_id), "story": "12", "execution": "9", "name": created[3] if created else "修复断流", "desc": created[4] if created else "检查枚举"}
 
 
 def app_for(repo, zentao, *, role=Role.MEMBER, stale=False, actor=ACTOR):
@@ -185,8 +199,10 @@ async def test_reviewer_can_review_and_contributor_can_create_linked_task():
     async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
         review = await client.post("/api/v1/sdk/requirements/12/reviews", json={"request_id": str(uuid4()), "decision": "approved", "reason": "范围明确"})
         detail = await client.get("/api/v1/sdk/requirements/12")
+        history = await client.get("/api/v1/sdk/requirements/12/reviews?page=1")
     assert review.status_code == 201
     assert detail.json()["reviews"][0]["actor_id"] == str(ACTOR)
+    assert history.status_code == 200 and history.json()["items"][0]["reason"] == "范围明确"
     repo.roles[ACTOR] = "contributor"
     async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
         task = await client.post("/api/v1/sdk/requirements/12/tasks", json={"request_id": str(uuid4()), "name": "修复断流", "description": "检查枚举"})
@@ -271,3 +287,53 @@ async def test_owner_reconciles_ambiguous_story_without_duplicate_creation():
     assert bound.status_code == 200 and bound.json() == {"id": 12}
     assert replay.status_code == 201 and replay.json() == {"id": 12}
     assert len(zentao.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_owner_cannot_bind_unrelated_story_after_uncertain_write():
+    repo, zentao = Repository(), ZenTao()
+    request_id = uuid4()
+    zentao.fail = True
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
+        await client.post("/api/v1/sdk/requirements", json={"request_id": str(request_id), "title": "USB", "scenario": "客户", "device_platform": "Linux", "acceptance": "通过"})
+    zentao.fail = False
+    async def unrelated(_story_id):
+        return {"id": "12", "product": "7", "version": "1", "title": "无关需求", "spec": "其他", "verify": "其他"}
+    zentao.get_story = unrelated
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao, role=Role.PLATFORM_OWNER)), base_url="http://test") as client:
+        rejected = await client.post(f"/api/v1/sdk/reconciliation/{ACTOR}/{request_id}/bind", json={"request_id": str(uuid4()), "external_id": 12})
+    assert rejected.status_code == 409 and rejected.json()["detail"] == "sdk_external_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_definite_upstream_auth_failure_can_retry_without_reconciliation():
+    repo, zentao = Repository(), ZenTao()
+    original = zentao.create_story
+    async def unauthorized(*args):
+        raise ZenTaoAuthenticationError("private")
+    zentao.create_story = unauthorized
+    body = {"request_id": str(uuid4()), "title": "USB", "scenario": "客户", "device_platform": "Linux", "acceptance": "通过"}
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
+        denied = await client.post("/api/v1/sdk/requirements", json=body)
+        assert denied.status_code == 503 and denied.json()["detail"] == "sdk_zentao_auth_required"
+        assert (await client.get("/api/v1/sdk/reconciliation")).status_code == 403
+        zentao.create_story = original
+        retried = await client.post("/api/v1/sdk/requirements", json=body)
+    assert retried.status_code == 201
+    assert len(zentao.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_definite_permission_denial_is_retryable_after_access_is_fixed():
+    repo, zentao = Repository(), ZenTao()
+    original = zentao.create_story
+    async def forbidden(*args):
+        raise ZenTaoRequestRejected("private")
+    zentao.create_story = forbidden
+    body = {"request_id": str(uuid4()), "title": "USB", "scenario": "客户", "device_platform": "Linux", "acceptance": "通过"}
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
+        denied = await client.post("/api/v1/sdk/requirements", json=body)
+        assert denied.status_code == 502 and denied.json()["detail"] == "sdk_zentao_rejected"
+        zentao.create_story = original
+        retried = await client.post("/api/v1/sdk/requirements", json=body)
+    assert retried.status_code == 201

@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from app.control_plane.models import AuthContext, Role
 
-from .zentao import ZenTaoProtocolError, ZenTaoRejected, ZenTaoUnavailable
+from .zentao import ZenTaoAuthenticationError, ZenTaoProtocolError, ZenTaoRejected, ZenTaoRequestRejected, ZenTaoUnavailable
 
 
 _READ_ROLES = frozenset({"viewer", "contributor", "reviewer", "release_manager"})
@@ -81,10 +81,17 @@ class SdkService:
             raise HTTPException(409, "sdk_reconcile_required")
         try:
             if intent["kind"] == "create_requirement":
-                await self._story(external_id)
+                story = await self._story(external_id)
+                payload = intent["request_payload"]
+                expected_spec = f"场景：{payload.get('scenario', '')}\n设备/平台：{payload.get('device_platform', '')}"
+                if (story.get("title") != payload.get("title") or story.get("spec") != expected_spec
+                        or story.get("verify") != payload.get("acceptance")):
+                    raise HTTPException(409, "sdk_external_mismatch")
             elif intent["kind"] == "create_task":
                 task = await self.zentao.get_task(external_id)
-                if str(task.get("story")) != str(intent["story_id"]) or str(task.get("execution")) != str(self.execution_id):
+                payload = intent["request_payload"]
+                if (str(task.get("story")) != str(intent["story_id"]) or str(task.get("execution")) != str(self.execution_id)
+                        or task.get("name") != payload.get("name") or task.get("desc") != payload.get("description")):
                     raise HTTPException(409, "sdk_external_mismatch")
                 await self._story(int(intent["story_id"]))
             else:
@@ -95,6 +102,8 @@ class SdkService:
 
     @staticmethod
     def _translate(error: Exception) -> HTTPException:
+        if isinstance(error, ZenTaoAuthenticationError):
+            return HTTPException(503, "sdk_zentao_auth_required")
         if isinstance(error, ZenTaoUnavailable):
             return HTTPException(503, "sdk_zentao_unavailable")
         if isinstance(error, ZenTaoRejected):
@@ -134,6 +143,10 @@ class SdkService:
         story = await self._story(story_id)
         return {"story": story, "reviews": self.repository.list_reviews(story_id), "tasks": self.repository.list_tasks(story_id)}
 
+    def reviews(self, actor: AuthContext, story_id: int, page: int) -> dict:
+        self._role(actor)
+        return {"items": self.repository.list_reviews(story_id, page), "page": page}
+
     @staticmethod
     def _digest(kind: str, payload: dict) -> str:
         canonical = json.dumps({"kind": kind, "payload": payload}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -147,11 +160,13 @@ class SdkService:
             raise HTTPException(409, "sdk_request_id_collision")
         if intent["state"] == "succeeded" and isinstance(intent["result"], dict):
             return intent["result"]
+        if intent["state"] == "rejected":
+            return None
         raise HTTPException(409, "sdk_reconcile_required")
 
     def _intent(self, actor: AuthContext, request_id: UUID, kind: str, payload: dict) -> dict | None:
         digest = self._digest(kind, payload)
-        intent, fresh = self.repository.reserve(actor.internal_user_id, request_id, digest, kind, payload.get("story_id"))
+        intent, fresh = self.repository.reserve(actor.internal_user_id, request_id, digest, kind, payload.get("story_id"), payload)
         if fresh:
             return None
         if intent["digest"] != digest:
@@ -169,6 +184,9 @@ class SdkService:
         spec = f"场景：{scenario}\n设备/平台：{device_platform}"
         try:
             story_id = await self.zentao.create_story(self.product_id, title, spec, acceptance)
+        except (ZenTaoAuthenticationError, ZenTaoRequestRejected) as error:
+            self.repository.reject(actor.internal_user_id, request_id)
+            raise self._translate(error) from None
         except (ZenTaoUnavailable, ZenTaoRejected, ZenTaoProtocolError):
             self.repository.reconcile(actor.internal_user_id, request_id)
             raise HTTPException(503, "sdk_reconcile_required") from None
@@ -186,14 +204,17 @@ class SdkService:
         if replay is not None:
             return replay
         story = await self._story(story_id)
-        reviews = self.repository.list_reviews(story_id)
-        if not reviews or reviews[-1]["decision"] != "approved" or reviews[-1]["story_version"] != str(story["version"]):
+        latest = self.repository.latest_review(story_id)
+        if not latest or latest["decision"] != "approved" or latest["story_version"] != str(story["version"]):
             raise HTTPException(409, "sdk_requirement_review_required")
         replay = self._intent(actor, request_id, "create_task", payload)
         if replay is not None:
             return replay
         try:
             task_id = await self.zentao.create_task(self.execution_id, story_id, name, description)
+        except (ZenTaoAuthenticationError, ZenTaoRequestRejected) as error:
+            self.repository.reject(actor.internal_user_id, request_id)
+            raise self._translate(error) from None
         except (ZenTaoUnavailable, ZenTaoRejected, ZenTaoProtocolError):
             self.repository.reconcile(actor.internal_user_id, request_id)
             raise HTTPException(503, "sdk_reconcile_required") from None

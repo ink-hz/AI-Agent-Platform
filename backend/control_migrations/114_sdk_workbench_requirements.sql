@@ -15,13 +15,16 @@ create table sdk.write_intents (
   kind text not null check (kind in ('create_requirement', 'create_task', 'review_requirement')),
   story_id bigint check (story_id > 0),
   digest char(64) not null check (digest ~ '^[0-9a-f]{64}$'),
-  state text not null check (state in ('pending', 'succeeded', 'reconcile_required')),
+  request_payload jsonb not null default '{}'::jsonb check (jsonb_typeof(request_payload) = 'object'),
+  state text not null check (state in ('pending', 'succeeded', 'reconcile_required', 'rejected')),
   result jsonb,
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
   primary key (actor_id, request_id),
   check ((state = 'succeeded') = (result is not null))
 );
+create unique index sdk_write_intents_external_id on sdk.write_intents(kind, ((result->>'id')::bigint))
+  where state='succeeded' and kind in ('create_requirement','create_task');
 
 create table sdk.review_events (
   actor_id uuid not null references platform_control.internal_users(internal_user_id),

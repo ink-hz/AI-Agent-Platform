@@ -82,8 +82,8 @@ class EvidenceService:
         if not task_ids or len(task_ids) != len(set(task_ids)) or not targets or len({(t["os"], t["arch"]) for t in targets}) != len(targets):
             raise HTTPException(422, "sdk_candidate_scope_invalid")
         story = await self.sdk._story(story_id)
-        reviews = self.repository.list_reviews(story_id)
-        if not reviews or reviews[-1]["decision"] != "approved" or reviews[-1]["story_version"] != str(story["version"]):
+        latest = self.repository.latest_review(story_id)
+        if not latest or latest["decision"] != "approved" or latest["story_version"] != str(story["version"]):
             raise HTTPException(409, "sdk_requirement_review_required")
         linked = {task["task_id"] for task in self.repository.list_tasks(story_id)}
         if not set(task_ids).issubset(linked):
@@ -126,8 +126,8 @@ class EvidenceService:
         item = self._item(candidate_id)
         reasons = gate_reasons(item)
         story = await self.sdk._story(item["story_id"])
-        reviews = self.repository.list_reviews(item["story_id"])
-        if str(story["version"]) != item["story_version"] or not reviews or reviews[-1]["decision"] != "approved" or reviews[-1]["story_version"] != item["story_version"]:
+        latest = self.repository.latest_review(item["story_id"])
+        if str(story["version"]) != item["story_version"] or not latest or latest["decision"] != "approved" or latest["story_version"] != item["story_version"]:
             reasons.append("requirement_review_outdated")
         latest_approval = item["approvals"][-1] if item["approvals"] else None
         approved = bool(latest_approval and latest_approval["evidence_version"] == item["evidence_version"] and not reasons)

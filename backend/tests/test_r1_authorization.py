@@ -40,6 +40,7 @@ def test_sdk_routes_delegate_member_authorization_to_sdk_service(actor):
         ("POST", "/api/v1/sdk/requirements"),
         ("GET", "/api/v1/sdk/requirements/{story_id}"),
         ("POST", "/api/v1/sdk/requirements/{story_id}/reviews"),
+        ("GET", "/api/v1/sdk/requirements/{story_id}/reviews"),
         ("POST", "/api/v1/sdk/requirements/{story_id}/tasks"),
         ("GET", "/api/v1/sdk/members"),
         ("POST", "/api/v1/sdk/members"),

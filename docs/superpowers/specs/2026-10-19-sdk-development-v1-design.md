@@ -20,7 +20,7 @@
 
 SDK 专属成员表按现有内部用户 UUID 授予 `viewer`、`contributor`、`reviewer`、`release_manager`。平台所有者通过受审计的 API 管理成员；平台全局管理员不自动获得 SDK 发布权限。`contributor` 创建需求、任务和候选及录入构建；`reviewer` 记录需求评审和测试；`release_manager` 审批、发布；各写角色均可读项目内全部 SDK 记录。未授予 SDK 角色的用户不能读取。发布审批人不得是对应候选的创建人。硬陈旧目录和只读模式禁止写入。
 
-所有写入均要求 `request_id` UUID。平台数据库以 `(actor_id, request_id)` 存操作结果和请求摘要；相同请求重放返回原结果，摘要不同返回 409。禅道创建需求/任务属于跨系统写入：先在平台持久化意图，再调用禅道，成功后写入外部 ID；超时或不确定结果停在 `reconcile_required`，不自动重试创建。管理员需人工核对禅道并完成绑定，防止重复记录。事件追加保存操作者、时间、动作、对象、请求 ID 和关键字段摘要，保留原失败结果。浏览器和日志中均不得出现禅道 token。
+所有写入均要求 `request_id` UUID。平台数据库以 `(actor_id, request_id)` 存操作结果和请求摘要；相同请求重放返回原结果，摘要不同返回 409。禅道创建需求/任务属于跨系统写入：先在平台持久化不可编辑的原始写入意图，再调用禅道，成功后写入外部 ID；超时或不确定结果停在 `reconcile_required`，不自动重试创建。管理员需核对禅道记录的产品、需求或任务内容再绑定，外部 ID 不得重复绑定。确定的认证拒绝不进入对账队列，认证恢复后可复用原请求 ID 重试。事件追加保存操作者、时间、动作、对象、请求 ID 和关键字段摘要。需求评审变更会推进关联候选的证据版本，审批或发布事务复核该版本；晚于审批的评审使审批失效。浏览器和日志中均不得出现禅道 token。
 
 ## 组件与数据流
 
@@ -33,7 +33,7 @@ SDK 专属成员表按现有内部用户 UUID 授予 `viewer`、`contributor`、
 
 ## 接口契约
 
-`GET /api/v1/sdk/me` 返回角色与可操作动作。`GET/POST /requirements`、`GET /requirements/{id}`、`POST /requirements/{id}/reviews`、`POST /requirements/{id}/tasks` 对接禅道与本地评审事件。`GET/POST /candidates`、`GET /candidates/{id}`、`POST /candidates/{id}/builds`、`POST /artifacts/{id}/tests`、`GET /candidates/{id}/gate`、`POST /candidates/{id}/approval`、`POST /candidates/{id}/release` 操作 SDK 证据。所有列表分页，写请求严格校验字段长度和 SHA 格式；每个写接口要求 `request_id`。详情响应包含关联禅道 ID、证据版本、门槛结果和事件时间线。
+`GET /api/v1/sdk/me` 返回角色与可操作动作。`GET/POST /requirements`、`GET /requirements/{id}`、`GET/POST /requirements/{id}/reviews`、`POST /requirements/{id}/tasks` 对接禅道与本地评审事件。`GET/POST /candidates`、`GET /candidates/{id}`、`POST /candidates/{id}/builds`、`POST /artifacts/{id}/tests`、`GET /candidates/{id}/gate`、`POST /candidates/{id}/approval`、`POST /candidates/{id}/release` 操作 SDK 证据。需求、候选和评审历史列表分页；成员与对账队列各限制返回 500 条。写请求严格校验字段长度和 SHA 格式；每个写接口要求 `request_id`。详情响应包含关联禅道 ID、证据版本、门槛结果和操作者、时间、请求 ID 等审计字段。
 
 ## 验收
 

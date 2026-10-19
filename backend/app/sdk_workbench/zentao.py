@@ -26,6 +26,14 @@ class ZenTaoRejected(RuntimeError):
     pass
 
 
+class ZenTaoAuthenticationError(ZenTaoRejected):
+    pass
+
+
+class ZenTaoRequestRejected(ZenTaoRejected):
+    pass
+
+
 def _private_origin(value: str) -> str:
     try:
         parsed = urlparse(value)
@@ -97,6 +105,7 @@ class ZenTaoClient:
         payload: dict | None = None,
         params: dict | None = None,
         authenticated: bool = True,
+        retry_auth: bool = True,
     ) -> dict:
         if authenticated and self._token is None:
             await self.login()
@@ -121,11 +130,15 @@ class ZenTaoClient:
             raise ZenTaoUnavailable("zentao_unavailable") from None
         if status >= 500:
             raise ZenTaoUnavailable("zentao_unavailable")
+        if status == 401:
+            self._token = None
+            if authenticated and retry_auth:
+                await self.login()
+                return await self._request(method, endpoint, payload=payload, params=params, authenticated=True, retry_auth=False)
+            raise ZenTaoAuthenticationError("zentao_authentication_failed")
         if status != 200:
-            if status in {400, 401, 403, 404, 409, 422}:
-                if status == 401:
-                    self._token = None
-                raise ZenTaoRejected("zentao_rejected")
+            if status in {400, 403, 404, 409, 422}:
+                raise ZenTaoRequestRejected("zentao_request_rejected")
             raise ZenTaoProtocolError("zentao_http_status")
         try:
             body = json.loads(content, parse_constant=_reject_nonstandard)

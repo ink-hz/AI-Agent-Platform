@@ -23,6 +23,8 @@ type Props = { account: Account; role: SdkRole; readOnly: boolean; client: SdkAp
 
 export function CandidateWorkspace({ account, role, readOnly, client, storyId, taskIds = [] }: Props) {
   const [items, setItems] = useState<CandidateSummary[]>([]);
+  const [candidatePage, setCandidatePage] = useState(1);
+  const [candidateTotal, setCandidateTotal] = useState(0);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<CandidateDetail | null>(null);
   const [gate, setGate] = useState<Gate | null>(null);
@@ -62,13 +64,14 @@ export function CandidateWorkspace({ account, role, readOnly, client, storyId, t
 
   useEffect(() => {
     let live = true;
-    void client.candidates().then(list => {
+    void client.candidates(candidatePage).then(list => {
       if (!live) return;
       setItems(list.items);
-      setSelectedId(current => current ?? list.items[0]?.id ?? null);
+      setCandidateTotal(list.total);
+      setSelectedId(list.items[0]?.id ?? null);
     }).catch(error => { if (live) setError(errorText(error)); });
     return () => { live = false; };
-  }, [client]);
+  }, [client, candidatePage]);
 
   useEffect(() => {
     if (!selectedId) { setDetail(null); setGate(null); return; }
@@ -82,8 +85,8 @@ export function CandidateWorkspace({ account, role, readOnly, client, storyId, t
   }, [client, selectedId]);
 
   async function refresh(id: number) {
-    const [list, candidate] = await Promise.all([client.candidates(), client.candidate(id)]);
-    setItems(list.items); setSelectedId(id); setDetail(candidate);
+    const [list, candidate] = await Promise.all([client.candidates(1), client.candidate(id)]);
+    setCandidatePage(1); setItems(list.items); setCandidateTotal(list.total); setSelectedId(id); setDetail(candidate);
     try { setGate(await client.gate(id)); }
     catch (error) { setGate(null); setError(errorText(error)); }
   }
@@ -115,7 +118,7 @@ export function CandidateWorkspace({ account, role, readOnly, client, storyId, t
     {error && <p className="sdk-error" role="alert">{error}</p>}
     {notice && <p className="sdk-notice" role="status">{notice}</p>}
     <div className="sdk-candidate-layout">
-      <div><h3>候选列表</h3><ul className="sdk-list">{items.map(item => <li key={item.id}><button type="button" className={selectedId === item.id ? "selected" : ""} onClick={() => setSelectedId(item.id)}>候选 #{item.id} · 需求 #{item.story_id}</button></li>)}</ul>{items.length === 0 && <p>还没有候选版本。</p>}</div>
+      <div><h3>候选列表</h3><ul className="sdk-list">{items.map(item => <li key={item.id}><button type="button" className={selectedId === item.id ? "selected" : ""} onClick={() => setSelectedId(item.id)}>候选 #{item.id} · 需求 #{item.story_id}</button></li>)}</ul>{items.length === 0 && <p>还没有候选版本。</p>}<div className="sdk-pagination"><button type="button" disabled={candidatePage <= 1} onClick={() => setCandidatePage(candidatePage - 1)}>上一页</button><span>第 {candidatePage} 页</span><button type="button" disabled={candidatePage * 20 >= candidateTotal} onClick={() => setCandidatePage(candidatePage + 1)}>下一页</button></div></div>
       <div>{detail && <>
         <h3>候选 #{detail.id} · SDK {detail.manifest.sdk_version}</h3>
         <p>需求 #{detail.story_id} v{detail.story_version} · 任务 {detail.task_ids.map(id => `#${id}`).join("、")} · 证据版本 {detail.evidence_version}</p>
@@ -124,9 +127,9 @@ export function CandidateWorkspace({ account, role, readOnly, client, storyId, t
         <h4>发布门槛</h4>
         {!gate && <p>正在计算…</p>}
         {gate && <><p className={gate.ready ? "sdk-notice" : "sdk-error"}>{gate.ready ? (gate.approved ? "可发布 · 已审批" : "证据齐全 · 待审批") : "暂不可发布"}</p>{gate.reasons.length > 0 && <ul>{gate.reasons.map(reason => <li key={reason}>{describe(reason)}</li>)}</ul>}</>}
-        <h4>构建与产物</h4><ul>{detail.builds.map(build => <li key={build.id}>#{build.id} {build.os}/{build.arch} · {build.status} · {build.artifact_name || "无产物"}{build.artifact_sha256 && <> · <code>{build.artifact_sha256}</code></>}</li>)}</ul>
-        <h4>测试记录</h4><ul>{detail.tests.map(test => <li key={test.id}>#{test.id} · 产物 #{test.build_id} · {test.suite} · {test.status} · 通过 {test.passed} / 失败 {test.failed} / 跳过 {test.skipped}{test.device && ` · ${test.device} / ${test.firmware}`}</li>)}</ul>
-        <h4>审批与发布追溯</h4><ul>{detail.approvals.map(approval => <li key={approval.id}>审批 #{approval.id} · 证据 v{approval.evidence_version} · {approval.note}</li>)}{detail.releases.map(release => <li key={`release-${release.id}`}>发布 #{release.id} · {release.channel} · {release.released_at} · 回退：{release.rollback_uri}<br />产物摘要：<code>{release.artifact_sha256s.join(", ")}</code></li>)}</ul>
+        <h4>构建与产物</h4><ul>{detail.builds.map(build => <li key={build.id}>#{build.id} {build.os}/{build.arch} · {build.status} · {build.artifact_name || "无产物"}{build.artifact_sha256 && <> · <code>{build.artifact_sha256}</code></>}<br />执行者：{build.actor_id} · {build.created_at}<br />命令：<code>{build.command}</code> · 日志：<code>{build.log_uri}</code>{build.artifact_uri && <> · 产物：<code>{build.artifact_uri}</code></>}</li>)}</ul>
+        <h4>测试记录</h4><ul>{detail.tests.map(test => <li key={test.id}>#{test.id} · 产物 #{test.build_id} · {test.suite} · {test.status} · 通过 {test.passed} / 失败 {test.failed} / 跳过 {test.skipped}{test.device && ` · ${test.device} / ${test.firmware}`}<br />执行者：{test.actor_id} · {test.created_at} · 报告：<code>{test.report_uri}</code></li>)}</ul>
+        <h4>审批与发布追溯</h4><ul>{detail.approvals.map(approval => <li key={approval.id}>审批 #{approval.id} · 证据 v{approval.evidence_version} · {approval.note} · 审批人 {approval.actor_id} · {approval.created_at}</li>)}{detail.releases.map(release => <li key={`release-${release.id}`}>发布 #{release.id} · {release.channel} · {release.released_at} · 发布登记人 {release.actor_id} · 审批 #{release.approval_id} · 回退：{release.rollback_uri}<br />产物摘要：<code>{release.artifact_sha256s.join(", ")}</code></li>)}</ul>
       </>}</div>
     </div>
     {role === "contributor" && !readOnly && storyId && taskIds.length > 0 && <form className="sdk-form" onSubmit={event => { void createCandidate(event); }}><h3>冻结候选基线 · 需求 #{storyId}</h3>

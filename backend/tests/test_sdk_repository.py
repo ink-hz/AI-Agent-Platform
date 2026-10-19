@@ -4,6 +4,7 @@ import uuid
 
 import psycopg
 import pytest
+from fastapi import HTTPException
 
 from app.sdk_workbench.repository import SdkRepository
 from test_control_plane_migration import control_database
@@ -28,11 +29,19 @@ def test_sdk_members_intents_and_reviews_persist_through_app_role(control_databa
     assert repository.role_for(target) == "contributor"
     assert repository.members()[0]["internal_user_id"] == str(target)
 
-    intent, fresh = repository.reserve(target, request_id, "a" * 64, "create_requirement")
+    intent, fresh = repository.reserve(target, request_id, "a" * 64, "create_requirement", payload={"title": "需求"})
     assert fresh and intent["state"] == "pending"
+    assert repository.get_intent(target, request_id)["request_payload"] == {"title": "需求"}
     repository.complete(target, request_id, {"id": 71})
     replay, fresh = repository.reserve(target, request_id, "a" * 64, "create_requirement")
     assert not fresh and replay["result"] == {"id": 71}
+
+    rejected_id = uuid.uuid4()
+    repository.reserve(target, rejected_id, "9" * 64, "create_requirement")
+    repository.reject(target, rejected_id)
+    assert repository.get_intent(target, rejected_id)["state"] == "rejected"
+    retried, fresh = repository.reserve(target, rejected_id, "9" * 64, "create_requirement")
+    assert fresh and retried["state"] == "pending"
 
     review_request = uuid.uuid4()
     repository.reserve(target, review_request, "c" * 64, "review_requirement", 71)
@@ -67,3 +76,20 @@ def test_sdk_members_intents_and_reviews_persist_through_app_role(control_databa
         )
     assert any(item["request_id"] == str(stale_id) for item in repository.list_reconciliation())
     assert repository.bind_reconciliation(actor, uuid.uuid4(), target, stale_id, 72) == {"id": 72}
+    duplicate_story_id = uuid.uuid4()
+    repository.reserve(target, duplicate_story_id, "f" * 64, "create_requirement")
+    repository.reconcile(target, duplicate_story_id)
+    with pytest.raises(HTTPException) as duplicate:
+        repository.bind_reconciliation(actor, uuid.uuid4(), target, duplicate_story_id, 72)
+    assert duplicate.value.status_code == 409
+
+    with psycopg.connect(environment["admin"]) as connection:
+        for index in range(501):
+            connection.execute(
+                "insert into sdk.review_events(actor_id,request_id,story_id,story_version,decision,reason,created_at) "
+                "values (%s,%s,71,'1','rejected',%s,now()+%s * interval '1 second')",
+                (target, uuid.uuid4(), f"review-{index}", index),
+            )
+    assert repository.list_reviews(71)[-1]["reason"] == "review-500"
+    assert repository.latest_review(71)["reason"] == "review-500"
+    assert repository.list_reviews(71, 11)[-1]["reason"] == "review-0"

@@ -9,16 +9,17 @@ export type RequirementDetail = {
   reviews: Array<{ actor_id: string; decision: string; reason: string; created_at?: string }>;
   tasks: Array<{ story_id: number; task_id: number }>;
 };
+export type ReviewRecord = RequirementDetail["reviews"][number];
 export type RequirementInput = {
   request_id: string; title: string; scenario: string; device_platform: string; acceptance: string;
 };
-export type ReconciliationIntent = { actor_id: string; request_id: string; kind: string; story_id: number | null; created_at?: string };
+export type ReconciliationIntent = { actor_id: string; request_id: string; kind: string; story_id: number | null; created_at?: string; request_payload?: { title?: string; name?: string; scenario?: string; device_platform?: string; acceptance?: string; description?: string } };
 export type Target = { os: string; arch: string };
 export type Manifest = { packaging_sha: string; sdk_version: string; script_path: string; modules: Record<string, string> };
 export type CandidateSummary = { id: number; story_id: number; story_version: string; evidence_version: number; creator_id: string; created_at: string };
-export type BuildEvidence = { id: number; os: string; arch: string; status: string; command: string; log_uri: string; artifact_name: string | null; artifact_sha256: string | null; artifact_size: number | null; artifact_uri: string | null; created_at: string };
-export type TestEvidence = { id: number; build_id: number; suite: string; status: string; passed: number; failed: number; skipped: number; report_uri: string; device: string; firmware: string; created_at: string };
-export type CandidateDetail = CandidateSummary & { task_ids: number[]; manifest: Manifest; targets: Target[]; builds: BuildEvidence[]; tests: TestEvidence[]; approvals: Array<{ id: number; evidence_version: number; actor_id: string; note: string; created_at: string }>; releases: Array<{ id: number; channel: string; released_at: string; rollback_uri: string; artifact_sha256s: string[]; created_at: string }> };
+export type BuildEvidence = { id: number; actor_id: string; request_id: string; os: string; arch: string; status: string; command: string; log_uri: string; artifact_name: string | null; artifact_sha256: string | null; artifact_size: number | null; artifact_uri: string | null; created_at: string };
+export type TestEvidence = { id: number; actor_id: string; request_id: string; build_id: number; suite: string; status: string; passed: number; failed: number; skipped: number; report_uri: string; device: string; firmware: string; created_at: string };
+export type CandidateDetail = CandidateSummary & { task_ids: number[]; manifest: Manifest; targets: Target[]; builds: BuildEvidence[]; tests: TestEvidence[]; approvals: Array<{ id: number; evidence_version: number; actor_id: string; request_id: string; note: string; created_at: string }>; releases: Array<{ id: number; actor_id: string; request_id: string; approval_id: number; channel: string; released_at: string; rollback_uri: string; artifact_sha256s: string[]; created_at: string }> };
 export type Gate = { ready: boolean; reasons: string[]; evidence_version: number; approved: boolean; approval_id: number | null };
 export type CandidateInput = { request_id: string; story_id: number; task_ids: number[]; manifest: Manifest; targets: Target[] };
 export type BuildInput = { request_id: string; os: string; arch: string; status: "success" | "failed" | "cancelled" | "timeout"; command: string; log_uri: string; artifact_name: string | null; artifact_sha256: string | null; artifact_size: number | null; artifact_uri: string | null };
@@ -52,6 +53,7 @@ export interface SdkApi {
   createRequirement(input: RequirementInput, csrfToken: string): Promise<{ id: number }>;
   createTask(storyId: number, input: { request_id: string; name: string; description: string }, csrfToken: string): Promise<{ id: number }>;
   review(storyId: number, input: { request_id: string; decision: "approved" | "rejected" | "needs_changes"; reason: string }, csrfToken: string): Promise<unknown>;
+  reviews(storyId: number, page?: number): Promise<{ items: ReviewRecord[]; page: number }>;
   members(): Promise<{ items: Array<{ internal_user_id: string; role: SdkRole }> }>;
   grantMember(input: { request_id: string; internal_user_id: string; role: SdkRole }, csrfToken: string): Promise<unknown>;
   reconciliation(): Promise<{ items: ReconciliationIntent[] }>;
@@ -73,6 +75,7 @@ export const sdkApi: SdkApi = {
   createRequirement: (input, csrf) => request("/requirements", input, csrf),
   createTask: (storyId, input, csrf) => request(`/requirements/${storyId}/tasks`, input, csrf),
   review: (storyId, input, csrf) => request(`/requirements/${storyId}/reviews`, input, csrf),
+  reviews: (storyId, page = 1) => request(`/requirements/${storyId}/reviews?page=${page}`),
   members: () => request("/members"),
   grantMember: (input, csrf) => request("/members", input, csrf),
   reconciliation: () => request("/reconciliation"),

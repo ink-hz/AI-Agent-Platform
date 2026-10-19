@@ -48,6 +48,36 @@ it("shows live requirements and the selected story without a second login", asyn
   expect(client.requirement).toHaveBeenCalledWith(12);
 });
 
+it("can browse beyond the first page of requirements", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "viewer", can_manage: false, read_only: false }),
+    requirements: vi.fn().mockImplementation(async (page = 1) => ({ items: [{ id: page, title: `第 ${page} 页`, status: "active" }], page, total: 100 })),
+    candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  const next = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "下一页");
+  expect(next).toBeDefined();
+  await act(async () => next!.click());
+  expect(container.textContent).toContain("第 2 页");
+});
+
+it("can retrieve older requirement review history", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "viewer", can_manage: false, read_only: false }),
+    requirements: vi.fn().mockResolvedValue({ items: [{ id: 12, title: "需求", status: "active" }], page: 1, total: 1 }),
+    requirement: vi.fn().mockResolvedValue({ story: { id: "12", product: "7", title: "需求", version: "1" },
+      reviews: Array.from({ length: 50 }, () => ({ decision: "approved", reason: "新评审" })), tasks: [] }),
+    reviews: vi.fn().mockResolvedValue({ items: [{ decision: "rejected", reason: "旧评审" }], page: 2 }),
+    candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} storyId={12} client={client} />));
+  const older = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "查看更早评审");
+  expect(older).toBeDefined();
+  await act(async () => older!.click());
+  expect(container.textContent).toContain("旧评审");
+  expect(client.reviews).toHaveBeenCalledWith(12, 2);
+});
+
 it("shows a clear unavailable state when the service cannot load", async () => {
   const client = {
     me: vi.fn().mockRejectedValue(new Error("unavailable")),

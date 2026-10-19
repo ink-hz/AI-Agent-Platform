@@ -30,6 +30,6 @@
 
 22.6 版本应保持在私网、仅由 BFF 服务账号访问；公开漏洞库已记录该版本的评论授权绕过问题。正式开放前复核上游修复版本并升级或继续隔离，不对外开放禅道原生入口。
 
-禅道异常、数据结构不符合契约、产品 ID 不匹配、请求 ID 冲突均在接口中显式返回错误。创建需求或任务的上游结果不确定时，操作停在 `reconcile_required`；平台所有者可在“待核对写入”中核对禅道记录并绑定 ID。参见[设计](../../docs/superpowers/specs/2026-10-19-sdk-development-v1-design.md)。
+禅道异常、数据结构不符合契约、产品 ID 不匹配、请求 ID 冲突均在接口中显式返回错误。创建需求或任务的上游结果不确定时，操作停在 `reconcile_required`；平台所有者可在“待核对写入”查看原提交摘要，核对禅道记录后绑定 ID，平台会校验字段并拒绝重复外部 ID。令牌过期时 BFF 重新认证一次；确定的 HTTP 认证或权限拒绝不会进入对账队列，修复服务账号后可复用原请求 ID 重试。参见[设计](../../docs/superpowers/specs/2026-10-19-sdk-development-v1-design.md)。
 
 官方参考：[Docker 部署](https://www.zentao.net/book/zentaopms/docker-1111.html)、[22.6 下载](https://www.zentao.net/downloads.html/)、[API v2 登录](https://www.zentao.net/book/api/post-users-login-2142.html)、[创建需求](https://www.zentao.net/book/api/post-stories-2169.html)、[创建任务](https://www.zentao.net/book/api/post-tasks-2207.html)。[22.6 漏洞条目](https://osv.dev/vulnerability/CVE-2026-111346)。

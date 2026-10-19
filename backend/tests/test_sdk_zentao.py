@@ -10,6 +10,8 @@ from app.sdk_workbench.zentao import (
     ZenTaoProtocolError,
     ZenTaoRejected,
     ZenTaoUnavailable,
+    ZenTaoAuthenticationError,
+    ZenTaoRequestRejected,
 )
 
 
@@ -102,3 +104,43 @@ def test_requires_fixed_private_origin_and_password_file(password_file):
         ZenTaoClient("http://169.254.169.254:80", "sdk-api", password_file)
     with pytest.raises(ValueError):
         ZenTaoClient("http://127.0.0.1:18131", "sdk-api", password_file.parent / "missing")
+
+
+@pytest.mark.asyncio
+async def test_expired_token_reauthenticates_once_and_persistent_401_is_definite(password_file):
+    logins = 0
+    def respond(request):
+        nonlocal logins
+        if request.url.path.endswith("/users/login"):
+            logins += 1
+            return httpx.Response(200, json={"status": "success", "token": f"token-{logins}"})
+        if request.headers.get("token") == "token-1":
+            return httpx.Response(401, json={"status": "fail"})
+        return httpx.Response(200, json={"status": "success", "story": {"id": "12"}})
+    client = ZenTaoClient("http://127.0.0.1:18131", "sdk-api", password_file, transport=httpx.MockTransport(respond))
+    try:
+        assert (await client.get_story(12))["id"] == "12"
+        assert logins == 2
+    finally:
+        await client.close()
+    failing = ZenTaoClient("http://127.0.0.1:18131", "sdk-api", password_file,
+                           transport=httpx.MockTransport(lambda request: httpx.Response(401, json={"status": "fail"})))
+    try:
+        with pytest.raises(ZenTaoAuthenticationError):
+            await failing.create_story(7, "t", "s", "v")
+    finally:
+        await failing.close()
+
+
+@pytest.mark.asyncio
+async def test_permission_denial_is_a_definite_rejection(password_file):
+    def respond(request):
+        if request.url.path.endswith("/users/login"):
+            return httpx.Response(200, json={"status": "success", "token": "token"})
+        return httpx.Response(403, json={"status": "fail"})
+    client = ZenTaoClient("http://127.0.0.1:18131", "sdk-api", password_file, transport=httpx.MockTransport(respond))
+    try:
+        with pytest.raises(ZenTaoRequestRejected):
+            await client.create_story(7, "t", "s", "v")
+    finally:
+        await client.close()

@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.sdk_workbench.evidence_repository import EvidenceRepository
+from app.sdk_workbench.repository import SdkRepository
 from test_control_plane_migration import control_database
 
 
@@ -59,6 +60,15 @@ def test_evidence_is_immutable_versioned_and_idempotent(control_database):
     released = repository.add_release(reviewer, uuid.uuid4(), "4" * 64, candidate_id, approved["id"], 3,
                                       "stable", "https://example.test/rollback", datetime.now(timezone.utc), ["f" * 64])
     assert repository.get_candidate(candidate_id)["releases"][0]["id"] == released["id"]
+    sdk = SdkRepository(environment["urls"]["platform_control_app"])
+    review_request = uuid.uuid4()
+    sdk.reserve(reviewer, review_request, "7" * 64, "review_requirement", 12)
+    sdk.add_review(reviewer, 12, "1", "rejected", "新问题", review_request)
+    assert repository.get_candidate(candidate_id)["evidence_version"] == 4
+    with pytest.raises(HTTPException) as review_stale:
+        repository.add_release(reviewer, uuid.uuid4(), "8" * 64, candidate_id, approved["id"], 3,
+                               "stable", "https://example.test/rollback", datetime.now(timezone.utc), ["f" * 64])
+    assert review_stale.value.status_code == 409
     repository.add_test(reviewer, uuid.uuid4(), "5" * 64, build["id"], {
         "suite": "hardware", "status": "failed", "passed": 0, "failed": 1, "skipped": 0,
         "report_uri": "https://example.test/fail", "device": "Gemini 2", "firmware": "1.0",
@@ -67,3 +77,11 @@ def test_evidence_is_immutable_versioned_and_idempotent(control_database):
         repository.add_release(reviewer, uuid.uuid4(), "6" * 64, candidate_id, approved["id"], 3,
                                "stable", "https://example.test/rollback", datetime.now(timezone.utc), ["f" * 64])
     assert stale.value.status_code == 409
+    with psycopg.connect(environment["admin"]) as connection:
+        audit = connection.execute(
+            "select kind,object_id from sdk.evidence_requests where actor_id=%s and request_id=%s",
+            (creator, request_id),
+        ).fetchone()
+        created_row = connection.execute("select request_id from sdk.candidates where id=%s", (candidate_id,)).fetchone()
+    assert audit == ("candidate", candidate_id)
+    assert created_row[0] == request_id
