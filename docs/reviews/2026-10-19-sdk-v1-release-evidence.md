@@ -1,6 +1,6 @@
 # SDK V1 真实场景验收与发布记录
 
-日期：2026-10-19。状态：**本地真实禅道与平台接口链路通过；SDK 核心库构建通过；单测、真机、企业登录和生产发布未通过或未执行。发布门槛关闭。**
+日期：2026-10-19。当前状态：**年度计划入口已上线，原始 CSV 尚待企业会话上传；正式需求、单测、真机与 SDK 业务发布门槛仍关闭。** 下文早期“尚未上线”段落保留当时检查结论；末节记录最新生产切换。
 
 ## 版本与入口
 
@@ -10,7 +10,7 @@
 | 远端 `origin/master` | 本轮已推送，推送后核对为 `02e9e7fc2c32a22960e1b2bff7f790b9127ee4ad`；后续文档更新以新的主线提交为准 |
 | 线上现行 release | `2c6111bdefba4760cf67045dcdd2dc41333dc043` |
 | SDK 打包源码基线 | `c7669cc67ff303a9d6fc45585d640a546a682dcc`，工作树干净，八个子模块 SHA 从 Git tree 读取 |
-| 计划员工入口 | `https://agent.orbbec.com.cn/sdk/`，同源 API `/api/v1/sdk/`；**线上尚未开放** |
+| 计划员工入口 | `https://agent.orbbec.com.cn/sdk/`，同源 API `/api/v1/sdk/`；年度计划入口已上线，企业页面验收待用户完成 |
 | 隔离禅道产品/执行 | 本地产品 `SDK-V1-ACCEPT-OpenOrbbecSDK` ID `1`，项目 ID `1`，执行 ID `2`；不得用于正式配置 |
 | 本地镜像 | 禅道 22.6 arm64 `sha256:d7266f4cd4a5da594c987bcdaaac6c74b4a6a2946384cc378dc949b69ea0b99e`；MariaDB 10.6 arm64 `sha256:88ac718dafee1e8fb415233c04f314f3c3866af99177ce25d436106c62090461` |
 
@@ -56,3 +56,13 @@
 - 正式禅道镜像需使用云主机 `linux/amd64` 摘要；已解析官方 `hub.zentao.net/app/zentao:22.6` 的 amd64 摘要为 `sha256:99dd899fd99a370d3ddf9a50fecc6cf66f61ad879d70c350a1700a5730c4ff7f`。MariaDB 10.6 的官方 registry 从云主机超时，本机 amd64 镜像下载中断，未落地容器或数据卷。22.6 有已公开的评论授权绕过漏洞，因此原生禅道入口只能保持本机/私网，不能作为公网入口。
 
 结论：容量问题已解，但生产应用、依赖、迁移、覆盖配置与真实身份验收尚未闭环，**不能宣布 SDK 平台上线可用或 CSV 已可直接导入**。
+
+## 年度计划入口受控上线（2026-10-19）
+
+本节为上述历史预检之后的实际发布记录；范围仅为年度计划导入、查询、来源详情与角色管理，禅道正式需求写入保持关闭。准确发布提交为已推送 `origin/master` 的 `ccf2241a92e0bb384f79c3ecc025df3bc0687069`；云主机从该提交的 Git archive 构建镜像 `sha256:6f0efc41241d1c0aa84a14add9b28d471b27d6a502317a23c53a79d5bf7aa77b`。发布步骤见 `deploy/sdk/plan-only-rollout.md`。
+
+- 发布前实际 API 镜像为 `sha256:79f8bcd40a04854319575c93f4036898e67bd9da5176a1516be7ae17ff85b064`，API 容器标签列出 8 份有序 Compose 文件，包括 HR generation、4 层全景与 DAQ 覆盖。私有备份目录 `/data/orbbec-agent-platform/backups/sdk-plan-20261019-ccf2241a` 存有原 `platform.env`、预览和生产控制库 PostgreSQL 17 自定义格式备份与可读取校验、旧容器和 Compose 文件哈希。旧镜像及原文件均保留以备回滚。
+- 第一次候选 `0f354fd5` 在两库迁移至 117 后重建 API；运行校验发现旧 Compose 固定 `PLATFORM_RELEASE_SHA=7bce35f0…`，覆盖了镜像新标识。按预设步骤恢复原环境文件和旧 API 镜像，旧 API 再次健康；没有宣称第一次切换成功。随后补充覆盖文件中的准确发布 SHA，并将其纳入配置差异守卫，7 项守卫测试通过。数据库迁移为加法，回滚应用时保留。
+- 第二次切换前重新备份已迁移的两库。配置守卫输出 `SDK_OVERLAY_CONFIG_OK`：现行 API 容器 ID `2f0aef530624a0346d7f36ce69ee58e37660fa935027a56c8de96fccbac72d9d`、8 份旧 Compose 文件、9 个服务、运行时 HR 模型变量保持、目标镜像 `ccf2241a…`。预览及生产库迁移均校验到 117，临时 migrator owner 授权已撤销。只重建 `platform-api`，新容器 ID `664518c3b0a2eb2b0add7e5d949bae4572036fcf5fd6afd8fb228a40c5eb9f67`，镜像与 `PLATFORM_RELEASE_SHA` 一致、`PLATFORM_SDK_PLAN_ENABLED=1`；旧环境变量、挂载和网络逐项相同，Brain 与 loopback 容器 ID 未变，API health 为 healthy，本机 `/api/health` HTTP 200。
+- 公网未登录请求 `/sdk/`、`/api/v1/sdk/me` 与 `/api/v1/sdk/plan-imports` 都返回 401，符合企业会话门禁；镜像含年度计划前端资源和后端模块。该检查不能代替登录后的页面验收。生产控制库 `sdk.plan_imports=0`、`sdk.members=0`；原始 CSV 还未通过企业会话上传。线上“苍渊”是 active 的平台所有者，可在页面给自身内部用户 ID 授予 SDK contributor 后执行用户侧上传；不得用运维数据库写入伪造企业会话。
+- 本地真实源 CSV 场景复跑通过，SHA-256 `41df018a029f1d27417bec3008bbe7aab3becd785cc38b312c563ce18ee8370d`，69 条来源、67 条任务、17 个栏目；涵盖重复导入、权限、CSRF、原文保存、需求补全、异常写入核对。该场景的禅道边界是测试替身；早期单独的真实禅道场景仍是隔离本地实例。生产无禅道服务，也无设备/单测报告，正式 SDK 业务发布门槛保持关闭。
