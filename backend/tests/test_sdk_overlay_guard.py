@@ -42,6 +42,21 @@ def test_sdk_native_overlay_allows_only_api_image_and_sdk_flags():
                                   "orbbec-agent-platform:" + "a" * 40) == 2
 
 
+def test_sdk_sso_overlay_allows_only_exact_login_configuration():
+    module = guard()
+    old, new = configs()
+    new["services"]["platform-api"]["environment"].update({
+        "PLATFORM_SDK_SSO_ENABLED": "1",
+        "PLATFORM_SDK_SSO_PUBLIC_ORIGIN": "https://47.106.112.69",
+        "PLATFORM_SDK_SSO_ENTRY_CODE": "sdk-sso",
+        "PLATFORM_SDK_SSO_ENTRY_KEY_FILE": "/run/sdk-secrets/sso-entry-key",
+    })
+    assert module.compare_configs(old, new, "sha256:old", "orbbec-agent-platform:" + "a" * 40) == 2
+    new["services"]["platform-api"]["environment"]["PLATFORM_SDK_SSO_PUBLIC_ORIGIN"] = "https://evil.example"
+    with pytest.raises(module.OverlayGuardError):
+        module.compare_configs(old, new, "sha256:old", "orbbec-agent-platform:" + "a" * 40)
+
+
 @pytest.mark.parametrize("mutation", ["hr_mount", "brain_image", "extra_environment", "wrong_flag", "wrong_native_flag", "wrong_image", "wrong_release"])
 def test_sdk_native_overlay_rejects_other_changes(mutation):
     module = guard()

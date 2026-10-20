@@ -16,6 +16,7 @@ function message(error: unknown): string {
     if (error.detail === "sdk_requirement_review_required") return "当前需求版本尚未评审通过，不能创建任务。";
     if (error.detail === "sdk_zentao_auth_required") return "禅道服务账号认证失败，请联系平台管理员；可在恢复后重试同一提交。";
     if (error.detail === "sdk_external_mismatch") return "禅道记录与原提交内容不一致，不能绑定。";
+    if (error.detail === "sdk_sso_access_or_binding_required") return "当前账号尚未绑定个人禅道账号，请联系 SDK 管理员。";
     if (error.status === 403) return "当前账号没有执行此操作的 SDK 权限。";
     if (error.status === 422) return "输入不符合要求，请检查必填项与格式。";
     if (error.status === 409) return `状态冲突：${error.detail}`;
@@ -32,6 +33,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const [hasOlderReviews, setHasOlderReviews] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [enteringZenTao, setEnteringZenTao] = useState(false);
   const [title, setTitle] = useState("");
   const [selectedPlanRow, setSelectedPlanRow] = useState<PlanRow | null>(null);
   const [scenario, setScenario] = useState("");
@@ -52,6 +54,33 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const reviewRequest = useRef(new RequestIdentity()).current;
   const memberRequest = useRef(new RequestIdentity()).current;
   const reconciliationRequest = useRef(new RequestIdentity()).current;
+
+  async function enterZenTao() {
+    if (enteringZenTao) return;
+    setEnteringZenTao(true);
+    setError("");
+    try {
+      const handoff = await client.ssoStart(account.csrf_token);
+      const target = new URL(handoff.consume_url);
+      if (target.protocol !== "https:" || target.pathname !== "/sdk-sso/consume" ||
+          target.username || target.password || target.search || target.hash || !handoff.ticket) {
+        throw new Error("invalid SSO handoff");
+      }
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = target.href;
+      const ticket = document.createElement("input");
+      ticket.type = "hidden";
+      ticket.name = "ticket";
+      ticket.value = handoff.ticket;
+      form.append(ticket);
+      document.body.append(form);
+      form.submit();
+    } catch (error) {
+      setError(message(error));
+      setEnteringZenTao(false);
+    }
+  }
 
   useEffect(() => {
     let live = true;
@@ -130,8 +159,11 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
       <p className="sdk-eyebrow">OpenOrbbecSDK · 研发工作区</p>
       <h1>从需求到发布，在禅道协作</h1>
       <p>创建和评审需求、安排迭代任务、关联测试用例与发布计划。</p>
-      <a className="sdk-native-link" href="https://47.106.112.69/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>
-      <p className="sdk-native-hint">使用个人禅道账号登录。禅道中的产品权限决定可查看和编辑的内容。</p>
+      {me.sso_enabled && me.role && !me.read_only
+        ? <button className="sdk-native-link" type="button" disabled={enteringZenTao} onClick={() => void enterZenTao()}>进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></button>
+        : <a className="sdk-native-link" href="https://47.106.112.69/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>}
+      <p className="sdk-native-hint">{me.sso_enabled ? "使用钉钉身份进入个人禅道账号；禅道中的产品权限决定可查看和编辑的内容。" : "使用个人禅道账号登录。禅道中的产品权限决定可查看和编辑的内容。"}</p>
+      {error && <p role="alert" className="sdk-error">{error}</p>}
     </header>
     <div className="sdk-native-steps" aria-label="研发流程">
       <div><span>01</span><h2>需求</h2><p>写清场景、设备、验收标准，按版本完成评审。</p></div>

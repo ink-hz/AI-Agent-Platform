@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 
@@ -23,10 +24,14 @@ FIELDS = (
     "PLATFORM_SDK_ZENTAO_EXECUTION_ID",
     "PLATFORM_SDK_PLAN_ENABLED",
     "PLATFORM_SDK_NATIVE_ONLY",
+    "PLATFORM_SDK_SSO_ENABLED",
+    "PLATFORM_SDK_SSO_PUBLIC_ORIGIN",
+    "PLATFORM_SDK_SSO_ENTRY_CODE",
 )
-DEFAULTS = ("0", "", "", "0", "0", "0", "0")
+DEFAULTS = ("0", "", "", "0", "0", "0", "0", "0", "", "")
 ACCOUNT = re.compile(r"[A-Za-z0-9_.-]{1,80}\Z")
 POSITIVE_ID = re.compile(r"[1-9][0-9]{0,9}\Z")
+ENTRY_CODE = re.compile(r"[a-z][a-z0-9-]{2,19}\Z")
 
 
 def _private_text(path: Path, *, optional: bool = False) -> str | None:
@@ -63,13 +68,24 @@ def _settings(text: str, *, complete: bool) -> tuple[str, ...]:
     if complete and not set(FIELDS[:5]).issubset(found):
         raise ValueError("missing_field")
     values = tuple(found.get(name, fallback) for name, fallback in zip(FIELDS, DEFAULTS))
-    enabled, base_url, account, product_id, execution_id, plan_enabled, native_only = values
+    enabled, base_url, account, product_id, execution_id, plan_enabled, native_only, sso_enabled, sso_origin, sso_code = values
     if enabled not in {"0", "1"}:
         raise ValueError("flag")
     if plan_enabled not in {"0", "1"}:
         raise ValueError("plan_flag")
     if native_only not in {"0", "1"} or (native_only == "1" and enabled != "1"):
         raise ValueError("native_only_flag")
+    if sso_enabled not in {"0", "1"} or (sso_enabled == "1" and native_only != "1"):
+        raise ValueError("sso_flag")
+    if sso_enabled == "0":
+        if sso_origin or sso_code:
+            raise ValueError("sso_disabled_values")
+    else:
+        parsed = urlsplit(sso_origin)
+        if (parsed.scheme != "https" or not parsed.netloc or parsed.username is not None
+                or parsed.password is not None or parsed.path not in {"", "/"}
+                or parsed.query or parsed.fragment or ENTRY_CODE.fullmatch(sso_code) is None):
+            raise ValueError("sso_values")
     if enabled == "0":
         if values[:5] != DEFAULTS[:5]:
             raise ValueError("disabled_values")
@@ -134,9 +150,17 @@ def _apply_locked(current: Path, settings: Path) -> None:
         values[5] = previous_values[5]
     if "PLATFORM_SDK_NATIVE_ONLY=" not in proposed:
         values[6] = previous_values[6]
+    for index in (7, 8, 9):
+        if FIELDS[index] + "=" not in proposed:
+            values[index] = previous_values[index]
     if values[0] == "0":
         values[6] = "0"
+    if values[6] == "0":
+        values[7:] = ["0", "", ""]
+    elif values[7] == "0":
+        values[8:] = ["", ""]
     values = tuple(values)
+    _settings(_render(values), complete=False)
     retained = []
     for line in previous.splitlines():
         if not line.startswith("PLATFORM_SDK_"):
@@ -201,6 +225,13 @@ def _recreate_api(current: Path, compose: Path) -> None:
             "-v", "orbbec-agent-platform-sdk-secrets:/run/sdk-secrets:ro", "alpine:3.22",
             "sh", "-ceu",
             'file=/run/sdk-secrets/password; test -f "$file" && test ! -L "$file" && test -s "$file" && test "$(stat -c "%u:%g:%a" "$file")" = "10001:10001:600"',
+        ], check=True, timeout=30, capture_output=True)
+    if expected["PLATFORM_SDK_SSO_ENABLED"] == "1":
+        subprocess.run([
+            "/usr/bin/docker", "run", "--rm", "--network", "none",
+            "-v", "orbbec-agent-platform-sdk-secrets:/run/sdk-secrets:ro", "alpine:3.22",
+            "sh", "-ceu",
+            'file=/run/sdk-secrets/sso-entry-key; test -f "$file" && test ! -L "$file" && test -s "$file" && test "$(stat -c "%u:%g:%a" "$file")" = "10001:10001:600"',
         ], check=True, timeout=30, capture_output=True)
     command = ["/usr/bin/docker", "compose", "--project-name", "orbbec-agent-platform", "--env-file", str(current), "-f", str(compose)]
     compose_env = {name: value for name, value in os.environ.items() if not name.startswith("PLATFORM_SDK_")}

@@ -365,6 +365,22 @@ def test_formal_nginx_routes_voc_without_exposing_health_or_credentials():
         assert "$proxy_add_x_forwarded_for" not in block
 
 
+def test_sdk_workspace_allows_form_post_only_to_its_zentao_origin():
+    value = _text(FORMAL_NGINX)
+    sdk = _location_block(value, "    location ^~ /sdk/ {")
+    assert "proxy_pass http://127.0.0.1:8080;" in sdk
+    assert "form-action 'self' https://47.106.112.69" in sdk
+    assert 'add_header Referrer-Policy "no-referrer" always;' in sdk
+    assert 'add_header Strict-Transport-Security "max-age=31536000" always;' in sdk
+    assert 'add_header X-Content-Type-Options "nosniff" always;' in sdk
+    assert 'add_header X-Frame-Options "DENY" always;' in sdk
+    assert 'add_header Cache-Control "no-store" always;' in sdk
+    assert 'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;' in sdk
+    assert value.index("    location ^~ /sdk/ {") < value.rindex("    location / {")
+    default_policy = value[value.index("# HTTPS_ENTRY_BEGIN") : value.index("    location = /api/v1/internal/session/subject")]
+    assert "form-action 'self'\" always;" in default_policy
+
+
 def test_formal_nginx_assigns_hardened_non_overlapping_fae_route_owners():
     value = _text(FORMAL_NGINX)
     selectors = (
@@ -493,8 +509,8 @@ def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
         assert expected in block
         assert all(other not in block for other in all_upstreams - {expected})
 
-    # HR, Marketing, and every unmatched product path deliberately stay on the
-    # final Platform catch-all; no competing prefix may steal those workspaces.
+    # HR has its own Platform route; Marketing and unmatched paths use the
+    # final Platform catch-all.
     catch_all = value[value.rindex("    location / {") :]
     assert platform_upstream in catch_all
     location_lines = tuple(
@@ -503,7 +519,7 @@ def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
         if line.strip().startswith("location ")
     )
     assert all(
-        "/hr" not in line and "/marketing" not in line
+        "/marketing" not in line
         for line in location_lines
     )
 

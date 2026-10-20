@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -646,6 +647,34 @@ def test_execution_relay_enabled_requires_production_identity(monkeypatch, tmp_p
 def test_sdk_native_mode_rejects_ambiguous_startup_flag(monkeypatch):
     monkeypatch.setenv("PLATFORM_SDK_NATIVE_ONLY", "maybe")
     with pytest.raises(ValueError, match="sdk_native_only_flag_invalid"):
+        load_config()
+
+
+def test_sdk_sso_requires_private_entry_key_and_https_origin(monkeypatch, tmp_path):
+    _enable_production_identity(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_SDK_WORKBENCH_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_SDK_NATIVE_ONLY", "1")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_BASE_URL", "http://zentao:80")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_ACCOUNT", "sdk-api")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_PRODUCT_ID", "1")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_EXECUTION_ID", "1")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_PASSWORD_FILE", _private_file(tmp_path / "zentao-password", "unused"))
+    monkeypatch.setenv("PLATFORM_SDK_SSO_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_SDK_SSO_PUBLIC_ORIGIN", "https://47.106.112.69")
+    monkeypatch.setenv("PLATFORM_SDK_SSO_ENTRY_CODE", "sdk-sso")
+    key = _private_file(tmp_path / "sdk-sso-key", "x" * 32)
+    monkeypatch.setenv("PLATFORM_SDK_SSO_ENTRY_KEY_FILE", key)
+    assert load_config().sdk_sso_enabled
+    Path(key).write_text("x" * 40, encoding="ascii")
+    with pytest.raises(ValueError, match="sdk_sso_entry_key_invalid"):
+        load_config()
+    Path(key).write_text("x" * 32, encoding="ascii")
+    monkeypatch.setenv("PLATFORM_SDK_SSO_PUBLIC_ORIGIN", "http://47.106.112.69")
+    with pytest.raises(ValueError, match="sdk_sso_https_origin_required"):
+        load_config()
+    monkeypatch.setenv("PLATFORM_SDK_SSO_PUBLIC_ORIGIN", "https://47.106.112.69")
+    monkeypatch.setenv("PLATFORM_SDK_SSO_ENTRY_KEY", "inline-key")
+    with pytest.raises(ValueError, match="secret file"):
         load_config()
 
 

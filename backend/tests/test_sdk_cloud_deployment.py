@@ -26,6 +26,17 @@ def test_zentao_uses_a_separate_https_origin_and_keeps_loopback_upstream() -> No
     assert "agent.orbbec.com.cn" not in config
 
 
+def test_zen_sso_proxy_only_exposes_exact_post_handoff_and_keeps_apilogin_denied() -> None:
+    config = NATIVE_DOMAIN.read_text(encoding="utf-8")
+    assert "location = /sdk-sso/consume {" in config
+    assert "proxy_pass http://127.0.0.1:8080/api/v1/sdk/sso/consume;" in config
+    assert "proxy_set_header Cookie \"\";" in config
+    assert "access_log off;" in config
+    assert "client_max_body_size 1k;" in config
+    assert "if ($arg_f = apilogin) { return 403; }" in config
+    assert "location = /api.php { return 403; }" in config
+
+
 def test_zentao_compose_requires_an_explicit_hardened_image() -> None:
     service = yaml.safe_load(ZENTAO_COMPOSE.read_text(encoding="utf-8"))["services"]["zentao"]
     image = service["image"]
@@ -46,10 +57,14 @@ def test_sdk_cloud_switch_and_password_are_scoped_to_platform_api() -> None:
     assert environment["PLATFORM_SDK_ZENTAO_PASSWORD_FILE"] == "/run/sdk-secrets/password"
     assert environment["PLATFORM_SDK_ZENTAO_PRODUCT_ID"] == "${PLATFORM_SDK_ZENTAO_PRODUCT_ID:-0}"
     assert environment["PLATFORM_SDK_ZENTAO_EXECUTION_ID"] == "${PLATFORM_SDK_ZENTAO_EXECUTION_ID:-0}"
+    assert environment["PLATFORM_SDK_SSO_ENABLED"] == "${PLATFORM_SDK_SSO_ENABLED:-0}"
+    assert environment["PLATFORM_SDK_SSO_ENTRY_KEY_FILE"] == "/run/sdk-secrets/sso-entry-key"
     assert "platform-sdk-secrets:/run/sdk-secrets:ro" in api["volumes"]
     assert "platform-sdk-secrets:/run/sdk-secrets:ro" not in worker["volumes"]
     assert worker["environment"]["PLATFORM_SDK_WORKBENCH_ENABLED"] == "0"
     assert not worker["environment"]["PLATFORM_SDK_ZENTAO_ACCOUNT"]
+    assert worker["environment"]["PLATFORM_SDK_SSO_ENABLED"] == "0"
+    assert not worker["environment"]["PLATFORM_SDK_SSO_ENTRY_KEY_FILE"]
     for name, service in services.items():
         if name != "platform-api":
             assert "platform-sdk-secrets:/run/sdk-secrets:ro" not in service.get("volumes", [])

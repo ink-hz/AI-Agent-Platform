@@ -113,6 +113,10 @@ class Config:
     partner_callback_method: Literal["GET", "POST"]
     partner_callback_path: str
     control_plane: ControlPlaneConfig
+    sdk_sso_enabled: bool = False
+    sdk_sso_public_origin: str = ""
+    sdk_sso_entry_code: str = ""
+    sdk_sso_entry_key_file: str = ""
     hr_web_worker_enabled: bool = False
     hr_agent_settings: HrAgentSettings = field(default_factory=HrAgentSettings)
     hr_role_package_root: str = ""
@@ -783,8 +787,16 @@ def _validate_voc_extension_config(config: Config) -> None:
 def _validate_sdk_workbench_config(config: Config) -> None:
     if os.getenv("PLATFORM_SDK_ZENTAO_PASSWORD"):
         raise ValueError("SDK ZenTao password must use a secret file")
+    if os.getenv("PLATFORM_SDK_SSO_ENTRY_KEY"):
+        raise ValueError("SDK SSO entry key must use a secret file")
     if config.sdk_native_only and not config.sdk_workbench_enabled:
         raise ValueError("SDK native mode requires the workbench")
+    if config.sdk_sso_enabled and (
+        not config.sdk_native_only
+        or not config.sdk_workbench_enabled
+        or config.control_plane.mode is not IdentityMode.PRODUCTION
+    ):
+        raise ValueError("SDK SSO requires native workbench and production identity")
     if not config.sdk_workbench_enabled:
         return
     from .sdk_workbench.zentao import _private_origin
@@ -795,6 +807,21 @@ def _validate_sdk_workbench_config(config: Config) -> None:
     if config.sdk_zentao_product_id < 1 or config.sdk_zentao_execution_id < 1:
         raise ValueError("SDK ZenTao product and execution IDs are required")
     _validate_private_file(config.sdk_zentao_password_file, "SDK ZenTao password")
+    if config.sdk_sso_enabled:
+        from .sdk_workbench.sso import _https_origin, _CODE
+
+        _https_origin(config.sdk_sso_public_origin)
+        if not _CODE.fullmatch(config.sdk_sso_entry_code):
+            raise ValueError("sdk_sso_entry_code_invalid")
+        _validate_private_file(config.sdk_sso_entry_key_file, "SDK SSO entry key")
+        if Path(config.sdk_sso_entry_key_file).samefile(config.sdk_zentao_password_file):
+            raise ValueError("SDK SSO entry key must be distinct")
+        try:
+            key = Path(config.sdk_sso_entry_key_file).read_text(encoding="ascii").strip()
+        except (OSError, UnicodeError):
+            raise ValueError("sdk_sso_entry_key_invalid") from None
+        if not (len(key) == 32 and key.isascii()):
+            raise ValueError("sdk_sso_entry_key_invalid")
 
 
 def _validate_partner_release_config(config: Config) -> None:
@@ -1041,6 +1068,10 @@ def load_config() -> Config:
         sdk_zentao_password_file=os.getenv("PLATFORM_SDK_ZENTAO_PASSWORD_FILE", "").strip(),
         sdk_zentao_product_id=int(os.getenv("PLATFORM_SDK_ZENTAO_PRODUCT_ID", "0")),
         sdk_zentao_execution_id=int(os.getenv("PLATFORM_SDK_ZENTAO_EXECUTION_ID", "0")),
+        sdk_sso_enabled=_strict_flag("PLATFORM_SDK_SSO_ENABLED", "sdk_sso_flag_invalid"),
+        sdk_sso_public_origin=os.getenv("PLATFORM_SDK_SSO_PUBLIC_ORIGIN", "").strip(),
+        sdk_sso_entry_code=os.getenv("PLATFORM_SDK_SSO_ENTRY_CODE", "").strip(),
+        sdk_sso_entry_key_file=os.getenv("PLATFORM_SDK_SSO_ENTRY_KEY_FILE", "").strip(),
         content_encryption_keyring_file=content_encryption_keyring_file,
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,

@@ -109,6 +109,10 @@ services:
       PLATFORM_SDK_ZENTAO_PASSWORD_FILE: /run/sdk-secrets/password
       PLATFORM_SDK_ZENTAO_PRODUCT_ID: "${PLATFORM_SDK_ZENTAO_PRODUCT_ID:-0}"
       PLATFORM_SDK_ZENTAO_EXECUTION_ID: "${PLATFORM_SDK_ZENTAO_EXECUTION_ID:-0}"
+      PLATFORM_SDK_SSO_ENABLED: "${PLATFORM_SDK_SSO_ENABLED:-0}"
+      PLATFORM_SDK_SSO_PUBLIC_ORIGIN: "${PLATFORM_SDK_SSO_PUBLIC_ORIGIN:-}"
+      PLATFORM_SDK_SSO_ENTRY_CODE: "${PLATFORM_SDK_SSO_ENTRY_CODE:-}"
+      PLATFORM_SDK_SSO_ENTRY_KEY_FILE: /run/sdk-secrets/sso-entry-key
       # FAE partner operator identity is production-disabled: no real Partner
       # Provider has been selected yet. These values are deliberately empty so
       # the release gate fails closed and no Partner start or callback route is
@@ -233,6 +237,10 @@ services:
       PLATFORM_SDK_ZENTAO_PASSWORD_FILE: ""
       PLATFORM_SDK_ZENTAO_PRODUCT_ID: "0"
       PLATFORM_SDK_ZENTAO_EXECUTION_ID: "0"
+      PLATFORM_SDK_SSO_ENABLED: "0"
+      PLATFORM_SDK_SSO_PUBLIC_ORIGIN: ""
+      PLATFORM_SDK_SSO_ENTRY_CODE: ""
+      PLATFORM_SDK_SSO_ENTRY_KEY_FILE: ""
     volumes:
       - platform-api-secrets:/run/secrets:ro
       - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro

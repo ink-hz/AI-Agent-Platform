@@ -4,6 +4,8 @@
 .sdk-workbench .sdk-native-entry h1 { margin-top: 12px; font-size: clamp(30px, 4vw, 46px); }
 .sdk-native-entry > p:not(.sdk-eyebrow) { max-width: 760px; line-height: 1.65; }
 .sdk-native-link { display: inline-flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px 20px; border-radius: 9px; background: #fff; color: #123f81; font-weight: 700; text-decoration: none; }
+.sdk-native-entry button.sdk-native-link { border: 0; cursor: pointer; font: inherit; font-weight: 700; }
+.sdk-native-entry button.sdk-native-link:disabled { opacity: .65; cursor: wait; }
 .sdk-native-link:hover { background: #e8f4ff; }
 .sdk-native-entry .sdk-native-hint { margin-bottom: 0; font-size: 13px; color: #dbeafe; }
 .sdk-native-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }

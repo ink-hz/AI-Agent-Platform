@@ -162,7 +162,8 @@ def build_sdk_router() -> APIRouter:
     async def me(request: Request):
         return JSONResponse({**_access(request).me(_actor(request)),
                              "plan_enabled": getattr(request.app.state, "sdk_plan_service", None) is not None,
-                             "native_only": _native_only()}, headers=_NO_STORE)
+                             "native_only": _native_only(),
+                             "sso_enabled": getattr(request.app.state, "sdk_sso_service", None) is not None}, headers=_NO_STORE)
 
     @router.get("/members")
     async def members(request: Request):

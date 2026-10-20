@@ -1,7 +1,7 @@
 import { platformPath } from "../auth";
 
 export type SdkRole = "viewer" | "contributor" | "reviewer" | "release_manager";
-export type SdkMe = { role: SdkRole | null; can_manage: boolean; read_only: boolean; requirements_enabled?: boolean; plan_enabled?: boolean; native_only?: boolean };
+export type SdkMe = { role: SdkRole | null; can_manage: boolean; read_only: boolean; requirements_enabled?: boolean; plan_enabled?: boolean; native_only?: boolean; sso_enabled?: boolean };
 export type PlanBatch = { id: number; uploaded_by: string; filename: string; sha256: string; row_count: number; task_count: number; module_count: number; created_at: string };
 export type PlanRow = { id: number; import_id: number; record_number: number; physical_line: number; kind: "task" | "heading"; module: string; cells: string[]; sha256: string; filename: string; conversion_state: string | null; story_id: number | null; actor_id: string | null; request_id: string | null };
 export type PlanFilter = { module?: string; priority?: string; owner?: string };
@@ -60,6 +60,7 @@ async function uploadPlanFile(file: File, csrfToken: string): Promise<PlanBatch>
 
 export interface SdkApi {
   me(): Promise<SdkMe>;
+  ssoStart(csrfToken: string): Promise<{ ticket: string; consume_url: string }>;
   planImports(page?: number): Promise<{ items: PlanBatch[]; page: number; total: number }>;
   planRows(importId: number, page?: number, filter?: PlanFilter): Promise<{ items: PlanRow[]; page: number; total: number }>;
   planRow(id: number): Promise<PlanRow>;
@@ -87,6 +88,7 @@ export interface SdkApi {
 
 export const sdkApi: SdkApi = {
   me: () => request("/me"),
+  ssoStart: csrf => request("/sso/start", {}, csrf),
   planImports: (page = 1) => request(`/plan-imports?page=${page}`),
   planRows: (importId, page = 1, filter = {}) => {
     const query = new URLSearchParams({ page: String(page) });

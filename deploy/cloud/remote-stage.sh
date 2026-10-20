@@ -733,11 +733,17 @@ done
 sdk_environment="$(/usr/bin/python3 "$release_path/deploy/sdk/cloud_env.py" render "$environment_path")" || fail
 unset PLATFORM_SDK_WORKBENCH_ENABLED PLATFORM_SDK_ZENTAO_BASE_URL PLATFORM_SDK_ZENTAO_ACCOUNT \
   PLATFORM_SDK_ZENTAO_PRODUCT_ID PLATFORM_SDK_ZENTAO_EXECUTION_ID PLATFORM_SDK_ZENTAO_PASSWORD_FILE \
-  PLATFORM_SDK_PLAN_ENABLED PLATFORM_SDK_NATIVE_ONLY
+  PLATFORM_SDK_PLAN_ENABLED PLATFORM_SDK_NATIVE_ONLY PLATFORM_SDK_SSO_ENABLED \
+  PLATFORM_SDK_SSO_PUBLIC_ORIGIN PLATFORM_SDK_SSO_ENTRY_CODE PLATFORM_SDK_SSO_ENTRY_KEY_FILE
 if /usr/bin/grep -Fxq 'PLATFORM_SDK_WORKBENCH_ENABLED=1' <<<"$sdk_environment"; then
   /usr/bin/docker run --rm --network none \
     -v orbbec-agent-platform-sdk-secrets:/run/sdk-secrets:ro alpine:3.22 \
     sh -ceu 'file=/run/sdk-secrets/password; test -f "$file" && test ! -L "$file" && test -s "$file" && test "$(stat -c "%u:%g:%a" "$file")" = "10001:10001:600"' || fail
+fi
+if /usr/bin/grep -Fxq 'PLATFORM_SDK_SSO_ENABLED=1' <<<"$sdk_environment"; then
+  /usr/bin/docker run --rm --network none \
+    -v orbbec-agent-platform-sdk-secrets:/run/sdk-secrets:ro alpine:3.22 \
+    sh -ceu 'file=/run/sdk-secrets/sso-entry-key; test -f "$file" && test ! -L "$file" && test -s "$file" && test "$(stat -c "%u:%g:%a" "$file")" = "10001:10001:600"' || fail
 fi
 
 if [[ -n "$previous_release" && -f "$environment_path" ]]; then

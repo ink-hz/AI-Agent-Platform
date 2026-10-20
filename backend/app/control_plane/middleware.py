@@ -34,6 +34,9 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
         "/api/v1/manage/access-subjects",
         "/api/v1/internal/session/subject",
         "/api/v1/auth/logout",
+        "/api/v1/sdk/sso/start",
+        "/api/v1/sdk/sso/consume",
+        "/api/v1/sdk/sso/bindings",
         "/api/v1/manage/system-health",
         "/api/v1/manage/hr-readiness",
     }
@@ -261,6 +264,7 @@ def is_public_request(
         ("GET", "/api/v1/auth/dingtalk/config"),
         ("GET", "/api/v1/auth/dingtalk/callback"),
         ("POST", "/api/v1/auth/dingtalk/in-client/exchange"),
+        ("POST", "/api/v1/sdk/sso/consume"),
     }
     if (method, local) in exact:
         return True

@@ -17,6 +17,12 @@ PROJECT = "orbbec-agent-platform"
 ENV_FILE = "/opt/orbbec-agent-platform/private/platform.env"
 PLAN_FLAG = "PLATFORM_SDK_PLAN_ENABLED"
 NATIVE_FLAG = "PLATFORM_SDK_NATIVE_ONLY"
+SSO_VALUES = {
+    "PLATFORM_SDK_SSO_ENABLED": "1",
+    "PLATFORM_SDK_SSO_PUBLIC_ORIGIN": "https://47.106.112.69",
+    "PLATFORM_SDK_SSO_ENTRY_CODE": "sdk-sso",
+    "PLATFORM_SDK_SSO_ENTRY_KEY_FILE": "/run/sdk-secrets/sso-entry-key",
+}
 IMAGE = re.compile(r"orbbec-agent-platform:[0-9a-f]{40}\Z")
 
 
@@ -43,6 +49,12 @@ def compare_configs(baseline: dict, candidate: dict, current_image: str, target_
         if new_api["environment"].pop(NATIVE_FLAG) != "1":
             raise OverlayGuardError("native_flag_disabled")
         old_api.get("environment", {}).pop(NATIVE_FLAG, None)
+        if any(key in new_api["environment"] for key in SSO_VALUES):
+            if {key: new_api["environment"].get(key) for key in SSO_VALUES} != SSO_VALUES:
+                raise OverlayGuardError("sso_config_invalid")
+            for key in SSO_VALUES:
+                new_api["environment"].pop(key)
+                old_api.get("environment", {}).pop(key, None)
     except (KeyError, TypeError):
         raise OverlayGuardError("compose_shape_invalid") from None
     if old != new:
@@ -64,7 +76,9 @@ def preflight(overlay_path: Path, target_image: str, expected_container_id: str)
         raise OverlayGuardError("container_id_invalid")
     expected_overlay = {"services": {"platform-api": {"image": target_image, "environment": {
         "PLATFORM_RELEASE_SHA": target_image.rsplit(":", 1)[1], PLAN_FLAG: "1", NATIVE_FLAG: "1"}}}}
-    if json.loads(overlay_path.read_text(encoding="utf-8")) != expected_overlay:
+    sso_overlay = copy.deepcopy(expected_overlay)
+    sso_overlay["services"]["platform-api"]["environment"].update(SSO_VALUES)
+    if json.loads(overlay_path.read_text(encoding="utf-8")) not in (expected_overlay, sso_overlay):
         raise OverlayGuardError("overlay_content_invalid")
     environment = {key: value for key, value in os.environ.items()
                    if not key.startswith("PLATFORM_") and not key.startswith("COMPOSE_")}

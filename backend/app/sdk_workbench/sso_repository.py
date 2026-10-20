@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from uuid import UUID
 
 import psycopg
@@ -14,6 +15,7 @@ from app.control_plane.dsn import validate_control_dsn
 
 _ACCOUNT = re.compile(r"[a-z][a-z0-9._-]{1,39}\Z")
 _RESERVED = frozenset({"admin", "sdkadmin", "sdk-api"})
+_ZEN_LOGIN_LOCK = 0x53444B53534F
 
 
 class SdkSsoRepository:
@@ -77,5 +79,26 @@ class SdkSsoRepository:
             with self._connection() as connection:
                 row = connection.execute("select sdk.next_sso_time() as login_time").fetchone()
             return int(row["login_time"])
+        except psycopg.Error:
+            raise HTTPException(503, "sdk_sso_store_unavailable") from None
+
+    @contextmanager
+    def login_slot(self):
+        """Serialize a monotonic timestamp through the ZenTao response.
+
+        ZenTao compares calledTime globally per entry. A session advisory lock
+        survives the allocator commit, so a failed HTTP call cannot roll back
+        an already accepted timestamp.
+        """
+        try:
+            with self._connection() as connection:
+                connection.execute("select pg_advisory_lock(%s)", (_ZEN_LOGIN_LOCK,))
+                try:
+                    row = connection.execute("select sdk.next_sso_time() as login_time").fetchone()
+                    connection.commit()
+                    yield int(row["login_time"])
+                finally:
+                    connection.rollback()
+                    connection.execute("select pg_advisory_unlock(%s)", (_ZEN_LOGIN_LOCK,))
         except psycopg.Error:
             raise HTTPException(503, "sdk_sso_store_unavailable") from None

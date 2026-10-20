@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
+from threading import Event
 from uuid import uuid4
 
 import psycopg
@@ -52,6 +54,40 @@ def test_zentao_apilogin_timestamps_are_unique_and_increasing(control_database):
     second = sso.next_login_time()
     assert len(str(first)) == 10
     assert second > first
+
+
+@pytest.mark.postgres
+def test_zentao_login_slot_holds_order_across_network_call_and_commits_failed_attempt(control_database):
+    env = control_database["environments"]["production"]
+    sso = SdkSsoRepository(env["urls"]["platform_control_app"])
+    first_entered = Event()
+    release_first = Event()
+    second_entered = Event()
+
+    def first_login():
+        with pytest.raises(RuntimeError, match="network failed"):
+            with sso.login_slot() as timestamp:
+                first_entered.set()
+                assert release_first.wait(5)
+                raise RuntimeError("network failed")
+        return timestamp
+
+    def second_login():
+        with sso.login_slot() as timestamp:
+            second_entered.set()
+            return timestamp
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(first_login)
+        assert first_entered.wait(5)
+        second = pool.submit(second_login)
+        try:
+            assert not second_entered.wait(0.3)
+        finally:
+            release_first.set()
+        first_timestamp = first.result(timeout=5)
+        second_timestamp = second.result(timeout=5)
+    assert second_timestamp > first_timestamp
 
 
 @pytest.mark.postgres

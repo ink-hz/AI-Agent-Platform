@@ -17,7 +17,15 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 
 将已核验镜像的 `sha256:<image-id>` 填入权限 `0600` 的私有 `sdk.env` 的 `SDK_ZENTAO_IMAGE`，然后用生产私有 Compose 重新创建禅道。Compose 强制使用镜像内的启动校验脚本；控制器文件摘要不符时容器无法启动。核对容器实际镜像 ID 等于构建结果，登录后访问 `action::editComment` 必须返回 403。升级禅道时重新评估补丁及控制器摘要。
 
-原生公开入口暂用独立 HTTPS 源 `https://47.106.112.69/`。`sdk.orbbec.com.cn` 尚无 A 记录；DNS 生效后应按 `zentao-domain.nginx.conf` 配置域名证书，再把前端入口切换为域名。IP 证书由 Let's Encrypt 的短期证书签发，生产 `orbbec-sdk-ip-cert.timer` 每 12 小时检查续期，续期后重新加载 Nginx。先确认入口的可信 TLS、登录跳转和自动续期，再启用 `PLATFORM_SDK_NATIVE_ONLY=1` 发布平台前端。每位员工用个人禅道账号和产品权限登录，两套会话不共享。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
+原生公开入口暂用独立 HTTPS 源 `https://47.106.112.69/`。`sdk.orbbec.com.cn` 尚无 A 记录；DNS 生效后应按 `zentao-domain.nginx.conf` 配置域名证书，再把前端入口切换为域名。IP 证书由 Let's Encrypt 的短期证书签发，生产 `orbbec-sdk-ip-cert.timer` 每 12 小时检查续期，续期后重新加载 Nginx。先确认入口的可信 TLS、登录跳转和自动续期，再启用 `PLATFORM_SDK_NATIVE_ONLY=1` 发布平台前端。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
+
+## 钉钉身份进入个人禅道账号
+
+启用 `PLATFORM_SDK_SSO_ENABLED=1` 后，平台 `/sdk/` 为已授权 SDK 成员签发 45 秒、单次使用的表单票据。平台所有者先用受 CSRF 保护的 `PUT /api/v1/sdk/sso/bindings/{internal_user_id}` 明确绑定个人禅道账号，JSON 为 `{"account":"cangyuan"}`。数据库强制账号唯一；`admin`、`sdkadmin`、`sdk-api` 禁止绑定。绑定前核对钉钉内部 UUID、禅道账号和产品权限，不按显示姓名猜测。
+
+禅道“二次开发 → 接入禅道”创建专用 `freePasswd=1` 入口，`code` 与 `PLATFORM_SDK_SSO_ENTRY_CODE` 相同，32 字符随机 `key` 只保存于禅道和平台 `platform-sdk-secrets` 卷的 `/run/sdk-secrets/sso-entry-key`，后者须属主 `10001:10001`、权限 `0600`。入口 IP 白名单只允许平台 API 在 `orbbec-agent-platform-sdk` 私网的固定地址，禁止 `*`。`PLATFORM_SDK_SSO_PUBLIC_ORIGIN` 必须是禅道实际 HTTPS 源。工作区页面 CSP 的 `form-action` 只额外允许该源，进入 SDK 时必须加载 `/sdk/` 文档以取得该策略。禅道 vhost 只代理精确 `/sdk-sso/consume`，继续封锁公网 `/api.php`。
+
+核对顺序：匿名 `POST /api/v1/sdk/sso/start` 为 401；无绑定或无 SDK 权限不能领票；票据重放或过期不能创建会话；绑定员工经平台钉钉会话点击后，禅道首页显示同一员工、能访问其授权产品；另一员工不能借用该会话；行政服务脚本与静态资源内容正常。平台登出不会即时注销已经创建的禅道会话；此范围只实现登录。生产修改 Nginx 前先在独立容器校验候选配置；共享主机不得用独立配置运行 `nginx -t -c`。
 
 ## 验收顺序
 

@@ -66,6 +66,23 @@ it("opens native ZenTao requirements and keeps the annual CSV secondary", async 
   expect(client.candidates).not.toHaveBeenCalled();
 });
 
+it("posts a one-use SSO ticket to ZenTao after DingTalk login", async () => {
+  const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true, sso_enabled: true }),
+    ssoStart: vi.fn().mockResolvedValue({ ticket: "single-use-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  const enter = Array.from(container.querySelectorAll("button")).find(button => button.textContent?.includes("进入 SDK 禅道工作区"));
+  expect(enter).toBeDefined();
+  await act(async () => enter!.click());
+  expect(client.ssoStart).toHaveBeenCalledWith("csrf");
+  expect(submit).toHaveBeenCalledOnce();
+  const form = document.body.querySelector("form[action='https://47.106.112.69/sdk-sso/consume']") as HTMLFormElement;
+  expect(form.method.toLowerCase()).toBe("post");
+  expect((form.querySelector("input[name='ticket']") as HTMLInputElement).value).toBe("single-use-ticket");
+});
+
 it("keeps the native entry available without the legacy requirements API", async () => {
   const client = {
     me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true }),

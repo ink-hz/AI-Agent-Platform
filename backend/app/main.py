@@ -228,6 +228,8 @@ from .sdk_workbench.plan_service import PlanService
 from .sdk_workbench.evidence_repository import EvidenceRepository
 from .sdk_workbench.evidence_service import EvidenceService
 from .sdk_workbench.routes import build_sdk_router
+from .sdk_workbench.sso import SdkSsoService, build_sdk_sso_router
+from .sdk_workbench.sso_repository import SdkSsoRepository
 from .sdk_workbench.service import SdkService
 from .sdk_workbench.zentao import ZenTaoClient
 from .spa import SpaStaticFiles, load_public_asset_manifest
@@ -841,6 +843,7 @@ def create_app(
     )
     owns_sdk_zentao_client = sdk_service is None and config.sdk_workbench_enabled
     sdk_zentao_client = None
+    sdk_sso_service = None
     identity_enabled = (
         identity_auth is not None
         or config.control_plane.mode is not IdentityMode.DISABLED
@@ -1341,6 +1344,21 @@ def create_app(
         sdk_plan_service = PlanService(
             SdkRepository(control_database_url), PlanRepository(control_database_url)
         )
+    if config.sdk_sso_enabled:
+        if not identity_enabled:
+            raise RuntimeError("SDK SSO requires enterprise identity")
+        if control_database_url is None:
+            control_database_url = read_secret_file(
+                config.control_plane.control_database_url_file
+            )
+        sdk_sso_service = SdkSsoService(
+            SdkSsoRepository(control_database_url),
+            private_origin=config.sdk_zentao_base_url,
+            public_origin=config.sdk_sso_public_origin,
+            platform_origin=config.control_plane.public_base_url,
+            entry_code=config.sdk_sso_entry_code,
+            entry_key_file=config.sdk_sso_entry_key_file,
+        )
     if config.voc_extension_enabled and identity_enabled:
         bot_subject_resolver = getattr(
             identity_auth, "voc_bot_subject_resolver", None
@@ -1456,6 +1474,7 @@ def create_app(
     app.state.sdk_service = sdk_service
     app.state.sdk_plan_service = sdk_plan_service
     app.state.sdk_evidence_service = sdk_evidence_service
+    app.state.sdk_sso_service = sdk_sso_service
     app.state.voc_submitter_directory = voc_submitter_directory
     app.state.voc_service_authorizer = voc_service_authorizer
     app.state.ai_notes_reader = ai_notes_reader
@@ -1580,6 +1599,8 @@ def create_app(
     )
     app.include_router(build_voc_extension_router())
     app.include_router(build_sdk_router())
+    if sdk_sso_service is not None:
+        app.include_router(build_sdk_sso_router(sdk_sso_service))
     if voc_internal_router is not None:
         app.include_router(voc_internal_router)
     if office_recipient_router is not None:
