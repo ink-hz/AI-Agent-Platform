@@ -678,6 +678,32 @@ def test_sdk_sso_requires_private_entry_key_and_https_origin(monkeypatch, tmp_pa
         load_config()
 
 
+def test_sdk_auto_provision_requires_separate_private_credential_and_group(monkeypatch, tmp_path):
+    _enable_production_identity(monkeypatch, tmp_path)
+    monkeypatch.setenv("PLATFORM_SDK_WORKBENCH_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_SDK_NATIVE_ONLY", "1")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_BASE_URL", "http://zentao:80")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_ACCOUNT", "sdk-api")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_PRODUCT_ID", "1")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_EXECUTION_ID", "1")
+    sdk_password = _private_file(tmp_path / "sdk-api-password", "read-only")
+    monkeypatch.setenv("PLATFORM_SDK_ZENTAO_PASSWORD_FILE", sdk_password)
+    monkeypatch.setenv("PLATFORM_SDK_SSO_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_SDK_SSO_PUBLIC_ORIGIN", "https://47.106.112.69")
+    monkeypatch.setenv("PLATFORM_SDK_SSO_ENTRY_CODE", "sdk-sso")
+    monkeypatch.setenv("PLATFORM_SDK_SSO_ENTRY_KEY_FILE", _private_file(tmp_path / "sso-key", "x" * 32))
+    monkeypatch.setenv("PLATFORM_SDK_AUTO_PROVISION_ENABLED", "1")
+    monkeypatch.setenv("PLATFORM_SDK_PROVISION_ACCOUNT", "sdk-provision")
+    monkeypatch.setenv("PLATFORM_SDK_PROVISION_GROUP_ID", "24")
+    monkeypatch.setenv("PLATFORM_SDK_PROVISION_PASSWORD_FILE", sdk_password)
+    with pytest.raises(ValueError, match="distinct"):
+        load_config()
+    monkeypatch.setenv("PLATFORM_SDK_PROVISION_PASSWORD_FILE", _private_file(tmp_path / "provision-password", "provision-secret"))
+    config = load_config()
+    assert config.sdk_auto_provision_enabled
+    assert config.sdk_provision_group_id == 24
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

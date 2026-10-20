@@ -7,6 +7,7 @@ import re
 import secrets
 from http.cookies import SimpleCookie
 from pathlib import Path
+from typing import Literal
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -17,6 +18,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.control_plane.models import AuthContext, Role
+from .provision import ProvisionConflict, ProvisionRejected, ProvisionUnavailable, ZenTaoProvisioner
 from .zentao import _private_origin
 
 
@@ -40,11 +42,25 @@ class AccountBinding(BaseModel):
     account: str = Field(min_length=2, max_length=40)
 
 
+SsoTarget = Literal["home", "requirements", "tasks", "tests", "releases"]
+
+
+class StartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: SsoTarget = "home"
+
+
+class DepartmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
 class SdkSsoService:
     def __init__(
         self, repository, *, private_origin: str, public_origin: str,
         platform_origin: str, entry_code: str, entry_key_file: str | Path,
-        transport: httpx.BaseTransport | None = None,
+        transport: httpx.BaseTransport | None = None, product_id: int = 1,
+        provisioner: ZenTaoProvisioner | None = None,
     ) -> None:
         self.repository = repository
         self.private_origin = _private_origin(private_origin)
@@ -57,18 +73,100 @@ class SdkSsoService:
         if len(self.entry_key) != 32 or not self.entry_key.isascii():
             raise ValueError("sdk_sso_entry_key_invalid")
         self.transport = transport
+        self.provisioner = provisioner
+        if product_id < 1:
+            raise ValueError("sdk_sso_product_required")
+        self.product_id = product_id
 
-    async def start(self, actor: AuthContext) -> dict[str, str]:
+    def target_path(self, target: SsoTarget) -> str:
+        return {
+            "home": "/",
+            "requirements": f"/index.php?m=product&f=browse&productID={self.product_id}",
+            "tasks": "/index.php?m=my&f=work&mode=task",
+            "tests": f"/index.php?m=testcase&f=browse&productID={self.product_id}",
+            "releases": f"/index.php?m=release&f=browse&productID={self.product_id}",
+        }[target]
+
+    async def start(self, actor: AuthContext, target: SsoTarget = "home") -> dict[str, str]:
         if actor.hard_stale_read_only:
             raise HTTPException(503, "sdk_sso_identity_stale")
+        if self.provisioner is not None:
+            await run_in_threadpool(self._ensure_personal_account, actor.internal_user_id)
         ticket = secrets.token_urlsafe(32)
         digest = hashlib.sha256(ticket.encode("ascii")).digest()
         issued = await run_in_threadpool(
-            self.repository.issue, actor.internal_user_id, actor.session_id, digest
+            self.repository.issue, actor.internal_user_id, actor.session_id, digest, target
         )
         if not issued:
             raise HTTPException(403, "sdk_sso_access_or_binding_required")
         return {"ticket": ticket, "consume_url": f"{self.public_origin}/sdk-sso/consume"}
+
+    def _ensure_personal_account(self, user_id: UUID) -> None:
+        assert self.provisioner is not None
+        with self.repository.provision_slot(user_id) as (connection, identity):
+            if identity["account"] is not None:
+                if identity["provision_state"] in {"bound", "suspended"}:
+                    marker = identity["marker"]
+                    if not isinstance(marker, str):
+                        raise HTTPException(409, "sdk_provision_state_invalid")
+                    self._set_access(identity["account"], marker, True)
+                    if identity["provision_state"] == "suspended":
+                        self.repository.mark_access_state(connection, user_id, "suspended", "bound")
+                return
+            account = self.repository.account_for(user_id)
+            marker = identity["marker"]
+            try:
+                if identity["provision_state"] is None:
+                    marker = "sdk:" + secrets.token_hex(16)
+                    self.repository.mark_provision_attempt(connection, user_id, account, marker)
+                    self.provisioner.create(account, identity["display_name"], marker)
+                elif identity["provision_state"] == "reconcile_required" and isinstance(marker, str):
+                    self.provisioner.reconcile(account, identity["display_name"], marker)
+                else:
+                    raise HTTPException(409, "sdk_provision_state_invalid")
+            except ProvisionUnavailable:
+                raise HTTPException(503, "sdk_provision_reconcile_required") from None
+            except ProvisionConflict:
+                raise HTTPException(409, "sdk_provision_account_conflict") from None
+            except ProvisionRejected:
+                raise HTTPException(502, "sdk_provision_zentao_rejected") from None
+            except ValueError:
+                raise HTTPException(422, "sdk_provision_identity_invalid") from None
+            self.repository.complete_provision(connection, user_id, account)
+            self._set_access(account, marker, True)
+
+    def _set_access(self, account: str, marker: str, enabled: bool) -> None:
+        assert self.provisioner is not None
+        try:
+            self.provisioner.set_access(account, marker, enabled=enabled)
+        except ProvisionUnavailable:
+            raise HTTPException(503, "sdk_provision_reconcile_required") from None
+        except ProvisionConflict:
+            raise HTTPException(409, "sdk_provision_account_conflict") from None
+        except ProvisionRejected:
+            raise HTTPException(502, "sdk_provision_zentao_rejected") from None
+
+    def sync_auto_access(self) -> tuple[int, int]:
+        """Apply fresh directory scope changes to auto-created ZenTao accounts."""
+        if self.provisioner is None:
+            return (0, 0)
+        changed = errors = 0
+        for candidate in self.repository.access_changes():
+            try:
+                user_id = candidate["internal_user_id"]
+                with self.repository.access_slot(user_id) as (connection, identity):
+                    enabled = identity["eligible"]
+                    old_state = "suspended" if enabled else "bound"
+                    new_state = "bound" if enabled else "suspended"
+                    if identity["state"] != old_state:
+                        continue
+                    self.provisioner.set_access(identity["account"], identity["marker"], enabled=enabled)
+                    self.repository.mark_access_state(connection, user_id, old_state, new_state)
+                    changed += 1
+            except (ProvisionUnavailable, ProvisionConflict, ProvisionRejected, HTTPException, ValueError):
+                self.repository.defer_access_retry(candidate["internal_user_id"])
+                errors += 1
+        return (changed, errors)
 
     async def bind(self, actor: AuthContext, target: UUID, account: str) -> dict[str, str]:
         if actor.role is not Role.PLATFORM_OWNER:
@@ -77,15 +175,35 @@ class SdkSsoService:
             raise HTTPException(503, "sdk_sso_identity_stale")
         return await run_in_threadpool(self.repository.bind, actor.internal_user_id, target, account)
 
-    async def consume(self, ticket: str) -> str:
+    async def departments(self, actor: AuthContext) -> dict:
+        if actor.role is not Role.PLATFORM_OWNER:
+            raise HTTPException(403, "sdk_owner_required")
+        return {"items": await run_in_threadpool(self.repository.departments)}
+
+    async def set_department(self, actor: AuthContext, department: UUID, enabled: bool) -> dict:
+        if actor.role is not Role.PLATFORM_OWNER:
+            raise HTTPException(403, "sdk_owner_required")
+        if actor.hard_stale_read_only:
+            raise HTTPException(503, "sdk_sso_identity_stale")
+        changed = await run_in_threadpool(
+            self.repository.set_allowed_department, actor.internal_user_id, department, enabled
+        )
+        if not changed:
+            raise HTTPException(409, "sdk_department_scope_rejected")
+        return {"id": str(department), "enabled": enabled}
+
+    async def consume(self, ticket: str) -> tuple[str, str]:
         if not _TICKET.fullmatch(ticket):
             raise HTTPException(403, "sdk_sso_ticket_invalid")
-        account = await run_in_threadpool(
+        selection = await run_in_threadpool(
             self.repository.consume, hashlib.sha256(ticket.encode("ascii")).digest()
         )
-        if account is None:
+        if selection is None:
             raise HTTPException(403, "sdk_sso_ticket_invalid")
-        return await run_in_threadpool(self._zen_login_sync, account)
+        account, target = selection
+        if target not in {"home", "requirements", "tasks", "tests", "releases"}:
+            raise HTTPException(403, "sdk_sso_ticket_invalid")
+        return await run_in_threadpool(self._zen_login_sync, account), self.target_path(target)
 
     def _zen_login_sync(self, account: str) -> str:
         with self.repository.login_slot() as timestamp:
@@ -138,12 +256,22 @@ def build_sdk_sso_router(service: SdkSsoService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/sdk/sso", tags=["sdk-sso"])
 
     @router.post("/start")
-    async def start(request: Request):
-        return JSONResponse(await service.start(_actor(request)), headers=_NO_STORE)
+    async def start(request: Request, body: StartRequest | None = None):
+        return JSONResponse(await service.start(_actor(request), body.target if body else "home"), headers=_NO_STORE)
 
     @router.put("/bindings/{user_id}")
     async def bind(request: Request, user_id: UUID, body: AccountBinding):
         return JSONResponse(await service.bind(_actor(request), user_id, body.account), headers=_NO_STORE)
+
+    @router.get("/departments")
+    async def departments(request: Request):
+        return JSONResponse(await service.departments(_actor(request)), headers=_NO_STORE)
+
+    @router.put("/departments/{department_id}")
+    async def set_department(request: Request, department_id: UUID, body: DepartmentRequest):
+        return JSONResponse(
+            await service.set_department(_actor(request), department_id, body.enabled), headers=_NO_STORE
+        )
 
     @router.post("/consume")
     async def consume(request: Request):
@@ -164,8 +292,8 @@ def build_sdk_sso_router(service: SdkSsoService) -> APIRouter:
             raise HTTPException(400, "sdk_sso_form_invalid") from None
         if set(values) != {"ticket"} or len(values["ticket"]) != 1:
             raise HTTPException(400, "sdk_sso_form_invalid")
-        session_id = await service.consume(values["ticket"][0])
-        response = RedirectResponse("/", status_code=303, headers=_NO_STORE)
+        session_id, destination = await service.consume(values["ticket"][0])
+        response = RedirectResponse(destination, status_code=303, headers=_NO_STORE)
         response.set_cookie("zentaosid", session_id, path="/", secure=True, httponly=True, samesite="lax")
         return response
 

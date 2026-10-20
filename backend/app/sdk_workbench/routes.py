@@ -160,10 +160,15 @@ def build_sdk_router() -> APIRouter:
 
     @router.get("/me")
     async def me(request: Request):
-        return JSONResponse({**_access(request).me(_actor(request)),
+        actor = _actor(request)
+        sso = getattr(request.app.state, "sdk_sso_service", None)
+        identity = await run_in_threadpool(sso.repository.identity, actor.internal_user_id) if sso else None
+        return JSONResponse({**_access(request).me(actor),
                              "plan_enabled": getattr(request.app.state, "sdk_plan_service", None) is not None,
                              "native_only": _native_only(),
-                             "sso_enabled": getattr(request.app.state, "sdk_sso_service", None) is not None}, headers=_NO_STORE)
+                             "sso_enabled": sso is not None,
+                             "can_enter": bool(identity and identity["eligible"] and not actor.hard_stale_read_only
+                                               and (identity["account"] or sso.provisioner))}, headers=_NO_STORE)
 
     @router.get("/members")
     async def members(request: Request):

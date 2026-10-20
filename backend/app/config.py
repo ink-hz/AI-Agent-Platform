@@ -117,6 +117,10 @@ class Config:
     sdk_sso_public_origin: str = ""
     sdk_sso_entry_code: str = ""
     sdk_sso_entry_key_file: str = ""
+    sdk_auto_provision_enabled: bool = False
+    sdk_provision_account: str = ""
+    sdk_provision_password_file: str = ""
+    sdk_provision_group_id: int = 0
     hr_web_worker_enabled: bool = False
     hr_agent_settings: HrAgentSettings = field(default_factory=HrAgentSettings)
     hr_role_package_root: str = ""
@@ -789,6 +793,8 @@ def _validate_sdk_workbench_config(config: Config) -> None:
         raise ValueError("SDK ZenTao password must use a secret file")
     if os.getenv("PLATFORM_SDK_SSO_ENTRY_KEY"):
         raise ValueError("SDK SSO entry key must use a secret file")
+    if os.getenv("PLATFORM_SDK_PROVISION_PASSWORD"):
+        raise ValueError("SDK provision password must use a secret file")
     if config.sdk_native_only and not config.sdk_workbench_enabled:
         raise ValueError("SDK native mode requires the workbench")
     if config.sdk_sso_enabled and (
@@ -822,6 +828,17 @@ def _validate_sdk_workbench_config(config: Config) -> None:
             raise ValueError("sdk_sso_entry_key_invalid") from None
         if not (len(key) == 32 and key.isascii()):
             raise ValueError("sdk_sso_entry_key_invalid")
+    if config.sdk_auto_provision_enabled:
+        if not config.sdk_sso_enabled:
+            raise ValueError("SDK auto provision requires SSO")
+        if (not config.sdk_provision_account or
+                config.sdk_provision_account == config.sdk_zentao_account or
+                config.sdk_provision_group_id < 1):
+            raise ValueError("sdk_provision_scope_invalid")
+        _validate_private_file(config.sdk_provision_password_file, "SDK provision password")
+        if (Path(config.sdk_provision_password_file).samefile(config.sdk_zentao_password_file) or
+                Path(config.sdk_provision_password_file).samefile(config.sdk_sso_entry_key_file)):
+            raise ValueError("SDK provision password must be distinct")
 
 
 def _validate_partner_release_config(config: Config) -> None:
@@ -1072,6 +1089,10 @@ def load_config() -> Config:
         sdk_sso_public_origin=os.getenv("PLATFORM_SDK_SSO_PUBLIC_ORIGIN", "").strip(),
         sdk_sso_entry_code=os.getenv("PLATFORM_SDK_SSO_ENTRY_CODE", "").strip(),
         sdk_sso_entry_key_file=os.getenv("PLATFORM_SDK_SSO_ENTRY_KEY_FILE", "").strip(),
+        sdk_auto_provision_enabled=_strict_flag("PLATFORM_SDK_AUTO_PROVISION_ENABLED", "sdk_auto_provision_flag_invalid"),
+        sdk_provision_account=os.getenv("PLATFORM_SDK_PROVISION_ACCOUNT", "").strip(),
+        sdk_provision_password_file=os.getenv("PLATFORM_SDK_PROVISION_PASSWORD_FILE", "").strip(),
+        sdk_provision_group_id=int(os.getenv("PLATFORM_SDK_PROVISION_GROUP_ID", "0")),
         content_encryption_keyring_file=content_encryption_keyring_file,
         execution_relay_lease_seconds=execution_relay_lease_seconds,
         execution_relay_max_body_bytes=execution_relay_max_body_bytes,

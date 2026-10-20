@@ -113,6 +113,10 @@ services:
       PLATFORM_SDK_SSO_PUBLIC_ORIGIN: "${PLATFORM_SDK_SSO_PUBLIC_ORIGIN:-}"
       PLATFORM_SDK_SSO_ENTRY_CODE: "${PLATFORM_SDK_SSO_ENTRY_CODE:-}"
       PLATFORM_SDK_SSO_ENTRY_KEY_FILE: /run/sdk-secrets/sso-entry-key
+      PLATFORM_SDK_AUTO_PROVISION_ENABLED: "${PLATFORM_SDK_AUTO_PROVISION_ENABLED:-0}"
+      PLATFORM_SDK_PROVISION_ACCOUNT: "${PLATFORM_SDK_PROVISION_ACCOUNT:-}"
+      PLATFORM_SDK_PROVISION_PASSWORD_FILE: /run/sdk-secrets/provision-password
+      PLATFORM_SDK_PROVISION_GROUP_ID: "${PLATFORM_SDK_PROVISION_GROUP_ID:-0}"
       # FAE partner operator identity is production-disabled: no real Partner
       # Provider has been selected yet. These values are deliberately empty so
       # the release gate fails closed and no Partner start or callback route is
@@ -241,6 +245,10 @@ services:
       PLATFORM_SDK_SSO_PUBLIC_ORIGIN: ""
       PLATFORM_SDK_SSO_ENTRY_CODE: ""
       PLATFORM_SDK_SSO_ENTRY_KEY_FILE: ""
+      PLATFORM_SDK_AUTO_PROVISION_ENABLED: "0"
+      PLATFORM_SDK_PROVISION_ACCOUNT: ""
+      PLATFORM_SDK_PROVISION_PASSWORD_FILE: ""
+      PLATFORM_SDK_PROVISION_GROUP_ID: "0"
     volumes:
       - platform-api-secrets:/run/secrets:ro
       - /data/orbbec-agent-platform/hr-intelligence:/data/agent-platform/hr-intelligence:ro

@@ -36,7 +36,8 @@ class SdkRepository:
         try:
             with self._connection() as connection:
                 row = connection.execute(
-                    "select role from sdk.members where internal_user_id = %s", (actor,)
+                    "select role from sdk.members where internal_user_id = %s "
+                    "and (grant_source='manual' or sdk.sso_eligible(%s))", (actor, actor)
                 ).fetchone()
             return row["role"] if row else None
         except psycopg.Error as error:
@@ -71,7 +72,8 @@ class SdkRepository:
                         return {"internal_user_id": str(target), "role": role}
                     connection.execute(
                         "insert into sdk.members(internal_user_id,role,granted_by) values (%s,%s,%s) "
-                        "on conflict (internal_user_id) do update set role=excluded.role,granted_by=excluded.granted_by,granted_at=clock_timestamp()",
+                        "on conflict (internal_user_id) do update set role=excluded.role,granted_by=excluded.granted_by,"
+                        "grant_source='manual',granted_at=clock_timestamp()",
                         (target, role, actor),
                     )
             return {"internal_user_id": str(target), "role": role}
