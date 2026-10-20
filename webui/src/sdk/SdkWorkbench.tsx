@@ -59,6 +59,10 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     void client.me().then(async identity => {
       if (!live) return;
       setMe(identity);
+      if (identity.native_only) {
+        setList({ items: [], page: 1, total: 0 });
+        return;
+      }
       if (identity.role && identity.requirements_enabled !== false) {
         const requirements = await client.requirements();
         if (live) setList(requirements);
@@ -73,14 +77,14 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   }, [client]);
 
   useEffect(() => {
-    if (!storyId) { setDetail(null); return; }
+    if (!me || me.native_only || !storyId) { setDetail(null); return; }
     let live = true;
     setError("");
     setReviewPage(1); setHasOlderReviews(false);
     void client.requirement(storyId).then(value => { if (live) { setDetail(value); setHasOlderReviews(value.reviews.length === 50); } })
       .catch(error => { if (live) setError(message(error)); });
     return () => { live = false; };
-  }, [client, storyId]);
+  }, [client, storyId, me]);
 
   async function submit<T>(action: () => Promise<T>, success: (result: T) => string) {
     setError(""); setNotice("");
@@ -119,20 +123,35 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   }
 
   if (error && !me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p role="alert">{error}</p></section>;
-  if (!me || !list) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取需求…</p></section>;
+  if (!me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取工作区…</p></section>;
   if (!me.role && !me.can_manage) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>当前账号没有 SDK 工作台权限。</p></section>;
+  if (me.native_only) return <section className="sdk-workbench sdk-native-workspace">
+    <header className="sdk-native-entry">
+      <p className="sdk-eyebrow">OpenOrbbecSDK · 研发工作区</p>
+      <h1>从需求到发布，在禅道协作</h1>
+      <p>创建和评审需求、安排迭代任务、关联测试用例与发布计划。</p>
+      <a className="sdk-native-link" href="https://sdk.orbbec.com.cn/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>
+      <p className="sdk-native-hint">使用个人禅道账号登录。禅道中的产品权限决定可查看和编辑的内容。</p>
+    </header>
+    <div className="sdk-native-steps" aria-label="研发流程">
+      <div><span>01</span><h2>需求</h2><p>写清场景、设备、验收标准，按版本完成评审。</p></div>
+      <div><span>02</span><h2>开发</h2><p>拆分迭代任务，指定负责人并跟踪进度。</p></div>
+      <div><span>03</span><h2>验证</h2><p>关联用例和缺陷，记录执行结果。</p></div>
+      <div><span>04</span><h2>发布</h2><p>在禅道管理发布计划和交付记录。</p></div>
+    </div>
+  </section>;
+  if (!list) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取需求…</p></section>;
 
   return <section className="sdk-workbench">
-    <header><p className="sdk-eyebrow">开发流程 · 需求与任务</p><h1>SDK 开发管理</h1><p>需求、验收标准和任务保存在禅道；评审结论由平台留痕。</p></header>
     {me.read_only && <p className="sdk-notice">当前身份为只读状态。</p>}
     {error && <p className="sdk-error" role="alert">{error}</p>}
     {notice && <p className="sdk-notice" role="status">{notice}</p>}
-    {me.role && me.plan_enabled === true && <PlanIntake client={client} csrfToken={account.csrf_token} role={me.role} readOnly={me.read_only} onSelect={row => {
+    {me.role && me.plan_enabled === true && <details className="sdk-plan-drawer"><summary>2026 年度任务计划 · 来源参考</summary><PlanIntake client={client} csrfToken={account.csrf_token} role={me.role} readOnly={me.read_only} onSelect={row => {
       if (row?.kind !== "task") { setSelectedPlanRow(null); setTitle(""); setScenario(""); setDevicePlatform(""); setAcceptance(""); requirementRequest.clear(); return; }
       setSelectedPlanRow(row); setTitle(row.cells[1]); setScenario(""); setDevicePlatform(""); setAcceptance(""); requirementRequest.clear();
-    }} />}
+    }} /></details>}
     {me.requirements_enabled === false && <p className="sdk-notice">年度计划已可阅读；正式需求功能等待禅道服务配置。</p>}
-    <div className="sdk-columns">
+    <details className="sdk-legacy-drawer" open={!!storyId}><summary>平台需求记录与 SDK 专属证据</summary><div className="sdk-columns">
       <div className="sdk-panel">
         <h2>需求</h2>
         {selectedPlanRow && <p className="sdk-notice">正在整理来源：{selectedPlanRow.module} · 原文件第 {selectedPlanRow.physical_line} 行。请人工补全场景、设备与验收标准。</p>}
@@ -140,7 +159,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
         <ul className="sdk-list">{list.items.map(item => <li key={item.id}><button type="button" onClick={() => navigate(`/sdk/requirements/${item.id}`)} className={storyId === item.id ? "selected" : ""}>#{item.id} {item.title}</button><span>{item.status || "待定"}</span></li>)}</ul>
         {list.items.length === 0 && <p>还没有需求。</p>}
         <div className="sdk-pagination"><button type="button" disabled={list.page <= 1} onClick={() => { void requirementPage(list.page - 1); }}>上一页</button><span>第 {list.page} 页</span><button type="button" disabled={list.total == null ? list.items.length < 50 : list.page * 50 >= Number(list.total)} onClick={() => { void requirementPage(list.page + 1); }}>下一页</button></div>
-        {me.role === "contributor" && !me.read_only && <form onSubmit={createRequirement} className="sdk-form"><h3>创建需求</h3>
+        {me.role === "contributor" && !me.read_only && !me.native_only && <form onSubmit={createRequirement} className="sdk-form"><h3>创建需求</h3>
           <label>标题<input required maxLength={200} value={title} onChange={event => setTitle(event.target.value)} /></label>
           <label>场景<textarea required maxLength={4000} value={scenario} onChange={event => setScenario(event.target.value)} /></label>
           <label>设备与平台<input required maxLength={500} value={devicePlatform} onChange={event => setDevicePlatform(event.target.value)} /></label>
@@ -162,7 +181,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
           <ul>{detail.reviews.map((review, index) => <li key={index}>{review.decision} · {review.reason} · {review.created_at || ""}</li>)}</ul>
           <h4>开发任务</h4>
           <ul>{detail.tasks.map(task => <li key={task.task_id}>开发任务 #{task.task_id}</li>)}</ul>
-          {me.role === "reviewer" && !me.read_only && <form className="sdk-form" onSubmit={event => { event.preventDefault(); void submit(async () => {
+          {me.role === "reviewer" && !me.read_only && !me.native_only && <form className="sdk-form" onSubmit={event => { event.preventDefault(); void submit(async () => {
             const input = { decision: reviewDecision, reason: reviewReason };
             await client.review(storyId!, { request_id: reviewRequest.forPayload(input), ...input }, account.csrf_token);
             reviewRequest.clear();
@@ -171,7 +190,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
             <label>结论<select value={reviewDecision} onChange={event => setReviewDecision(event.target.value as typeof reviewDecision)}><option value="approved">通过</option><option value="needs_changes">需修改</option><option value="rejected">不通过</option></select></label>
             <label>理由<textarea required maxLength={2000} value={reviewReason} onChange={event => setReviewReason(event.target.value)} /></label><button type="submit">提交评审</button>
           </form>}
-          {me.role === "contributor" && !me.read_only && <form className="sdk-form" onSubmit={event => { event.preventDefault(); void submit(async () => {
+          {me.role === "contributor" && !me.read_only && !me.native_only && <form className="sdk-form" onSubmit={event => { event.preventDefault(); void submit(async () => {
             const input = { name: taskName, description: taskDescription };
             const task = await client.createTask(storyId!, { request_id: taskRequest.forPayload(input), ...input }, account.csrf_token);
             taskRequest.clear(); setTaskName(""); setTaskDescription("");
@@ -216,5 +235,6 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
         <button type="submit">确认绑定</button>
       </form>}
     </section>}
+    </details>
   </section>;
 }

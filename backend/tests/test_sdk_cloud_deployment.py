@@ -12,8 +12,28 @@ import yaml
 
 COMPOSE = Path(__file__).parents[2] / "deploy" / "cloud" / "compose.yaml"
 ZENTAO_COMPOSE = Path(__file__).parents[2] / "deploy" / "sdk" / "compose.yaml"
+NATIVE_DOMAIN = Path(__file__).parents[2] / "deploy" / "sdk" / "zentao-domain.nginx.conf"
 
 
+def test_zentao_uses_a_separate_https_origin_and_keeps_loopback_upstream() -> None:
+    config = NATIVE_DOMAIN.read_text(encoding="utf-8")
+    assert "server_name __SDK_DOMAIN__;" in config
+    assert "listen 443 ssl;" in config
+    assert "proxy_pass http://127.0.0.1:18131;" in config
+    assert "proxy_set_header Authorization \"\";" in config
+    assert "proxy_set_header X-Forwarded-For $remote_addr;" in config
+    assert "apilogin" in config
+    assert "agent.orbbec.com.cn" not in config
+
+
+def test_zentao_compose_requires_an_explicit_hardened_image() -> None:
+    service = yaml.safe_load(ZENTAO_COMPOSE.read_text(encoding="utf-8"))["services"]["zentao"]
+    image = service["image"]
+    assert image == "${SDK_ZENTAO_IMAGE:?set an audited hardened ZenTao image}"
+    assert service["entrypoint"] == ["/usr/local/bin/verify-and-start.sh"]
+    dockerfile = (ZENTAO_COMPOSE.parent / "Dockerfile.hardened").read_text(encoding="utf-8")
+    assert "COPY verify-and-start.sh /usr/local/bin/verify-and-start.sh" in dockerfile
+    assert "chmod 755 /usr/local/bin/verify-and-start.sh" in dockerfile
 def test_sdk_cloud_switch_and_password_are_scoped_to_platform_api() -> None:
     services = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
     api = services["platform-api"]

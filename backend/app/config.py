@@ -96,6 +96,7 @@ class Config:
     voc_extension_timeout_seconds: float
     sdk_workbench_enabled: bool
     sdk_plan_enabled: bool
+    sdk_native_only: bool
     sdk_zentao_base_url: str
     sdk_zentao_account: str
     sdk_zentao_password_file: str
@@ -782,6 +783,8 @@ def _validate_voc_extension_config(config: Config) -> None:
 def _validate_sdk_workbench_config(config: Config) -> None:
     if os.getenv("PLATFORM_SDK_ZENTAO_PASSWORD"):
         raise ValueError("SDK ZenTao password must use a secret file")
+    if config.sdk_native_only and not config.sdk_workbench_enabled:
+        raise ValueError("SDK native mode requires the workbench")
     if not config.sdk_workbench_enabled:
         return
     from .sdk_workbench.zentao import _private_origin
@@ -1032,6 +1035,7 @@ def load_config() -> Config:
         ),
         sdk_workbench_enabled=_strict_flag("PLATFORM_SDK_WORKBENCH_ENABLED", "sdk_workbench_flag_invalid"),
         sdk_plan_enabled=_strict_flag("PLATFORM_SDK_PLAN_ENABLED", "sdk_plan_flag_invalid"),
+        sdk_native_only=_strict_flag("PLATFORM_SDK_NATIVE_ONLY", "sdk_native_only_flag"),
         sdk_zentao_base_url=os.getenv("PLATFORM_SDK_ZENTAO_BASE_URL", "").strip(),
         sdk_zentao_account=os.getenv("PLATFORM_SDK_ZENTAO_ACCOUNT", "").strip(),
         sdk_zentao_password_file=os.getenv("PLATFORM_SDK_ZENTAO_PASSWORD_FILE", "").strip(),

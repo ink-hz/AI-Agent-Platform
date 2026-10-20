@@ -1,7 +1,7 @@
 import { platformPath } from "../auth";
 
 export type SdkRole = "viewer" | "contributor" | "reviewer" | "release_manager";
-export type SdkMe = { role: SdkRole | null; can_manage: boolean; read_only: boolean; requirements_enabled?: boolean; plan_enabled?: boolean };
+export type SdkMe = { role: SdkRole | null; can_manage: boolean; read_only: boolean; requirements_enabled?: boolean; plan_enabled?: boolean; native_only?: boolean };
 export type PlanBatch = { id: number; uploaded_by: string; filename: string; sha256: string; row_count: number; task_count: number; module_count: number; created_at: string };
 export type PlanRow = { id: number; import_id: number; record_number: number; physical_line: number; kind: "task" | "heading"; module: string; cells: string[]; sha256: string; filename: string; conversion_state: string | null; story_id: number | null; actor_id: string | null; request_id: string | null };
 export type PlanFilter = { module?: string; priority?: string; owner?: string };

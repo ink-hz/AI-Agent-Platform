@@ -21,7 +21,8 @@ services:
       start_period: 40s
 
   zentao:
-    image: ${SDK_ZENTAO_IMAGE:-hub.zentao.net/app/zentao:22.6}
+    image: ${SDK_ZENTAO_IMAGE:?set an audited hardened ZenTao image}
+    entrypoint: ["/usr/local/bin/verify-and-start.sh"]
     restart: unless-stopped
     environment:
       MYSQL_INTERNAL: "false"

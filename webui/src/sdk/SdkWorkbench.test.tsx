@@ -40,12 +40,41 @@ it("shows live requirements and the selected story without a second login", asyn
   } as unknown as SdkApi;
 
   await act(async () => root.render(<SdkWorkbench account={account} storyId={12} client={client} />));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 
   expect(container.textContent).toContain("USB 稳定性");
   expect(container.textContent).toContain("连续运行");
   expect(container.textContent).toContain("开发任务 #31");
   expect(container.textContent).toContain("创建需求");
   expect(client.requirement).toHaveBeenCalledWith(12);
+});
+
+it("opens native ZenTao requirements and keeps the annual CSV secondary", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, plan_enabled: true, native_only: true }),
+    requirements: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+    planImports: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+    candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  expect(container.querySelector('a[href="https://sdk.orbbec.com.cn/"]')?.textContent).toContain("禅道");
+  expect(container.querySelector("details.sdk-plan-drawer")).toBeNull();
+  expect(container.querySelector(".sdk-native-entry")).not.toBeNull();
+  expect(container.textContent).not.toContain("创建需求");
+  expect(container.textContent).not.toContain("候选");
+  expect(client.requirements).not.toHaveBeenCalled();
+  expect(client.candidates).not.toHaveBeenCalled();
+});
+
+it("keeps the native entry available without the legacy requirements API", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true }),
+    requirements: vi.fn().mockRejectedValue(new Error("unavailable")),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} storyId={12} client={client} />));
+  expect(container.querySelector('a[href="https://sdk.orbbec.com.cn/"]')).not.toBeNull();
+  expect(client.requirements).not.toHaveBeenCalled();
+  expect(client.requirement).toBeUndefined();
 });
 
 it("does not call plan endpoints when the plan feature is disabled", async () => {
@@ -82,6 +111,7 @@ it("can retrieve older requirement review history", async () => {
     candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
   } as unknown as SdkApi;
   await act(async () => root.render(<SdkWorkbench account={account} storyId={12} client={client} />));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   const older = Array.from(container.querySelectorAll("button")).find(button => button.textContent === "查看更早评审");
   expect(older).toBeDefined();
   await act(async () => older!.click());

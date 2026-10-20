@@ -1,0 +1,10 @@
+ARG ZENTAO_BASE_IMAGE=hub.zentao.net/app/zentao@sha256:d7266f4cd4a5da594c987bcdaaac6c74b4a6a2946384cc378dc949b69ea0b99e
+FROM ${ZENTAO_BASE_IMAGE}
+
+COPY disable-edit-comment.php /tmp/disable-edit-comment.php
+COPY verify-and-start.sh /usr/local/bin/verify-and-start.sh
+RUN chmod 755 /usr/local/bin/verify-and-start.sh \
+    && /opt/zbox/bin/php /tmp/disable-edit-comment.php \
+    && /opt/zbox/bin/php -l /apps/zentao/module/action/control.php \
+    && /usr/local/bin/verify-and-start.sh --verify-only \
+    && rm /tmp/disable-edit-comment.php

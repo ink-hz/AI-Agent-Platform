@@ -133,6 +133,41 @@ def app_for(repo, zentao, *, role=Role.MEMBER, stale=False, actor=ACTOR):
 
 
 @pytest.mark.asyncio
+async def test_native_mode_rejects_parallel_requirement_review_and_task_writes(monkeypatch):
+    monkeypatch.setenv("PLATFORM_SDK_NATIVE_ONLY", "1")
+    repo, zentao = Repository(), ZenTao()
+    repo.roles[ACTOR] = "reviewer"
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
+        me = await client.get("/api/v1/sdk/me")
+        body = {"request_id": str(uuid4()), "title": "USB", "scenario": "客户", "device_platform": "Linux", "acceptance": "通过"}
+        created = await client.post("/api/v1/sdk/requirements", json=body)
+        from_plan = await client.post("/api/v1/sdk/plan-rows/1/requirements", json=body)
+        reviewed = await client.post("/api/v1/sdk/requirements/12/reviews", json={"request_id": str(uuid4()), "decision": "approved", "reason": "范围明确"})
+        task = await client.post("/api/v1/sdk/requirements/12/tasks", json={"request_id": str(uuid4()), "name": "修复", "description": "细节"})
+        listed = await client.get("/api/v1/sdk/requirements")
+        detail = await client.get("/api/v1/sdk/requirements/12")
+        reviews = await client.get("/api/v1/sdk/requirements/12/reviews")
+        legacy_candidates = await client.get("/api/v1/sdk/candidates")
+        legacy_plan = await client.get("/api/v1/sdk/plan-imports")
+    assert me.json()["native_only"] is True
+    assert [created.status_code, from_plan.status_code, reviewed.status_code, task.status_code] == [410, 410, 410, 410]
+    assert [listed.status_code, detail.status_code, reviews.status_code, legacy_candidates.status_code, legacy_plan.status_code] == [410] * 5
+    assert zentao.created == []
+
+
+@pytest.mark.asyncio
+async def test_native_mode_flag_never_silently_reopens_legacy_proxy(monkeypatch):
+    repo, zentao = Repository(), ZenTao()
+    monkeypatch.setenv("PLATFORM_SDK_NATIVE_ONLY", "true")
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
+        assert (await client.get("/api/v1/sdk/requirements")).status_code == 410
+    monkeypatch.setenv("PLATFORM_SDK_NATIVE_ONLY", "maybe")
+    async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:
+        assert (await client.get("/api/v1/sdk/requirements")).status_code == 503
+    assert zentao.created == []
+
+
+@pytest.mark.asyncio
 async def test_member_can_list_and_create_story_with_server_derived_actor():
     repo, zentao = Repository(), ZenTao()
     async with AsyncClient(transport=ASGITransport(app=app_for(repo, zentao)), base_url="http://test") as client:

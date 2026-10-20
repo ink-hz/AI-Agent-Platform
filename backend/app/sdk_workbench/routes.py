@@ -11,6 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.config import _strict_flag
 from app.control_plane.models import AuthContext
 from .plan_csv import MAX_BYTES
 
@@ -142,13 +143,26 @@ def _access(request: Request):
     return getattr(request.app.state, "sdk_service", None) or _plan(request)
 
 
+def _native_only() -> bool:
+    try:
+        return _strict_flag("PLATFORM_SDK_NATIVE_ONLY", "sdk_native_only_flag")
+    except ValueError:
+        raise HTTPException(503, "sdk_native_mode_invalid") from None
+
+
+def _require_legacy_enabled() -> None:
+    if _native_only():
+        raise HTTPException(410, "sdk_use_zentao_native")
+
+
 def build_sdk_router() -> APIRouter:
     router = APIRouter(prefix="/api/v1/sdk", tags=["sdk-workbench"])
 
     @router.get("/me")
     async def me(request: Request):
         return JSONResponse({**_access(request).me(_actor(request)),
-                             "plan_enabled": getattr(request.app.state, "sdk_plan_service", None) is not None}, headers=_NO_STORE)
+                             "plan_enabled": getattr(request.app.state, "sdk_plan_service", None) is not None,
+                             "native_only": _native_only()}, headers=_NO_STORE)
 
     @router.get("/members")
     async def members(request: Request):
@@ -161,10 +175,12 @@ def build_sdk_router() -> APIRouter:
 
     @router.get("/plan-imports")
     async def plan_imports(request: Request, page: int = Query(1, ge=1, le=1000)):
+        _require_legacy_enabled()
         return JSONResponse(_plan(request).list_batches(_actor(request), page), headers=_NO_STORE)
 
     @router.post("/plan-imports")
     async def import_plan(request: Request, filename: str = Query(..., min_length=1, max_length=255)):
+        _require_legacy_enabled()
         actor = _actor(request)
         plan = _plan(request)
         if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() not in ("text/csv", "application/vnd.ms-excel"):
@@ -182,14 +198,17 @@ def build_sdk_router() -> APIRouter:
                         module: str | None = Query(None),
                         priority: str | None = Query(None, max_length=100),
                         owner: str | None = Query(None, max_length=200)):
+        _require_legacy_enabled()
         return JSONResponse(_plan(request).list_rows(_actor(request), import_id, page, module, priority, owner), headers=_NO_STORE)
 
     @router.get("/plan-rows/{row_id}")
     async def plan_row(request: Request, row_id: int):
+        _require_legacy_enabled()
         return JSONResponse(_plan(request).row(_actor(request), row_id), headers=_NO_STORE)
 
     @router.post("/plan-rows/{row_id}/requirements")
     async def create_plan_requirement(request: Request, row_id: int, body: RequirementBody):
+        _require_legacy_enabled()
         actor = _actor(request)
         _plan(request).conversion_row(actor, row_id, body.request_id)
         result = await _service(request).create_requirement(actor, body.request_id, body.title, body.scenario,
@@ -198,30 +217,36 @@ def build_sdk_router() -> APIRouter:
 
     @router.get("/reconciliation")
     async def reconciliation(request: Request):
+        _require_legacy_enabled()
         return JSONResponse(_service(request).reconciliation(_actor(request)), headers=_NO_STORE)
 
     @router.post("/reconciliation/{actor_id}/{target_request_id}/bind")
     async def bind_reconciliation(request: Request, actor_id: UUID, target_request_id: UUID, body: ReconcileBody):
+        _require_legacy_enabled()
         result = await _service(request).bind_reconciliation(_actor(request), actor_id, target_request_id, body.request_id, body.external_id)
         return JSONResponse(result, headers=_NO_STORE)
 
     @router.get("/requirements")
     async def list_requirements(request: Request, page: int = Query(1, ge=1, le=1000)):
+        _require_legacy_enabled()
         return JSONResponse(await _service(request).list_requirements(_actor(request), page), headers=_NO_STORE)
 
     @router.post("/requirements")
     async def create_requirement(request: Request, body: RequirementBody):
+        _require_legacy_enabled()
         result = await _service(request).create_requirement(_actor(request), body.request_id, body.title, body.scenario, body.device_platform, body.acceptance)
         return JSONResponse(result, status_code=201, headers=_NO_STORE)
 
     @router.get("/requirements/{story_id}")
     async def requirement(request: Request, story_id: int):
+        _require_legacy_enabled()
         if story_id < 1:
             raise HTTPException(404, "sdk_requirement_not_found")
         return JSONResponse(await _service(request).requirement(_actor(request), story_id), headers=_NO_STORE)
 
     @router.post("/requirements/{story_id}/tasks")
     async def create_task(request: Request, story_id: int, body: TaskBody):
+        _require_legacy_enabled()
         if story_id < 1:
             raise HTTPException(404, "sdk_requirement_not_found")
         result = await _service(request).create_task(_actor(request), story_id, body.request_id, body.name, body.description)
@@ -229,6 +254,7 @@ def build_sdk_router() -> APIRouter:
 
     @router.post("/requirements/{story_id}/reviews")
     async def review(request: Request, story_id: int, body: ReviewBody):
+        _require_legacy_enabled()
         if story_id < 1:
             raise HTTPException(404, "sdk_requirement_not_found")
         result = await _service(request).review(_actor(request), story_id, body.request_id, body.decision, body.reason)
@@ -236,45 +262,54 @@ def build_sdk_router() -> APIRouter:
 
     @router.get("/requirements/{story_id}/reviews")
     async def reviews(request: Request, story_id: int, page: int = Query(1, ge=1, le=1000)):
+        _require_legacy_enabled()
         if story_id < 1:
             raise HTTPException(404, "sdk_requirement_not_found")
         return JSONResponse(await _service(request).reviews(_actor(request), story_id, page), headers=_NO_STORE)
 
     @router.get("/candidates")
     async def candidates(request: Request, page: int = Query(1, ge=1, le=1000)):
+        _require_legacy_enabled()
         return JSONResponse(_evidence(request).list_candidates(_actor(request), page), headers=_NO_STORE)
 
     @router.post("/candidates")
     async def create_candidate(request: Request, body: CandidateBody):
+        _require_legacy_enabled()
         result = await _evidence(request).create_candidate(_actor(request), body.request_id, body.story_id, body.task_ids,
                                                            body.manifest.model_dump(), [target.model_dump() for target in body.targets])
         return JSONResponse(result, status_code=201, headers=_NO_STORE)
 
     @router.get("/candidates/{candidate_id}")
     async def candidate(request: Request, candidate_id: int):
+        _require_legacy_enabled()
         return JSONResponse(_evidence(request).candidate(_actor(request), candidate_id), headers=_NO_STORE)
 
     @router.post("/candidates/{candidate_id}/builds")
     async def build(request: Request, candidate_id: int, body: BuildBody):
+        _require_legacy_enabled()
         result = _evidence(request).add_build(_actor(request), candidate_id, body.request_id, body.model_dump(exclude={"request_id"}))
         return JSONResponse(result, status_code=201, headers=_NO_STORE)
 
     @router.post("/artifacts/{build_id}/tests")
     async def test(request: Request, build_id: int, body: TestBody):
+        _require_legacy_enabled()
         result = _evidence(request).add_test(_actor(request), build_id, body.request_id, body.model_dump(exclude={"request_id"}))
         return JSONResponse(result, status_code=201, headers=_NO_STORE)
 
     @router.get("/candidates/{candidate_id}/gate")
     async def gate(request: Request, candidate_id: int):
+        _require_legacy_enabled()
         return JSONResponse(await _evidence(request).gate(_actor(request), candidate_id), headers=_NO_STORE)
 
     @router.post("/candidates/{candidate_id}/approval")
     async def approval(request: Request, candidate_id: int, body: ApprovalBody):
+        _require_legacy_enabled()
         result = await _evidence(request).approve(_actor(request), candidate_id, body.request_id, body.note)
         return JSONResponse(result, status_code=201, headers=_NO_STORE)
 
     @router.post("/candidates/{candidate_id}/release")
     async def release(request: Request, candidate_id: int, body: ReleaseBody):
+        _require_legacy_enabled()
         if body.released_at.tzinfo is None:
             raise HTTPException(422, "sdk_release_time_timezone_required")
         result = await _evidence(request).release(_actor(request), candidate_id, body.request_id, body.channel, body.rollback_uri, body.released_at)

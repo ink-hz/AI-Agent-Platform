@@ -1,4 +1,20 @@
 .sdk-workbench { max-width: 1300px; margin: 0 auto; padding: 30px; color: #1e293b; }
+.sdk-native-entry { padding: 34px; border-radius: 20px; background: linear-gradient(120deg, #10254b, #185db0); color: #fff; }
+.sdk-native-entry .sdk-eyebrow { color: #a9d6ff; }
+.sdk-workbench .sdk-native-entry h1 { margin-top: 12px; font-size: clamp(30px, 4vw, 46px); }
+.sdk-native-entry > p:not(.sdk-eyebrow) { max-width: 760px; line-height: 1.65; }
+.sdk-native-link { display: inline-flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px 20px; border-radius: 9px; background: #fff; color: #123f81; font-weight: 700; text-decoration: none; }
+.sdk-native-link:hover { background: #e8f4ff; }
+.sdk-native-entry .sdk-native-hint { margin-bottom: 0; font-size: 13px; color: #dbeafe; }
+.sdk-native-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+.sdk-native-steps > div { border: 1px solid #dce4ee; border-radius: 14px; padding: 22px; background: #fff; }
+.sdk-native-steps span { color: #2563eb; font-weight: 700; font-size: 13px; }
+.sdk-native-steps h2 { margin: 12px 0 8px; }
+.sdk-native-steps p { margin: 0; color: #475569; line-height: 1.6; }
+.sdk-plan-drawer, .sdk-legacy-drawer { margin-top: 22px; border: 1px solid #dce4ee; border-radius: 12px; background: #fff; }
+.sdk-plan-drawer > summary, .sdk-legacy-drawer > summary { padding: 16px 20px; cursor: pointer; font-weight: 700; }
+.sdk-plan-drawer > .sdk-panel { margin: 0; border: 0; border-top: 1px solid #dce4ee; box-shadow: none; }
+.sdk-legacy-drawer > .sdk-columns, .sdk-legacy-drawer > .sdk-candidate-layout, .sdk-legacy-drawer > .sdk-panel { margin: 20px; }
 .sdk-workbench h1 { font-size: 30px; margin: 5px 0 8px; }
 .sdk-workbench h2 { font-size: 21px; margin: 0 0 18px; }
 .sdk-workbench h3 { font-size: 17px; }
@@ -42,3 +58,5 @@
 @media (max-width: 800px) { .sdk-columns { grid-template-columns: 1fr; } .sdk-workbench { padding: 16px; } }
 @media (max-width: 800px) { .sdk-candidate-layout, .sdk-module-grid { grid-template-columns: 1fr; } }
 @media (max-width: 800px) { .sdk-plan-detail dl { grid-template-columns: 1fr; } .sdk-plan-rows li { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 800px) { .sdk-native-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .sdk-native-steps { grid-template-columns: 1fr; } .sdk-native-entry { padding: 24px; } }

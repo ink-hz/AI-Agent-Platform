@@ -643,6 +643,12 @@ def test_execution_relay_enabled_requires_production_identity(monkeypatch, tmp_p
         load_config()
 
 
+def test_sdk_native_mode_rejects_ambiguous_startup_flag(monkeypatch):
+    monkeypatch.setenv("PLATFORM_SDK_NATIVE_ONLY", "maybe")
+    with pytest.raises(ValueError, match="sdk_native_only_flag_invalid"):
+        load_config()
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
