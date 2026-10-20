@@ -19,3 +19,13 @@
 - 公开平台健康和 `/sdk/` 为 200；匿名签发为 401；无效票据为 403；公网旧 `apilogin` 为 403。SDK JS 资源经公开代理与本机上游逐字节相同，大小 1,089,429 字节；行政服务 JS 同样逐字节相同，大小 534,098 字节。API healthy，Nginx 近期权限错误日志为 0。生产 Brain 在本次发布前已是 unhealthy，本次未替换该容器。
 
 员工实际钉钉登录后点击 `/sdk/` 入口的浏览器验收仍需用户执行；其余生产接口及会话链路已按上述范围验证。GitLab、SDK 构建和真机测试集成仍未纳入此功能。
+
+## 浏览器交接热修（同日）
+
+员工首次点击时，`POST /api/v1/sdk/sso/start` 已返回 200，但禅道没有收到表单。根因是 `/sdk/` 同时返回上游 `form-action 'none'` 与边缘允许禅道的 CSP；浏览器同时执行两条策略，阻断提交。隐藏上游 CSP 后，浏览器提交到禅道，但返回 `request origin rejected`。独立 Chrome 场景复现确认 `/sdk/` 的 `Referrer-Policy: no-referrer` 会使跨源表单的 `Origin` 为 `null`。因此 `/sdk/` 仅保留边缘 CSP 和 `strict-origin-when-cross-origin`，其他工作区策略不变。前端增加 CSP 阻断提示与 15 秒超时，避免按钮一直停在提交态。
+
+修复提交 `f864dc9691ff3b8736ea5f662ff9a263cabebbe9` 已合入主线并部署，API 镜像 ID 为 `sha256:258008881750ddf35cc64ffe352c91d54cb83e49640af2d873ab961db7cf58af`。新 API 发布前 `overlay_guard.py` 核对 13 个原 Compose 文件、9 个服务配置；仅 API 容器重建，其他 7 个运行容器 ID 未变。API 健康，公网 `/sdk/`、`/api/health`、`/office/` 为 200；新 SDK JS 和行政服务 JS 的公网哈希分别与镜像、行政服务上游一致。Nginx 的完整配置校验与重载后，代理临时目录仍为 `www-data:700`，没有新增权限错误。回滚参考 `/data/orbbec-agent-platform/backups/sdk-sso-hotfix-f864dc96/` 的原 API 容器配置和原环境；Nginx 两次单项改动的原件分别在 `/root/nginx-backups/sdk-sso-csp-20261020T033749Z.conf`、`/root/nginx-backups/sdk-sso-origin-20261020T034042Z.conf`。
+
+生产浏览器从线上 `/sdk/` 提交无效测试票据时，发出 `Origin: https://agent.orbbec.com.cn`，禅道接票接口返回 `sdk_sso_ticket_invalid`，证明 CSP、浏览器导航和来源校验已贯通；此测试没有创建禅道会话。员工本人再次点击并确认个人会话仍是待验收项。
+
+用户希望使用 `orbbec.com.cn/sdk`。该地址当前返回 404；`orbbec.com.cn` 解析到 `120.25.206.12`，平台服务器为 `47.106.112.69`。官网入口需由官网服务器或其发布系统配置；平台服务器的 Nginx 改动不能接管该路径。是否作为入口重定向，或要求禅道会话全程保留该路径，待业务方确定。
