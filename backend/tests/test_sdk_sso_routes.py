@@ -145,6 +145,47 @@ async def test_first_sso_entry_creates_personal_account_and_timeout_reconciles_w
 
 
 @pytest.mark.asyncio
+async def test_first_sso_entry_adopts_prepared_directory_account_without_duplicate_creation(tmp_path):
+    prepared_account = SdkSsoRepository.account_for(uuid4())
+    marker = "sdk:" + uuid4().hex
+
+    class PreparedRepository(Repository):
+        def __init__(self):
+            super().__init__()
+            self.account = None
+            self.adopted = False
+
+        @contextmanager
+        def provision_slot(self, actor):
+            yield self, {"eligible": True, "display_name": "SDK User", "account": self.account,
+                         "provision_state": None, "marker": None,
+                         "prepared": {"account": prepared_account, "marker": marker}}
+
+        def adopt_directory_account(self, connection, actor, account, selected_marker):
+            assert (account, selected_marker) == (prepared_account, marker)
+            self.adopted = True
+
+        def complete_provision(self, connection, actor, account):
+            assert self.adopted
+            self.account = account
+
+    class Provisioner:
+        def __init__(self): self.reconciled = []; self.access = []
+        def create(self, *args): raise AssertionError("prepared account must not be recreated")
+        def reconcile(self, *args): self.reconciled.append(args)
+        def set_access(self, *args, **kwargs): self.access.append((args, kwargs))
+
+    repository, provisioner = PreparedRepository(), Provisioner()
+    app, _ = build_app(tmp_path, repository, provisioner=provisioner)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        response = await client.post("/api/v1/sdk/sso/start", json={"target": "requirements"})
+    assert response.status_code == 200
+    assert repository.account == prepared_account
+    assert provisioner.reconciled == [(prepared_account, "SDK User", marker)]
+    assert provisioner.access == [((prepared_account, marker), {"enabled": True})]
+
+
+@pytest.mark.asyncio
 async def test_suspended_personal_account_is_restored_before_new_ticket(tmp_path):
     class SuspendedRepository(Repository):
         @contextmanager

@@ -148,3 +148,27 @@ async def test_permission_denial_is_a_definite_rejection(password_file):
             await client.create_story(7, "t", "s", "v")
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_story_assignment_uses_native_action_and_requires_readback(password_file):
+    assigned = ""
+    story = {"id": 3, "title": "Existing requirement", "assignedTo": "", "status": "reviewing",
+             "version": 1, "spec": "source", "verify": "pending", "pri": 2, "reviewer": ["cangyuan"]}
+    def respond(request):
+        nonlocal assigned
+        if request.url.path.endswith("/users/login"):
+            return httpx.Response(200, json={"status": "success", "token": "token"})
+        if request.url.path == "/api.php/v2/stories/3" and request.method == "PUT":
+            assert json.loads(request.content)["title"] == story["title"]
+            assigned = json.loads(request.content)["assignedTo"]
+            return httpx.Response(200, json={"status": "success", "data": "3"})
+        if request.url.path == "/api.php/v2/stories/3":
+            return httpx.Response(200, json={"status": "success", "story": {**story, "assignedTo": assigned}})
+        raise AssertionError(request.url)
+    client = ZenTaoClient("http://127.0.0.1:18131", "sdk-api", password_file, transport=httpx.MockTransport(respond))
+    try:
+        await client.assign_story(3, "sdk_abcdefghijklmnopqrstuvwxyz", expected_version=1)
+        assert assigned == "sdk_abcdefghijklmnopqrstuvwxyz"
+    finally:
+        await client.close()

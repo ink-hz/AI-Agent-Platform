@@ -113,13 +113,19 @@ class SdkSsoService:
                     if identity["provision_state"] == "suspended":
                         self.repository.mark_access_state(connection, user_id, "suspended", "bound")
                 return
-            account = self.repository.account_for(user_id)
+            prepared = identity.get("prepared")
+            account = identity.get("intent_account") or (prepared["account"] if prepared else self.repository.account_for(user_id))
             marker = identity["marker"]
             try:
                 if identity["provision_state"] is None:
-                    marker = "sdk:" + secrets.token_hex(16)
-                    self.repository.mark_provision_attempt(connection, user_id, account, marker)
-                    self.provisioner.create(account, identity["display_name"], marker)
+                    if prepared:
+                        marker = prepared["marker"]
+                        self.repository.adopt_directory_account(connection, user_id, account, marker)
+                        self.provisioner.reconcile(account, identity["display_name"], marker)
+                    else:
+                        marker = "sdk:" + secrets.token_hex(16)
+                        self.repository.mark_provision_attempt(connection, user_id, account, marker)
+                        self.provisioner.create(account, identity["display_name"], marker)
                 elif identity["provision_state"] == "reconcile_required" and isinstance(marker, str):
                     self.provisioner.reconcile(account, identity["display_name"], marker)
                 else:

@@ -19,11 +19,13 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 
 将已核验镜像的 `sha256:<image-id>` 填入权限 `0600` 的私有 `sdk.env` 的 `SDK_ZENTAO_IMAGE`，然后用生产私有 Compose 重新创建禅道。Compose 强制使用镜像内的启动校验脚本；控制器文件摘要不符时容器无法启动。核对容器实际镜像 ID 等于构建结果，登录后访问 `action::editComment` 必须返回 403。升级禅道时重新评估补丁及控制器摘要。
 
-原生公开入口暂用独立 HTTPS 源 `https://47.106.112.69/`。`sdk.orbbec.com.cn` 尚无 A 记录；DNS 生效后应按 `zentao-domain.nginx.conf` 配置域名证书，再把前端入口切换为域名。IP 证书由 Let's Encrypt 的短期证书签发，生产 `orbbec-sdk-ip-cert.timer` 每 12 小时检查续期，续期后重新加载 Nginx。先确认入口的可信 TLS、登录跳转和自动续期，再启用 `PLATFORM_SDK_NATIVE_ONLY=1` 发布平台前端。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
+当前入口由 `https://agent.orbbec.com.cn/sdk/` 发起钉钉单点登录，并进入禅道工作区。禅道仍有独立的浏览器源；平台入口域名与禅道回调源按实际部署配置。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
 
 ## 钉钉身份进入个人禅道账号
 
-启用 `PLATFORM_SDK_SSO_ENABLED=1` 后，平台 `/sdk/` 为已授权 SDK 成员签发 45 秒、单次使用的表单票据。平台所有者先用受 CSRF 保护的 `PUT /api/v1/sdk/sso/bindings/{internal_user_id}` 明确绑定个人禅道账号，JSON 为 `{"account":"cangyuan"}`。数据库强制账号唯一；`admin`、`sdkadmin`、`sdk-api` 禁止绑定。绑定前核对钉钉内部 UUID、禅道账号和产品权限，不按显示姓名猜测。
+启用 `PLATFORM_SDK_SSO_ENABLED=1` 和 `PLATFORM_SDK_AUTO_PROVISION_ENABLED=1` 后，平台 `/sdk/` 为已授权 SDK 成员签发 45 秒、单次使用的表单票据。3D 传感技术研发中心是默认准入部门，子部门由当前钉钉目录继承；成员首次进入时按稳定目录身份自动建立个人禅道账号并授予工作区访问，无需逐人添加。已有人工绑定保持有效；`admin`、`sdkadmin`、`sdk-api` 禁止作为个人绑定。人员离开准入范围时由既有访问同步机制撤权。
+
+年度计划的 67 条既有需求按文件摘要、行标识和禅道导入标识核对后原位补全。责任人仅在钉钉目录中唯一匹配时才写入禅道“指派给”；多人、别名和存疑姓名保留原文并标待确认。原文件没有提出人列，不把导入账号或责任人伪装成提出人。开始、结束时间保存为结构化来源日期，同时保留禅道需求正文中的原始时间；它们不是需求创建日期。可重跑的修复工具为 `python -m app.sdk_workbench.annual_reconcile --sha256 <文件摘要>`，默认只读，确认报告后添加 `--apply`。
 
 禅道“二次开发 → 接入禅道”创建专用 `freePasswd=1` 入口，`code` 与 `PLATFORM_SDK_SSO_ENTRY_CODE` 相同，32 字符随机 `key` 只保存于禅道和平台 `platform-sdk-secrets` 卷的 `/run/sdk-secrets/sso-entry-key`，后者须属主 `10001:10001`、权限 `0600`。入口 IP 白名单只允许平台 API 在 `orbbec-agent-platform-sdk` 私网的固定地址，禁止 `*`。`PLATFORM_SDK_SSO_PUBLIC_ORIGIN` 必须是禅道实际 HTTPS 源。工作区页面 CSP 的 `form-action` 只额外允许该源，进入 SDK 时必须加载 `/sdk/` 文档以取得该策略。禅道 vhost 只代理精确 `/sdk-sso/consume`，继续封锁公网 `/api.php`。
 
@@ -36,7 +38,7 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 1. 备份禅道数据库和数据卷，记录镜像 ID、产品/项目/执行 ID。
 2. 用员工账号验证：登录前不能读取产品数据；获得产品权限后可新建需求、提交评审、关联任务和用例；无权限账号仍不能查看产品。
 3. 核对 `action::editComment` 返回 403，`sdk-api` 服务账号不用于浏览器登录。
-4. 核对 `https://47.106.112.69/` 的 TLS、独立浏览器源、登录跳转和 `orbbec-sdk-ip-cert.timer`；随后启用平台 `PLATFORM_SDK_NATIVE_ONLY=1`。平台旧需求、CSV、候选 API 应返回 410，`/api/v1/sdk/me` 应返回 `native_only: true`。
+4. 核对 `https://agent.orbbec.com.cn/sdk/` 的钉钉登录跳转与禅道会话；平台旧需求、CSV、候选 API 在原生模式应返回 410，`/api/v1/sdk/me` 应返回 `native_only: true`。
 5. `/sdk/` 页面交互由业务方按仓库 `AGENTS.md` 验收。GitLab、打包产物和真机测试没有完成时，不标记发布证据通过。
 
 需求变更请走禅道原生界面并选择评审人。v2 `PUT /stories/:id/change` 省略 `status` 时，本实例会让变更后的需求保持 `active`，不能作为强制评审入口。产品负责人也可以在原生界面选择“不需要评审”；如果团队要求每次变更必须由其他人评审，需另设产品负责人与评审人并调整评审策略。[禅道需求评审说明](https://www.zentao.net/book/zentaopms/887.html)、[v2 变更接口](https://www.zentao.net/book/api/put-stories-storyid-change-2171.html)。

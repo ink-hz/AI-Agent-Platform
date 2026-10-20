@@ -203,6 +203,26 @@ class ZenTaoClient:
         )
         return self._positive_id(body)
 
+    async def assign_story(self, story_id: int, account: str, *, expected_version: int) -> None:
+        """Edit only the native assignee after a fresh conflict check and readback."""
+        if story_id < 1 or not account or not account.isascii() or len(account) > 40:
+            raise ValueError("zentao_assignment_invalid")
+        before = await self.get_story(story_id)
+        if (before.get("assignedTo") not in {"", None, account}
+                or int(before.get("version", 0)) != expected_version
+                or before.get("status") not in {"active", "reviewing"}):
+            raise ZenTaoRequestRejected("zentao_assignment_conflict")
+        if before.get("assignedTo") == account:
+            return
+        await self._request("PUT", f"stories/{story_id}",
+                            payload={"title": before["title"], "assignedTo": account})
+        after = await self.get_story(story_id)
+        if after.get("assignedTo") != account:
+            raise ZenTaoProtocolError("zentao_assignment_unconfirmed")
+        for field in ("title", "spec", "verify", "pri", "status", "version", "reviewer"):
+            if after.get(field) != before.get(field):
+                raise ZenTaoProtocolError("zentao_assignment_side_effect")
+
     async def create_task(self, execution_id: int, story_id: int, name: str, desc: str) -> int:
         body = await self._request(
             "POST", "tasks",

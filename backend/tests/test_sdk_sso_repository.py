@@ -82,6 +82,40 @@ def test_zentao_apilogin_timestamps_are_unique_and_increasing(control_database):
 
 
 @pytest.mark.postgres
+def test_prepared_directory_account_is_adopted_only_by_verified_member(control_database):
+    env = control_database["environments"]["production"]
+    owner, member = uuid4(), uuid4()
+    with psycopg.connect(env["admin"]) as connection:
+        connection.execute(
+            "insert into platform_control.internal_users(internal_user_id,display_name,status) "
+            "values (%s,'Owner','active'),(%s,'SDK Member','active')", (owner, member),
+        )
+        generation = _activate_directory_member(connection, member)
+        member_key = connection.execute(
+            "select member_key from platform_control.directory_members where generation_id=%s", (generation,)
+        ).fetchone()[0]
+        account = SdkSsoRepository.account_for(member_key)
+        marker = "sdk:" + uuid4().hex
+        connection.execute(
+            "insert into sdk.directory_accounts(member_key,account,marker,display_name,state) "
+            "values (%s,%s,%s,'SDK Member','ready')", (member_key, account, marker),
+        )
+    SdkRepository(env["urls"]["platform_control_app"]).grant_member(owner, member, "contributor", uuid4())
+    sso = SdkSsoRepository(env["urls"]["platform_control_app"])
+    with sso.provision_slot(member) as (connection, identity):
+        assert identity["prepared"] == {"account": account, "marker": marker}
+        sso.adopt_directory_account(connection, member, account, marker)
+        sso.complete_provision(connection, member, account)
+    assert sso.identity(member)["account"] == account
+    with psycopg.connect(env["admin"]) as connection:
+        connection.execute("update platform_control.directory_members set status='inactive' where generation_id=%s", (generation,))
+    with pytest.raises(HTTPException) as error:
+        with sso.provision_slot(member):
+            pass
+    assert error.value.status_code == 403
+
+
+@pytest.mark.postgres
 def test_zentao_login_slot_holds_order_across_network_call_and_commits_failed_attempt(control_database):
     env = control_database["environments"]["production"]
     sso = SdkSsoRepository(env["urls"]["platform_control_app"])

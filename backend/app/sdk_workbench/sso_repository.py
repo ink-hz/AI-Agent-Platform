@@ -101,9 +101,14 @@ class SdkSsoRepository:
                     if not row or not row["eligible"]:
                         raise HTTPException(403, "sdk_sso_access_required")
                     intent = connection.execute(
-                        "select marker from sdk.provision_intents where internal_user_id=%s", (actor,)
+                        "select account,marker from sdk.provision_intents where internal_user_id=%s", (actor,)
                     ).fetchone()
-                    yield connection, {**dict(row), "marker": intent["marker"] if intent else None}
+                    prepared = connection.execute(
+                        "select account,marker from sdk.prepared_account_for(%s)", (actor,),
+                    ).fetchone()
+                    yield connection, {**dict(row), "marker": intent["marker"] if intent else None,
+                                       "intent_account": intent["account"] if intent else None,
+                                       "prepared": dict(prepared) if prepared else None}
                 finally:
                     connection.rollback()
                     connection.execute("select pg_advisory_unlock(%s)", (_ZEN_PROVISION_LOCK,))
@@ -178,8 +183,28 @@ class SdkSsoRepository:
             raise HTTPException(409, "sdk_provision_already_started")
         connection.commit()
 
+    def adopt_directory_account(self, connection, actor: UUID, account: str, marker: str) -> None:
+        """Reserve a verified, unprivileged ZenTao account for its DingTalk member."""
+        prepared = connection.execute(
+            "select 1 from sdk.prepared_account_for(%s) prepared "
+            "where prepared.account=%s and prepared.marker=%s", (actor, account, marker),
+        ).fetchone()
+        if not prepared:
+            raise HTTPException(409, "sdk_prepared_account_mismatch")
+        inserted = connection.execute(
+            "insert into sdk.provision_intents(internal_user_id,account,marker,state) "
+            "values (%s,%s,%s,'reconcile_required') on conflict do nothing returning account",
+            (actor, account, marker),
+        ).fetchone()
+        if not inserted:
+            raise HTTPException(409, "sdk_provision_already_started")
+        connection.commit()
+
     def complete_provision(self, connection, actor: UUID, account: str) -> None:
-        if account != self.account_for(actor):
+        prepared = connection.execute(
+            "select 1 from sdk.prepared_account_for(%s) prepared where prepared.account=%s", (actor, account),
+        ).fetchone()
+        if account != self.account_for(actor) and not prepared:
             raise HTTPException(422, "sdk_provision_identity_invalid")
         with connection.transaction():
             eligible = connection.execute("select sdk.sso_eligible(%s) as eligible", (actor,)).fetchone()
