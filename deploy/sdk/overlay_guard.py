@@ -23,6 +23,12 @@ SSO_VALUES = {
     "PLATFORM_SDK_SSO_ENTRY_CODE": "sdk-sso",
     "PLATFORM_SDK_SSO_ENTRY_KEY_FILE": "/run/sdk-secrets/sso-entry-key",
 }
+AUTO_VALUES = {
+    "PLATFORM_SDK_AUTO_PROVISION_ENABLED": "1",
+    "PLATFORM_SDK_PROVISION_ACCOUNT": "sdk-provision",
+    "PLATFORM_SDK_PROVISION_PASSWORD_FILE": "/run/sdk-secrets/provision-password",
+}
+AUTO_GROUP_ID = "PLATFORM_SDK_PROVISION_GROUP_ID"
 IMAGE = re.compile(r"orbbec-agent-platform:[0-9a-f]{40}\Z")
 
 
@@ -55,6 +61,13 @@ def compare_configs(baseline: dict, candidate: dict, current_image: str, target_
             for key in SSO_VALUES:
                 new_api["environment"].pop(key)
                 old_api.get("environment", {}).pop(key, None)
+        if any(key in new_api["environment"] for key in (*AUTO_VALUES, AUTO_GROUP_ID)):
+            if ({key: new_api["environment"].get(key) for key in AUTO_VALUES} != AUTO_VALUES
+                    or not re.fullmatch(r"[1-9][0-9]{0,5}", new_api["environment"].get(AUTO_GROUP_ID, ""))):
+                raise OverlayGuardError("auto_provision_config_invalid")
+            for key in (*AUTO_VALUES, AUTO_GROUP_ID):
+                new_api["environment"].pop(key)
+                old_api.get("environment", {}).pop(key, None)
     except (KeyError, TypeError):
         raise OverlayGuardError("compose_shape_invalid") from None
     if old != new:
@@ -78,7 +91,16 @@ def preflight(overlay_path: Path, target_image: str, expected_container_id: str)
         "PLATFORM_RELEASE_SHA": target_image.rsplit(":", 1)[1], PLAN_FLAG: "1", NATIVE_FLAG: "1"}}}}
     sso_overlay = copy.deepcopy(expected_overlay)
     sso_overlay["services"]["platform-api"]["environment"].update(SSO_VALUES)
-    if json.loads(overlay_path.read_text(encoding="utf-8")) not in (expected_overlay, sso_overlay):
+    provision_overlay = copy.deepcopy(sso_overlay)
+    provision_overlay["services"]["platform-api"]["environment"].update(AUTO_VALUES)
+    submitted = json.loads(overlay_path.read_text(encoding="utf-8"))
+    try:
+        group_id = submitted["services"]["platform-api"]["environment"].get(AUTO_GROUP_ID, "")
+    except (KeyError, TypeError, AttributeError):
+        group_id = ""
+    if isinstance(group_id, str) and re.fullmatch(r"[1-9][0-9]{0,5}", group_id):
+        provision_overlay["services"]["platform-api"]["environment"][AUTO_GROUP_ID] = group_id
+    if submitted not in (expected_overlay, sso_overlay, provision_overlay):
         raise OverlayGuardError("overlay_content_invalid")
     environment = {key: value for key, value in os.environ.items()
                    if not key.startswith("PLATFORM_") and not key.startswith("COMPOSE_")}

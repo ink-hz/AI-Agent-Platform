@@ -57,6 +57,22 @@ def test_sdk_sso_overlay_allows_only_exact_login_configuration():
         module.compare_configs(old, new, "sha256:old", "orbbec-agent-platform:" + "a" * 40)
 
 
+def test_sdk_auto_provision_overlay_requires_dedicated_private_secret_and_group():
+    module = guard()
+    old, new = configs()
+    new["services"]["platform-api"]["environment"].update(module.SSO_VALUES)
+    new["services"]["platform-api"]["environment"].update({
+        "PLATFORM_SDK_AUTO_PROVISION_ENABLED": "1",
+        "PLATFORM_SDK_PROVISION_ACCOUNT": "sdk-provision",
+        "PLATFORM_SDK_PROVISION_PASSWORD_FILE": "/run/sdk-secrets/provision-password",
+        "PLATFORM_SDK_PROVISION_GROUP_ID": "25",
+    })
+    assert module.compare_configs(old, new, "sha256:old", "orbbec-agent-platform:" + "a" * 40) == 2
+    new["services"]["platform-api"]["environment"]["PLATFORM_SDK_PROVISION_PASSWORD_FILE"] = "/tmp/password"
+    with pytest.raises(module.OverlayGuardError):
+        module.compare_configs(old, new, "sha256:old", "orbbec-agent-platform:" + "a" * 40)
+
+
 @pytest.mark.parametrize("mutation", ["hr_mount", "brain_image", "extra_environment", "wrong_flag", "wrong_native_flag", "wrong_image", "wrong_release"])
 def test_sdk_native_overlay_rejects_other_changes(mutation):
     module = guard()
