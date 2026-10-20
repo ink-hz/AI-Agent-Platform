@@ -111,6 +111,8 @@ class ZenTaoClient:
         params: dict | None = None,
         authenticated: bool = True,
         retry_auth: bool = True,
+        api_version: int = 2,
+        expect_envelope: bool = True,
     ) -> dict:
         if authenticated and self._token is None:
             await self.login()
@@ -118,7 +120,7 @@ class ZenTaoClient:
         try:
             async with self._client.stream(
                 method,
-                f"/api.php/v2/{endpoint}",
+                f"/api.php/v{api_version}/{endpoint}",
                 json=payload,
                 params=params,
                 headers=headers,
@@ -139,7 +141,9 @@ class ZenTaoClient:
             self._token = None
             if authenticated and retry_auth:
                 await self.login()
-                return await self._request(method, endpoint, payload=payload, params=params, authenticated=True, retry_auth=False)
+                return await self._request(method, endpoint, payload=payload, params=params,
+                                           authenticated=True, retry_auth=False,
+                                           api_version=api_version, expect_envelope=expect_envelope)
             raise ZenTaoAuthenticationError("zentao_authentication_failed")
         if status != 200:
             if status in {400, 403, 404, 409, 422}:
@@ -149,9 +153,11 @@ class ZenTaoClient:
             body = json.loads(content, parse_constant=_reject_nonstandard)
         except (UnicodeDecodeError, ValueError):
             raise ZenTaoProtocolError("zentao_invalid_json") from None
-        if not isinstance(body, dict) or not isinstance(body.get("status"), str):
+        if not isinstance(body, dict):
             raise ZenTaoProtocolError("zentao_invalid_envelope")
-        if body["status"] != "success":
+        if expect_envelope and not isinstance(body.get("status"), str):
+            raise ZenTaoProtocolError("zentao_invalid_envelope")
+        if expect_envelope and body["status"] != "success":
             raise ZenTaoRejected("zentao_rejected")
         return body
 
@@ -214,8 +220,11 @@ class ZenTaoClient:
             raise ZenTaoRequestRejected("zentao_assignment_conflict")
         if before.get("assignedTo") == account:
             return
-        await self._request("PUT", f"stories/{story_id}",
-                            payload={"title": before["title"], "assignedTo": account})
+        result = await self._request("POST", f"stories/{story_id}/assign",
+                                     payload={"assignedTo": account, "comment": ""},
+                                     api_version=1, expect_envelope=False)
+        if str(result.get("id")) != str(story_id):
+            raise ZenTaoProtocolError("zentao_assignment_response_invalid")
         after = await self.get_story(story_id)
         if after.get("assignedTo") != account:
             raise ZenTaoProtocolError("zentao_assignment_unconfirmed")

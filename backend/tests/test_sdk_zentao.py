@@ -159,10 +159,10 @@ async def test_story_assignment_uses_native_action_and_requires_readback(passwor
         nonlocal assigned
         if request.url.path.endswith("/users/login"):
             return httpx.Response(200, json={"status": "success", "token": "token"})
-        if request.url.path == "/api.php/v2/stories/3" and request.method == "PUT":
-            assert json.loads(request.content)["title"] == story["title"]
+        if request.url.path == "/api.php/v1/stories/3/assign" and request.method == "POST":
+            assert json.loads(request.content)["comment"] == ""
             assigned = json.loads(request.content)["assignedTo"]
-            return httpx.Response(200, json={"status": "success", "data": "3"})
+            return httpx.Response(200, json={"id": 3, "assignedTo": assigned})
         if request.url.path == "/api.php/v2/stories/3":
             return httpx.Response(200, json={"status": "success", "story": {**story, "assignedTo": assigned}})
         raise AssertionError(request.url)
