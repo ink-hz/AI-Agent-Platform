@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import html
 import os
 import re
 import secrets
@@ -179,7 +180,7 @@ async def reconcile(payload: bytes, *, expected_sha: str, apply: bool, limit: in
                 raise RuntimeError("sdk_story_coverage_mismatch")
             for item in mapped:
                 story = stories[item.record_number]
-                if story["title"] != _imported_title(item.title) or int(story["product"]) != product_id or story.get("deleted") in (1, "1", True):
+                if _imported_title(html.unescape(story["title"])) != _imported_title(item.title) or int(story["product"]) != product_id or story.get("deleted") in (1, "1", True):
                     raise RuntimeError(f"sdk_story_identity_drift:{item.record_number}")
                 if item.priority is not None and int(story["pri"]) != item.priority:
                     raise RuntimeError(f"sdk_story_priority_drift:{item.record_number}")

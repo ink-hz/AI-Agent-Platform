@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import html
 from io import StringIO
 
 import pytest
@@ -51,3 +52,4 @@ def test_invalid_date_fails_before_any_write():
 
 def test_existing_zentao_import_flattens_multiline_titles():
     assert _imported_title("A\r\nB\r\nC") == "A B C"
+    assert _imported_title(html.unescape("RK3576&amp; 地平线")) == "RK3576& 地平线"
