@@ -15,7 +15,7 @@
 1. 平台所有者用受平台 CSRF 保护的管理 API 将内部用户 UUID 显式绑定到唯一的禅道账号；禁止绑定服务账号和管理员账号。绑定表存于现有 Control DB 的 `sdk` schema。
 2. `/sdk/` 调用同源 `POST /api/v1/sdk/sso/start`。平台用钉钉会话中的内部 UUID 和 session ID 检查 SDK 成员权限及绑定，签发 45 秒、随机且仅能使用一次的票据。数据库只保存票据摘要。
 3. 浏览器用 HTTPS 表单 POST 将票据送到禅道同源 `/sdk-sso/consume`；票据不出现在 URL、Referer 或访问日志。禅道站点 Nginx 只将该精确路径转发给平台 API。平台 API 原子核销票据，重新检查平台会话、人员状态、SDK 成员资格及当前绑定。
-4. 平台 API 经内部 Docker 网络调用禅道旧版 `apilogin`，密钥只从只读私密文件加载，且不转发浏览器原有的禅道 Cookie。只接受成功的内部跳转和单个合法 `zentaosid`，在禅道 HTTPS 源设置 `Secure; HttpOnly; SameSite=Lax` 会话 Cookie，并 303 跳转到禅道首页。公网继续拒绝任何直接 `apilogin` 请求。
+4. 平台 API 从数据库原子分配严格递增的十位时间戳，经内部 Docker 网络调用禅道旧版 `apilogin`。禅道每个应用每秒只接受一个时间戳，不能直接使用当前秒数。密钥只从只读私密文件加载，且不转发浏览器原有的禅道 Cookie。只接受成功的内部跳转和单个合法 `zentaosid`，在禅道 HTTPS 源设置 `Secure; HttpOnly; SameSite=Lax` 会话 Cookie，并 303 跳转到禅道首页。公网继续拒绝任何直接 `apilogin` 请求。
 
 ## 失败处理与验收
 
