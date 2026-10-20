@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed unless an SDK plan overlay changes the API image, release ID and flag."""
+"""Fail closed unless an SDK native overlay changes the API image, release ID and SDK flags."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ API_CONTAINER = "orbbec-agent-platform-platform-api-1"
 PROJECT = "orbbec-agent-platform"
 ENV_FILE = "/opt/orbbec-agent-platform/private/platform.env"
 PLAN_FLAG = "PLATFORM_SDK_PLAN_ENABLED"
+NATIVE_FLAG = "PLATFORM_SDK_NATIVE_ONLY"
 IMAGE = re.compile(r"orbbec-agent-platform:[0-9a-f]{40}\Z")
 
 
@@ -39,6 +40,9 @@ def compare_configs(baseline: dict, candidate: dict, current_image: str, target_
         if new_api["environment"].pop(PLAN_FLAG) != "1":
             raise OverlayGuardError("plan_flag_disabled")
         old_api.get("environment", {}).pop(PLAN_FLAG, None)
+        if new_api["environment"].pop(NATIVE_FLAG) != "1":
+            raise OverlayGuardError("native_flag_disabled")
+        old_api.get("environment", {}).pop(NATIVE_FLAG, None)
     except (KeyError, TypeError):
         raise OverlayGuardError("compose_shape_invalid") from None
     if old != new:
@@ -59,7 +63,7 @@ def preflight(overlay_path: Path, target_image: str, expected_container_id: str)
     if re.fullmatch(r"[0-9a-f]{64}", expected_container_id) is None:
         raise OverlayGuardError("container_id_invalid")
     expected_overlay = {"services": {"platform-api": {"image": target_image, "environment": {
-        "PLATFORM_RELEASE_SHA": target_image.rsplit(":", 1)[1], PLAN_FLAG: "1"}}}}
+        "PLATFORM_RELEASE_SHA": target_image.rsplit(":", 1)[1], PLAN_FLAG: "1", NATIVE_FLAG: "1"}}}}
     if json.loads(overlay_path.read_text(encoding="utf-8")) != expected_overlay:
         raise OverlayGuardError("overlay_content_invalid")
     environment = {key: value for key, value in os.environ.items()
