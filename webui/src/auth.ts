@@ -142,6 +142,9 @@ export type LoginReturnPath =
   | "/marketing"
   | "/marketing/"
   | `/marketing/${string}`
+  | "/sdk"
+  | "/sdk/"
+  | `/sdk/requirements/${string}`
   | "/admin"
   | "/admin/"
   | `/admin/${string}`;
@@ -179,6 +182,7 @@ function safeLoginReturnPath(value: string): boolean {
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
   if (/^\/ai-notes\/[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,127}$/.test(value)) return true;
   return value === "/office/" || value === "/admin/" || value === "/admin" || value === "/fae/"
+    || value === "/sdk" || value === "/sdk/" || /^\/sdk\/requirements\/[1-9]\d*$/.test(value)
     || value === `${FAE_MANAGEMENT_PATH}/` || value === "/hr" || value === "/hr/" || value === "/hr/chat" || value === "/hr/panorama" || value === "/hr/agent" || value === "/hr/positions"
     || value === "/marketing" || value === "/marketing/"
     || /^\/fae\/conversations\/[A-Za-z0-9:._-]+$/.test(value)

@@ -42,6 +42,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("SDK login return path", () => {
+  it.each(["/sdk", "/sdk/", "/sdk/requirements/1"])("preserves %s", (path) => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe(path);
+  });
+
+  it.each(["/sdk/other", "/sdk/requirements/0", "/sdk/requirements/1/extra", "/sdk/?next=https://evil.test"])("rejects %s", (path) => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe("/");
+  });
+});
+
 
 function accountResponse(): Response {
   return new Response(JSON.stringify({

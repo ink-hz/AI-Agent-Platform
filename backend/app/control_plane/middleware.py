@@ -71,6 +71,7 @@ _PUBLIC_MARKETING_WORKSPACE_SHELL = re.compile(
     r"/marketing(?:/?|/(?:prospecting|inbound|voice|intelligence|gtm)"
     r"(?:/conversations/[A-Za-z0-9:._-]+)?)\Z"
 )
+_PUBLIC_SDK_WORKSPACE_SHELL = re.compile(r"/sdk(?:/?|/requirements/[1-9][0-9]*)\Z")
 _AGENT_BINDING_VALIDATION_ROUTE = re.compile(
     r"/api/v1/internal/agent-bindings/"
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/validate\Z"
@@ -271,6 +272,7 @@ def is_public_request(
         local in {"/brain", "/ai-engineering", "/organization"}
         or _PUBLIC_HR_WORKSPACE_SHELL.fullmatch(local) is not None
         or _PUBLIC_MARKETING_WORKSPACE_SHELL.fullmatch(local) is not None
+        or _PUBLIC_SDK_WORKSPACE_SHELL.fullmatch(local) is not None
     ):
         return True
     if (
