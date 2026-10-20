@@ -27,6 +27,11 @@ from .zentao import ZenTaoClient
 _MARKER = re.compile(r"SDK2026PLAN-([0-9a-f]{8})-R(\d{4})")
 
 
+def _imported_title(value: str) -> str:
+    """The original ZenTao import flattened CSV line breaks to spaces."""
+    return " ".join(value.split())
+
+
 def _source_rows(connection, sha256: str) -> dict[int, dict]:
     rows = connection.execute(
         "select row.id,row.record_number,row.physical_line,row.kind,row.module,row.cells "
@@ -174,7 +179,7 @@ async def reconcile(payload: bytes, *, expected_sha: str, apply: bool, limit: in
                 raise RuntimeError("sdk_story_coverage_mismatch")
             for item in mapped:
                 story = stories[item.record_number]
-                if story["title"] != item.title or int(story["product"]) != product_id or story.get("deleted") in (1, "1", True):
+                if story["title"] != _imported_title(item.title) or int(story["product"]) != product_id or story.get("deleted") in (1, "1", True):
                     raise RuntimeError(f"sdk_story_identity_drift:{item.record_number}")
                 if item.priority is not None and int(story["pri"]) != item.priority:
                     raise RuntimeError(f"sdk_story_priority_drift:{item.record_number}")

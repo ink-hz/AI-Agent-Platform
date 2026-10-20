@@ -7,6 +7,7 @@ import pytest
 
 from app.sdk_workbench.plan_csv import parse_plan_csv
 from app.sdk_workbench.plan_mapping import PlanMappingError, map_plan, match_responsible
+from app.sdk_workbench.annual_reconcile import _imported_title
 
 
 def _plan(rows: list[list[str]]):
@@ -46,3 +47,7 @@ def test_invalid_date_fails_before_any_write():
     parsed = _plan([["SDK", "任务", "周公", "", "2026/2/30", "", "", "", "", ""]])
     with pytest.raises(PlanMappingError, match="start_date_invalid"):
         map_plan(parsed)
+
+
+def test_existing_zentao_import_flattens_multiline_titles():
+    assert _imported_title("A\r\nB\r\nC") == "A B C"
