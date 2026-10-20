@@ -38,7 +38,12 @@ def _private_origin(value: str) -> str:
     try:
         parsed = urlparse(value)
         host = parsed.hostname
-        address = ip_address(host) if host else None
+        address = None
+        if host and host != "zentao":
+            try:
+                address = ip_address(host)
+            except ValueError:
+                pass
         allowed_host = host == "zentao" or (address is not None and (
             address.is_loopback or any(address in network for network in _DOCKER_PRIVATE_NETWORKS)
         ))

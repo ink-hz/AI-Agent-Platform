@@ -96,8 +96,12 @@ async def test_upstream_failure_is_explicit(password_file):
 
 
 def test_requires_fixed_private_origin_and_password_file(password_file):
+    client = ZenTaoClient("http://zentao:80", "sdk-api", password_file)
+    assert client._base_url == "http://zentao:80"
     with pytest.raises(ValueError):
         ZenTaoClient("https://example.com", "sdk-api", password_file)
+    with pytest.raises(ValueError):
+        ZenTaoClient("http://zentao.example:80", "sdk-api", password_file)
     with pytest.raises(ValueError):
         ZenTaoClient("http://127.0.0.1:18131/attacker", "sdk-api", password_file)
     with pytest.raises(ValueError):
