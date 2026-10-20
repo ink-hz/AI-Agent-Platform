@@ -27,4 +27,6 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 4. 核对 `https://sdk.orbbec.com.cn/` 的 TLS、独立浏览器源与登录跳转；随后启用平台 `PLATFORM_SDK_NATIVE_ONLY=1`。平台旧需求、CSV、候选 API 应返回 410，`/api/v1/sdk/me` 应返回 `native_only: true`。
 5. `/sdk/` 页面交互由业务方按仓库 `AGENTS.md` 验收。GitLab、打包产物和真机测试没有完成时，不标记发布证据通过。
 
+需求变更请走禅道原生界面并选择评审人。v2 `PUT /stories/:id/change` 省略 `status` 时，本实例会让变更后的需求保持 `active`，不能作为强制评审入口。产品负责人也可以在原生界面选择“不需要评审”；如果团队要求每次变更必须由其他人评审，需另设产品负责人与评审人并调整评审策略。[禅道需求评审说明](https://www.zentao.net/book/zentaopms/887.html)、[v2 变更接口](https://www.zentao.net/book/api/put-stories-storyid-change-2171.html)。
+
 官方参考：[Docker 部署](https://www.zentao.net/book/zentaopms/docker-1111.html)、[API v2 登录](https://www.zentao.net/book/api/post-users-login-2142.html)、[创建需求](https://www.zentao.net/book/api/post-stories-2169.html)、[创建任务](https://www.zentao.net/book/api/post-tasks-2207.html)。[漏洞记录](https://github.com/CVEProject/cvelistV5/blob/main/cves/2026/111xxx/CVE-2026-111346.json)。
