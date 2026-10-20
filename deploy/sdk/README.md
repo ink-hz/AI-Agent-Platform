@@ -17,14 +17,14 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 
 将已核验镜像的 `sha256:<image-id>` 填入权限 `0600` 的私有 `sdk.env` 的 `SDK_ZENTAO_IMAGE`，然后用生产私有 Compose 重新创建禅道。Compose 强制使用镜像内的启动校验脚本；控制器文件摘要不符时容器无法启动。核对容器实际镜像 ID 等于构建结果，登录后访问 `action::editComment` 必须返回 403。升级禅道时重新评估补丁及控制器摘要。
 
-原生公开入口使用独立域名 `sdk.orbbec.com.cn`，由 `zentao-domain.nginx.conf` 渲染。先完成 DNS A 记录、证书和 Nginx 配置，再启用 `PLATFORM_SDK_NATIVE_ONLY=1` 发布平台前端；否则页面按钮会指向不可访问的域名。每位员工用个人禅道账号和产品权限登录，两套会话不共享。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
+原生公开入口暂用独立 HTTPS 源 `https://47.106.112.69/`。`sdk.orbbec.com.cn` 尚无 A 记录；DNS 生效后应按 `zentao-domain.nginx.conf` 配置域名证书，再把前端入口切换为域名。IP 证书由 Let's Encrypt 的短期证书签发，生产 `orbbec-sdk-ip-cert.timer` 每 12 小时检查续期，续期后重新加载 Nginx。先确认入口的可信 TLS、登录跳转和自动续期，再启用 `PLATFORM_SDK_NATIVE_ONLY=1` 发布平台前端。每位员工用个人禅道账号和产品权限登录，两套会话不共享。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
 
 ## 验收顺序
 
 1. 备份禅道数据库和数据卷，记录镜像 ID、产品/项目/执行 ID。
 2. 用员工账号验证：登录前不能读取产品数据；获得产品权限后可新建需求、提交评审、关联任务和用例；无权限账号仍不能查看产品。
 3. 核对 `action::editComment` 返回 403，`sdk-api` 服务账号不用于浏览器登录。
-4. 核对 `https://sdk.orbbec.com.cn/` 的 TLS、独立浏览器源与登录跳转；随后启用平台 `PLATFORM_SDK_NATIVE_ONLY=1`。平台旧需求、CSV、候选 API 应返回 410，`/api/v1/sdk/me` 应返回 `native_only: true`。
+4. 核对 `https://47.106.112.69/` 的 TLS、独立浏览器源、登录跳转和 `orbbec-sdk-ip-cert.timer`；随后启用平台 `PLATFORM_SDK_NATIVE_ONLY=1`。平台旧需求、CSV、候选 API 应返回 410，`/api/v1/sdk/me` 应返回 `native_only: true`。
 5. `/sdk/` 页面交互由业务方按仓库 `AGENTS.md` 验收。GitLab、打包产物和真机测试没有完成时，不标记发布证据通过。
 
 需求变更请走禅道原生界面并选择评审人。v2 `PUT /stories/:id/change` 省略 `status` 时，本实例会让变更后的需求保持 `active`，不能作为强制评审入口。产品负责人也可以在原生界面选择“不需要评审”；如果团队要求每次变更必须由其他人评审，需另设产品负责人与评审人并调整评审策略。[禅道需求评审说明](https://www.zentao.net/book/zentaopms/887.html)、[v2 变更接口](https://www.zentao.net/book/api/put-stories-storyid-change-2171.html)。

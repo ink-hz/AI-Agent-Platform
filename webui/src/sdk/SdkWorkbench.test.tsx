@@ -57,7 +57,7 @@ it("opens native ZenTao requirements and keeps the annual CSV secondary", async 
     candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
   } as unknown as SdkApi;
   await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
-  expect(container.querySelector('a[href="https://sdk.orbbec.com.cn/"]')?.textContent).toContain("禅道");
+  expect(container.querySelector('a[href="https://47.106.112.69/"]')?.textContent).toContain("禅道");
   expect(container.querySelector("details.sdk-plan-drawer")).toBeNull();
   expect(container.querySelector(".sdk-native-entry")).not.toBeNull();
   expect(container.textContent).not.toContain("创建需求");
@@ -72,7 +72,7 @@ it("keeps the native entry available without the legacy requirements API", async
     requirements: vi.fn().mockRejectedValue(new Error("unavailable")),
   } as unknown as SdkApi;
   await act(async () => root.render(<SdkWorkbench account={account} storyId={12} client={client} />));
-  expect(container.querySelector('a[href="https://sdk.orbbec.com.cn/"]')).not.toBeNull();
+  expect(container.querySelector('a[href="https://47.106.112.69/"]')).not.toBeNull();
   expect(client.requirements).not.toHaveBeenCalled();
   expect(client.requirement).toBeUndefined();
 });

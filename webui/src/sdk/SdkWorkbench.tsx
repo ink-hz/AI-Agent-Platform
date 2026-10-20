@@ -130,7 +130,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
       <p className="sdk-eyebrow">OpenOrbbecSDK · 研发工作区</p>
       <h1>从需求到发布，在禅道协作</h1>
       <p>创建和评审需求、安排迭代任务、关联测试用例与发布计划。</p>
-      <a className="sdk-native-link" href="https://sdk.orbbec.com.cn/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>
+      <a className="sdk-native-link" href="https://47.106.112.69/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>
       <p className="sdk-native-hint">使用个人禅道账号登录。禅道中的产品权限决定可查看和编辑的内容。</p>
     </header>
     <div className="sdk-native-steps" aria-label="研发流程">
