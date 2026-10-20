@@ -29,3 +29,11 @@
 生产浏览器从线上 `/sdk/` 提交无效测试票据时，发出 `Origin: https://agent.orbbec.com.cn`，禅道接票接口返回 `sdk_sso_ticket_invalid`，证明 CSP、浏览器导航和来源校验已贯通；此测试没有创建禅道会话。员工本人再次点击并确认个人会话仍是待验收项。
 
 用户希望使用 `orbbec.com.cn/sdk`。该地址当前返回 404；`orbbec.com.cn` 解析到 `120.25.206.12`，平台服务器为 `47.106.112.69`。官网入口需由官网服务器或其发布系统配置；平台服务器的 Nginx 改动不能接管该路径。是否作为入口重定向，或要求禅道会话全程保留该路径，待业务方确定。
+
+## 入口地址更正与默认语言
+
+用户随后将入口地址更正为 `https://agent.orbbec.com.cn/sdk`。公网该地址返回 301 到 `/sdk/`，最终页面的 CSP 允许向禅道源提交单次票据；它是平台钉钉身份入口，完整禅道页面仍在独立浏览器源。审查确认，把完整禅道代理到平台同源 `/sdk/` 会使禅道脚本取得主平台 API 的同源访问能力，因此该方案未上线。拟用独立企业子域名承载禅道；`sdk.orbbec.com.cn` 的 DNS 尚未配置，域名切换仍待外部 DNS 生效。
+
+默认语言修复源码提交 `10d7235525d699f141d3309916f8af0ed0ee0c55` 已合并并推送主线。生产禅道私有 Compose 增加 `ZT_DEFAULT_LANG=zh-cn`，没有重建运行容器；运行实例此前已有中文回退配置。独立禅道 IP 入口的 Nginx 代理增加 `Accept-Language: zh-cn`，配置 SHA-256 为 `7812a19f583686657d99f2c7baa8b3d69c62494d54876b5165c4ef99c210f4fb`。变更前备份在 `/data/orbbec-agent-platform/backups/sdk-domain-path-20261020-5ba6dc88/`，校验清单全项通过。
+
+隔离 Nginx 容器的语法及运行测试通过；生产只用完整默认 `nginx -t` 检查后重载，未用独立 `-c` 检查。公网新会话携 `Accept-Language: en` 返回禅道 `html lang=zh-cn` 与 `lang=zh-cn` Cookie；显式 `lang=en` Cookie 返回英文。平台 `/api/health`、`/sdk/`、`/office/` 均为 200，SDK 与行政服务 JavaScript 的完整 SHA-256 与变更前相同。代理临时目录仍为 `www-data:www-data 700`，Nginx 近五分钟日志无权限错误。
