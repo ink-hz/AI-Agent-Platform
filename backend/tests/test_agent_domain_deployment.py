@@ -31,6 +31,18 @@ def _location_block(value: str, selector: str) -> str:
     return value[start:] if next_location < 0 else value[start:next_location]
 
 
+def test_sdk_handoff_page_uses_one_csp_that_allows_zentao_form():
+    value = _text(FORMAL_NGINX)
+    sdk = _location_block(value, "location ^~ /sdk/ {")
+    assert "proxy_hide_header Content-Security-Policy;" in sdk
+    assert "form-action 'self' https://47.106.112.69" in sdk
+    assert "proxy_hide_header Referrer-Policy;" in sdk
+    assert 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;' in sdk
+    assert "proxy_hide_header Content-Security-Policy;" not in _location_block(
+        value, "location ^~ /office/ {"
+    )
+
+
 def _http_response(port: int, route: str) -> tuple[int, str, bytes]:
     connection = HTTPConnection("127.0.0.1", port, timeout=2)
     try:
@@ -370,7 +382,7 @@ def test_sdk_workspace_allows_form_post_only_to_its_zentao_origin():
     sdk = _location_block(value, "    location ^~ /sdk/ {")
     assert "proxy_pass http://127.0.0.1:8080;" in sdk
     assert "form-action 'self' https://47.106.112.69" in sdk
-    assert 'add_header Referrer-Policy "no-referrer" always;' in sdk
+    assert 'add_header Referrer-Policy "strict-origin-when-cross-origin" always;' in sdk
     assert 'add_header Strict-Transport-Security "max-age=31536000" always;' in sdk
     assert 'add_header X-Content-Type-Options "nosniff" always;' in sdk
     assert 'add_header X-Frame-Options "DENY" always;' in sdk

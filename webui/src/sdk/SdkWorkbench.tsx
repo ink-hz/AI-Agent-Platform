@@ -75,7 +75,27 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
       ticket.value = handoff.ticket;
       form.append(ticket);
       document.body.append(form);
-      form.submit();
+      let timeout: number;
+      const handoffBlocked = () => {
+        document.removeEventListener("securitypolicyviolation", onPolicyViolation);
+        window.clearTimeout(timeout);
+        form.remove();
+        setError("浏览器阻止了跳转，请刷新 SDK 页面后重试。");
+        setEnteringZenTao(false);
+      };
+      const onPolicyViolation = (event: Event) => {
+        const violation = event as SecurityPolicyViolationEvent;
+        if (violation.effectiveDirective === "form-action" && violation.blockedURI.startsWith(target.origin)) handoffBlocked();
+      };
+      document.addEventListener("securitypolicyviolation", onPolicyViolation);
+      timeout = window.setTimeout(handoffBlocked, 15000);
+      try { form.submit(); }
+      catch (error) {
+        document.removeEventListener("securitypolicyviolation", onPolicyViolation);
+        window.clearTimeout(timeout);
+        form.remove();
+        throw error;
+      }
     } catch (error) {
       setError(message(error));
       setEnteringZenTao(false);

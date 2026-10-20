@@ -83,6 +83,28 @@ it("posts a one-use SSO ticket to ZenTao after DingTalk login", async () => {
   expect((form.querySelector("input[name='ticket']") as HTMLInputElement).value).toBe("single-use-ticket");
 });
 
+it("shows a retry hint when browser policy blocks the ZenTao handoff", async () => {
+  vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true, sso_enabled: true }),
+    ssoStart: vi.fn().mockResolvedValue({ ticket: "single-use-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  const enter = Array.from(container.querySelectorAll("button")).find(button => button.textContent?.includes("进入 SDK 禅道工作区"))!;
+  await act(async () => enter.click());
+  expect(enter.disabled).toBe(true);
+
+  const violation = new Event("securitypolicyviolation") as SecurityPolicyViolationEvent;
+  Object.defineProperties(violation, {
+    effectiveDirective: { value: "form-action" },
+    blockedURI: { value: "https://47.106.112.69/sdk-sso/consume" },
+  });
+  await act(async () => document.dispatchEvent(violation));
+
+  expect(enter.disabled).toBe(false);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("刷新 SDK 页面");
+});
+
 it("keeps the native entry available without the legacy requirements API", async () => {
   const client = {
     me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true }),

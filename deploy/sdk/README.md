@@ -25,6 +25,8 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 
 禅道“二次开发 → 接入禅道”创建专用 `freePasswd=1` 入口，`code` 与 `PLATFORM_SDK_SSO_ENTRY_CODE` 相同，32 字符随机 `key` 只保存于禅道和平台 `platform-sdk-secrets` 卷的 `/run/sdk-secrets/sso-entry-key`，后者须属主 `10001:10001`、权限 `0600`。入口 IP 白名单只允许平台 API 在 `orbbec-agent-platform-sdk` 私网的固定地址，禁止 `*`。`PLATFORM_SDK_SSO_PUBLIC_ORIGIN` 必须是禅道实际 HTTPS 源。工作区页面 CSP 的 `form-action` 只额外允许该源，进入 SDK 时必须加载 `/sdk/` 文档以取得该策略。禅道 vhost 只代理精确 `/sdk-sso/consume`，继续封锁公网 `/api.php`。
 
+`/sdk/` 代理必须隐藏上游的 CSP 与 Referrer-Policy，仅保留边缘配置的 `form-action` 禅道源和 `strict-origin-when-cross-origin`。上游 `form-action 'none'` 会阻断表单；`no-referrer` 会使 Chrome 的跨源 POST 发出 `Origin: null`。
+
 核对顺序：匿名 `POST /api/v1/sdk/sso/start` 为 401；无绑定或无 SDK 权限不能领票；票据重放或过期不能创建会话；绑定员工经平台钉钉会话点击后，禅道首页显示同一员工、能访问其授权产品；另一员工不能借用该会话；行政服务脚本与静态资源内容正常。平台登出不会即时注销已经创建的禅道会话；此范围只实现登录。生产修改 Nginx 前先在独立容器校验候选配置；共享主机不得用独立配置运行 `nginx -t -c`。
 
 ## 验收顺序
