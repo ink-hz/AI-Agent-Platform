@@ -19,6 +19,13 @@
 ## 场景与限制
 
 - 真禅道服务账号写入：需求 ID `1` 为 `active`，任务 ID `1` 关联该需求及执行 ID `2`；需求标题、正文、验收标准和任务正文均按原值读回。这是接口部署验收记录，明确标记 `SDK-DEPLOY-CHECK-`，不代表 SDK 构建、单测或硬件测试通过。
-- 新生产 API 容器内读回计划批次、成员角色、禅道产品与执行以及上述需求和任务，结果通过。公网未登录 `/sdk/` 和 `/api/v1/sdk/me` 均返回 401，符合认证设计。企业真实会话、CSRF 与页面操作由用户按 `AGENTS.md` 进行最终验收；本次未声称通过。
+- 新生产 API 容器内读回计划批次、成员角色、禅道产品与执行以及上述需求和任务，结果通过。首次发布时公网未登录 `/sdk/` 和 `/api/v1/sdk/me` 均返回 401；随后确认 `/sdk/` 的 401 阻断浏览器登录流程，见下方修复记录。企业真实会话、CSRF 与页面操作由用户按 `AGENTS.md` 进行最终验收；本次未声称通过。
 - 生产切换前备份位置：`/opt/orbbec-agent-platform/backups/sdk-full-20261020-1257435c/`，含生产/预览控制库、自身环境文件原件、禅道 SQL 与数据卷归档，权限仅 root。回滚需使用切换前 9 份 Compose 文件及 `platform.env.before`，不能用基础 Compose 单独重建。
+
+## SDK 登录入口修复（2026-10-20 09:05 CST）
+
+- 用户反馈 `https://agent.orbbec.com.cn/sdk/` 直接显示 `{"detail":"authentication required"}`。公网复现为 401 JSON；后端已有 `/sdk/` 页面路由，但中间件公开页面列表、后端登录回跳白名单、前端回跳白名单均缺少 SDK 路径。修复提交 `2ef4386a663e2997fc76ef45ef29010ebfef5486` 已推送主线。
+- 测试先失败后修复：后端 SDK 登录测试原为 5 失败、4 通过，前端 SDK 回跳测试原为 3 失败。修复后后端相关测试 `115 passed`，前端登录与路由测试 `178 passed`，前端构建通过。原有业务 API 未登录 401 保持不变。
+- 从该提交构建生产镜像 `sha256:347f0438882e8ca2559b167e354867214897dc53031ff000b3702957b2be7fa0`。使用原有 10 份 Compose 文件加 SDK 登录镜像覆盖文件切换 API，有效配置预检返回 `SDK_OVERLAY_CONFIG_OK`，9 个服务仅 API 镜像和发布 SHA 变化；新 API 容器 `0b6d6071a06c651fb3fbd8d6430b904ea91cf77c0b57d943cfc8424fca73c8eb` 健康，其他服务容器 ID、API 网络和挂载未变。回滚时使用切换前原有 10 份 Compose 文件与原 API 镜像。
+- 新容器内 `/sdk/`、`/sdk/requirements/1`、`/hr/` 均 200 HTML，`/api/v1/sdk/me` 仍 401 JSON。公网再次验证 `/sdk/`、`/sdk`、SDK 详情及 `/login` 均 200 HTML，HTML 含 `platform-identity-mode=enabled`，JS 资源 200；SDK API 和未知 `/sdk/other` 仍 401 JSON。未执行浏览器中的真实企业身份登录与页面操作，按 `AGENTS.md` 留给用户验收。
 - 禅道 22.6 已有公开授权绕过漏洞 [CVE-2026-111346](https://osv.dev/vulnerability/CVE-2026-111346)。保持原生界面仅本机可达、BFF 私网访问；升级至上游修复版本前不得开放禅道公网入口。

@@ -42,7 +42,7 @@ env -i PATH=/usr/bin:/bin PLATFORM_HR_AGENT_MODEL='<切换前实际值>' \
   up -d --force-recreate --no-deps platform-api
 ```
 
-仅替换 `platform-api`；核对新 API 镜像、`PLATFORM_RELEASE_SHA`、`PLATFORM_SDK_PLAN_ENABLED=1`、健康状态和本机健康接口，且 Brain、loopback 及其他容器 ID 未变。再次核对 API 的有效挂载、网络和 HR/全景/DAQ 环境字段与预检一致。公网 `/sdk/` 未登录访问的 401 是预期认证结果，不能单凭它宣布页面或 CSV 可用。
+仅替换 `platform-api`；核对新 API 镜像、`PLATFORM_RELEASE_SHA`、`PLATFORM_SDK_PLAN_ENABLED=1`、健康状态和本机健康接口，且 Brain、loopback 及其他容器 ID 未变。再次核对 API 的有效挂载、网络和 HR/全景/DAQ 环境字段与预检一致。公网 `/sdk/` 未登录访问应返回带企业身份元数据的 HTML 页面，由前端进入钉钉登录流程；`/api/v1/sdk/me` 等业务 API 仍返回 401。应同时检查页面入口、静态资源、登录回跳白名单与 API 鉴权，不能单凭任一项宣布页面或 CSV 可用。
 
 发布前写入 `platform.env` 的计划状态供以后正常发布继承。不得调用 `cloud_env.py activate`，该函数目前只读取基础 Compose。发布前后的 `platform.env` 摘要与备份路径记入私有收据。
 
