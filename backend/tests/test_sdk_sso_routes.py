@@ -6,12 +6,14 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from app.control_plane.middleware import is_public_request
 from app.control_plane.models import AuthContext, Role
 from app.sdk_workbench.sso import SdkSsoService, build_sdk_sso_router
+from app.sdk_workbench.provision import ProvisionUnavailable
+from app.sdk_workbench.sso_repository import SdkSsoRepository
 
 
 USER = UUID("11111111-1111-4111-8111-111111111111")
@@ -26,15 +28,23 @@ class Repository:
         self.can_issue = True
         self.bound = []
         self.login_slot_held = False
+        self.department_changes = []
+
+    def departments(self):
+        return [{"id": "22222222-2222-4222-8222-222222222222", "name": "应用SDK组", "selected": True}]
+
+    def set_allowed_department(self, actor, department, enabled):
+        self.department_changes.append((actor, department, enabled))
+        return True
 
     def bind(self, actor, target, account):
         self.bound.append((actor, target, account))
         return {"internal_user_id": str(target), "account": account}
 
-    def issue(self, actor, session_id, digest):
-        if not self.can_issue:
+    def issue(self, actor, session_id, digest, target="home"):
+        if not self.can_issue or self.account is None:
             return False
-        self.pending[digest] = self.account
+        self.pending[digest] = (self.account, target)
         return True
 
     def consume(self, digest):
@@ -52,7 +62,7 @@ class Repository:
             self.login_slot_held = False
 
 
-def build_app(tmp_path, repository, *, actor=USER, role=Role.MEMBER, stale=False, zentao_response=None):
+def build_app(tmp_path, repository, *, actor=USER, role=Role.MEMBER, stale=False, zentao_response=None, provisioner=None):
     key = tmp_path / "entry-key"
     key.write_text("a" * 32, encoding="utf-8")
     seen = []
@@ -67,7 +77,7 @@ def build_app(tmp_path, repository, *, actor=USER, role=Role.MEMBER, stale=False
     service = SdkSsoService(
         repository, private_origin="http://zentao:80", public_origin=ZENTAO,
         platform_origin=PLATFORM, entry_code="sdk-sso", entry_key_file=key,
-        transport=httpx.MockTransport(zen_reply),
+        transport=httpx.MockTransport(zen_reply), provisioner=provisioner,
     )
     app = FastAPI()
 
@@ -79,6 +89,201 @@ def build_app(tmp_path, repository, *, actor=USER, role=Role.MEMBER, stale=False
 
     app.include_router(build_sdk_sso_router(service))
     return app, seen
+
+
+@pytest.mark.asyncio
+async def test_first_sso_entry_creates_personal_account_and_timeout_reconciles_without_recreate(tmp_path):
+    class FirstLoginRepository(Repository):
+        def __init__(self):
+            super().__init__()
+            self.account = None
+            self.state = None
+            self.marker = None
+
+        @contextmanager
+        def provision_slot(self, actor):
+            yield self, {"eligible": True, "display_name": "SDK User", "account": self.account,
+                         "provision_state": self.state, "marker": self.marker}
+
+        account_for = staticmethod(SdkSsoRepository.account_for)
+
+        def mark_provision_attempt(self, connection, actor, account, marker):
+            self.state = "reconcile_required"
+            self.marker = marker
+
+        def complete_provision(self, connection, actor, account):
+            self.account = account
+            self.state = "bound"
+
+    class Provisioner:
+        def __init__(self):
+            self.created = []
+            self.reconciled = []
+            self.access_changes = []
+
+        def create(self, account, name, marker):
+            self.created.append((account, name, marker))
+            raise ProvisionUnavailable("response lost")
+
+        def reconcile(self, account, name, marker):
+            self.reconciled.append((account, name, marker))
+
+        def set_access(self, account, marker, *, enabled):
+            self.access_changes.append((account, marker, enabled))
+
+    repository, provisioner = FirstLoginRepository(), Provisioner()
+    app, _ = build_app(tmp_path, repository, provisioner=provisioner)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        first = await client.post("/api/v1/sdk/sso/start", json={"target": "requirements"})
+        second = await client.post("/api/v1/sdk/sso/start", json={"target": "requirements"})
+    assert first.status_code == 503
+    assert second.status_code == 200
+    assert len(provisioner.created) == 1
+    assert provisioner.reconciled == provisioner.created
+    assert provisioner.access_changes == [(provisioner.created[0][0], provisioner.created[0][2], True)]
+    assert len(provisioner.created[0][0]) == 30
+
+
+@pytest.mark.asyncio
+async def test_suspended_personal_account_is_restored_before_new_ticket(tmp_path):
+    class SuspendedRepository(Repository):
+        @contextmanager
+        def provision_slot(self, actor):
+            yield self, {"eligible": True, "display_name": "SDK User", "account": SdkSsoRepository.account_for(actor),
+                         "provision_state": "suspended", "marker": "sdk:1234567890abcdef1234567890abcdef"}
+
+        def mark_access_state(self, connection, actor, old_state, new_state):
+            self.transition = (old_state, new_state)
+
+    class Provisioner:
+        def set_access(self, account, marker, *, enabled):
+            self.restored = (account, marker, enabled)
+
+    repository, provisioner = SuspendedRepository(), Provisioner()
+    app, _ = build_app(tmp_path, repository, provisioner=provisioner)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        response = await client.post("/api/v1/sdk/sso/start", json={"target": "tasks"})
+    assert response.status_code == 200
+    assert provisioner.restored[2] is True
+    assert repository.transition == ("suspended", "bound")
+
+
+@pytest.mark.asyncio
+async def test_directory_revocation_during_creation_never_grants_zen_permissions(tmp_path):
+    class RevokedRepository(Repository):
+        @contextmanager
+        def provision_slot(self, actor):
+            yield self, {"eligible": True, "display_name": "SDK User", "account": None,
+                         "provision_state": None, "marker": None}
+
+        account_for = staticmethod(SdkSsoRepository.account_for)
+
+        def mark_provision_attempt(self, connection, actor, account, marker): pass
+
+        def complete_provision(self, connection, actor, account):
+            raise HTTPException(403, "sdk_sso_access_required")
+
+    class Provisioner:
+        def __init__(self): self.created = False; self.granted = False
+        def create(self, account, name, marker): self.created = True
+        def set_access(self, account, marker, *, enabled): self.granted = True
+
+    repository, provisioner = RevokedRepository(), Provisioner()
+    app, _ = build_app(tmp_path, repository, provisioner=provisioner)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        response = await client.post("/api/v1/sdk/sso/start")
+    assert response.status_code == 403
+    assert provisioner.created is True
+    assert provisioner.granted is False
+
+
+def test_directory_sync_removes_auto_account_access_and_restores_it_when_scope_returns(tmp_path):
+    class AccessRepository(Repository):
+        def __init__(self):
+            super().__init__()
+            self.eligible = False
+            self.state = "bound"
+
+        def access_changes(self):
+            return [{"internal_user_id": USER}] if self.state == ("suspended" if self.eligible else "bound") else []
+
+        @contextmanager
+        def access_slot(self, actor):
+            yield self, {"account": SdkSsoRepository.account_for(actor), "marker": "sdk:1234567890abcdef1234567890abcdef",
+                         "eligible": self.eligible, "state": self.state}
+
+        def mark_access_state(self, connection, actor, old_state, new_state):
+            assert self.state == old_state
+            self.state = new_state
+
+    class Provisioner:
+        def __init__(self): self.operations = []
+        def set_access(self, account, marker, *, enabled): self.operations.append(enabled)
+
+    repository, provisioner = AccessRepository(), Provisioner()
+    from app.sdk_workbench.sso import SdkSsoService
+    key = tmp_path / "entry-key"
+    key.write_text("k" * 32)
+    service = SdkSsoService(repository, private_origin="http://zentao:80", public_origin=ZENTAO,
+                            platform_origin=PLATFORM, entry_code="sdk-sso", entry_key_file=key,
+                            provisioner=provisioner)
+    assert service.sync_auto_access() == (1, 0)
+    assert repository.state == "suspended"
+    repository.eligible = True
+    assert service.sync_auto_access() == (1, 0)
+    assert repository.state == "bound"
+    assert provisioner.operations == [False, True]
+
+
+def test_directory_sync_defers_failed_account_to_keep_queue_moving(tmp_path):
+    class AccessRepository(Repository):
+        def __init__(self):
+            super().__init__()
+            self.deferred = []
+
+        def access_changes(self):
+            return [{"internal_user_id": USER}]
+
+        @contextmanager
+        def access_slot(self, actor):
+            yield self, {"account": SdkSsoRepository.account_for(actor),
+                         "marker": "sdk:1234567890abcdef1234567890abcdef",
+                         "eligible": False, "state": "bound"}
+
+        def defer_access_retry(self, actor):
+            self.deferred.append(actor)
+
+    class FailingProvisioner:
+        def set_access(self, account, marker, *, enabled):
+            raise ProvisionUnavailable("zentao_unavailable")
+
+    repository = AccessRepository()
+    from app.sdk_workbench.sso import SdkSsoService
+    key = tmp_path / "entry-key"
+    key.write_text("k" * 32)
+    service = SdkSsoService(repository, private_origin="http://zentao:80", public_origin=ZENTAO,
+                            platform_origin=PLATFORM, entry_code="sdk-sso", entry_key_file=key,
+                            provisioner=FailingProvisioner())
+    assert service.sync_auto_access() == (0, 1)
+    assert repository.deferred == [USER]
+
+
+@pytest.mark.asyncio
+async def test_only_owner_can_manage_department_scope(tmp_path):
+    repository = Repository()
+    app, _ = build_app(tmp_path, repository, role=Role.PLATFORM_OWNER)
+    department = "22222222-2222-4222-8222-222222222222"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        listed = await client.get("/api/v1/sdk/sso/departments")
+        changed = await client.put(f"/api/v1/sdk/sso/departments/{department}", json={"enabled": False})
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["name"] == "应用SDK组"
+    assert changed.status_code == 200
+    assert repository.department_changes == [(USER, UUID(department), False)]
+    member_app, _ = build_app(tmp_path, repository, role=Role.MEMBER)
+    async with AsyncClient(transport=ASGITransport(app=member_app), base_url=PLATFORM) as client:
+        denied = await client.put(f"/api/v1/sdk/sso/departments/{department}", json={"enabled": True})
+    assert denied.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -118,6 +323,34 @@ async def test_authenticated_sdk_member_can_post_single_use_ticket_to_zentao(tmp
     assert seen[0].url.host == "zentao"
     assert seen[0].url.params["account"] == "cangyuan"
     assert seen[0].url.params["token"] == md5(b"sdk-sso" + b"a" * 32 + b"1792471200").hexdigest()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target,location", [
+    ("requirements", "/index.php?m=product&f=browse&productID=1"),
+    ("tasks", "/index.php?m=my&f=work&mode=task"),
+    ("tests", "/index.php?m=testcase&f=browse&productID=1"),
+    ("releases", "/index.php?m=release&f=browse&productID=1"),
+])
+async def test_sso_ticket_redirects_only_to_fixed_work_page(tmp_path, target, location):
+    repository = Repository()
+    app, _ = build_app(tmp_path, repository)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        started = await client.post("/api/v1/sdk/sso/start", json={"target": target})
+    assert started.status_code == 200
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ZENTAO) as client:
+        consumed = await client.post("/api/v1/sdk/sso/consume", data={"ticket": started.json()["ticket"]},
+                                     headers={"origin": PLATFORM, "x-forwarded-proto": "https"}, follow_redirects=False)
+    assert consumed.status_code == 303
+    assert consumed.headers["location"] == location
+
+
+@pytest.mark.asyncio
+async def test_sso_rejects_arbitrary_destination(tmp_path):
+    app, _ = build_app(tmp_path, Repository())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        response = await client.post("/api/v1/sdk/sso/start", json={"target": "https://evil.example"})
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

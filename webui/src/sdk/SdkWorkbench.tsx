@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
 import { navigate } from "../router";
-import { sdkApi, SdkApiError, type PlanRow, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole } from "./sdkApi";
+import { sdkApi, SdkApiError, type PlanRow, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole, type SdkSsoDepartment, type SdkSsoTarget } from "./sdkApi";
 import { RequestIdentity } from "./requestIdentity";
 import { CandidateWorkspace } from "./CandidateWorkspace";
 import { PlanIntake } from "./PlanIntake";
@@ -12,6 +12,8 @@ type Props = { account: Account; storyId?: number; client?: SdkApi };
 
 function message(error: unknown): string {
   if (error instanceof SdkApiError) {
+    if (error.detail === "sdk_provision_in_progress" || error.detail === "sdk_provision_pending_retry") return "个人禅道账号开通中，请稍后重试；系统不会重复建号。";
+    if (error.detail === "sdk_provision_reconcile_required") return "正在核对个人禅道账号的创建结果，请稍后重试。";
     if (error.detail === "sdk_reconcile_required") return "提交结果需要管理员核对，请勿重复创建。";
     if (error.detail === "sdk_requirement_review_required") return "当前需求版本尚未评审通过，不能创建任务。";
     if (error.detail === "sdk_zentao_auth_required") return "禅道服务账号认证失败，请联系平台管理员；可在恢复后重试同一提交。";
@@ -34,6 +36,9 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [enteringZenTao, setEnteringZenTao] = useState(false);
+  const [departments, setDepartments] = useState<SdkSsoDepartment[] | null>(null);
+  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [changingDepartment, setChangingDepartment] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [selectedPlanRow, setSelectedPlanRow] = useState<PlanRow | null>(null);
   const [scenario, setScenario] = useState("");
@@ -55,12 +60,12 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const memberRequest = useRef(new RequestIdentity()).current;
   const reconciliationRequest = useRef(new RequestIdentity()).current;
 
-  async function enterZenTao() {
+  async function enterZenTao(destination: SdkSsoTarget = "home") {
     if (enteringZenTao) return;
     setEnteringZenTao(true);
     setError("");
     try {
-      const handoff = await client.ssoStart(account.csrf_token);
+      const handoff = await client.ssoStart(account.csrf_token, destination);
       const target = new URL(handoff.consume_url);
       if (target.protocol !== "https:" || target.pathname !== "/sdk-sso/consume" ||
           target.username || target.password || target.search || target.hash || !handoff.ticket) {
@@ -108,6 +113,10 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     void client.me().then(async identity => {
       if (!live) return;
       setMe(identity);
+      if (identity.can_manage && identity.sso_enabled) {
+        void client.ssoDepartments().then(value => { if (live) setDepartments(value.items); })
+          .catch(error => { if (live) setError(message(error)); });
+      }
       if (identity.native_only) {
         setList({ items: [], page: 1, total: 0 });
         return;
@@ -171,26 +180,62 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
     } catch (error) { setError(message(error)); }
   }
 
+  async function changeDepartment(department: SdkSsoDepartment) {
+    if (changingDepartment || me?.read_only) return;
+    setChangingDepartment(department.id); setError(""); setNotice("");
+    try {
+      await client.setSsoDepartment(department.id, !department.selected, account.csrf_token);
+      setDepartments(current => current?.map(item => item.id === department.id ? { ...item, selected: !department.selected } : item) ?? null);
+      setNotice(`已${department.selected ? "移除" : "加入"} ${department.name} 的自动开通范围。`);
+    } catch (error) { setError(message(error)); }
+    finally { setChangingDepartment(null); }
+  }
+
+  const departmentSettings = me?.can_manage && me.sso_enabled && <section className="sdk-panel sdk-department-settings">
+    <h2>自动开通范围</h2>
+    <p>选中的部门及其下级部门，员工首次进入时自动获得个人禅道账号。已有人工授权继续有效。</p>
+    {departments === null ? <p>正在读取钉钉组织目录…</p> : departments.length === 0 ? <p>目录未更新，暂时不能调整范围。</p> :
+      <><label className="sdk-department-search">查找部门<input type="search" value={departmentSearch}
+        onChange={event => setDepartmentSearch(event.target.value)} placeholder="输入部门名称或上级路径" /></label>
+      <div className="sdk-department-list">{departments.filter(department => department.path.toLocaleLowerCase().includes(departmentSearch.trim().toLocaleLowerCase())).map(department => <label key={department.id}>
+        <input type="checkbox" checked={department.selected} disabled={!!changingDepartment || me.read_only || (department.root && !department.selected)}
+          onChange={() => { void changeDepartment(department); }} />
+        <span><strong>{department.path || department.name}</strong><small>{department.people} 人{department.root ? " · 公司根部门请联系管理员" : ""}</small></span>
+      </label>)}</div></>}
+  </section>;
+
   if (error && !me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p role="alert">{error}</p></section>;
   if (!me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取工作区…</p></section>;
-  if (!me.role && !me.can_manage) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>当前账号没有 SDK 工作台权限。</p></section>;
+  if (!me.role && !me.can_manage && !me.can_enter) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>当前账号没有 SDK 工作台权限。</p></section>;
   if (me.native_only) return <section className="sdk-workbench sdk-native-workspace">
     <header className="sdk-native-entry">
       <p className="sdk-eyebrow">OpenOrbbecSDK · 研发工作区</p>
-      <h1>从需求到发布，在禅道协作</h1>
-      <p>创建和评审需求、安排迭代任务、关联测试用例与发布计划。</p>
-      {me.sso_enabled && me.role && !me.read_only
-        ? <button className="sdk-native-link" type="button" disabled={enteringZenTao} onClick={() => void enterZenTao()}>进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></button>
-        : <a className="sdk-native-link" href="https://47.106.112.69/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>}
+      <h1>SDK 开发管理</h1>
+      <p>选择今天要做的事，直接进入对应工作页面。</p>
+      {me.sso_enabled && (me.role || me.can_enter) && !me.read_only
+        ? <button className="sdk-native-link" type="button" disabled={enteringZenTao} onClick={() => void enterZenTao("home")}>进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></button>
+        : !me.sso_enabled ? <a className="sdk-native-link" href="https://47.106.112.69/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>
+          : <p>当前账号尚未获得 SDK 禅道工作区权限。</p>}
       <p className="sdk-native-hint">{me.sso_enabled ? "使用钉钉身份进入个人禅道账号；禅道中的产品权限决定可查看和编辑的内容。" : "使用个人禅道账号登录。禅道中的产品权限决定可查看和编辑的内容。"}</p>
       {error && <p role="alert" className="sdk-error">{error}</p>}
+      {enteringZenTao && <p role="status">正在核对或开通个人禅道账号，请稍候…</p>}
     </header>
-    <div className="sdk-native-steps" aria-label="研发流程">
-      <div><span>01</span><h2>需求</h2><p>写清场景、设备、验收标准，按版本完成评审。</p></div>
-      <div><span>02</span><h2>开发</h2><p>拆分迭代任务，指定负责人并跟踪进度。</p></div>
-      <div><span>03</span><h2>验证</h2><p>关联用例和缺陷，记录执行结果。</p></div>
-      <div><span>04</span><h2>发布</h2><p>在禅道管理发布计划和交付记录。</p></div>
+    <div className="sdk-native-actions" aria-label="SDK 日常工作">
+      {([
+        ["requirements", "需求", "整理、评审和跟踪需求"],
+        ["tasks", "我的任务", "查看分配给我的开发工作"],
+        ["tests", "测试", "维护用例与验证结果"],
+        ["releases", "发布", "查看版本和交付记录"],
+      ] as const).map(([target, label, description]) =>
+        <button key={target} type="button" disabled={enteringZenTao || !me.sso_enabled || !(me.role || me.can_enter) || me.read_only}
+          onClick={() => void enterZenTao(target)}>
+          <span className="sdk-native-action-title">{label} <span aria-hidden="true">↗</span></span>
+          <span className="sdk-native-action-description">{description}</span>
+        </button>
+      )}
     </div>
+    {notice && <p className="sdk-notice" role="status">{notice}</p>}
+    {departmentSettings}
   </section>;
   if (!list) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取需求…</p></section>;
 

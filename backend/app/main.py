@@ -332,6 +332,32 @@ async def agent_brain_loop(
             await asyncio.sleep(idle_seconds)
 
 
+async def sdk_access_sync_loop(service: SdkSsoService, *, interval_seconds: float = 300) -> None:
+    if interval_seconds <= 0:
+        raise ValueError("SDK access sync interval must be positive")
+    while True:
+        changed = errors = 0
+        try:
+            update = asyncio.create_task(asyncio.to_thread(service.sync_auto_access))
+            try:
+                changed, errors = await asyncio.shield(update)
+            except asyncio.CancelledError as cancellation:
+                try:
+                    await update
+                except Exception:
+                    logger.exception("SDK access sync failed during shutdown")
+                raise cancellation
+            if changed or errors:
+                logger.info("SDK access sync changed=%s errors=%s", changed, errors)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("SDK access sync unavailable")
+        # Drain a successful full page immediately so removing a large
+        # department does not wait five minutes for every 100 accounts.
+        await asyncio.sleep(0 if changed + errors >= 100 else interval_seconds)
+
+
 def _check_execution_relay_database(
     control_database_url: str,
     *,
@@ -1351,6 +1377,16 @@ def create_app(
             control_database_url = read_secret_file(
                 config.control_plane.control_database_url_file
             )
+        sdk_provisioner = None
+        if config.sdk_auto_provision_enabled:
+            from .sdk_workbench.provision import ZenTaoProvisioner
+            sdk_provisioner = ZenTaoProvisioner(
+                config.sdk_zentao_base_url,
+                config.sdk_provision_account,
+                config.sdk_provision_password_file,
+                product_id=config.sdk_zentao_product_id,
+                group_id=config.sdk_provision_group_id,
+            )
         sdk_sso_service = SdkSsoService(
             SdkSsoRepository(control_database_url),
             private_origin=config.sdk_zentao_base_url,
@@ -1358,6 +1394,8 @@ def create_app(
             platform_origin=config.control_plane.public_base_url,
             entry_code=config.sdk_sso_entry_code,
             entry_key_file=config.sdk_sso_entry_key_file,
+            product_id=config.sdk_zentao_product_id,
+            provisioner=sdk_provisioner,
         )
     if config.voc_extension_enabled and identity_enabled:
         bot_subject_resolver = getattr(
@@ -1422,6 +1460,8 @@ def create_app(
             tasks.append(asyncio.create_task(candidate_parser_submission_loop(
                 hr_candidate_parser_submission_coordinator
             )))
+        if sdk_sso_service is not None and sdk_sso_service.provisioner is not None:
+            tasks.append(asyncio.create_task(sdk_access_sync_loop(sdk_sso_service)))
         try:
             yield
         finally:

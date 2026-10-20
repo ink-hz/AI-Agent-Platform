@@ -1,7 +1,9 @@
 import { platformPath } from "../auth";
 
 export type SdkRole = "viewer" | "contributor" | "reviewer" | "release_manager";
-export type SdkMe = { role: SdkRole | null; can_manage: boolean; read_only: boolean; requirements_enabled?: boolean; plan_enabled?: boolean; native_only?: boolean; sso_enabled?: boolean };
+export type SdkSsoTarget = "home" | "requirements" | "tasks" | "tests" | "releases";
+export type SdkSsoDepartment = { id: string; name: string; path: string; people: number; root: boolean; selected: boolean };
+export type SdkMe = { role: SdkRole | null; can_manage: boolean; can_enter?: boolean; read_only: boolean; requirements_enabled?: boolean; plan_enabled?: boolean; native_only?: boolean; sso_enabled?: boolean };
 export type PlanBatch = { id: number; uploaded_by: string; filename: string; sha256: string; row_count: number; task_count: number; module_count: number; created_at: string };
 export type PlanRow = { id: number; import_id: number; record_number: number; physical_line: number; kind: "task" | "heading"; module: string; cells: string[]; sha256: string; filename: string; conversion_state: string | null; story_id: number | null; actor_id: string | null; request_id: string | null };
 export type PlanFilter = { module?: string; priority?: string; owner?: string };
@@ -34,9 +36,10 @@ export class SdkApiError extends Error {
   }
 }
 
-async function request<T>(path: string, payload?: object, csrfToken?: string): Promise<T> {
+async function request<T>(path: string, payload?: object, csrfToken?: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(platformPath(`/api/v1/sdk${path}`), {
     credentials: "same-origin",
+    signal,
     method: payload ? "POST" : "GET",
     headers: {
       Accept: "application/json",
@@ -47,6 +50,30 @@ async function request<T>(path: string, payload?: object, csrfToken?: string): P
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) throw new SdkApiError(response.status, typeof body?.detail === "string" ? body.detail : "sdk_request_failed");
   return body as T;
+}
+
+async function startSso(csrfToken: string, target: SdkSsoTarget): Promise<{ ticket: string; consume_url: string }> {
+  const abort = new AbortController();
+  const timeout = window.setTimeout(() => abort.abort(), 30000);
+  try {
+    return await request("/sso/start", { target }, csrfToken, abort.signal);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new SdkApiError(503, "sdk_provision_pending_retry");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function setSsoDepartment(id: string, enabled: boolean, csrfToken: string): Promise<{ id: string; enabled: boolean }> {
+  const response = await fetch(platformPath(`/api/v1/sdk/sso/departments/${encodeURIComponent(id)}`), {
+    credentials: "same-origin", method: "PUT",
+    headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify({ enabled }),
+  });
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok) throw new SdkApiError(response.status, typeof body?.detail === "string" ? body.detail : "sdk_request_failed");
+  return body as { id: string; enabled: boolean };
 }
 
 async function uploadPlanFile(file: File, csrfToken: string): Promise<PlanBatch> {
@@ -60,7 +87,9 @@ async function uploadPlanFile(file: File, csrfToken: string): Promise<PlanBatch>
 
 export interface SdkApi {
   me(): Promise<SdkMe>;
-  ssoStart(csrfToken: string): Promise<{ ticket: string; consume_url: string }>;
+  ssoStart(csrfToken: string, target: SdkSsoTarget): Promise<{ ticket: string; consume_url: string }>;
+  ssoDepartments(): Promise<{ items: SdkSsoDepartment[] }>;
+  setSsoDepartment(id: string, enabled: boolean, csrfToken: string): Promise<{ id: string; enabled: boolean }>;
   planImports(page?: number): Promise<{ items: PlanBatch[]; page: number; total: number }>;
   planRows(importId: number, page?: number, filter?: PlanFilter): Promise<{ items: PlanRow[]; page: number; total: number }>;
   planRow(id: number): Promise<PlanRow>;
@@ -88,7 +117,9 @@ export interface SdkApi {
 
 export const sdkApi: SdkApi = {
   me: () => request("/me"),
-  ssoStart: csrf => request("/sso/start", {}, csrf),
+  ssoStart: startSso,
+  ssoDepartments: () => request("/sso/departments"),
+  setSsoDepartment,
   planImports: (page = 1) => request(`/plan-imports?page=${page}`),
   planRows: (importId, page = 1, filter = {}) => {
     const query = new URLSearchParams({ page: String(page) });

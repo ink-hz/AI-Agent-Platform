@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
-import type { SdkApi } from "./sdkApi";
+import { SdkApiError, type SdkApi } from "./sdkApi";
 import { SdkWorkbench } from "./SdkWorkbench";
 
 const account: Account = {
@@ -76,11 +76,24 @@ it("posts a one-use SSO ticket to ZenTao after DingTalk login", async () => {
   const enter = Array.from(container.querySelectorAll("button")).find(button => button.textContent?.includes("进入 SDK 禅道工作区"));
   expect(enter).toBeDefined();
   await act(async () => enter!.click());
-  expect(client.ssoStart).toHaveBeenCalledWith("csrf");
+  expect(client.ssoStart).toHaveBeenCalledWith("csrf", "home");
   expect(submit).toHaveBeenCalledOnce();
   const form = document.body.querySelector("form[action='https://47.106.112.69/sdk-sso/consume']") as HTMLFormElement;
   expect(form.method.toLowerCase()).toBe("post");
   expect((form.querySelector("input[name='ticket']") as HTMLInputElement).value).toBe("single-use-ticket");
+});
+
+it.each([["需求", "requirements"], ["我的任务", "tasks"], ["测试", "tests"], ["发布", "releases"]])("opens %s through a target-bound personal SSO ticket", async (label, target) => {
+  vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true, sso_enabled: true }),
+    ssoStart: vi.fn().mockResolvedValue({ ticket: "single-use-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  const button = Array.from(container.querySelectorAll<HTMLButtonElement>(".sdk-native-actions button")).find(item => item.textContent?.includes(label));
+  expect(button, label).toBeDefined();
+  await act(async () => button!.click());
+  expect(client.ssoStart).toHaveBeenLastCalledWith("csrf", target);
 });
 
 it("shows a retry hint when browser policy blocks the ZenTao handoff", async () => {
@@ -103,6 +116,18 @@ it("shows a retry hint when browser policy blocks the ZenTao handoff", async () 
 
   expect(enter.disabled).toBe(false);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("刷新 SDK 页面");
+});
+
+it("explains a first-login provisioning delay and allows another click", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: null, can_manage: false, can_enter: true, read_only: false, native_only: true, sso_enabled: true }),
+    ssoStart: vi.fn().mockRejectedValue(new SdkApiError(409, "sdk_provision_in_progress")),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  const enter = container.querySelector<HTMLButtonElement>(".sdk-native-actions button")!;
+  await act(async () => enter.click());
+  expect(enter.disabled).toBe(false);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("开通中");
 });
 
 it("keeps the native entry available without the legacy requirements API", async () => {
@@ -179,6 +204,48 @@ it("does not fetch requirements for an account without SDK membership", async ()
 
   expect(container.textContent).toContain("没有 SDK 工作台权限");
   expect(client.requirements).not.toHaveBeenCalled();
+});
+
+it("offers SSO entry to an eligible SDK department member before first account creation", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: null, can_manage: false, can_enter: true, read_only: false, native_only: true, sso_enabled: true }),
+    ssoStart: vi.fn().mockResolvedValue({ ticket: "first-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
+  } as unknown as SdkApi;
+  vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
+  const first = container.querySelector<HTMLButtonElement>(".sdk-native-actions button");
+  expect(first?.disabled).toBe(false);
+  await act(async () => first!.click());
+  expect(client.ssoStart).toHaveBeenCalledWith("csrf", "requirements");
+});
+
+it("lets the platform owner select SDK and collaborator departments from the verified directory", async () => {
+  const client = {
+    me: vi.fn().mockResolvedValue({ role: null, can_manage: true, read_only: false, native_only: true, sso_enabled: true }),
+    ssoDepartments: vi.fn().mockResolvedValue({ items: [
+      { id: "11111111-1111-4111-8111-111111111111", name: "应用SDK组", path: "研发中心 / 应用SDK组", people: 18, root: false, selected: true },
+      { id: "22222222-2222-4222-8222-222222222222", name: "测试协作组", path: "质量中心 / 测试协作组", people: 12, root: false, selected: false },
+      { id: "33333333-3333-4333-8333-333333333333", name: "公司", path: "公司", people: 3000, root: true, selected: false },
+    ] }),
+    setSsoDepartment: vi.fn().mockResolvedValue({ id: "22222222-2222-4222-8222-222222222222", enabled: true }),
+  } as unknown as SdkApi;
+  await act(async () => root.render(<SdkWorkbench account={{ ...account, role: "platform_owner" }} client={client} />));
+  expect(container.textContent).toContain("自动开通范围");
+  expect(container.textContent).toContain("应用SDK组");
+  expect(container.textContent).toContain("研发中心 / 应用SDK组");
+  expect(container.textContent).toContain("18 人");
+  const company = Array.from(container.querySelectorAll<HTMLInputElement>("input[type=checkbox]"))
+    .find(input => input.closest("label")?.textContent?.includes("公司"));
+  expect(company?.disabled).toBe(true);
+  const collaborator = Array.from(container.querySelectorAll<HTMLInputElement>("input[type=checkbox]"))
+    .find(input => input.closest("label")?.textContent?.includes("测试协作组"));
+  expect(collaborator?.checked).toBe(false);
+  await act(async () => {
+    collaborator!.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  expect(client.setSsoDepartment).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", true, "csrf");
+  expect(collaborator?.checked).toBe(true);
 });
 
 it("shows owner reconciliation work with stable intent identifiers", async () => {
