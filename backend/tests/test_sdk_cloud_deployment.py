@@ -22,6 +22,7 @@ def test_zentao_uses_a_separate_https_origin_and_keeps_loopback_upstream() -> No
     assert "proxy_pass http://127.0.0.1:18131;" in config
     assert "proxy_set_header Authorization \"\";" in config
     assert "proxy_set_header X-Forwarded-For $remote_addr;" in config
+    assert 'proxy_set_header Accept-Language "zh-cn";' in config
     assert "apilogin" in config
     assert "agent.orbbec.com.cn" not in config
 
@@ -42,6 +43,7 @@ def test_zentao_compose_requires_an_explicit_hardened_image() -> None:
     image = service["image"]
     assert image == "${SDK_ZENTAO_IMAGE:?set an audited hardened ZenTao image}"
     assert service["entrypoint"] == ["/usr/local/bin/verify-and-start.sh"]
+    assert service["environment"]["ZT_DEFAULT_LANG"] == "zh-cn"
     dockerfile = (ZENTAO_COMPOSE.parent / "Dockerfile.hardened").read_text(encoding="utf-8")
     assert "COPY verify-and-start.sh /usr/local/bin/verify-and-start.sh" in dockerfile
     assert "chmod 755 /usr/local/bin/verify-and-start.sh" in dockerfile

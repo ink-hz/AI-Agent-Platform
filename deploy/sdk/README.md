@@ -4,6 +4,8 @@
 
 本目录提供独立的禅道配置；禅道数据与原平台数据库分开。`SDK_ZENTAO_IMAGE` 必须显式指定经过核验的加固镜像，Compose 不再允许默认使用未加固的 ZenTao 22.6。`Dockerfile.hardened` 从固定上游 digest 构建，并在源文件摘要不符时停止构建。MariaDB 镜像也应固定 digest；发布前备份两个卷。
 
+禅道容器配置 `ZT_DEFAULT_LANG=zh-cn`，代理转发给禅道的请求统一设置 `Accept-Language: zh-cn`。这保证浏览器默认英文时，新会话仍以简体中文打开；用户手动选择的语言 Cookie 优先于该请求头。
+
 ## 原生需求入口发布
 
 原生模式把需求、评审、任务和测试交给禅道员工账号；平台 `/sdk/` 只显示工作区入口。旧平台需求、年度 CSV 和候选证据 API 在 `PLATFORM_SDK_NATIVE_ONLY=1` 时返回 410，历史数据留在数据库中。此模式尚无 GitLab 构建集成，不能据此声称 SDK 包或真机测试通过。
