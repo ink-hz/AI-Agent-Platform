@@ -14,8 +14,16 @@
 - 变更评审复测：ZenTao 原生表单在选择评审人且不勾选“不需要评审”时把状态提交为 `reviewing`。测试需求提交为版本 5、`reviewing`，员工 `cangyuan` 通过原生评审后读回版本 5、`active`、`reviewedBy=cangyuan`。直接调用 v2 `PUT /stories/2/change` 而不提供状态时，版本 2–4 曾保持 `active`；这条 API 不能作为有评审约束的变更入口。产品负责人可在原生界面选择“不需要评审”，如需强制所有人交叉评审，应配置独立的产品负责人与评审人。
 - 匿名访问产品故事 API 返回 401，匿名访问产品页面返回 302 到禅道登录；员工登录后可读取授权产品，数据库和禅道容器保持运行。加固镜像二次切换前又保存备份至 `/opt/orbbec-agent-platform/backups/sdk-native-verified-20261020/`。
 
-## 本地验证与上线门槛
+## 上线前本地验证
 
 - 后端配置与 SDK 测试：136 passed、3 skipped；前端 SDK 组件测试：9 passed；Web 构建通过。原生模式旧需求、CSV、候选 API 返回 410，原生入口不依赖旧需求 API。
 - Nginx 独立域名模板已在正式主机用现有证书路径作**语法验证**，`nginx -t` 通过。正式域名没有 A 记录，不能申请其有效证书，也尚未安装/公开这个 vhost。
-- `sdk.orbbec.com.cn` 需要解析到 `47.106.112.69`。DNS 和证书生效前不得开启平台 `PLATFORM_SDK_NATIVE_ONLY=1` 或发布指向该域名的前端；当前生产 `/sdk/` 仍是旧版本。浏览器页面验收按 `AGENTS.md` 由用户执行。
+- 上述检查时 `sdk.orbbec.com.cn` 尚无 A 记录，平台当时仍为旧版本。以下上线记录更新了实际入口与版本；浏览器页面验收仍按 `AGENTS.md` 由用户执行。
+
+## 生产上线记录
+
+- 已推送主线并上线的平台 API 准确源码提交为 `fe2f10f10fc2fd775d3a8684d5c3915d862ca4fe`，镜像 ID 为 `sha256:c901977b035b6b5846a6262f9e26062df74b01e25b36cc249df143504a703abf`。`PLATFORM_SDK_NATIVE_ONLY=1`，`/sdk/` 的禅道按钮指向 `https://47.106.112.69/`。主机 `current` 符号链接仍指向旧全栈 release；实际运行版本以 API 容器镜像与 `PLATFORM_RELEASE_SHA` 为准。
+- `sdk.orbbec.com.cn` 在 2026-10-20 仍无 A 记录。公网 IP 是临时独立 HTTPS 源；域名解析生效后需安装域名证书并切换前端按钮。[Let's Encrypt 的 IP 证书](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)有效期约六天。正式 IP 证书到期时间为 2026-10-26 17:00:15 UTC；`orbbec-sdk-ip-cert.timer` 每 12 小时检查续期，模拟续期和 Nginx 重载通过。
+- 通用 `deploy/cloud/deploy.sh` 因生产启用 HR Compose 覆盖而在切换前触发 `CLOUD_DEPLOY_HR_OVERLAY_REQUIRED`；当次暂存密钥、deploy-input 锁与 action 锁按 helper 清理，旧 API 未变。随后使用生产运行容器标签中的 **11 份有序 Compose 文件**、SDK 原生模式覆盖文件和 `overlay_guard.py` 发布。守卫核对了 9 个服务的有效配置，仅允许 API 镜像、发布 SHA 与 SDK 开关变化。只重建 `platform-api`，其他 7 个运行容器 ID 保持不变。
+- 本次私有备份在 `/data/orbbec-agent-platform/backups/sdk-native-20261020-fe2f10f1/`，含旧环境、容器配置、Compose 哈希和生产/预览控制库自定义格式转储；两份转储均通过 `pg_restore -l` 可读性检查。新 API 容器 healthy，公网 `/api/health` 与 `/sdk/` 返回 200，JS/CSS 资源返回 200，JS 包含当前 HTTPS 禅道地址。未登录的 SDK API 返回 401。公网禅道登录页返回 200，匿名需求读取返回 403，员工登录及授权需求读取返回 200，旧 `apilogin` 动作返回 403；`fae.orbbec.com.cn` 仍返回 200。
+- 本轮在准确源码版本上重跑 SDK 后端路由 14 项、SDK 前端组件 9 项与前端构建；叠加配置守卫 8 项通过。生产 Brain 容器在发布前后均为 `unhealthy`，本次 SDK API 叠加发布没有替换它。真实设备用例、GitLab 打包集成以及用户浏览器页面验收尚未完成，不能据此标记 SDK 包或硬件测试通过。
