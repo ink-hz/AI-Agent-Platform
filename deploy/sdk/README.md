@@ -1,6 +1,6 @@
 # SDK 工作台禅道试运行
 
-2026 年度计划入口的首轮生产发布按[叠加式发布与回滚步骤](plan-only-rollout.md)执行；本文件以下是后续禅道完整工作流的试运行说明。现行生产 API 有多份 HR、全景与 DAQ Compose 覆盖，以下单文件 `cloud_env.py activate` 命令**不能用于当前生产栈**。计划入口开放不代表正式需求、打包测试或 SDK 业务发布完成。
+2026 年度计划入口的首轮生产发布按[叠加式发布与回滚步骤](plan-only-rollout.md)执行。2026-10-20 已完成 [CSV 代录、禅道实例和平台 API 生产接入](../../docs/reviews/2026-10-20-sdk-plan-and-zentao-production.md)；企业浏览器会话、打包及真机测试尚未验收。本文件以下保留禅道部署与验收方法。现行生产 API 有多份 HR、全景与 DAQ Compose 覆盖，以下单文件 `cloud_env.py activate` 命令**不能用于当前生产栈**。
 
 本目录提供独立的禅道试运行配置；禅道数据与原平台数据库分开。当前镜像默认使用禅道开源版 `22.6`、MariaDB `10.6` 标签，标签可能移动；真实试验与发布要在私有 `.env` 中设置 `SDK_ZENTAO_IMAGE`、`SDK_DB_IMAGE` 为核对过的对应架构 `仓库@sha256:<digest>`，并备份两个卷。
 
