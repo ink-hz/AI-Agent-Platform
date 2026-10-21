@@ -21,9 +21,8 @@ from psycopg.rows import dict_row
 from .plan_csv import parse_plan_csv
 from .plan_mapping import MappedRequirement, map_plan, match_responsible
 from .provision import ProvisionConflict, ZenTaoProvisioner
-from .sso_repository import SdkSsoRepository, _ZEN_PROVISION_LOCK
+from .sso_repository import _ZEN_PROVISION_LOCK, SdkSsoRepository
 from .zentao import ZenTaoClient
-
 
 _MARKER = re.compile(r"SDK2026PLAN-([0-9a-f]{8})-R(\d{4})")
 
@@ -49,7 +48,25 @@ def _scoped_people(connection) -> dict[str, list[dict]]:
     return by_name
 
 
-async def _stories(client: ZenTaoClient, product_id: int, sha256: str) -> dict[int, dict]:
+def _linked_story_ids(connection, sha256: str) -> dict[int, int]:
+    rows = connection.execute(
+        "select row.record_number,source.story_id "
+        "from sdk.plan_story_sources source "
+        "join sdk.plan_rows row on row.id=source.plan_row_id "
+        "join sdk.plan_imports batch on batch.id=row.import_id "
+        "where batch.sha256=%s", (sha256,),
+    ).fetchall()
+    linked = {int(row["record_number"]): int(row["story_id"]) for row in rows}
+    if len(linked) != len(rows):
+        raise RuntimeError("sdk_source_story_conflict")
+    return linked
+
+
+async def _stories(client: ZenTaoClient, product_id: int, sha256: str,
+                   *, linked_ids: dict[int, int] | None = None) -> dict[int, dict]:
+    if linked_ids:
+        return {record_number: await client.get_story(story_id)
+                for record_number, story_id in linked_ids.items()}
     first = await client.list_stories(product_id, 1)
     pager = first.get("pager")
     page_total = pager.get("pageTotal") if isinstance(pager, dict) else None
@@ -175,7 +192,10 @@ async def reconcile(payload: bytes, *, expected_sha: str, apply: bool, limit: in
                 ):
                     raise RuntimeError("sdk_plan_source_drift")
             people = _scoped_people(connection)
-            stories = await _stories(client, product_id, parsed.sha256)
+            linked_ids = _linked_story_ids(connection, parsed.sha256)
+            if linked_ids and set(linked_ids) != {item.record_number for item in mapped}:
+                raise RuntimeError("sdk_source_story_coverage_mismatch")
+            stories = await _stories(client, product_id, parsed.sha256, linked_ids=linked_ids)
             if set(stories) != {item.record_number for item in mapped}:
                 raise RuntimeError("sdk_story_coverage_mismatch")
             for item in mapped:

@@ -5,10 +5,9 @@ import html
 from io import StringIO
 
 import pytest
-
+from app.sdk_workbench.annual_reconcile import _imported_title, _stories
 from app.sdk_workbench.plan_csv import parse_plan_csv
 from app.sdk_workbench.plan_mapping import PlanMappingError, map_plan, match_responsible
-from app.sdk_workbench.annual_reconcile import _imported_title
 
 
 def _plan(rows: list[list[str]]):
@@ -53,3 +52,19 @@ def test_invalid_date_fails_before_any_write():
 def test_existing_zentao_import_flattens_multiline_titles():
     assert _imported_title("A\r\nB\r\nC") == "A B C"
     assert _imported_title(html.unescape("RK3576&amp; 地平线")) == "RK3576& 地平线"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_uses_source_link_after_q4_body_removes_old_marker():
+    class Client:
+        async def get_story(self, story_id):
+            assert story_id == 68
+            return {"id": 68, "title": "根据客户需要更新版本",
+                    "spec": "<p>根据客户需要更新版本</p>",
+                    "sourceNote": "2026年Q4上线版本｜Android Wrapper｜Excel第92行"}
+
+        async def list_stories(self, product_id, page):
+            raise AssertionError("linked stories must not scan markers")
+
+    found = await _stories(Client(), 1, "41df018a", linked_ids={92: 68})
+    assert found[92]["id"] == 68
