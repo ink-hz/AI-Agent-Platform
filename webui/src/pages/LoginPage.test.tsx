@@ -79,6 +79,28 @@ describe("LoginPage", () => {
     expect(onStartQr).toHaveBeenCalledWith("/office/");
   });
 
+  it("returns to DAQ after QR login", async () => {
+    window.history.replaceState({}, "", "/login?return_path=%2Fdaq%2F");
+    const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");
+    await act(async () => root.render(<LoginPage onStartQr={onStartQr} onNavigate={() => undefined} />));
+
+    const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("扫码登录"));
+    await act(async () => button?.click());
+
+    expect(onStartQr).toHaveBeenCalledWith("/daq/");
+  });
+
+  it("keeps the encoded DAQ conversation path for QR login", async () => {
+    window.history.replaceState({}, "", "/login?return_path=%2Fdaq%2Fconversations%2Fdaq%253Aone");
+    const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");
+    await act(async () => root.render(<LoginPage onStartQr={onStartQr} onNavigate={() => undefined} />));
+
+    const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.includes("扫码登录"));
+    await act(async () => button?.click());
+
+    expect(onStartQr).toHaveBeenCalledWith("/daq/conversations/daq%3Aone");
+  });
+
   it("never forwards an unvalidated query to QR login", async () => {
     window.history.replaceState({}, "", "/login?return_path=https%3A%2F%2Fevil.example%2F");
     const onStartQr = vi.fn().mockResolvedValue("https://login.dingtalk.com/oauth2/auth");
@@ -154,6 +176,26 @@ describe("LoginPage", () => {
     expect(onInClient).toHaveBeenCalledTimes(1);
     expect(onInClient).toHaveBeenCalledWith("/office/");
     expect(onNavigate).toHaveBeenCalledWith("/office/");
+  });
+
+  it("returns to DAQ after DingTalk in-client login", async () => {
+    window.history.replaceState({}, "", "/login?return_path=%2Fdaq%2F");
+    const onInClient = vi.fn().mockResolvedValue(undefined);
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
+
+    expect(onInClient).toHaveBeenCalledWith("/daq/");
+    expect(onNavigate).toHaveBeenCalledWith("/daq/");
+  });
+
+  it("keeps the encoded DAQ conversation path for DingTalk in-client login", async () => {
+    window.history.replaceState({}, "", "/login?return_path=%2Fdaq%2Fconversations%2Fdaq%253Aone");
+    const onInClient = vi.fn().mockResolvedValue(undefined);
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<LoginPage onStartQr={vi.fn()} onInClient={onInClient} onNavigate={onNavigate} />));
+
+    expect(onInClient).toHaveBeenCalledWith("/daq/conversations/daq%3Aone");
+    expect(onNavigate).toHaveBeenCalledWith("/daq/conversations/daq%3Aone");
   });
 
   it("keeps in-client fragment URLs on the default account page", async () => {

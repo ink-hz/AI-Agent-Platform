@@ -93,6 +93,9 @@ describe("login return path", () => {
 
   it("accepts canonical workspace paths and rejects malformed variants", () => {
     expect(loginReturnPath("?return_path=%2Ffae%2Fconversations%2Fc-1")).toBe("/fae/conversations/c-1");
+    expect(loginReturnPath("?return_path=%2Fdaq%2F")).toBe("/daq/");
+    expect(loginReturnPath("?return_path=%2Fdaq%2Fconversations%2Fdaq%3Aone")).toBe("/daq/conversations/daq:one");
+    expect(loginReturnPath("?return_path=%2Fdaq%2Fconversations%2Fdaq%253Aone")).toBe("/daq/conversations/daq%3Aone");
     expect(loginReturnPath("?return_path=%2Ffae%2Fmanage%2Freports%2Fr-1")).toBe("/fae/manage/reports/r-1");
     expect(loginReturnPath("?return_path=%2Fmarketing%2Fvoice%2Fconversations%2Fc-1")).toBe("/marketing/voice/conversations/c-1");
     expect(loginReturnPath("?return_path=%2Fmarketing%2Funknown")).toBe("/");
@@ -128,6 +131,11 @@ describe("login return path", () => {
 
   it.each([
     "/fae/conversations/unsafe/path",
+    "/daq/conversations/unsafe/path",
+    "/daq/conversations/.",
+    "/daq/conversations/..",
+    "/daq/api/chat",
+    "/daq//",
     "/fae/manage/unknown",
     "/voc/unknown",
     "/hr/conversations/unsafe/path",

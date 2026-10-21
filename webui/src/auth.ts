@@ -136,6 +136,8 @@ export type LoginReturnPath =
   | `/voc/${string}`
   | "/fae/"
   | `/fae/${string}`
+  | "/daq/"
+  | `/daq/conversations/${string}`
   | "/hr"
   | "/hr/"
   | `/hr/${string}`
@@ -151,11 +153,12 @@ export type LoginReturnPath =
 
 
 function canonicalEncodedDetailPath(value: string): boolean {
-  const matched = /^(\/admin\/fae\/(?:sessions|reports)|\/fae\/conversations|\/fae\/manage\/(?:sessions|issues|reports)|\/hr\/conversations|\/hr\/positions\/[0-9a-fA-F-]{36}\/conversations|\/marketing\/(?:prospecting|inbound|voice|intelligence|gtm)\/conversations)\/([^/]+)$/.exec(value);
+  const matched = /^(\/admin\/fae\/(?:sessions|reports)|\/fae\/conversations|\/daq\/conversations|\/fae\/manage\/(?:sessions|issues|reports)|\/hr\/conversations|\/hr\/positions\/[0-9a-fA-F-]{36}\/conversations|\/marketing\/(?:prospecting|inbound|voice|intelligence|gtm)\/conversations)\/([^/]+)$/.exec(value);
   if (!matched) return false;
   let detailId: string;
   try { detailId = decodeURIComponent(matched[2]); } catch { return false; }
   return /^[A-Za-z0-9:._-]+$/.test(detailId)
+    && detailId !== "." && detailId !== ".."
     && `${matched[1]}/${encodeURIComponent(detailId)}` === value;
 }
 
@@ -181,11 +184,12 @@ function safeLoginReturnPath(value: string): boolean {
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
   if (/^\/ai-notes\/[a-z0-9][a-z0-9-]{0,63}\/[a-z0-9][a-z0-9-]{0,127}$/.test(value)) return true;
-  return value === "/office/" || value === "/admin/" || value === "/admin" || value === "/fae/"
+  return value === "/office/" || value === "/admin/" || value === "/admin" || value === "/fae/" || value === "/daq/"
     || value === "/sdk" || value === "/sdk/" || /^\/sdk\/requirements\/[1-9]\d*$/.test(value)
     || value === `${FAE_MANAGEMENT_PATH}/` || value === "/hr" || value === "/hr/" || value === "/hr/chat" || value === "/hr/panorama" || value === "/hr/agent" || value === "/hr/positions"
     || value === "/marketing" || value === "/marketing/"
     || /^\/fae\/conversations\/[A-Za-z0-9:._-]+$/.test(value)
+    || /^\/daq\/conversations\/(?!\.{1,2}$)[A-Za-z0-9:._-]+$/.test(value)
     || /^\/fae\/manage\/(?:sessions|issues|reports)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/voc\/(?:records|manage\/records)(?:\/[A-Za-z0-9:._-]+)?$/.test(value)
     || /^\/hr\/conversations\/[A-Za-z0-9:._-]+$/.test(value)
