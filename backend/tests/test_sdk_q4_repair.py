@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -7,12 +8,15 @@ import pytest
 from openpyxl import Workbook
 from tools.sdk_q4_repair import (
     RepairConflict,
+    _fetch_stories,
     assert_source_story,
     build_source_note_sql,
     change_story_body,
     parse_q4_workbook,
+    protected_fields,
     render_story,
     select_rows,
+    validate_manifest,
 )
 
 
@@ -90,19 +94,79 @@ def test_matching_rejects_human_changes_and_accepts_idempotent_result(tmp_path):
                  "导入标识：SDK2026PLAN-41df018a-R0002；"
                  "源文件 SHA-256：41df018a029f1d27417bec3008bbe7aab3becd785cc38b312c563ce18ee8370d"),
     }
-    assert_source_story(story, row, product_id=1)
+    identity = {
+        "id": 12,
+        "legacy_spec_sha256": hashlib.sha256(story["spec"].encode()).hexdigest(),
+        "legacy_verify_sha256": hashlib.sha256(b"").hexdigest(),
+    }
+    assert_source_story(story, row, product_id=1, identity=identity)
+    with pytest.raises(RepairConflict, match="human_edit"):
+        assert_source_story({**story, "spec": story["spec"] + "人工补充"}, row, product_id=1, identity=identity)
+    with pytest.raises(RepairConflict, match="human_edit"):
+        assert_source_story({**story, "verify": "人工补充验收"}, row, product_id=1, identity=identity)
     edited = {**story, "spec": "有人已经修改了需求描述"}
     with pytest.raises(RepairConflict):
         assert_source_story(edited, row, product_id=1)
     with pytest.raises(RepairConflict, match="human_edit"):
-        assert_source_story({**story, "version": 2}, row, product_id=1)
+        assert_source_story({**story, "version": 2}, row, product_id=1, identity=identity)
     repaired = {**story, **render_story(row)}
     assert_source_story(repaired, row, product_id=1)
     source_done = {**story, "sourceNote": render_story(row)["sourceNote"]}
-    assert assert_source_story(source_done, row, product_id=1) == "source_done"
+    assert assert_source_story(source_done, row, product_id=1, identity=identity) == "source_done"
     body_done = {**story, "spec": render_story(row)["spec"],
                  "verify": render_story(row)["verify"], "version": 2}
     assert assert_source_story(body_done, row, product_id=1) == "body_done"
+
+
+def test_manifest_pins_workbook_rows_story_ids_and_legacy_hashes(tmp_path):
+    payload = _workbook(tmp_path / "plan.xlsx")
+    rows = parse_q4_workbook(payload)
+    manifest = {
+        "workbook_sha256": hashlib.sha256(payload).hexdigest(),
+        "rows": {str(row.excel_row): {"id": row.excel_row + 10,
+                                     "legacy_spec_sha256": "a" * 64,
+                                     "legacy_verify_sha256": "b" * 64} for row in rows},
+    }
+    assert validate_manifest(payload, rows, manifest)[2]["id"] == 12
+    with pytest.raises(RepairConflict, match="q4_workbook_sha_mismatch"):
+        validate_manifest(payload + b"changed", rows, manifest)
+    with pytest.raises(RepairConflict, match="q4_manifest_ids_invalid"):
+        validate_manifest(payload, rows, {**manifest, "rows": {"2": manifest["rows"]["2"]}})
+    with pytest.raises(RepairConflict, match="q4_manifest_ids_invalid"):
+        validate_manifest(payload, rows, {**manifest, "rows": {"2": manifest["rows"]["2"], "3": {"id": 12, "legacy_spec_sha256": "a" * 64, "legacy_verify_sha256": "b" * 64}}})
+
+
+def test_protected_fields_include_assignment_date_and_plan():
+    snapshot = protected_fields({"id": 12, "assignedDate": "2026-10-20 10:00:00", "plan": 0})
+    assert snapshot["assignedDate"] == "2026-10-20 10:00:00"
+    assert snapshot["plan"] == 0
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_matching_row_with_different_story_id(tmp_path):
+    rows = parse_q4_workbook(_workbook(tmp_path / "plan.xlsx"))
+    stories = {}
+    for row in rows:
+        rendered = render_story(row)
+        stories[row.excel_row + 20] = {
+            "id": row.excel_row + 20, "title": row.title, "product": 1,
+            "pri": 2 if row.excel_row == 2 else 1, "status": "reviewing",
+            "deleted": False, "sourceNote": rendered["sourceNote"],
+            "spec": rendered["spec"], "verify": rendered["verify"], "version": 2,
+        }
+
+    class FakeClient:
+        async def list_stories(self, product_id, page):
+            return {"pager": {"pageTotal": 1}, "stories": [{"id": key} for key in stories]}
+
+        async def get_story(self, story_id):
+            return stories[story_id]
+
+    identities = {row.excel_row: {"id": row.excel_row + 10,
+                                 "legacy_spec_sha256": "a" * 64,
+                                 "legacy_verify_sha256": "b" * 64} for row in rows}
+    with pytest.raises(RepairConflict, match="q4_story_id_changed"):
+        await _fetch_stories(FakeClient(), rows, 1, identities)
 
 
 def test_parser_requires_q4_sheet_and_rejects_wrong_header(tmp_path):
@@ -158,6 +222,12 @@ async def test_change_uses_native_change_endpoint_and_preserves_assignment(tmp_p
                  "导入标识：SDK2026PLAN-41df018a-R0002；"
                  "源文件 SHA-256：41df018a029f1d27417bec3008bbe7aab3becd785cc38b312c563ce18ee8370d"),
         "verify": "待补全", "version": 1, "lastEditedDate": "2026-10-20 10:00:00",
+        "assignedDate": "2026-10-20 10:00:00", "plan": 0,
+    }
+    identity = {
+        "id": 12,
+        "legacy_spec_sha256": hashlib.sha256(before["spec"].encode()).hexdigest(),
+        "legacy_verify_sha256": hashlib.sha256(before["verify"].encode()).hexdigest(),
     }
 
     class FakeClient:
@@ -171,6 +241,13 @@ async def test_change_uses_native_change_endpoint_and_preserves_assignment(tmp_p
         async def get_story(self, story_id):
             return {**before, **render_story(row), "sourceNote": "", "version": 2}
 
-    after = await change_story_body(FakeClient(), before, row, product_id=1)
+    after = await change_story_body(FakeClient(), before, row, product_id=1, identity=identity)
     assert after["assignedTo"] == "sdk_owner"
     assert assert_source_story(after, row, product_id=1) == "body_done"
+
+    class DriftClient(FakeClient):
+        async def get_story(self, story_id):
+            return {**await super().get_story(story_id), "plan": 9}
+
+    with pytest.raises(RepairConflict, match="q4_unexpected_side_effect"):
+        await change_story_body(DriftClient(), before, row, product_id=1, identity=identity)

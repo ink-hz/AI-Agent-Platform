@@ -5,7 +5,11 @@ import html
 from io import StringIO
 
 import pytest
-from app.sdk_workbench.annual_reconcile import _imported_title, _stories
+from app.sdk_workbench.annual_reconcile import (
+    _imported_title,
+    _linked_story_ids,
+    _stories,
+)
 from app.sdk_workbench.plan_csv import parse_plan_csv
 from app.sdk_workbench.plan_mapping import PlanMappingError, map_plan, match_responsible
 
@@ -68,3 +72,27 @@ async def test_reconcile_uses_source_link_after_q4_body_removes_old_marker():
 
     found = await _stories(Client(), 1, "41df018a", linked_ids={92: 68})
     assert found[92]["id"] == 68
+
+
+def test_source_link_query_joins_batch_and_rejects_duplicate_record_numbers():
+    class Result:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def execute(self, query, params):
+            assert "join sdk.plan_rows row" in query
+            assert "join sdk.plan_imports batch" in query
+            assert params == ("source-sha",)
+            return Result(self.rows)
+
+    rows = [{"record_number": 92, "story_id": 68}, {"record_number": 93, "story_id": 69}]
+    assert _linked_story_ids(Connection(rows), "source-sha") == {92: 68, 93: 69}
+    with pytest.raises(RuntimeError, match="sdk_source_story_conflict"):
+        _linked_story_ids(Connection(rows + [rows[0]]), "source-sha")

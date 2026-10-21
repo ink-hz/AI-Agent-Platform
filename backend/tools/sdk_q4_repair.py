@@ -29,7 +29,7 @@ SOURCE_SHA = "41df018a029f1d27417bec3008bbe7aab3becd785cc38b312c563ce18ee8370d"
 LEGACY_MARKER = re.compile(r"SDK2026PLAN-41df018a-R(\d{4})")
 PRIORITY = {"高": 1, "中": 2, "低": 3}
 MAX_WORKBOOK_BYTES = 8 * 1024 * 1024
-SAFE_FIELDS = ("id", "title", "product", "module", "pri", "status", "reviewer", "assignedTo", "openedBy", "deleted")
+SAFE_FIELDS = ("id", "title", "product", "module", "pri", "status", "reviewer", "assignedTo", "assignedDate", "plan", "openedBy", "deleted")
 
 
 class RepairConflict(RuntimeError):
@@ -108,6 +108,23 @@ def parse_q4_workbook(payload: bytes) -> tuple[Q4Row, ...]:
     return tuple(rows)
 
 
+def validate_manifest(payload: bytes, rows: tuple[Q4Row, ...], manifest: dict) -> dict[int, dict]:
+    """Pin this one-time repair to the reviewed workbook and original stories."""
+    if hashlib.sha256(payload).hexdigest() != manifest.get("workbook_sha256"):
+        raise RepairConflict("q4_workbook_sha_mismatch")
+    try:
+        identities = {int(key): value for key, value in manifest["rows"].items()}
+        ids = [int(value["id"]) for value in identities.values()]
+        hashes = [digest for value in identities.values()
+                  for digest in (value["legacy_spec_sha256"], value["legacy_verify_sha256"])]
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise RepairConflict("q4_manifest_ids_invalid") from exc
+    if (set(identities) != {row.excel_row for row in rows} or len(ids) != len(set(ids))
+            or any(not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest) for digest in hashes)):
+        raise RepairConflict("q4_manifest_ids_invalid")
+    return identities
+
+
 def _html_text(value: str) -> str:
     return html.escape(value, quote=True).replace("\r\n", "\n").replace("\n", "<br />")
 
@@ -163,7 +180,10 @@ def _normalized(value: object) -> str:
     return " ".join(html.unescape(raw).split())
 
 
-def assert_source_story(story: dict, row: Q4Row, *, product_id: int) -> str:
+def assert_source_story(story: dict, row: Q4Row, *, product_id: int,
+                        identity: dict | None = None) -> str:
+    if identity is not None and int(story.get("id", 0)) != int(identity["id"]):
+        raise RepairConflict(f"q4_story_id_changed:{row.excel_row}")
     if int(story.get("product", 0)) != product_id or story.get("deleted") in (1, "1", True):
         raise RepairConflict(f"q4_story_identity:{row.excel_row}")
     if _normalized(story.get("title")) != _normalized(row.title):
@@ -180,7 +200,10 @@ def assert_source_story(story: dict, row: Q4Row, *, product_id: int) -> str:
             raise RepairConflict(f"q4_story_human_edit:{row.excel_row}")
         if story.get("sourceNote") not in ("", None, rendered["sourceNote"]):
             raise RepairConflict(f"q4_story_source_changed:{row.excel_row}")
-        if "2026 SDK 年度任务计划转入的待评审需求" not in spec:
+        if (identity is None or hashlib.sha256(spec.encode()).hexdigest()
+                != identity["legacy_spec_sha256"]
+                or hashlib.sha256(str(story.get("verify") or "").encode()).hexdigest()
+                != identity["legacy_verify_sha256"]):
             raise RepairConflict(f"q4_story_human_edit:{row.excel_row}")
         return "source_done" if story.get("sourceNote") == rendered["sourceNote"] else "legacy"
     if (_normalized(spec) == _normalized(rendered["spec"])
@@ -196,7 +219,8 @@ def protected_fields(story: dict) -> dict:
     return {key: story.get(key) for key in SAFE_FIELDS}
 
 
-def build_source_note_sql(rows: tuple[Q4Row, ...], stories: dict[int, dict], *, product_id: int) -> str:
+def build_source_note_sql(rows: tuple[Q4Row, ...], stories: dict[int, dict], *, product_id: int,
+                          identities: dict[int, dict] | None = None) -> str:
     """Generate one guarded MariaDB transaction for sourceNote only.
 
     ZenTao OSS 22.6's story PUT API clears assignedTo and rewrites assignedDate
@@ -205,7 +229,8 @@ def build_source_note_sql(rows: tuple[Q4Row, ...], stories: dict[int, dict], *, 
     statements = []
     for row in rows:
         story = stories[row.excel_row]
-        state = assert_source_story(story, row, product_id=product_id)
+        state = assert_source_story(story, row, product_id=product_id,
+                                    identity=identities[row.excel_row] if identities else None)
         if state == "done":
             continue
         if state != "body_done":
@@ -246,8 +271,9 @@ def select_rows(rows: tuple[Q4Row, ...], *, only_row: int | None, limit: int | N
     return rows[:limit]
 
 
-async def change_story_body(client: ZenTaoClient, before: dict, row: Q4Row, *, product_id: int) -> dict:
-    state = assert_source_story(before, row, product_id=product_id)
+async def change_story_body(client: ZenTaoClient, before: dict, row: Q4Row, *, product_id: int,
+                            identity: dict) -> dict:
+    state = assert_source_story(before, row, product_id=product_id, identity=identity)
     if state not in {"legacy", "source_done"}:
         raise RepairConflict(f"q4_change_not_needed:{row.excel_row}")
     rendered = render_story(row)
@@ -270,13 +296,14 @@ async def change_story_body(client: ZenTaoClient, before: dict, row: Q4Row, *, p
     if protected_fields(after) != protected_fields(before):
         raise RepairConflict(f"q4_unexpected_side_effect:{row.excel_row}")
     expected_state = "done" if state == "source_done" else "body_done"
-    if (assert_source_story(after, row, product_id=product_id) != expected_state
+    if (assert_source_story(after, row, product_id=product_id, identity=identity) != expected_state
             or int(after.get("version", 0)) != int(before.get("version", 0)) + 1):
         raise RepairConflict(f"q4_readback_failed:{row.excel_row}")
     return after
 
 
-async def _fetch_stories(client: ZenTaoClient, rows: tuple[Q4Row, ...], product_id: int) -> dict[int, dict]:
+async def _fetch_stories(client: ZenTaoClient, rows: tuple[Q4Row, ...], product_id: int,
+                         identities: dict[int, dict]) -> dict[int, dict]:
     first = await client.list_stories(product_id, 1)
     pager = first.get("pager")
     page_total = pager.get("pageTotal") if isinstance(pager, dict) else None
@@ -304,15 +331,20 @@ async def _fetch_stories(client: ZenTaoClient, rows: tuple[Q4Row, ...], product_
     if set(mapped) != expected:
         raise RepairConflict(f"q4_coverage_mismatch:missing={sorted(expected-set(mapped))}:extra={sorted(set(mapped)-expected)}")
     for row in rows:
-        assert_source_story(mapped[row.excel_row], row, product_id=product_id)
+        assert_source_story(mapped[row.excel_row], row, product_id=product_id,
+                            identity=identities[row.excel_row])
     return mapped
 
 
 async def run(workbook: bytes, *, apply: bool, limit: int | None, only_row: int | None,
               output_dir: Path) -> dict:
+    manifest = json.loads(Path(__file__).with_name("sdk_q4_manifest.json").read_text())
     rows = parse_q4_workbook(workbook)
+    identities = validate_manifest(workbook, rows, manifest)
     if len(rows) != 67 or len({row.module for row in rows}) != 16 or sum(len(row.links) for row in rows) != 8:
         raise RepairConflict("q4_source_shape_mismatch")
+    if {identity["id"] for identity in identities.values()} != set(range(3, 70)):
+        raise RepairConflict("q4_manifest_ids_invalid")
     product_id = int(os.environ["PLATFORM_SDK_ZENTAO_PRODUCT_ID"])
     client = ZenTaoClient(
         os.environ["PLATFORM_SDK_ZENTAO_BASE_URL"],
@@ -330,11 +362,14 @@ async def run(workbook: bytes, *, apply: bool, limit: int | None, only_row: int 
             saved_ids = {int(item["excel_row"]): int(item["old_story"]["id"]) for item in prior["rows"]}
             if set(saved_ids) != {row.excel_row for row in rows}:
                 raise RepairConflict("q4_snapshot_coverage_changed")
+            if any(saved_ids[row.excel_row] != identities[row.excel_row]["id"] for row in rows):
+                raise RepairConflict("q4_snapshot_story_id_changed")
             stories = {row.excel_row: await client.get_story(saved_ids[row.excel_row]) for row in rows}
             for row in rows:
-                assert_source_story(stories[row.excel_row], row, product_id=product_id)
+                assert_source_story(stories[row.excel_row], row, product_id=product_id,
+                                    identity=identities[row.excel_row])
         else:
-            stories = await _fetch_stories(client, rows, product_id)
+            stories = await _fetch_stories(client, rows, product_id, identities)
         snapshot = {
             "sheet": SHEET,
             "workbook_sha256": hashlib.sha256(workbook).hexdigest(),
@@ -350,7 +385,8 @@ async def run(workbook: bytes, *, apply: bool, limit: int | None, only_row: int 
         result = {"total": len(rows), "already_done": 0, "written": 0, "dry_run": not apply, "rows": []}
         for row in select_rows(rows, only_row=only_row, limit=limit):
             before = await client.get_story(int(stories[row.excel_row]["id"]))
-            state = assert_source_story(before, row, product_id=product_id)
+            state = assert_source_story(before, row, product_id=product_id,
+                                        identity=identities[row.excel_row])
             if state in {"done", "body_done"}:
                 result["already_done"] += 1
                 result["rows"].append({"row": row.excel_row, "story": before["id"], "state": state})
@@ -358,16 +394,18 @@ async def run(workbook: bytes, *, apply: bool, limit: int | None, only_row: int 
             if not apply:
                 result["rows"].append({"row": row.excel_row, "story": before["id"], "state": "preview"})
                 continue
-            await change_story_body(client, before, row, product_id=product_id)
+            await change_story_body(client, before, row, product_id=product_id,
+                                    identity=identities[row.excel_row])
             result["written"] += 1
             result["rows"].append({"row": row.excel_row, "story": before["id"], "state": "written"})
             receipt_path = output_dir / "receipts.json"
             receipt_path.write_text(json.dumps(result, ensure_ascii=False, indent=2))
             os.chmod(receipt_path, 0o600)
         current = {row.excel_row: await client.get_story(int(stories[row.excel_row]["id"])) for row in rows}
-        if all(assert_source_story(current[row.excel_row], row, product_id=product_id)
+        if all(assert_source_story(current[row.excel_row], row, product_id=product_id,
+                                   identity=identities[row.excel_row])
                in {"body_done", "done"} for row in rows):
-            sql = build_source_note_sql(rows, current, product_id=product_id)
+            sql = build_source_note_sql(rows, current, product_id=product_id, identities=identities)
             if sql:
                 sql_path = output_dir / "source-notes.sql"
                 sql_path.write_text(sql)
