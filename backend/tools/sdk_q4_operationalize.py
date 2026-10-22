@@ -18,13 +18,22 @@ from typing import Any, Self
 
 import httpx
 
-from tools.sdk_q4_repair import Q4Row, parse_q4_workbook, validate_manifest
+from tools.sdk_q4_repair import (
+    PRIORITY,
+    Q4Row,
+    _normalized,
+    parse_q4_workbook,
+    render_story,
+    validate_manifest,
+)
 
 SHEET = "2026年Q4上线版本"
 WORKBOOK_SHA = "402030f9a76fb966b23fc6c9ad843d5f9abd85bcdce1d685835440ae6c51b7d0"
 PLAN_TITLE = SHEET
 _PROTECTED = ("id", "product", "title", "spec", "verify", "pri", "version",
-              "sourceNote", "assignedTo", "assignedDate", "deleted")
+              "sourceNote", "assignedTo", "assignedDate", "deleted", "branch",
+              "roadmap", "color", "estimate", "category", "source", "keywords",
+              "closedBy", "closedReason", "openedBy", "openedDate")
 
 
 class OperationalConflict(RuntimeError):
@@ -78,7 +87,7 @@ def _account(value: Any) -> str:
 
 
 def _same(field: str, before: dict, after: dict) -> bool:
-    if field == "assignedTo":
+    if field in {"assignedTo", "openedBy", "closedBy"}:
         return _account(before.get(field)) == _account(after.get(field))
     return before.get(field) == after.get(field)
 
@@ -88,9 +97,16 @@ def check_story_before(item: SourceItem, story: dict) -> None:
         raise OperationalConflict(f"q4_identity:{item.excel_row}")
     if " ".join(str(story.get("title") or "").split()) != " ".join(item.row.title.split()):
         raise OperationalConflict(f"q4_title:{item.excel_row}")
-    note = str(story.get("sourceNote") or "")
-    if not (note.startswith(SHEET + "｜") and note.endswith(f"｜Excel第{item.excel_row}行")):
+    expected = render_story(item.row)
+    if story.get("sourceNote") != expected["sourceNote"]:
         raise OperationalConflict(f"q4_source:{item.excel_row}")
+    for field in ("spec", "verify", "source"):
+        if _normalized(story.get(field)) != _normalized(expected[field]):
+            raise OperationalConflict(f"q4_source_field:{item.excel_row}:{field}")
+    if item.row.priority and int(story.get("pri") or 0) != PRIORITY[item.row.priority]:
+        raise OperationalConflict(f"q4_source_priority:{item.excel_row}")
+    if _account(story.get("openedBy")) != "sdk-api":
+        raise OperationalConflict(f"q4_source_creator:{item.excel_row}")
     assignee = story.get("assignedTo")
     if assignee and (not isinstance(assignee, dict)
                      or assignee.get("realname") != item.row.owner):
@@ -110,6 +126,8 @@ def check_story_after(before: dict, after: dict, *, module_id: int, plan_id: int
     for field in _PROTECTED:
         if not _same(field, before, after):
             raise OperationalConflict(f"q4_side_effect:{field}:{before.get('id')}")
+    if after.get("stage") != before.get("stage"):
+        raise OperationalConflict(f"q4_side_effect:stage:{before.get('id')}")
     if int(after.get("module") or 0) != module_id or str(plan_id) not in str(after.get("plan") or "").split(","):
         raise OperationalConflict(f"q4_link_readback:{before.get('id')}")
     if draft:
@@ -207,7 +225,20 @@ class NativeZen:
             raise OperationalConflict("q4_plan_readback")
         return plan_id
 
-    def modules(self) -> dict[str, int]:
+    def plan_stories(self, plan_id: int) -> set[int]:
+        body = self.api("GET", f"productplans/{plan_id}")
+        stories = body.get("stories")
+        if not isinstance(stories, list):
+            raise OperationalConflict("q4_plan_members_invalid")
+        try:
+            ids = [int(story["id"]) for story in stories]
+        except (TypeError, ValueError, KeyError):
+            raise OperationalConflict("q4_plan_members_invalid") from None
+        if len(ids) != len(set(ids)):
+            raise OperationalConflict("q4_plan_members_duplicate")
+        return set(ids)
+
+    def modules(self, expected_names: set[str] | None = None) -> dict[str, int]:
         body = self.api("GET", "modules", params={"type": "story", "id": 1})
         tree = body.get("modules")
         if not isinstance(tree, list):
@@ -222,6 +253,8 @@ class NativeZen:
                 name = str(node.get("name") or "")
                 if name in found:
                     raise OperationalConflict("q4_module_duplicate")
+                if expected_names and name in expected_names and int(node.get("parent") or 0) != 0:
+                    raise OperationalConflict(f"q4_module_parent_conflict:{name}")
                 found[name] = int(node["id"])
                 if node.get("children"):
                     visit(node["children"])
@@ -249,7 +282,7 @@ class NativeZen:
             raise OperationalConflict("q4_module_create_uncertain") from None
         if response.status_code != 200 or body.get("result") != "success":
             raise OperationalConflict("q4_module_create_rejected")
-        module_id = self.modules().get(name)
+        module_id = self.modules({name}).get(name)
         if not module_id:
             raise OperationalConflict("q4_module_create_readback")
         return module_id
@@ -274,7 +307,9 @@ class NativeZen:
             "assignedTo": _account(story.get("assignedTo")),
             "source": story.get("source") or "", "sourceNote": story["sourceNote"],
             "status": status or story["status"], "stage": story.get("stage") or "wait",
-            "closedBy": "", "closedReason": "", "keywords": story.get("keywords") or "",
+            "closedBy": _account(story.get("closedBy")),
+            "closedReason": story.get("closedReason") or "",
+            "keywords": story.get("keywords") or "",
         }
         data = {f"{key}[{story_id}]": str(value) for key, value in fields.items()}
         response = self.client.post(self.origin + "/sdk/index.php", params={
@@ -302,6 +337,34 @@ def _write_private(path: Path, data: dict) -> None:
     os.chmod(path, 0o600)
 
 
+def source_gap_register(items: tuple[SourceItem, ...], stories: dict[int, dict]) -> dict:
+    rows = []
+    for item in items:
+        row = item.row
+        story = stories[item.story_id]
+        assignee = story.get("assignedTo") or {}
+        rows.append({
+            "source": {
+                "sheet": SHEET, "excel_row": row.excel_row,
+                "cells": {"A": row.module, "B": row.title, "C": row.owner,
+                          "D": row.version, "E": row.planned_start, "F": row.planned_end,
+                          "G": row.priority, "H": row.risk, "I": row.progress, "J": row.note},
+                "links": [{"cell": cell, "label": label, "url": url}
+                          for cell, label, url in row.links],
+            },
+            "zentao": {"story_id": item.story_id, "source_module": item.module_name,
+                       "assignee_account": _account(assignee) or None,
+                       "assignee_realname": assignee.get("realname") if isinstance(assignee, dict) else None},
+            "business_decisions_needed": [
+                "confirm_requester", "define_scenario_and_device_scope", "define_acceptance_criteria",
+                "choose_reviewer", "confirm_target_version_and_dates",
+                *(["resolve_responsible_account"] if not assignee else []),
+            ],
+        })
+    return {"workbook_sha256": WORKBOOK_SHA, "sheet": SHEET,
+            "source_rows": len(rows), "rows": rows}
+
+
 def operate(items: tuple[SourceItem, ...], zen: NativeZen, output: Path,
             *, phase: str, apply: bool, review_mode: str) -> dict:
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -320,10 +383,13 @@ def operate(items: tuple[SourceItem, ...], zen: NativeZen, output: Path,
         baseline = {"sheet": SHEET, "workbook_sha256": WORKBOOK_SHA,
                     "stories": {str(key): value for key, value in current.items()}}
         _write_private(snapshot_path, baseline)
+    _write_private(output / "source-gap-register.json", source_gap_register(items, {
+        int(key): value for key, value in baseline["stories"].items()
+    }))
     extra = {story_id: zen.story(story_id) for story_id in (1, 2)}
     plan_id = zen.plan(create=False)
     expected_modules = tuple(dict.fromkeys(item.module_name for item in items))
-    modules = zen.modules()
+    modules = zen.modules(set(expected_modules))
     report = {"phase": phase, "dry_run": not apply, "source_rows": len(items),
               "plan_id": plan_id, "modules_present": len(set(expected_modules) & set(modules)),
               "stories_linked": 0, "stories_draft": 0, "written": 0}
@@ -370,10 +436,14 @@ def operate(items: tuple[SourceItem, ...], zen: NativeZen, output: Path,
             after = zen.story(item.story_id)
             if str(plan_id) in str(after.get("plan") or "").split(","):
                 report["stories_linked"] += 1
+        if apply and zen.plan_stories(plan_id) != {item.story_id for item in items}:
+            raise OperationalConflict("q4_plan_members_mismatch")
 
     if phase == "draft":
         if review_mode != "pending":
             raise OperationalConflict("q4_draft_requires_pending_mode")
+        if zen.plan_stories(plan_id) != {item.story_id for item in items}:
+            raise OperationalConflict("q4_plan_members_mismatch")
         for item in items:
             before = zen.story(item.story_id)
             _check_protected_against_snapshot(baseline["stories"][str(item.story_id)], before)
@@ -398,6 +468,8 @@ def operate(items: tuple[SourceItem, ...], zen: NativeZen, output: Path,
                 report["stories_draft"] += 1
 
     if phase == "verify":
+        if zen.plan_stories(plan_id) != {item.story_id for item in items}:
+            raise OperationalConflict("q4_plan_members_mismatch")
         for item in items:
             story = zen.story(item.story_id)
             _check_protected_against_snapshot(baseline["stories"][str(item.story_id)], story)
