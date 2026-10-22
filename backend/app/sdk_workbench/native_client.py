@@ -55,6 +55,10 @@ class NativeZenTaoClient:
         self._sessions.clear()
         await self._client.aclose()
 
+    async def account(self, actor: AuthContext) -> str:
+        """Return the currently entitled ZenTao account without exposing a session."""
+        return await self._sso.native_account(actor)
+
     async def request(
         self,
         actor: AuthContext,
@@ -70,7 +74,7 @@ class NativeZenTaoClient:
             raise ValueError("zentao_invalid_method")
         if not _PATH.fullmatch(path) or api_version not in {1, 2}:
             raise ValueError("zentao_invalid_path")
-        account = await self._sso.native_account(actor)
+        account = await self.account(actor)
         key = (actor.internal_user_id, account)
         sid = await self._session(key, account)
         for attempt in range(2):

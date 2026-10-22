@@ -109,6 +109,20 @@ async def test_entitlement_is_rechecked_before_cached_session_use(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_account_lookup_checks_current_eligibility_without_zen_login(tmp_path):
+    repository = Identities()
+    client = build_client(tmp_path, repository, lambda _: pytest.fail("no ZenTao traffic expected"))
+    try:
+        assert await client.account(actor()) == "alice"
+        repository.members[ALICE]["eligible"] = False
+        with pytest.raises(HTTPException) as denied:
+            await client.account(actor())
+    finally:
+        await client.close()
+    assert denied.value.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_stale_identity_is_denied_before_session_or_api_call(tmp_path):
     seen: list[str] = []
 
