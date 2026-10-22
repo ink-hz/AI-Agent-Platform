@@ -10,6 +10,7 @@ from app.control_plane.middleware import IdentitySecurityMiddleware, is_public_r
 
 @pytest.mark.parametrize("path", [
     "/ai-notes",
+    "/ai-notes/",
     "/ai-notes/foundations/agent-engineering-learning-map",
 ])
 def test_unauthenticated_ai_notes_shell_can_start_dingtalk_login(path):

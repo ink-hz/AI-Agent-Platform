@@ -75,7 +75,7 @@ _PUBLIC_MARKETING_WORKSPACE_SHELL = re.compile(
     r"(?:/conversations/[A-Za-z0-9:._-]+)?)\Z"
 )
 _PUBLIC_AI_NOTES_SHELL = re.compile(
-    r"/ai-notes(?:/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,127})?\Z"
+    r"/ai-notes(?:/|/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,127})?\Z"
 )
 _PUBLIC_SDK_WORKSPACE_SHELL = re.compile(r"/sdk(?:/?|/requirements/[1-9][0-9]*|/tasks(?:/[1-9][0-9]*)?)\Z")
 _AGENT_BINDING_VALIDATION_ROUTE = re.compile(

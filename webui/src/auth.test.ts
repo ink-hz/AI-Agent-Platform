@@ -179,6 +179,7 @@ describe("login return path", () => {
     ["?return_path=%2Fagents%2Fhr-bot", "/agents/hr-bot"],
     ["?return_path=%2Faccount", "/account"],
     ["?return_path=%2Fai-notes", "/ai-notes"],
+    ["?return_path=%2Fai-notes%2F", "/ai-notes/"],
     ["?return_path=%2Fai-notes%2Fagent-architecture%2Fsystem-handbook", "/ai-notes/agent-architecture/system-handbook"],
     ["?return_path=%2Fadmin%2Fvoc", "/admin/voc"],
     ["?return_path=%2Fadmin%2Ffae", "/admin/fae"],
