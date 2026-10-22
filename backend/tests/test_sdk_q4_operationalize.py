@@ -152,6 +152,7 @@ def test_verify_requires_exact_plan_membership(tmp_path):
     item = _fixture_item()
     story = {**_story(item), "pri": 1, "module": 5, "plan": "1",
              "status": "draft", "reviewer": [], "stage": "planned"}
+    (tmp_path / "preflight.json").write_text(json.dumps({"stories": {"3": story}}))
 
     class FakeZen:
         def story(self, story_id):
@@ -176,6 +177,7 @@ def test_completed_link_and_draft_phases_write_nothing_on_resume(tmp_path):
     item = _fixture_item()
     story = {**_story(item), "pri": 1, "module": 5, "plan": "1",
              "status": "draft", "reviewer": [], "stage": "planned"}
+    (tmp_path / "preflight.json").write_text(json.dumps({"stories": {"3": story}}))
 
     class FakeZen:
         def story(self, story_id):
@@ -218,3 +220,27 @@ def test_plan_conflict_and_nested_module_are_rejected():
     }]}
     with pytest.raises(OperationalConflict, match="parent_conflict"):
         zen.modules({"SDK 核心"})
+
+
+def test_batch_edit_rejects_missing_fields_before_accessing_network():
+    item = _fixture_item()
+    story = {**_story(item), "category": "", "branch": 0}
+    zen = object.__new__(NativeZen)
+    with pytest.raises(OperationalConflict, match="missing_field"):
+        zen.batch_edit(story, module_id=5, plan_id=1)
+    story["category"] = "feature"
+    story["stage"] = ""
+    with pytest.raises(OperationalConflict, match="missing_field"):
+        zen.batch_edit(story, module_id=5, plan_id=1)
+
+
+def test_first_preflight_rejects_unreviewed_version_vector(tmp_path):
+    item = _fixture_item()
+    story = {**_story(item), "pri": 1}
+
+    class FakeZen:
+        def story(self, story_id):
+            return story
+
+    with pytest.raises(OperationalConflict, match="initial_version_drift"):
+        operate((item,), FakeZen(), tmp_path, phase="audit", apply=False, review_mode="pending")

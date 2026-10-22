@@ -29,6 +29,8 @@ from tools.sdk_q4_repair import (
 
 SHEET = "2026年Q4上线版本"
 WORKBOOK_SHA = "402030f9a76fb966b23fc6c9ad843d5f9abd85bcdce1d685835440ae6c51b7d0"
+# Reviewed online version vector before the 2026-10-22 one-time write.
+INITIAL_VERSIONS_SHA = "ee2a336ba5201c12ce8dfd55e8db3b587269a344a8968687551fde009a4fe252"
 PLAN_TITLE = SHEET
 _PROTECTED = ("id", "product", "title", "spec", "verify", "pri", "version",
               "sourceNote", "assignedTo", "assignedDate", "deleted", "branch",
@@ -293,20 +295,22 @@ class NativeZen:
     def batch_edit(self, story: dict, *, module_id: int, plan_id: int,
                    status: str | None = None) -> None:
         story_id = int(story["id"])
+        if not story.get("category") or not story.get("stage") or story.get("branch") is None:
+            raise OperationalConflict(f"q4_story_edit_missing_field:{story_id}")
         referer = self.client.get(self.origin + "/sdk/index.php", params={
             "m": "product", "f": "browse", "productID": 1,
         })
         if referer.status_code != 200:
             raise OperationalConflict("q4_story_browse_unavailable")
         fields = {
-            "branch": "branch" + str(story.get("branch") or 0),
-            "module": module_id, "roadmap": story.get("roadmap") or 0,
+            "branch": "branch" + str(story["branch"]),
+            "module": module_id, "roadmap": story.get("roadmap") or "",
             "plan": plan_id, "title": story["title"], "color": story.get("color") or "",
-            "estimate": story.get("estimate") or 0,
-            "category": story.get("category") or "feature", "pri": story["pri"],
+            "estimate": story.get("estimate") or "",
+            "category": story["category"], "pri": story["pri"],
             "assignedTo": _account(story.get("assignedTo")),
             "source": story.get("source") or "", "sourceNote": story["sourceNote"],
-            "status": status or story["status"], "stage": story.get("stage") or "wait",
+            "status": status or story["status"], "stage": story["stage"],
             "closedBy": _account(story.get("closedBy")),
             "closedReason": story.get("closedReason") or "",
             "keywords": story.get("keywords") or "",
@@ -353,6 +357,9 @@ def source_gap_register(items: tuple[SourceItem, ...], stories: dict[int, dict])
                           for cell, label, url in row.links],
             },
             "zentao": {"story_id": item.story_id, "source_module": item.module_name,
+                       "status_at_register": story.get("status"),
+                       "plan_at_register": story.get("plan"),
+                       "module_at_register": story.get("module"),
                        "assignee_account": _account(assignee) or None,
                        "assignee_realname": assignee.get("realname") if isinstance(assignee, dict) else None},
             "business_decisions_needed": [
@@ -380,12 +387,14 @@ def operate(items: tuple[SourceItem, ...], zen: NativeZen, output: Path,
         for story_id, story in current.items():
             _check_protected_against_snapshot(baseline["stories"][str(story_id)], story)
     else:
+        vector = ",".join(f"{story_id}:{current[story_id].get('version')}"
+                          for story_id in sorted(current))
+        if hashlib.sha256(vector.encode()).hexdigest() != INITIAL_VERSIONS_SHA:
+            raise OperationalConflict("q4_initial_version_drift")
         baseline = {"sheet": SHEET, "workbook_sha256": WORKBOOK_SHA,
                     "stories": {str(key): value for key, value in current.items()}}
         _write_private(snapshot_path, baseline)
-    _write_private(output / "source-gap-register.json", source_gap_register(items, {
-        int(key): value for key, value in baseline["stories"].items()
-    }))
+    _write_private(output / "source-gap-register.json", source_gap_register(items, current))
     extra = {story_id: zen.story(story_id) for story_id in (1, 2)}
     plan_id = zen.plan(create=False)
     expected_modules = tuple(dict.fromkeys(item.module_name for item in items))

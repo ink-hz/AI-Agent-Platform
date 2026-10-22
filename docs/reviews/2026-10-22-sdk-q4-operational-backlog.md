@@ -13,7 +13,7 @@
 
 隔离生产副本先验证原生创建计划/模块、逐条关联、撤回统一评审、草稿、从草稿重新提交评审和幂等重跑。相同工具在生产按 `structure`、`link`、`draft` 三阶段执行，每条写后回读，最后 `verify` 结果：67/67 条关联计划、16/16 个需求模块存在、67/67 条为草稿且无当前评审人、受保护的标题/正文/验收栏/优先级/版本/来源/责任人/指派时间均无差异。独立 SQL 复核得到同样的 67 条草稿、67 条计划关联、16 个模块和 0 条当前版本评审记录。生产没有改 Nginx、平台镜像或行政服务。
 
-生产写入实际使用的 `sdk_q4_operationalize.executed.py` SHA-256 是 `3e701305c35dd2e10d49f7de45674f97e7a07eb5a3f34b41faf0d06db13c99f3`；代码审查后补强的 `sdk_q4_operationalize.py` SHA-256 是 `176405c3f4bb7fdbac1fa445d60102b264623259e171a60ab46a708dde0f7b06`，以只读 `verify` 再验生产，核对完整原表正文/栏目和计划精确成员集合，结果仍是 67/67。私有目录还保存 `audit-report.json`、`structure-report.json`、`link-report.json`、`draft-report.json`、`verify-report.json`、`verify-report-reviewed.json` 以及 `source-gap-register.json`。后者按 67 个 Excel 行分别列 A:J 原值和单元格、8 个原链接、禅道 ID、当前账号对应及待业务决定事项；SHA-256 为 `e4407cd7f26dc638be7abcb97a3428d472404479a7c4e18ff44b7411ea11f933`。这些来源数据仅保存在私有目录，没有上传公开页面。
+生产写入实际使用的 `sdk_q4_operationalize.executed.py` SHA-256 是 `3e701305c35dd2e10d49f7de45674f97e7a07eb5a3f34b41faf0d06db13c99f3`；代码审查后补强的 `sdk_q4_operationalize.py` SHA-256 是 `a1a37b749f51fe712feebfc90093fd6f6f21427a39f3d296c8e7342a3f1cf414`，以只读 `verify` 再验生产，核对完整原表正文/栏目和计划精确成员集合，结果仍是 67/67。私有目录还保存 `audit-report.json`、`structure-report.json`、`link-report.json`、`draft-report.json`、`verify-report.json`、`verify-report-reviewed.json`、`verify-report-final.json` 以及 `source-gap-register.json`。后者按 67 个 Excel 行分别列 A:J 原值和单元格、8 个原链接、禅道 ID、当前草稿状态、账号对应及待业务决定事项；SHA-256 为 `c2d234a2022ffbf42c0bd67836632606e615bdcd190bee2d2068223128a49126`。这些来源数据仅保存在私有目录，没有上传公开页面。
 
 线上即时快照中 54 条已指派给与原表姓名完全一致的禅道账号，13 条未指派。隔离副本建立时只有 53 条；生产在预检前已有人将 #3 指派给“周公”，本次操作保留了该人工变更。13 条待业务核定的原表责任人如下：
 
