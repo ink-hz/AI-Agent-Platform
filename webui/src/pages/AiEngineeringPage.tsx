@@ -369,6 +369,9 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   const openAction = (action: PanoramaActionId) => {
     if (action === "access" && account.role !== "platform_owner") return;
     const target = actionPath(action);
+    if ('newTab' in target && target.newTab) {
+      window.open(platformPath(target.path), '_blank', 'noopener,noreferrer'); return;
+    }
     const previous = lastWorkspace.current;
     if (dirty.current && (target.external || (previous && previous.group !== action))) {
       if (!window.confirm("当前工作区可能有未保存的输入。确定放弃并切换？选择取消可保留当前工作。")) return;

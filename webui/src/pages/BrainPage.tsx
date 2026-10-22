@@ -23,13 +23,11 @@ export function BrainPage({
   account,
   client = DEFAULT_CLIENT,
   onConversationCreated,
-  onOpenAiNotes = (path) => navigate(path),
   onOpenConversation = (path) => navigate(path),
 }: {
   account: Account;
   client?: BrainPageClient;
   onConversationCreated?: (conversation: Conversation) => void;
-  onOpenAiNotes?: (path: string) => void;
   onOpenConversation?: (path: string) => void;
 }) {
   const commitDraft = useWorkspaceDraftCommit();
@@ -86,11 +84,8 @@ export function BrainPage({
         <a
           className="brain-ai-notes-entry"
           href={platformPath("/ai-notes")}
-          onClick={(event) => {
-            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            onOpenAiNotes("/ai-notes");
-          }}
+          target="_blank"
+          rel="noopener noreferrer"
         >AI 工程笔记 <span aria-hidden="true">→</span></a>
       </div>
       <div className="brain-home-focus">

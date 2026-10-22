@@ -78,34 +78,31 @@ describe("BrainPage", () => {
   });
 
   it("opens AI engineering notes from one quiet home entry", async () => {
-    const onOpenAiNotes = vi.fn();
     await act(async () => root.render(
       <BrainPage
         account={account}
         client={{ createSubmission: vi.fn() }}
-        onOpenAiNotes={onOpenAiNotes}
       />,
     ));
 
     const entry = container.querySelector<HTMLAnchorElement>(".brain-ai-notes-entry");
     expect(entry?.textContent).toBe("AI 工程笔记 →");
     expect(entry?.getAttribute("href")).toBe("/ai-notes");
+    expect(entry?.getAttribute("target")).toBe("_blank");
+    expect(entry?.getAttribute("rel")).toBe("noopener noreferrer");
     expect(entry?.parentElement?.classList.contains("brain-home-toolbar")).toBe(true);
     expect(container.querySelector(".brain-home-focus h1")?.textContent).toBe("AI 助手");
     expect(container.querySelector(".brain-home-focus .brain-composer")).not.toBeNull();
 
-    await act(async () => entry?.click());
-    expect(onOpenAiNotes).toHaveBeenCalledWith("/ai-notes");
+    expect(entry?.target).toBe("_blank");
   });
 
   it("preserves the deployment prefix and native modified-link behavior", async () => {
     window.history.replaceState({}, "", "/_preview/dingtalk-r1/");
-    const onOpenAiNotes = vi.fn();
     await act(async () => root.render(
       <BrainPage
         account={account}
         client={{ createSubmission: vi.fn() }}
-        onOpenAiNotes={onOpenAiNotes}
       />,
     ));
     const entry = container.querySelector<HTMLAnchorElement>(".brain-ai-notes-entry")!;
@@ -121,7 +118,7 @@ describe("BrainPage", () => {
         ...init,
       })));
     }
-    expect(onOpenAiNotes).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/_preview/dingtalk-r1/");
   });
 
   it("submits once while pending and opens the persisted Conversation URL", async () => {

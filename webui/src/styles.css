@@ -1014,7 +1014,6 @@ body {
   .fleet-agent-card:hover { transform: none; }
 }
 
-.app.is-ai-notes-workspace-shell { height: 100dvh; overflow: hidden; }
 .page.is-ai-notes-workspace { width: 100%; min-height: 0; padding: 0; }
 .ai-notes-layout { position: relative; display: grid; height: 100%; min-height: 0; grid-template-columns: 19rem minmax(0, 1fr); background: var(--surface); }
 .ai-notes-sidebar { min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); background: #f7f9fc; }
@@ -1116,7 +1115,6 @@ body {
   .fae-workbench:is(section) { display: block; }
   .fae-report { gap: 14px; }
   .fae-outcome-cover, .fae-outcome-chapter { break-inside: avoid; box-shadow: none; }
-  .app.is-ai-notes-workspace-shell { height: auto; overflow: visible; }
   .ai-notes-layout { display: block; }
   .ai-notes-reader { overflow: visible; }
   .ai-note-article { max-width: none; padding: 0; }
