@@ -22,8 +22,12 @@ describe("Platform router", () => {
   it("keeps SDK requirement and detail routes inside the Platform shell", () => {
     expect(parseRoute("/sdk/")).toEqual({ name: "sdk" });
     expect(parseRoute("/sdk/requirements/12")).toEqual({ name: "sdk", storyId: 12 });
+    expect(parseRoute("/sdk/tasks")).toEqual({ name: "sdk", tab: "tasks" });
+    expect(parseRoute("/sdk/tasks/4")).toEqual({ name: "sdk", tab: "tasks", taskId: 4 });
     expect(parseRoute("/sdk/requirements/not-an-id")).toEqual({ name: "not-found" });
     expect(routePath({ name: "sdk", storyId: 12 })).toBe("/sdk/requirements/12");
+    expect(routePath({ name: "sdk", tab: "tasks" })).toBe("/sdk/tasks");
+    expect(routePath({ name: "sdk", tab: "tasks", taskId: 4 })).toBe("/sdk/tasks/4");
   });
   it.each([
     ["/hr/", ""],

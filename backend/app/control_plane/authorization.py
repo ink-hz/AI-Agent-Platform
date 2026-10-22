@@ -65,6 +65,16 @@ _SDK_WORKBENCH_ROUTES = frozenset({
     ("GET", "/api/v1/sdk/candidates/{candidate_id}/gate"),
     ("POST", "/api/v1/sdk/candidates/{candidate_id}/approval"),
     ("POST", "/api/v1/sdk/candidates/{candidate_id}/release"),
+    ("GET", "/api/v1/sdk/native/requirements"),
+    ("POST", "/api/v1/sdk/native/requirements"),
+    ("GET", "/api/v1/sdk/native/requirements/pending-create"),
+    ("GET", "/api/v1/sdk/native/requirements/{story_id}"),
+    ("PUT", "/api/v1/sdk/native/requirements/{story_id}"),
+    ("POST", "/api/v1/sdk/native/requirements/{story_id}/assign"),
+    ("POST", "/api/v1/sdk/native/requirements/{story_id}/review"),
+    ("GET", "/api/v1/sdk/native/my-tasks"),
+    ("GET", "/api/v1/sdk/native/tasks/{task_id}"),
+    ("GET", "/api/v1/sdk/native/members"),
 })
 
 _AI_ENGINEERING_ROUTES = frozenset({

@@ -8,7 +8,7 @@
 
 ## 原生需求入口发布
 
-原生模式把需求、评审、任务和测试交给禅道员工账号；平台 `/sdk/` 只显示工作区入口。旧平台需求、年度 CSV 和候选证据 API 在 `PLATFORM_SDK_NATIVE_ONLY=1` 时返回 410，历史数据留在数据库中。此模式尚无 GitLab 构建集成，不能据此声称 SDK 包或真机测试通过。
+原生模式把需求、评审与任务保存在禅道员工账号下；平台 `/sdk/` 直接呈现需求管理和“我的任务”界面，不再把浏览器跳转到禅道 IP。旧平台需求、年度 CSV 和候选证据 API 在 `PLATFORM_SDK_NATIVE_ONLY=1` 时返回 410，历史数据留在数据库中。此模式尚无 GitLab 构建集成，不能据此声称 SDK 包或真机测试通过。
 
 在正式主机从本目录构建加固镜像：
 
@@ -19,11 +19,11 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 
 将已核验镜像的 `sha256:<image-id>` 填入权限 `0600` 的私有 `sdk.env` 的 `SDK_ZENTAO_IMAGE`，然后用生产私有 Compose 重新创建禅道。Compose 强制使用镜像内的启动校验脚本；控制器文件摘要不符时容器无法启动。核对容器实际镜像 ID 等于构建结果，登录后访问 `action::editComment` 必须返回 403。升级禅道时重新评估补丁及控制器摘要。
 
-当前入口由 `https://agent.orbbec.com.cn/sdk/` 发起钉钉单点登录，并进入禅道工作区。禅道仍有独立的浏览器源；平台入口域名与禅道回调源按实际部署配置。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
+当前入口为 `https://agent.orbbec.com.cn/sdk/`。浏览器只使用平台钉钉会话；平台 API 在服务端换取当前员工的个人禅道会话并调用私有禅道 API。禅道原生界面继续作为管理员和高级操作入口，但日常需求不依赖独立浏览器源。当前生产样例需求、任务和用例均以 `SDK-SCENE-TEST-20261020` 为前缀，不算正式业务需求。
 
 ## 钉钉身份进入个人禅道账号
 
-启用 `PLATFORM_SDK_SSO_ENABLED=1` 和 `PLATFORM_SDK_AUTO_PROVISION_ENABLED=1` 后，平台 `/sdk/` 为已授权 SDK 成员签发 45 秒、单次使用的表单票据。3D 传感技术研发中心是默认准入部门，子部门由当前钉钉目录继承；成员首次进入时按稳定目录身份自动建立个人禅道账号并授予工作区访问，无需逐人添加。已有人工绑定保持有效；`admin`、`sdkadmin`、`sdk-api` 禁止作为个人绑定。人员离开准入范围时由既有访问同步机制撤权。
+启用 `PLATFORM_SDK_SSO_ENABLED=1` 和 `PLATFORM_SDK_AUTO_PROVISION_ENABLED=1` 后，3D 传感技术研发中心及子部门的成员首次进入时按稳定目录身份自动建立个人禅道账号并授予工作区访问，无需逐人添加。需求页面通过该个人账号访问禅道私有 API；会话仅在平台服务端缓存。已有人工绑定保持有效；`admin`、`sdkadmin`、`sdk-api` 禁止作为个人绑定。人员离开准入范围时由既有访问同步机制撤权。原有表单票据入口保留给禅道高级界面使用。
 
 年度计划的 67 条既有需求按文件摘要、行标识和禅道导入标识核对后原位补全。责任人仅在钉钉目录中唯一匹配时才写入禅道“指派给”；多人、别名和存疑姓名保留原文并标待确认。原文件没有提出人列，不把导入账号或责任人伪装成提出人。开始、结束时间保存为结构化来源日期，同时保留禅道需求正文中的原始时间；它们不是需求创建日期。可重跑的修复工具为 `python -m app.sdk_workbench.annual_reconcile --sha256 <文件摘要>`，默认只读，确认报告后添加 `--apply`。
 
@@ -38,7 +38,7 @@ docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{
 1. 备份禅道数据库和数据卷，记录镜像 ID、产品/项目/执行 ID。
 2. 用员工账号验证：登录前不能读取产品数据；获得产品权限后可新建需求、提交评审、关联任务和用例；无权限账号仍不能查看产品。
 3. 核对 `action::editComment` 返回 403，`sdk-api` 服务账号不用于浏览器登录。
-4. 核对 `https://agent.orbbec.com.cn/sdk/` 的钉钉登录跳转与禅道会话；平台旧需求、CSV、候选 API 在原生模式应返回 410，`/api/v1/sdk/me` 应返回 `native_only: true`。
+4. 核对 `https://agent.orbbec.com.cn/sdk/` 的钉钉登录跳转；登录后原域名内显示需求列表、2026 Q4 来源、需求详情、创建、编辑、指派、评审和我的 SDK 任务。平台旧需求、CSV、候选 API 在原生模式应返回 410，`/api/v1/sdk/me` 应返回 `native_only: true`。
 5. `/sdk/` 页面交互由业务方按仓库 `AGENTS.md` 验收。GitLab、打包产物和真机测试没有完成时，不标记发布证据通过。
 
 需求变更请走禅道原生界面并选择评审人。v2 `PUT /stories/:id/change` 省略 `status` 时，本实例会让变更后的需求保持 `active`，不能作为强制评审入口。产品负责人也可以在原生界面选择“不需要评审”；如果团队要求每次变更必须由其他人评审，需另设产品负责人与评审人并调整评审策略。[禅道需求评审说明](https://www.zentao.net/book/zentaopms/887.html)、[v2 变更接口](https://www.zentao.net/book/api/put-stories-storyid-change-2171.html)。

@@ -42,6 +42,13 @@ it('places classified navigation outside main and keeps the topbar to brand and 
  expect(link('/admin/access')).not.toBeNull();
  expect(box.querySelector('.account-chip')?.textContent).toBe('苍渊');
 });
+it('gives SDK requirements the full work area without the platform sidebar',async()=>{
+ await act(async()=>root.render(<AppShell route={{name:'sdk'}} account={member}><p>SDK 需求管理</p></AppShell>));
+ expect(box.querySelector('.platform-sidebar')).toBeNull();
+ expect(box.querySelector('.platform-nav-toggle')).toBeNull();
+ expect(box.querySelector('main')?.classList.contains('is-sdk-workspace')).toBe(true);
+ expect(box.querySelector('main')?.textContent).toContain('SDK 需求管理');
+});
 it('keeps management and scoped workbench permissions distinct',async()=>{
  await render('member');expect(link('/admin')).toBeNull();expect(link('/admin/identity')).toBeNull();expect(link('/fae/manage/')).toBeNull();expect(link('/fae/')).not.toBeNull();
  await render('management_viewer');expect(link('/admin')).toBeNull();expect(link('/admin/voc')).not.toBeNull();

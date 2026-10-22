@@ -33,6 +33,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
     || route.name === "hr-position" || route.name === "hr-position-section"
     || route.name === "hr-panorama";
   const aiNotesWorkspace = !panorama && (route.name === "ai-notes" || route.name === "ai-note");
+  const sdkWorkspace = route.name === "sdk";
   const agentDesignWorkspace = route.name === "admin-agent-designs";
   const faeWorkspace = route.name.startsWith("fae-manage-");
   const accountCanReadDeployment = account?.role === "platform_owner" || account?.role === "platform_admin";
@@ -74,16 +75,16 @@ export function AppShell({ route, children, account, panorama = false }: { route
     });
   };
   return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
-    <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}`}>
+    <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}${sdkWorkspace ? " is-sdk-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
-          {!hrWorkspace && <button type="button" className="platform-nav-toggle" aria-controls="platform-navigation"
+          {!hrWorkspace && !sdkWorkspace && <button type="button" className="platform-nav-toggle" aria-controls="platform-navigation"
             aria-expanded={!navigationCollapsed} aria-label={navigationCollapsed ? "展开导航" : "收起导航"} onClick={toggleNavigation}>
             {navigationCollapsed ? <PanelLeftOpen size={20} aria-hidden="true"/> : <PanelLeftClose size={20} aria-hidden="true"/>}
           </button>}
           <a className="brand" href={platformPath("/")} onClick={(event) => follow(event, "/")}>
             <img className="brand-mark" src={platformPath("/favicon.ico")} alt="" aria-hidden="true" />
-            <span className="brand-name"><strong>Orbbec</strong> Agent Platform</span>
+            <span className="brand-name"><strong>Orbbec</strong> {sdkWorkspace ? "SDK" : "Agent Platform"}</span>
           </a>
           {account && <a
             aria-current={current === "account" ? "page" : undefined}
@@ -95,14 +96,14 @@ export function AppShell({ route, children, account, panorama = false }: { route
         </div>
       </header>
       <div className="platform-body">
-        {!hrWorkspace && <PlatformSidebar route={route} account={account} readOnly={!deploymentResolved || !deployment || Boolean(cloudReplica)} collapsed={navigationCollapsed}/>}
+        {!hrWorkspace && !sdkWorkspace && <PlatformSidebar route={route} account={account} readOnly={!deploymentResolved || !deployment || Boolean(cloudReplica)} collapsed={navigationCollapsed}/>}
         <div className="platform-content">
-      <main data-platform-layout={platformPageLayout(route, panorama)} className={`page${panorama ? " is-panorama-page" : ""}${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}${agentDesignWorkspace ? " is-agent-design-workspace" : ""}`}>
+      <main data-platform-layout={platformPageLayout(route, panorama)} className={`page${panorama ? " is-panorama-page" : ""}${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${sdkWorkspace ? " is-sdk-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}${agentDesignWorkspace ? " is-agent-design-workspace" : ""}`}>
       {account?.hard_stale_read_only && !faeWorkspace && !hrWorkspace && <aside className="hard-stale-banner" role="status">
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
         {children}</main>
-      {!panorama && !brainWorkspace && !hrWorkspace && !aiNotesWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
+      {!panorama && !brainWorkspace && !hrWorkspace && !aiNotesWorkspace && !sdkWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
         </div>
       </div>
     </div>

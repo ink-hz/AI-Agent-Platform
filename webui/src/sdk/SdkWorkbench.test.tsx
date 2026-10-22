@@ -5,7 +5,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
-import { SdkApiError, type SdkApi } from "./sdkApi";
+import type { SdkApi } from "./sdkApi";
+import type { NativeSdkApi } from "./nativeSdkApi";
 import { SdkWorkbench } from "./SdkWorkbench";
 
 const account: Account = {
@@ -49,96 +50,19 @@ it("shows live requirements and the selected story without a second login", asyn
   expect(client.requirement).toHaveBeenCalledWith(12);
 });
 
-it("opens native ZenTao requirements and keeps the annual CSV secondary", async () => {
-  const client = {
-    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, plan_enabled: true, native_only: true }),
-    requirements: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
-    planImports: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
-    candidates: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
-  } as unknown as SdkApi;
-  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
-  expect(container.querySelector('a[href="https://47.106.112.69/"]')?.textContent).toContain("禅道");
-  expect(container.querySelector("details.sdk-plan-drawer")).toBeNull();
-  expect(container.querySelector(".sdk-native-entry")).not.toBeNull();
-  expect(container.textContent).not.toContain("创建需求");
-  expect(container.textContent).not.toContain("候选");
-  expect(client.requirements).not.toHaveBeenCalled();
-  expect(client.candidates).not.toHaveBeenCalled();
-});
-
-it("posts a one-use SSO ticket to ZenTao after DingTalk login", async () => {
-  const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
-  const client = {
-    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true, sso_enabled: true }),
-    ssoStart: vi.fn().mockResolvedValue({ ticket: "single-use-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
-  } as unknown as SdkApi;
-  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
-  const enter = Array.from(container.querySelectorAll("button")).find(button => button.textContent?.includes("进入 SDK 禅道工作区"));
-  expect(enter).toBeDefined();
-  await act(async () => enter!.click());
-  expect(client.ssoStart).toHaveBeenCalledWith("csrf", "home");
-  expect(submit).toHaveBeenCalledOnce();
-  const form = document.body.querySelector("form[action='https://47.106.112.69/sdk-sso/consume']") as HTMLFormElement;
-  expect(form.method.toLowerCase()).toBe("post");
-  expect((form.querySelector("input[name='ticket']") as HTMLInputElement).value).toBe("single-use-ticket");
-});
-
-it.each([["需求", "requirements"], ["我的任务", "tasks"], ["测试", "tests"], ["发布", "releases"]])("opens %s through a target-bound personal SSO ticket", async (label, target) => {
-  vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
-  const client = {
-    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true, sso_enabled: true }),
-    ssoStart: vi.fn().mockResolvedValue({ ticket: "single-use-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
-  } as unknown as SdkApi;
-  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
-  const button = Array.from(container.querySelectorAll<HTMLButtonElement>(".sdk-native-actions button")).find(item => item.textContent?.includes(label));
-  expect(button, label).toBeDefined();
-  await act(async () => button!.click());
-  expect(client.ssoStart).toHaveBeenLastCalledWith("csrf", target);
-});
-
-it("shows a retry hint when browser policy blocks the ZenTao handoff", async () => {
-  vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
-  const client = {
-    me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true, sso_enabled: true }),
-    ssoStart: vi.fn().mockResolvedValue({ ticket: "single-use-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
-  } as unknown as SdkApi;
-  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
-  const enter = Array.from(container.querySelectorAll("button")).find(button => button.textContent?.includes("进入 SDK 禅道工作区"))!;
-  await act(async () => enter.click());
-  expect(enter.disabled).toBe(true);
-
-  const violation = new Event("securitypolicyviolation") as SecurityPolicyViolationEvent;
-  Object.defineProperties(violation, {
-    effectiveDirective: { value: "form-action" },
-    blockedURI: { value: "https://47.106.112.69/sdk-sso/consume" },
-  });
-  await act(async () => document.dispatchEvent(violation));
-
-  expect(enter.disabled).toBe(false);
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("刷新 SDK 页面");
-});
-
-it("explains a first-login provisioning delay and allows another click", async () => {
-  const client = {
-    me: vi.fn().mockResolvedValue({ role: null, can_manage: false, can_enter: true, read_only: false, native_only: true, sso_enabled: true }),
-    ssoStart: vi.fn().mockRejectedValue(new SdkApiError(409, "sdk_provision_in_progress")),
-  } as unknown as SdkApi;
-  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
-  const enter = container.querySelector<HTMLButtonElement>(".sdk-native-actions button")!;
-  await act(async () => enter.click());
-  expect(enter.disabled).toBe(false);
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("开通中");
-});
-
-it("keeps the native entry available without the legacy requirements API", async () => {
+it("renders the native SDK workbench without a ZenTao IP handoff", async () => {
   const client = {
     me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true }),
-    requirements: vi.fn().mockRejectedValue(new Error("unavailable")),
+    requirements: vi.fn(),
   } as unknown as SdkApi;
-  await act(async () => root.render(<SdkWorkbench account={account} storyId={12} client={client} />));
-  expect(container.querySelector('a[href="https://47.106.112.69/"]')).not.toBeNull();
+  const nativeClient = { requirements: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+    members: vi.fn().mockResolvedValue({ items: [] }),
+    pendingCreate: vi.fn().mockResolvedValue({ status: "none" }) } as unknown as NativeSdkApi;
+  await act(async () => root.render(<SdkWorkbench account={account} client={client} nativeClient={nativeClient} />));
+  expect(container.textContent).toContain("需求管理");
+  expect(container.textContent).toContain("我的任务");
+  expect(container.querySelector('a[href^="https://47.106.112.69"]')).toBeNull();
   expect(client.requirements).not.toHaveBeenCalled();
-  expect(client.requirement).toBeUndefined();
 });
 
 it("does not call plan endpoints when the plan feature is disabled", async () => {
@@ -204,19 +128,6 @@ it("does not fetch requirements for an account without SDK membership", async ()
 
   expect(container.textContent).toContain("没有 SDK 工作台权限");
   expect(client.requirements).not.toHaveBeenCalled();
-});
-
-it("offers SSO entry to an eligible SDK department member before first account creation", async () => {
-  const client = {
-    me: vi.fn().mockResolvedValue({ role: null, can_manage: false, can_enter: true, read_only: false, native_only: true, sso_enabled: true }),
-    ssoStart: vi.fn().mockResolvedValue({ ticket: "first-ticket", consume_url: "https://47.106.112.69/sdk-sso/consume" }),
-  } as unknown as SdkApi;
-  vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
-  await act(async () => root.render(<SdkWorkbench account={account} client={client} />));
-  const first = container.querySelector<HTMLButtonElement>(".sdk-native-actions button");
-  expect(first?.disabled).toBe(false);
-  await act(async () => first!.click());
-  expect(client.ssoStart).toHaveBeenCalledWith("csrf", "requirements");
 });
 
 it("lets the platform owner select SDK and collaborator departments from the verified directory", async () => {

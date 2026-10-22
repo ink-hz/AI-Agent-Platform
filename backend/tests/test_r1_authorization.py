@@ -18,6 +18,7 @@ from app.control_plane.middleware import (
     IdentitySecurityMiddleware,
     is_execution_worker_request,
 )
+from app.sdk_workbench.native_routes import build_sdk_native_router
 from test_control_plane_migration import control_database
 
 
@@ -56,6 +57,16 @@ def test_sdk_routes_delegate_member_authorization_to_sdk_service(actor):
         ("POST", "/api/v1/sdk/candidates/{candidate_id}/release"),
         ("GET", "/sdk/"),
         ("GET", "/sdk/{client_path:path}"),
+        ("GET", "/api/v1/sdk/native/requirements"),
+        ("POST", "/api/v1/sdk/native/requirements"),
+        ("GET", "/api/v1/sdk/native/requirements/pending-create"),
+        ("GET", "/api/v1/sdk/native/requirements/{story_id}"),
+        ("PUT", "/api/v1/sdk/native/requirements/{story_id}"),
+        ("POST", "/api/v1/sdk/native/requirements/{story_id}/assign"),
+        ("POST", "/api/v1/sdk/native/requirements/{story_id}/review"),
+        ("GET", "/api/v1/sdk/native/my-tasks"),
+        ("GET", "/api/v1/sdk/native/tasks/{task_id}"),
+        ("GET", "/api/v1/sdk/native/members"),
     ):
         assert authorization.decide(actor, method, route, ()).allowed
         assert not authorization.decide(None, method, route, ()).allowed
@@ -667,6 +678,38 @@ def test_middleware_denies_before_service_and_audits_exact_viewer_read():
     assert audits == [
         (VIEWER.internal_user_id, "hr-bot", "management_projection")
     ]
+
+
+def test_native_sdk_routes_pass_central_middleware_with_employee_session():
+    class Auth:
+        route_prefix = "/"
+        cookie_name = "session"
+        csrf_cookie_name = "csrf"
+        public_base_url = "https://agent.example.test"
+        trusted_proxy_networks = ()
+        rate_limiter = None
+
+        def authenticate(self, token):
+            return (MEMBER, b"csrf") if token == "valid" else None
+
+        def verify_csrf(self, token, _digest):
+            return token == "csrf"
+
+    app = FastAPI()
+    app.include_router(build_sdk_native_router())
+    app.add_middleware(IdentitySecurityMiddleware, auth=Auth(), public_assets=frozenset(),
+                       authorization=AuthorizationService(Grants()), routes=tuple(app.router.routes))
+    client = TestClient(app, base_url="https://agent.example.test")
+    client.cookies.set("session", "valid")
+    client.cookies.set("csrf", "csrf")
+    read = client.get("/api/v1/sdk/native/requirements")
+    write = client.post("/api/v1/sdk/native/requirements", json={
+        "request_id": str(uuid4()), "title": "测试", "scenario": "测试场景",
+        "device_platform": "Linux", "acceptance": "测试通过", "priority": 2,
+        "reviewer": "sdk_reviewer",
+    }, headers={"Origin": "https://agent.example.test", "X-CSRF-Token": "csrf"})
+    assert (read.status_code, read.json()) == (503, {"detail": "sdk_native_unavailable"})
+    assert (write.status_code, write.json()) == (503, {"detail": "sdk_native_unavailable"})
 
 
 @pytest.mark.postgres

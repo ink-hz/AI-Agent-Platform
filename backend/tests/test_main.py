@@ -457,6 +457,18 @@ def test_operations_migration_failure_leaves_existing_health_route_available(
     assert app.state.operations_scheduler is None
 
 
+def test_native_sdk_router_is_installed_with_unavailable_service(tmp_path) -> None:
+    registry = tmp_path / "registry.yaml"
+    registry.write_text("version: 1\nagents: []\n", encoding="utf-8")
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"bots": []}', encoding="utf-8")
+    app = create_app(registry_path=str(registry), cluster_contract_path=str(contract),
+                     start_poller=False, operations_service=object(), operations_scheduler=object())
+    response = TestClient(app).get("/api/v1/sdk/native/requirements")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "sdk_native_unavailable"}
+
+
 def test_create_app_without_pollers_does_not_create_default_operations_database(
     tmp_path, monkeypatch
 ):
