@@ -258,3 +258,144 @@ def test_export_rows_cannot_inject_report_fields(field):
     e["rows"][0][field] = "approved"
     with pytest.raises(ReconcileError, match="export_schema"):
         run(c, data, book, e)
+
+
+def test_missing_raw_merge_range_is_reconcile_error():
+    c, data, book = fixture()
+    del c["records"][0]["raw_cells"][0]["merge_range"]
+    with pytest.raises(ReconcileError) as caught:
+        run(c, data, book)
+    assert caught.value.code == "candidate_cells"
+
+
+def test_oversized_merge_coordinate_is_reconcile_error():
+    c, data, book = fixture()
+    anchor = "A" + "9" * 5000
+    region = anchor + ":" + anchor
+    c["merge_ranges"] = [region]
+    c["records"][0]["raw_cells"][0].update(
+        merge_range=region, merge_anchor_cell=anchor)
+    with pytest.raises(ReconcileError) as caught:
+        run(c, data, book)
+    assert caught.value.code == "candidate_merge"
+
+
+def test_surrogate_sheet_name_is_candidate_json_error():
+    c, data, book = fixture()
+    c["source"]["sheet_name"] = "\ud800"
+    for row in c["records"]:
+        row["source_key"]["sheet_name"] = "\ud800"
+        row["category_source_key"]["sheet_name"] = "\ud800"
+    for category in c["categories"]:
+        category["source_key"]["sheet_name"] = "\ud800"
+    with pytest.raises(ReconcileError) as caught:
+        reconcile(json.dumps(c, ensure_ascii=True).encode(), data, book)
+    assert (caught.value.code, caught.value.path) == ("candidate_json", "$")
+
+
+@pytest.mark.parametrize("group,field", [
+    ("raw_cells", field) for field in (
+        "cell", "column", "column_name", "header_cell", "value", "xml_value",
+        "xml_type", "style_id", "number_format_id", "custom_number_format",
+        "formula", "formula_attributes", "raw_state", "merge_range",
+        "merge_anchor_cell", "hyperlinks")
+] + [
+    ("interpreted_cells", field) for field in (
+        "cell", "column", "column_name", "value", "value_origin", "value_state",
+        "source_cell", "merge_range")
+])
+def test_cell_schema_requires_fields_even_when_nullable(group, field):
+    c, data, book = fixture()
+    del c["records"][0][group][0][field]
+    with pytest.raises(ReconcileError) as caught:
+        run(c, data, book)
+    assert caught.value.code == "candidate_cells"
+
+
+@pytest.mark.parametrize("group,field,value", [
+    ("raw_cells", "formula_attributes", []),
+    ("raw_cells", "hyperlinks", None),
+    ("raw_cells", "xml_value", 1),
+    ("raw_cells", "merge_range", []),
+    ("raw_cells", "merge_anchor_cell", {}),
+    ("interpreted_cells", "value", []),
+    ("interpreted_cells", "merge_range", {}),
+    ("interpreted_cells", "source_cell", None),
+])
+def test_cell_schema_rejects_wrong_types(group, field, value):
+    c, data, book = fixture()
+    c["records"][0][group][0][field] = value
+    with pytest.raises(ReconcileError) as caught:
+        run(c, data, book)
+    assert caught.value.code == "candidate_cells"
+
+
+@pytest.mark.parametrize("row", [0, -1, 1048577, True, "2", "9" * 5000],
+                         ids=["zero", "negative", "past_excel", "bool", "string", "long_string"])
+def test_source_row_is_a_bounded_excel_integer(row):
+    c, data, book = fixture()
+    c["records"][0]["source_key"].update(row_start=row, row_end=row)
+    with pytest.raises(ReconcileError) as caught:
+        run(c, data, book)
+    assert caught.value.code == "source_key"
+
+
+@pytest.mark.parametrize("reference", ["A0", "A1048577", "A02", "A-1", "K2"])
+def test_declared_merge_coordinates_must_be_valid_even_when_unused(reference):
+    c, data, book = fixture()
+    c["merge_ranges"] = [reference + ":" + reference]
+    with pytest.raises(ReconcileError) as caught:
+        run(c, data, book)
+    assert caught.value.code == "candidate_merge"
+
+
+@pytest.mark.parametrize("prefix", ["candidate", "export"])
+@pytest.mark.parametrize("member", [
+    br'"extra": ["\ud800"]', br'"extra": {"\udfff": "value"}',
+    b'"extra": [1e999]', b'"extra": [-1e999]',
+    b'"extra": NaN', b'"extra": Infinity', b'"extra": -Infinity',
+], ids=["high_surrogate", "low_surrogate_key", "overflow", "negative_overflow",
+        "nan", "infinity", "negative_infinity"])
+def test_json_boundary_rejects_invalid_unicode_and_nonfinite_numbers(prefix, member):
+    c, data, book = fixture()
+    payload = encoded(c if prefix == "candidate" else existing(c, data))
+    payload = payload[:-1] + b"," + member + b"}"
+    with pytest.raises(ReconcileError) as caught:
+        reconcile(payload if prefix == "candidate" else encoded(c), data, book,
+                  payload if prefix == "export" else None)
+    assert (caught.value.code, caught.value.path) == (prefix + "_json", "$")
+
+
+def test_valid_unicode_nullable_cells_and_unknown_fields_are_preserved():
+    c, data, book = fixture()
+    c["extra"] = {"说明😀": [None, 1.5, "原文\r\n"]}
+    c["records"][0]["extra"] = "备注😀\r\n"
+    raw = c["records"][0]["raw_cells"][3]
+    raw.update(value=None, raw_state="absent_cell")
+    c["records"][0]["interpreted_cells"][3]["value"] = None
+    e = existing(c, data)
+    e["extra"] = copy.deepcopy(c["extra"])
+    report = reconcile(json.dumps(c, ensure_ascii=True).encode(), data, book,
+                       json.dumps(e, ensure_ascii=True).encode())
+    assert report["source_records"] == c["records"]
+    assert report["existing_objects"]["metadata"]["extra"] == e["extra"]
+    assert len(report["alias_proposals"]) == 1
+    assert report["existing_objects"]["collection_state"] == "observed"
+
+
+def test_excel_row_and_merge_upper_boundary_are_accepted():
+    c, data, book = fixture()
+    row = 1048576
+    record = c["records"][0]
+    record["source_key"].update(row_start=row, row_end=row)
+    record.update(source_range=f"A{row}:J{row}", category_anchor_cell=f"A{row}")
+    for raw, view in zip(record["raw_cells"], record["interpreted_cells"]):
+        raw["cell"] = view["cell"] = view["source_cell"] = f"{raw['column']}{row}"
+    region = f"A{row}:A{row}"
+    c["merge_ranges"] = [region]
+    record["raw_cells"][0].update(merge_range=region, merge_anchor_cell=f"A{row}")
+    record["interpreted_cells"][0]["merge_range"] = region
+    c["categories"][0].update(cell=f"A{row}", merge_range=region)
+    report = run(c, data, book)
+    assert report["source_records"] == c["records"]
+    assert len(report["alias_proposals"]) == 1

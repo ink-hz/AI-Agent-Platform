@@ -10,6 +10,7 @@ from .plan_csv import HEADERS, PlanCsvError, parse_plan_csv
 RULE = "r0a-compare-1"
 FIELDS = ["file_sha256", "sheet_name", "row_start", "row_end"]
 COLS = "ABCDEFGHIJ"
+EXCEL_MAX_ROW = 1048576
 
 
 class ReconcileError(ValueError):
@@ -28,7 +29,7 @@ def digest(payload):
 
 
 def canonical(value):
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
 
 
 def decode(payload, prefix):
@@ -42,6 +43,9 @@ def decode(payload, prefix):
             return result
         value = json.loads(payload.decode("utf-8-sig"), object_pairs_hook=pairs,
                            parse_constant=lambda value: (_ for _ in ()).throw(ValueError("constant")))
+        # Check every JSON key/value, including retained unknown metadata. JSON's
+        # decoder accepts escaped lone surrogates and overflowing float literals.
+        canonical(value).encode("utf-8")
     except (UnicodeError, ValueError, RecursionError):
         raise ReconcileError(prefix + "_json", "$") from None
     require(isinstance(value, dict), prefix + "_schema", "$")
@@ -51,20 +55,29 @@ def decode(payload, prefix):
 def source_key(value, source, path):
     require(isinstance(value, dict) and set(value) == set(FIELDS), "source_key", path)
     require(value["file_sha256"] == source["file_sha256"] and value["sheet_name"] == source["sheet_name"], "source_key", path)
-    require(all(type(value[k]) is int and value[k] > 0 for k in FIELDS[2:]) and value["row_start"] == value["row_end"], "source_key", path)
+    require(all(type(value[k]) is int and 1 <= value[k] <= EXCEL_MAX_ROW for k in FIELDS[2:]) and value["row_start"] == value["row_end"], "source_key", path)
     return tuple(value[k] for k in FIELDS)
 
 
 def coord(value):
-    found = re.fullmatch(r"([A-J])([1-9][0-9]*)", value or "") if isinstance(value, (str, type(None))) else None
+    found = re.fullmatch(r"([A-J])([1-9][0-9]{0,6})", value) if isinstance(value, str) and len(value) <= 8 else None
     require(found is not None, "candidate_merge", "cell_reference")
-    return COLS.index(found[1]), int(found[2])
+    row = int(found[2])
+    require(row <= EXCEL_MAX_ROW, "candidate_merge", "cell_reference")
+    return COLS.index(found[1]), row
+
+
+def merge_bounds(region):
+    require(isinstance(region, str) and region.count(":") == 1, "candidate_merge", "merge_range")
+    first, last = region.split(":")
+    a, b = coord(first), coord(last)
+    require(a[0] <= b[0] and a[1] <= b[1], "candidate_merge", "merge_range")
+    return first, a, b
 
 
 def merge_contains(region, cell, anchor):
-    require(isinstance(region, str) and region.count(":") == 1, "candidate_merge", "merge_range")
-    first, last = region.split(":")
-    a, b, c = coord(first), coord(last), coord(cell)
+    first, a, b = merge_bounds(region)
+    c = coord(cell)
     return anchor == first and a[0] <= c[0] <= b[0] and a[1] <= c[1] <= b[1]
 
 
@@ -76,6 +89,8 @@ def validate_candidate(payload, workbook):
     require(isinstance(source, dict) and source.get("file_sha256") == digest(workbook) and type(source.get("bytes")) is int and source["bytes"] == len(workbook) and isinstance(source.get("sheet_name"), str) and bool(source["sheet_name"]), "source_digest", "source")
     records, categories, merges = c.get("records"), c.get("categories"), c.get("merge_ranges")
     require(isinstance(records, list) and 0 < len(records) <= 1000 and isinstance(categories, list) and isinstance(merges, list) and all(isinstance(m, str) for m in merges), "candidate_schema", "records")
+    for region in merges:
+        merge_bounds(region)
     seen, cells = set(), {}
     for n, r in enumerate(records):
         path = f"records[{n}]"
@@ -90,11 +105,15 @@ def validate_candidate(payload, workbook):
         require(r.get("business_work_id") is None and r.get("business_review_state") == "not_reviewed" and r.get("production_import_eligible") is False, "candidate_preparation", path)
         for col, name, cell, view in zip(COLS, HEADERS, raw, interpreted):
             require(isinstance(cell, dict) and isinstance(view, dict), "candidate_cells", path)
+            # Establish the complete cell shape before later validation and
+            # comparison use direct indexing; missing is distinct from null.
+            require(all(k in cell and isinstance(cell[k], str) for k in ("cell", "column", "column_name", "header_cell", "raw_state")), "candidate_cells", path)
+            require(all(k in cell and (cell[k] is None or isinstance(cell[k], str)) for k in ("value", "xml_value", "xml_type", "style_id", "number_format_id", "custom_number_format", "formula", "merge_range", "merge_anchor_cell")), "candidate_cells", path)
+            require("formula_attributes" in cell and (cell["formula_attributes"] is None or isinstance(cell["formula_attributes"], dict)) and isinstance(cell.get("hyperlinks"), list), "candidate_cells", path)
+            require(all(k in view and isinstance(view[k], str) for k in ("cell", "column", "column_name", "value_origin", "value_state", "source_cell")), "candidate_cells", path)
+            require(all(k in view and (view[k] is None or isinstance(view[k], str)) for k in ("value", "merge_range")), "candidate_cells", path)
             require(cell.get("cell") == f"{col}{row}" and cell.get("column") == col and cell.get("column_name") == name and cell.get("header_cell") == f"{col}1", "candidate_cells", path)
             require(view.get("cell") == cell["cell"] and view.get("column") == col and view.get("column_name") == name, "candidate_cells", path)
-            require(all(k in cell and (cell[k] is None or isinstance(cell[k], str)) for k in ("value", "xml_value", "xml_type", "style_id", "number_format_id", "custom_number_format", "formula")), "candidate_cells", path)
-            require(cell.get("formula_attributes") is None or isinstance(cell["formula_attributes"], dict), "candidate_cells", path)
-            require(isinstance(cell.get("hyperlinks"), list), "candidate_cells", path)
             state, value = cell.get("raw_state"), cell["value"]
             require((state == "value" and isinstance(value, str) and bool(value)) or (state == "empty_string" and value == "") or (state in ("empty_cell_element", "absent_cell") and value is None), "candidate_cells", path)
             region, anchor = cell.get("merge_range"), cell.get("merge_anchor_cell")
