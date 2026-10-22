@@ -207,7 +207,8 @@ it.each(['overview', 'products', 'delivery', 'diagnostics', 'knowledge'] as cons
     expect(box.querySelector('.sdk-document-list a')).toBeTruthy();
     expect(box.querySelector('.sdk-scope-line, .sdk-doc-meta, .sdk-ai-note, .sdk-focus-facts, .sdk-sources')).toBeNull();
     for (const text of ['sdk-admin-private-release', 'PRIVATE-BASELINE', 'raw-internal-group', 'SDK 工具尚未接入', '内部接入验收', '接收验证', '资料快照', 'NEXT STEPS', 'DELIVERY WORKFLOW']) expect(box.textContent).not.toContain(text);
-    expect(box.querySelector('.sdk-document-list')?.textContent).toContain('设计草案，不代表已实施');
+    expect(box.querySelector('.sdk-document-list')?.textContent).toContain('流程与规范 · 草稿');
+    expect(box.querySelector('.sdk-document-list')?.textContent).not.toMatch(/不代表|结论限于/);
     expect(box.querySelector('.sdk-document-list code')).toBeNull();
     expect(box.querySelector('.sdk-document-list')?.textContent).toContain('流程与规范');
     expect(box.querySelector('.sdk-breadcrumb')).toBeNull();

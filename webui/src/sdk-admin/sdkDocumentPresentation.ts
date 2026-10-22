@@ -20,7 +20,9 @@ function contentBoundary(doc: DocumentSummary): string {
     return statusNames.has(doc.content_state) ? '' : '内容状态待确认';
 }
 export function documentListDescription(doc: DocumentSummary): string {
-    const boundary = contentBoundary(doc);
+    const boundary = doc.content_state === 'design_proposal' ? '草稿'
+        : doc.content_state === 'phase_report' ? '阶段分析'
+        : contentBoundary(doc);
     return `${kindNames[doc.kind]}${boundary ? ` · ${boundary}` : ''}`;
 }
 export function documentDescription(doc: DocumentSummary): string {

@@ -62,7 +62,7 @@ suite('SDK real content HTTP response to frontend contract', () => {
     expect(box.querySelector('.sdk-breadcrumb')).toBeNull();
     expect(box.textContent?.split('需求与进度在禅道查看')).toHaveLength(2);
     expect(box.querySelector('a[href="/sdk/"]')).not.toBeNull();
-    if (section === 'products' || section === 'delivery') expect(box.querySelector('.sdk-document-list')?.textContent).toContain('设计草案，不代表已实施');
+    if (section === 'products' || section === 'delivery') expect(box.querySelector('.sdk-document-list')?.textContent).toContain('流程与规范 · 草稿');
   });
 
   it.each([
@@ -79,7 +79,9 @@ suite('SDK real content HTTP response to frontend contract', () => {
     await act(async () => tab.click());
     const list = box.querySelector('.sdk-document-list')!;
     for (const type of types) expect(list.textContent).toContain(type);
-    expect(list.textContent).not.toMatch(/设备实测|设备表现|运行验证|not_run/);
+    expect(list.textContent).not.toMatch(/设备实测|设备表现|运行验证|not_run|不代表|结论限于/);
+    if (types.some(type => type === '分析成果')) expect(list.textContent).toContain('分析成果 · 阶段分析');
+    if (types.some(type => type === '流程与规范')) expect(list.textContent).toContain('流程与规范 · 草稿');
   });
 
   it('exposes real layered entry points and reads a real article with its evidence labels', async () => {
