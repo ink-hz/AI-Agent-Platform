@@ -18,6 +18,7 @@
 .sdk-native-editor-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
 .sdk-native-editor h3, .sdk-native-detail-form h3 { margin: 0 0 6px; color: #243d59; font-size: 17px; }
 .sdk-native-editor p, .sdk-native-detail-form p { margin: 0 0 16px; color: #75869a; font-size: 12px; }
+.sdk-native-fieldset { margin:0; padding:0; border:0; }
 .sdk-native-editor-head > button, .sdk-native-form-actions > button:not(.sdk-native-primary) { border: 0; background: transparent; color: #59728c; font: inherit; cursor: pointer; }
 .sdk-native-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
 .sdk-native-field-wide { grid-column: 1 / -1; }
@@ -39,7 +40,7 @@
 .sdk-native-filters label { display: inline-flex; align-items: center; gap: 8px; color: #586b83; font-size: 13px; }
 .sdk-native-filters select { padding: 9px 11px; border: 1px solid #dce4ed; border-radius: 8px; background: white; color: #263e58; font: inherit; }
 .sdk-native-main { display: grid; grid-template-columns: minmax(340px, .86fr) minmax(440px, 1.3fr); gap: 18px; align-items: start; }
-.sdk-native-list, .sdk-native-detail, .sdk-native-task-list article { border: 1px solid #dfe6ef; border-radius: 13px; background: #fff; box-shadow: 0 3px 15px #24406108; }
+.sdk-native-list, .sdk-native-detail, .sdk-native-task-list > button { border: 1px solid #dfe6ef; border-radius: 13px; background: #fff; box-shadow: 0 3px 15px #24406108; }
 .sdk-native-list { overflow: hidden; }
 .sdk-native-list > button { display: block; width: 100%; padding: 17px 20px; border: 0; border-bottom: 1px solid #edf1f5; background: #fff; color: inherit; text-align: left; font: inherit; cursor: pointer; }
 .sdk-native-list > button:hover, .sdk-native-list > button.is-selected { background: #f2f7fc; }
@@ -80,13 +81,20 @@
 .sdk-native-history li:last-child { border: 0; }
 .sdk-native-history li strong { color: #234665; }
 .sdk-native-history li p { margin: 5px 0 0; white-space: pre-wrap; }
+.sdk-native-related-tasks { margin:0; padding-left:18px; color:#455d75; font-size:13px; line-height:1.8; }
 .sdk-native-error { padding: 12px 15px; border: 1px solid #f1c7cd; border-radius: 9px; background: #fff1f2; color: #aa3544; font-size: 13px; }
 .sdk-native-notice { padding: 12px 15px; border: 1px solid #b8ddc8; border-radius: 9px; background: #edf9f1; color: #277045; font-size: 13px; }
+.sdk-native-pending { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 15px; border:1px solid #f2d6a6; border-radius:9px; background:#fff8e8; color:#86601f; font-size:13px; }
+.sdk-native-pending button { border:0; border-radius:7px; padding:8px 12px; background:#8f631a; color:white; font:inherit; cursor:pointer; }
+.sdk-native-pending button:disabled { opacity:.6; cursor:default; }
 .sdk-native-task-list { display: grid; gap: 10px; }
-.sdk-native-task-list article { display: flex; justify-content: space-between; gap: 20px; padding: 18px 22px; }
+.sdk-native-task-list > button { display: flex; justify-content: space-between; gap: 20px; padding: 18px 22px; width:100%; color:inherit; text-align:left; font:inherit; cursor:pointer; }
+.sdk-native-task-list > button:hover, .sdk-native-task-list > button.is-selected { background:#f2f7fc; }
 .sdk-native-task-list h3 { margin: 6px 0; font-size: 16px; }
 .sdk-native-task-list p { margin: 4px 0 0; color: #7a899a; font-size: 12px; }
-.sdk-native-task-list article > div:last-child { text-align: right; }
-.sdk-native-task-list article > div:last-child .sdk-native-status { margin-left: auto; }
+.sdk-native-task-list > button > div:last-child { text-align: right; }
+.sdk-native-task-list > button > div:last-child .sdk-native-status { margin-left: auto; }
+.sdk-native-task-detail { margin-top:16px; }
+.sdk-native-task-detail .sdk-native-facts button { border:0; padding:0; background:transparent; color:#1768b5; font:inherit; cursor:pointer; }
 @media (max-width: 1000px) { .sdk-native-main { grid-template-columns: 1fr; } .sdk-native-detail { min-height: 300px; } }
-@media (max-width: 650px) { .sdk-native-page { padding-top: 24px; } .sdk-native-header { flex-direction: column; gap: 14px; } .sdk-native-header-tools { padding: 0; } .sdk-native-main { gap: 12px; } .sdk-native-facts, .sdk-native-field-grid { grid-template-columns: 1fr; } .sdk-native-detail { padding: 20px; } .sdk-native-task-list article { flex-direction: column; } .sdk-native-task-list article > div:last-child { text-align: left; } .sdk-native-task-list article > div:last-child .sdk-native-status { margin-left: 0; } }
+@media (max-width: 650px) { .sdk-native-page { padding-top: 24px; } .sdk-native-header { flex-direction: column; gap: 14px; } .sdk-native-header-tools { padding: 0; } .sdk-native-main { gap: 12px; } .sdk-native-facts, .sdk-native-field-grid { grid-template-columns: 1fr; } .sdk-native-detail { padding: 20px; } .sdk-native-task-list > button { flex-direction: column; } .sdk-native-task-list > button > div:last-child { text-align: left; } .sdk-native-task-list > button > div:last-child .sdk-native-status { margin-left: 0; } }

@@ -55,7 +55,9 @@ it("renders the native SDK workbench without a ZenTao IP handoff", async () => {
     me: vi.fn().mockResolvedValue({ role: "contributor", can_manage: false, read_only: false, native_only: true }),
     requirements: vi.fn(),
   } as unknown as SdkApi;
-  const nativeClient = { requirements: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }) } as unknown as NativeSdkApi;
+  const nativeClient = { requirements: vi.fn().mockResolvedValue({ items: [], page: 1, total: 0 }),
+    members: vi.fn().mockResolvedValue({ items: [] }),
+    pendingCreate: vi.fn().mockResolvedValue({ status: "none" }) } as unknown as NativeSdkApi;
   await act(async () => root.render(<SdkWorkbench account={account} client={client} nativeClient={nativeClient} />));
   expect(container.textContent).toContain("需求管理");
   expect(container.textContent).toContain("我的任务");

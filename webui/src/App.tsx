@@ -126,7 +126,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "missions": return account ? <MissionsPage key={`${account.internal_user_id}:${account.role}`} /> : <PendingPage title="历史任务" description="请登录后查看。" />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
-    case "sdk": return account ? <SdkWorkbench account={account} storyId={route.storyId} /> : <PendingPage title="SDK 开发管理" description="请启用企业身份后使用。" />;
+    case "sdk": return account ? <SdkWorkbench account={account} storyId={route.storyId} taskId={route.taskId} tab={route.tab} /> : <PendingPage title="SDK 开发管理" description="请启用企业身份后使用。" />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
     case "marketing": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
     case "marketing-conversation": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} conversationId={route.conversationId} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;

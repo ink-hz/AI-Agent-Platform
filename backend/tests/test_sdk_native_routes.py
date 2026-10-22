@@ -42,6 +42,7 @@ class PersonalClient:
             return {"status": "success", "story": {"id": 70, "product": 5, "title": "其他产品", "deleted": "0"}}
         if path == "my/tasks":
             return {"status": "success", "tasks": [{"id": 4, "name": "实现", "status": "doing", "assignedTo": "sdk_owner", "story": 69,
+                "execution": 9,
                 "openedDate": "2026-10-21 08:00:00", "estStarted": "2026-10-22", "deadline": "2026-10-29"}],
                 "pager": {"recTotal": 1, "pageTotal": 1}}
         if path in {"tasks/4", "tasks/7"}:
@@ -135,6 +136,25 @@ async def test_my_tasks_are_read_with_the_current_personal_zen_session():
         "assignee_name": "行云", "story_id": 69, "opened_date": "2026-10-21 08:00:00",
         "planned_start": "2026-10-22", "deadline": "2026-10-29"}]
     assert personal.calls[0][2] == "my/tasks"
+
+
+@pytest.mark.asyncio
+async def test_my_tasks_excludes_other_product_before_pagination():
+    class MixedProducts(PersonalClient):
+        async def request(self, actor, method, path, payload=None, params=None, *, api_version=2):
+            if path == "my/tasks":
+                return {"status": "success", "tasks": [
+                    {"id": 7, "name": "其他产品任务", "status": "doing", "assignedTo": "sdk_owner", "story": 70, "execution": 8},
+                    {"id": 4, "name": "SDK 任务", "status": "doing", "assignedTo": "sdk_owner", "story": 69, "execution": 9}],
+                    "pager": {"recTotal": 2, "pageTotal": 1}}
+            return await super().request(actor, method, path, payload, params, api_version=api_version)
+
+    app, _ = make_app(MixedProducts())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as browser:
+        response = await browser.get("/api/v1/sdk/native/my-tasks")
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert [task["id"] for task in response.json()["items"]] == [4]
 
 
 @pytest.mark.asyncio

@@ -22,7 +22,7 @@ export type Route =
   | { name: "missions" }
   | { name: "mission"; missionId: string }
   | { name: "agents" }
-  | { name: "sdk"; storyId?: number }
+  | { name: "sdk"; storyId?: number; taskId?: number; tab?: "tasks" }
   | { name: "voc-workspace" }
   | { name: "hr"; positionId?: string; workId?: string }
   | { name: "hr-chat" }
@@ -231,6 +231,9 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (clean === "/missions") return { name: "missions" };
   if (clean === "/agents") return { name: "agents" };
   if (clean === "/sdk") return { name: "sdk" };
+  if (clean === "/sdk/tasks") return { name: "sdk", tab: "tasks" };
+  const sdkTask = clean.match(/^\/sdk\/tasks\/([1-9]\d*)$/);
+  if (sdkTask) return { name: "sdk", tab: "tasks", taskId: Number(sdkTask[1]) };
   const sdkStory = /^\/sdk\/requirements\/([1-9]\d*)$/.exec(clean);
   if (sdkStory) {
     const storyId = Number(sdkStory[1]);
@@ -422,7 +425,7 @@ export function routePath(route: Route): string {
     case "missions": return "/missions";
     case "mission": return `/missions/${encodeURIComponent(route.missionId)}`;
     case "agents": return "/agents";
-    case "sdk": return route.storyId ? `/sdk/requirements/${route.storyId}` : "/sdk/";
+    case "sdk": return route.storyId ? `/sdk/requirements/${route.storyId}` : route.taskId ? `/sdk/tasks/${route.taskId}` : route.tab === "tasks" ? "/sdk/tasks" : "/sdk/";
     case "voc-workspace": return "/agents/voc/workspace";
 
     case "hr-chat": return "/hr/chat";

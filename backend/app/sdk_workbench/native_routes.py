@@ -36,6 +36,7 @@ class RequirementCreateBody(StrictBody):
 
 class RequirementEditBody(StrictBody):
     expected_version: int = Field(ge=1)
+    expected_token: str = Field(pattern=r"^[0-9a-f]{64}$")
     title: str = Field(min_length=1, max_length=200)
     scenario: str = Field(min_length=1, max_length=16000)
     device_platform: str | None = Field(None, min_length=1, max_length=500)
@@ -46,11 +47,13 @@ class RequirementEditBody(StrictBody):
 
 class RequirementAssignBody(StrictBody):
     expected_version: int = Field(ge=1)
+    expected_token: str = Field(pattern=r"^[0-9a-f]{64}$")
     assigned_to: str = Field(pattern=_ACCOUNT_PATTERN)
 
 
 class RequirementReviewBody(StrictBody):
     expected_version: int = Field(ge=1)
+    expected_token: str = Field(pattern=r"^[0-9a-f]{64}$")
     decision: Literal["pass", "reject"]
     comment: str = Field("", max_length=2000)
     closed_reason: Literal["done", "subdivided", "postponed", "willnotdo", "cancel", "bydesign"] | None = None

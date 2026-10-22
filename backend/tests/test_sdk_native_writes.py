@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from app.control_plane.models import AuthContext, Role
-from app.sdk_workbench.native_service import NativeSdkService
+from app.sdk_workbench.native_service import NativeSdkService, _edit_token
 from app.sdk_workbench.native_routes import build_sdk_native_router
 from app.sdk_workbench.zentao import ZenTaoRequestRejected, ZenTaoUnavailable
 
@@ -333,12 +333,14 @@ async def test_stale_edit_and_out_of_product_assignment_are_rejected_before_writ
     client.stories[72] = {**client.stories[71], "id": 72, "product": 5}
     service = NativeSdkService(client, repo, product_id=1)
     with pytest.raises(HTTPException) as conflict:
-        await service.edit_requirement(ACTOR, 71, expected_version=1, title="改",
+        await service.edit_requirement(ACTOR, 71, expected_version=1,
+                                       expected_token=_edit_token(client.stories[71]), title="改",
                                        scenario="场景", device_platform="设备", acceptance="验收",
                                        priority=2, business_proposer="客户")
     assert (conflict.value.status_code, conflict.value.detail) == (409, "sdk_requirement_version_conflict")
     with pytest.raises(HTTPException) as wrong_product:
-        await service.assign_requirement(ACTOR, 72, expected_version=2, assigned_to="sdk_owner")
+        await service.assign_requirement(ACTOR, 72, expected_version=2,
+                                         expected_token=_edit_token(client.stories[72]), assigned_to="sdk_owner")
     assert wrong_product.value.status_code == 404
     assert all(call[0] == "GET" for call in client.calls)
 
@@ -351,12 +353,31 @@ async def test_legacy_q4_story_edit_accepts_unknown_device_without_inventing_one
                           "sourceNote": "2026年Q4上线版本", "openedBy": "employee",
                           "assignedTo": "", "pri": 2, "reviewer": ["sdk_reviewer"]}
     service = NativeSdkService(client, repo, product_id=1)
-    edited = await service.edit_requirement(ACTOR, 71, expected_version=2, title="新标题",
+    edited = await service.edit_requirement(ACTOR, 71, expected_version=2,
+                                            expected_token=_edit_token(client.stories[71]), title="新标题",
         scenario="新场景", device_platform=None, acceptance="新验收", priority=1,
         business_proposer=None)
     assert edited["title"] == "新标题"
     assert edited["device_platform"] is None
     assert edited["source"]["device_platform"] is None
+
+
+@pytest.mark.asyncio
+async def test_edit_rejects_stale_story_when_zentao_version_does_not_change():
+    client, repo = FakePersonalClient(), MemoryRepository()
+    client.stories[71] = {"id": 71, "product": 1, "title": "原需求", "spec": "原场景",
+                          "verify": "原验收", "status": "reviewing", "version": 1,
+                          "sourceNote": "", "openedBy": "employee", "assignedTo": "",
+                          "pri": 2, "reviewer": ["sdk_reviewer"]}
+    service = NativeSdkService(client, repo, product_id=1)
+    token = _edit_token(client.stories[71])
+    client.stories[71]["spec"] = "其他人已经修改"
+    with pytest.raises(HTTPException) as stale:
+        await service.edit_requirement(ACTOR, 71, expected_version=1, expected_token=token,
+            title="我的新标题", scenario="我的场景", device_platform=None,
+            acceptance="我的验收", priority=2, business_proposer=None)
+    assert (stale.value.status_code, stale.value.detail) == (409, "sdk_requirement_version_conflict")
+    assert not any(call[0] == "PUT" for call in client.calls)
 
 
 @pytest.mark.asyncio
@@ -368,6 +389,7 @@ async def test_review_writes_employee_action_and_reads_current_status():
                           "pri": 2, "reviewer": ["employee"]}
     service = NativeSdkService(client, repo, product_id=1)
     result = await service.review_requirement(ACTOR, 71, expected_version=1,
+                                              expected_token=_edit_token(client.stories[71]),
                                               decision="pass", comment="可实施")
     assert result["status"] == "active"
     posted = next(call for call in client.calls if call[1] == "stories/71/review")
@@ -396,7 +418,9 @@ async def test_native_write_routes_validate_payload_and_return_detail():
         created = await browser.post("/api/v1/sdk/native/requirements", json=payload)
         repeated = await browser.post("/api/v1/sdk/native/requirements", json=payload)
         edited = await browser.put(f"/api/v1/sdk/native/requirements/{created.json()['story_id']}",
-            json={"expected_version": 1, "title": "新需求", "scenario": "客户现场采集",
+            json={"expected_version": 1,
+                  "expected_token": created.json()["requirement"]["edit_token"],
+                  "title": "新需求", "scenario": "客户现场采集",
                   "device_platform": None, "acceptance": "连续采集一小时",
                   "priority": 2, "business_proposer": "客户A"})
     assert members.json()["items"] == repo.members()

@@ -10,7 +10,7 @@ import { CandidateWorkspace } from "./CandidateWorkspace";
 import { PlanIntake } from "./PlanIntake";
 import "./sdkWorkbench.css";
 
-type Props = { account: Account; storyId?: number; client?: SdkApi; nativeClient?: NativeSdkApi };
+type Props = { account: Account; storyId?: number; taskId?: number; tab?: "tasks"; client?: SdkApi; nativeClient?: NativeSdkApi };
 
 function message(error: unknown): string {
   if (error instanceof SdkApiError) {
@@ -29,7 +29,7 @@ function message(error: unknown): string {
   return "暂时无法连接 SDK 工作台，请稍后重试。";
 }
 
-export function SdkWorkbench({ account, storyId, client = sdkApi, nativeClient }: Props) {
+export function SdkWorkbench({ account, storyId, taskId, tab, client = sdkApi, nativeClient }: Props) {
   const [me, setMe] = useState<SdkMe | null>(null);
   const [list, setList] = useState<RequirementList | null>(null);
   const [detail, setDetail] = useState<RequirementDetail | null>(null);
@@ -162,7 +162,7 @@ export function SdkWorkbench({ account, storyId, client = sdkApi, nativeClient }
   if (!me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取工作区…</p></section>;
   if (!me.role && !me.can_manage && !me.can_enter) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>当前账号没有 SDK 工作台权限。</p></section>;
   if (me.native_only) return <>
-    <NativeSdkWorkspace account={account} storyId={storyId} readOnly={me.read_only} client={nativeClient} />
+    <NativeSdkWorkspace account={account} storyId={storyId} taskId={taskId} tab={tab} readOnly={me.read_only} client={nativeClient} />
     {error && <p role="alert" className="sdk-error">{error}</p>}
     {notice && <p role="status" className="sdk-notice">{notice}</p>}
     {departmentSettings}
