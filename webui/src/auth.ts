@@ -1,4 +1,5 @@
 import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
+import { parseSdkAdminPath } from "./sdk-admin/sdkAdminPaths";
 
 
 export type PlatformRole =
@@ -146,6 +147,8 @@ export type LoginReturnPath =
   | "/marketing/"
   | `/marketing/${string}`
   | "/sdk"
+  | "/sdk-admin"
+  | `/sdk-admin/${string}`
   | "/sdk/"
   | `/sdk/requirements/${string}`
   | "/admin"
@@ -165,6 +168,7 @@ function canonicalEncodedDetailPath(value: string): boolean {
 
 
 function safeLoginReturnPath(value: string): boolean {
+  if (parseSdkAdminPath(value)) return true;
   if (value === "/ai-engineering" || value === "/organization") return true;
   if (["overview", "reading", "domains", "finance", "products", "assets"]
     .some((slug) => value === `/ai-engineering?document=${slug}`)) return true;

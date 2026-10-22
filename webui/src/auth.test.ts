@@ -43,6 +43,14 @@ afterEach(() => {
 });
 
 describe("SDK login return path", () => {
+  it.each(["/sdk-admin", "/sdk-admin/", "/sdk-admin/products", "/sdk-admin/delivery", "/sdk-admin/diagnostics",
+    "/sdk-admin/knowledge", "/sdk-admin/knowledge/KB-PROP-OB_PROP_COLOR_GAIN_INT"])("preserves management return %s", path => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe(path);
+  });
+  it.each(["/sdk-admin-evil", "/sdk-admin/other", "/sdk-admin/knowledge/..", "/sdk-admin/knowledge/%2fetc",
+    "/sdk-admin/knowledge/a/extra", "/sdk-admin/?next=https://evil.test", "/sdk-admin//"])("rejects invalid management return %s", path => {
+    expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe("/");
+  });
   it.each(["/sdk", "/sdk/", "/sdk/requirements/1"])("preserves %s", (path) => {
     expect(loginReturnPath(`?${new URLSearchParams({ return_path: path })}`)).toBe(path);
   });

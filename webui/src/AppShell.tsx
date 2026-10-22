@@ -33,7 +33,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
     || route.name === "hr-position" || route.name === "hr-position-section"
     || route.name === "hr-panorama";
   const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
-  const sdkWorkspace = route.name === "sdk";
+  const sdkWorkspace = route.name === "sdk" || route.name === "sdk-admin";
   const agentDesignWorkspace = route.name === "admin-agent-designs";
   const faeWorkspace = route.name.startsWith("fae-manage-");
   const accountCanReadDeployment = account?.role === "platform_owner" || account?.role === "platform_admin";

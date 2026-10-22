@@ -36,6 +36,7 @@ import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AiNotesPage } from "./pages/AiNotesPage";
 import { AiEngineeringLanding } from "./pages/AiEngineeringPage";
+import { SdkAdminPage } from "./sdk-admin/SdkAdminPage";
 import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
 import { FaeManagementWorkspace } from "./workspaces/fae/FaeManagementWorkspace";
 import { AccessEventReporter } from "./accessEventReporter";
@@ -90,7 +91,7 @@ function AccessState({
 
 
 function viewerRouteAllowed(account: Account, route: ReturnType<typeof useRoute>): boolean {
-  if (["home", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
+  if (["home", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "sdk-admin", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account"].includes(route.name)) return true;
   if (route.name === "admin-governance") return true;
   if (route.name === "admin-voc") return true;
   if (route.name === "admin-agent-runtime") return account.observation_agent_ids.includes(route.agentId);
@@ -126,6 +127,9 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
     case "sdk": return <PendingPage title="SDK 入口切换中" description="请稍后刷新页面。" />;
+    case "sdk-admin": return account
+      ? <SdkAdminPage section={route.section} documentId={route.documentId} account={account} />
+      : <PendingPage title="正在确认 SDK 访问权限" description="请先登录企业账号。" />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
     case "marketing": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
     case "marketing-conversation": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} conversationId={route.conversationId} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
@@ -212,7 +216,7 @@ export default function App() {
   }
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
   if (!legacyMode && account) {
-    const usageRoute = ["home", "organization", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
+    const usageRoute = ["home", "organization", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "sdk-admin", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
     const faeManagementRoute = route.name.startsWith("fae-manage-");
     const ownerOnlyRoute = route.name === "admin-access";
     const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")

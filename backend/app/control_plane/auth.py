@@ -17,6 +17,8 @@ import psycopg
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from psycopg.rows import dict_row
 
+from app.sdk_admin_paths import SDK_ADMIN_SHELL
+
 from .crypto import (
     EncryptedDirectoryAttribute,
     IdentityCryptoError,
@@ -91,7 +93,7 @@ _CANONICAL_ENCODED_DETAIL = re.compile(
 
 
 def _safe_local_return_path(path: str) -> bool:
-    return path in _SAFE_RETURN_EXACT or any(
+    return SDK_ADMIN_SHELL.fullmatch(path) is not None or path in _SAFE_RETURN_EXACT or any(
         pattern.fullmatch(path) for pattern in _SAFE_RETURN_PATTERNS
     )
 
