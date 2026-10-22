@@ -13,6 +13,7 @@ from app.sdk_workbench.sso import SdkSsoService
 from app.sdk_workbench.zentao import (
     ZenTaoAuthenticationError,
     ZenTaoProtocolError,
+    ZenTaoRejected,
     ZenTaoRequestRejected,
     ZenTaoUnavailable,
 )
@@ -249,6 +250,37 @@ async def test_v2_response_requires_zentao_status_envelope(tmp_path):
     try:
         with pytest.raises(ZenTaoProtocolError, match="zentao_invalid_envelope"):
             await client.request(actor(), "GET", "stories/3")
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("story_status", ["reviewing", "active"])
+async def test_v1_story_write_response_uses_story_status_not_success_envelope(tmp_path, story_status):
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api.php":
+            return httpx.Response(302, headers={"location": "/", "set-cookie": f"zentaosid={'a' * 32}; Path=/"})
+        return httpx.Response(200, json={"id": 5, "product": 1, "status": story_status})
+
+    client = build_client(tmp_path, Identities(), respond)
+    try:
+        result = await client.request(actor(), "POST", "stories", {"title": "new"}, api_version=1)
+        assert result == {"id": 5, "product": 1, "status": story_status}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_v1_failure_envelope_is_rejected(tmp_path):
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api.php":
+            return httpx.Response(302, headers={"location": "/", "set-cookie": f"zentaosid={'a' * 32}; Path=/"})
+        return httpx.Response(200, json={"status": "fail", "error": "invalid"})
+
+    client = build_client(tmp_path, Identities(), respond)
+    try:
+        with pytest.raises(ZenTaoRejected):
+            await client.request(actor(), "POST", "stories", {"title": "new"}, api_version=1)
     finally:
         await client.close()
 

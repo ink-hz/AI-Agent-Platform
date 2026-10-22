@@ -105,6 +105,44 @@ it("offers a version-bound review for an imported Q4 story", async () => {
   expect(api.review).toHaveBeenCalledWith(69, { expected_version: 2, expected_token: "a".repeat(64), decision: "pass", comment: "" }, "csrf");
 });
 
+it("warns when ZenTao passed review but did not restore the owner", async () => {
+  const api = client();
+  api.review = vi.fn().mockImplementation(async () => ({ ...await api.requirement(69), status: "active",
+    assigned_to: "", assignment_warning: true }));
+  await act(async () => root.render(<NativeSdkWorkspace account={account} client={api} />));
+  await act(async () => Array.from(container.querySelectorAll("button"))
+    .find(button => button.textContent?.includes("IMU 时间戳优化"))?.click());
+  await act(async () => Array.from(container.querySelectorAll("button"))
+    .find(button => button.textContent?.includes("评审需求"))?.click());
+  await act(async () => container.querySelector<HTMLButtonElement>('form[aria-label="评审需求"] button[type="submit"]')?.click());
+  expect(container.querySelector('[role="status"]')?.textContent)
+    .toContain("评审已通过。负责人未能恢复");
+});
+
+it("labels a remaining multi-reviewer vote without claiming the whole requirement was rejected", async () => {
+  const api = client();
+  api.review = vi.fn().mockImplementation(async () => ({ ...await api.requirement(69),
+    status: "reviewing", assigned_to: "", assignment_warning: true }));
+  await act(async () => root.render(<NativeSdkWorkspace account={account} client={api} />));
+  await act(async () => Array.from(container.querySelectorAll("button"))
+    .find(button => button.textContent?.includes("IMU 时间戳优化"))?.click());
+  await act(async () => Array.from(container.querySelectorAll("button"))
+    .find(button => button.textContent?.includes("评审需求"))?.click());
+  await act(async () => {
+    const decision = container.querySelector<HTMLSelectElement>('form[aria-label="评审需求"] select')!;
+    decision.value = "reject";
+    decision.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => {
+    const reason = container.querySelectorAll<HTMLSelectElement>('form[aria-label="评审需求"] select')[1];
+    reason.value = "postponed";
+    reason.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => container.querySelector<HTMLButtonElement>('form[aria-label="评审需求"] button[type="submit"]')?.click());
+  expect(container.querySelector('[role="status"]')?.textContent)
+    .toContain("评审意见已记录，等待其他评审人。负责人未能恢复");
+});
+
 it("locks an uncertain create to the original request identity", async () => {
   const api = client();
   api.members = vi.fn().mockResolvedValue({ items: [{ account: "cangyuan", name: "苍渊" }] });

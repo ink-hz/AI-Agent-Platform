@@ -311,7 +311,13 @@ export function NativeSdkWorkspace({ account, storyId, taskId, tab, readOnly = f
         decision: reviewDecision, comment: reviewComment.trim(),
         ...(reviewDecision === "reject" ? { closed_reason: closedReason } : {}) }, account.csrf_token);
       setDetail(updated); setEditor(null); setRefresh(value => value + 1);
-      setNotice(reviewDecision === "pass" ? "评审已通过。" : "评审已驳回。");
+      const reviewNotice = updated.status === "reviewing" ? "评审意见已记录，等待其他评审人。"
+        : reviewDecision === "pass" ? "评审已通过。" : "评审已驳回。";
+      setNotice(updated.owner_changed_warning
+        ? `${reviewNotice}负责人已由其他操作更新，请核对当前负责人。`
+        : updated.assignment_warning
+          ? `${reviewNotice}负责人未能恢复，请在需求详情中重新分配。`
+          : reviewNotice);
     } catch (error) { setError(readableError(error)); }
     finally { setBusy(false); }
   }

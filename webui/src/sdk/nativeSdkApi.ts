@@ -9,6 +9,8 @@ export type NativeRequirementSummary = {
 
 export type NativeRequirementDetail = NativeRequirementSummary & {
   spec: string; verify: string; source_note: string; edit_token: string; device_platform?: string;
+  assignment_warning?: boolean;
+  owner_changed_warning?: boolean;
   source: null | { proposer_name: string | null; responsible_raw: string; planned_start: string | null;
     planned_end: string | null; source_version: string; source_risk: string; source_status: string;
     source_note: string; module: string; device_platform?: string };

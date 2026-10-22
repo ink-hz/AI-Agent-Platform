@@ -466,7 +466,9 @@ class NativeSdkService:
         pending_reviewers = before.get("notReview")
         if isinstance(pending_reviewers, list) and account not in pending_reviewers:
             raise HTTPException(409, "sdk_requirement_review_not_pending")
-        payload = {"result": decision, "comment": comment}
+        prior_priority = _priority(before.get("pri"))
+        prior_owner = _text(before.get("assignedTo"))
+        payload = {"result": decision, "comment": comment, "pri": prior_priority}
         if decision == "reject":
             if not closed_reason:
                 raise HTTPException(422, "sdk_review_reason_required")
@@ -484,4 +486,24 @@ class NativeSdkService:
                     or not isinstance(after_pending, list)
                     or account not in pending_reviewers or account in after_pending):
                 raise HTTPException(502, "sdk_requirement_write_unconfirmed")
-        return await self.requirement(actor, story_id)
+        if _priority(after.get("pri")) != prior_priority:
+            raise HTTPException(502, "sdk_requirement_write_unconfirmed")
+        assignment_warning = False
+        owner_changed_warning = False
+        after_owner = _text(after.get("assignedTo"))
+        if after.get("status") in {"active", "reviewing"} and prior_owner and after_owner and after_owner != prior_owner:
+            owner_changed_warning = True
+        if after.get("status") in {"active", "reviewing"} and prior_owner and not after_owner:
+            try:
+                await self.client.request(actor, "POST", f"stories/{story_id}/assign",
+                                          {"assignedTo": prior_owner, "comment": ""}, api_version=1)
+                after = await self._current_story(actor, story_id)
+                assignment_warning = after.get("assignedTo") != prior_owner
+            except (ZenTaoUnavailable, ZenTaoProtocolError, ZenTaoRejected):
+                assignment_warning = True
+        detail = await self.requirement(actor, story_id)
+        if assignment_warning:
+            detail["assignment_warning"] = True
+        if owner_changed_warning:
+            detail["owner_changed_warning"] = True
+        return detail
