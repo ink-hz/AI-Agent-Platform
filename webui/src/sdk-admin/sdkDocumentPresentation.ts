@@ -8,25 +8,29 @@ const statusNames = new Map<string, string>(Object.entries({
     accepted_static: '静态接收', navigation: '阅读导航', phase_report: '阶段报告',
     design_proposal: '设计草案', execution_record: '执行记录', independently_reviewed: '已独立复核',
     acceptance_report: '接收报告', not_applicable: '不适用', source_record: '来源记录',
-    not_run: '尚未进行设备实测', instance_not_verified: '实例待核验',
+    not_run: '未执行运行验证', instance_not_verified: '实例待核验',
     limited_release_record: '有限发布记录', not_registered: '待登记'
 }));
 export function statusLabel(code: string) { return statusNames.get(code) ?? '状态待确认'; }
 
-// Describe only declared evidence. Static acceptance never implies device testing.
+// Lists describe the material's purpose, without repeating runtime metadata.
+function contentBoundary(doc: DocumentSummary): string {
+    if (doc.content_state === 'design_proposal') return '设计草案，不代表已实施';
+    if (doc.content_state === 'phase_report') return '阶段性分析，结论限于文中范围';
+    return statusNames.has(doc.content_state) ? '' : '内容状态待确认';
+}
+export function documentListDescription(doc: DocumentSummary): string {
+    const boundary = contentBoundary(doc);
+    return `${kindNames[doc.kind]}${boundary ? ` · ${boundary}` : ''}`;
+}
 export function documentDescription(doc: DocumentSummary): string {
-    let description: string;
-    switch (doc.content_state) {
-        case 'design_proposal': description = '设计草案，不代表已实施'; break;
-        case 'phase_report': description = '阶段性分析，结论限于文中范围'; break;
-        case 'accepted_static': description = doc.kind === 'knowledge' ? '源码静态解读' : '静态资料接收记录'; break;
-        case 'navigation': description = '阅读导航'; break;
-        case 'execution_record': description = '执行记录，实际结果以正文证据为准'; break;
-        default: description = '内容状态待确认';
+    const boundary = contentBoundary(doc);
+    if (boundary) return `${boundary}。`;
+    if (doc.kind === 'knowledge' && doc.content_state === 'accepted_static'
+        && !['00-navigation', 'root', '_meta'].includes(doc.group)) {
+        return '基于源码整理，设备表现需结合实测。';
     }
-    if (doc.runtime_validation === 'not_run') description += '，尚未进行设备实测';
-    else if (doc.runtime_validation !== 'not_applicable') description += '，运行验证状态待确认';
-    return `${description}。`;
+    return '';
 }
 const conditionNames = new Map(Object.entries({
     device: '设备', devices: '设备', firmware: '固件', macros: '编译宏',

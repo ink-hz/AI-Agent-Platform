@@ -40,6 +40,7 @@ catch {
 export function SdkDocumentReader({ document: doc }: {
     document: DocumentDetail;
 }) {
+    const description = documentDescription(doc);
     const [showDetails, setShowDetails] = useState(false);
     const normalizedLinks = new Map(Object.entries(doc.links).map(([href, link]) => [markdownHref(href), link]));
     const headings = new Set<string>();
@@ -51,7 +52,7 @@ export function SdkDocumentReader({ document: doc }: {
         return id;
     }
     return <article className="sdk-reader" aria-label={doc.title}>
-  <div className="sdk-reader-heading"><h1>{doc.title}</h1><p>{documentDescription(doc)}</p></div>
+  <div className="sdk-reader-heading"><h1>{doc.title}</h1>{description && <p>{description}</p>}</div>
   <details className="sdk-provenance" open={showDetails} onToggle={event => setShowDetails(event.currentTarget.open)}><summary>文档详情与适用条件</summary>{showDetails && <>
     <dl><dt>资料类型</dt><dd>{kindNames[doc.kind]}</dd>{doc.level && <><dt>阅读层级</dt><dd>{doc.level}</dd></>}</dl>
     <dl className="sdk-evidence"><div><dt>内容状态</dt><dd>{statusLabel(doc.content_state)}</dd></div><div><dt>静态审阅</dt><dd>{statusLabel(doc.review_status)}</dd></div><div><dt>运行验证</dt><dd>{statusLabel(doc.runtime_validation)}</dd></div></dl>

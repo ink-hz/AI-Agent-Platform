@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Account } from '../auth';
 import { sdkAdminClient, type Catalog, type DocumentDetail, type DocumentList } from './sdkAdminApi';
 import { SdkAdminPage } from './SdkAdminPage';
+import { SdkDocumentReader } from './SdkDocumentReader';
 
 const fixturePath = process.env.SDK_ADMIN_HTTP_FIXTURE;
 const suite = fixturePath ? describe : describe.skip;
@@ -57,8 +58,28 @@ suite('SDK real content HTTP response to frontend contract', () => {
     expect(box.textContent).not.toContain(data.catalog.release_id);
     expect(box.textContent).not.toContain(data.catalog.baseline_id);
     expect(box.textContent).not.toContain('not_run');
+    expect(box.querySelector('.sdk-document-list')?.textContent).not.toMatch(/设备实测|运行验证|设备表现/);
+    expect(box.querySelector('.sdk-breadcrumb')).toBeNull();
+    expect(box.textContent?.split('需求与进度在禅道查看')).toHaveLength(2);
     expect(box.querySelector('a[href="/sdk/"]')).not.toBeNull();
     if (section === 'products' || section === 'delivery') expect(box.querySelector('.sdk-document-list')?.textContent).toContain('设计草案，不代表已实施');
+  });
+
+  it.each([
+    ['delivery', '开发与集成', ['流程与规范', '分析成果']],
+    ['delivery', '准出与交付', ['执行记录', '流程与规范']],
+    ['diagnostics', '改进行动', ['执行记录', '设计方案']],
+  ] as const)('keeps real %s / %s lists concise by purpose', async (section, title, types) => {
+    install();
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const account = { internal_user_id: 'sdk-stage-reader', display_name: 'SDK reader' } as Account;
+    box = document.createElement('div'); document.body.append(box); root = createRoot(box);
+    await act(async () => root!.render(<SdkAdminPage section={section} account={account} />));
+    const tab = Array.from(box.querySelectorAll<HTMLButtonElement>('.sdk-tabs button')).find(button => button.textContent?.endsWith(title))!;
+    await act(async () => tab.click());
+    const list = box.querySelector('.sdk-document-list')!;
+    for (const type of types) expect(list.textContent).toContain(type);
+    expect(list.textContent).not.toMatch(/设备实测|设备表现|运行验证|not_run/);
   });
 
   it('exposes real layered entry points and reads a real article with its evidence labels', async () => {
@@ -75,7 +96,7 @@ suite('SDK real content HTTP response to frontend contract', () => {
     window.history.replaceState({}, '', '/sdk-admin/knowledge/KB-API-001');
     await act(async () => root!.render(<SdkAdminPage section="knowledge" documentId="KB-API-001" account={account} />));
     expect(box.querySelector('article')?.textContent).toContain(data.documents['KB-API-001'].title);
-    expect(box.querySelector('.sdk-reader-heading')?.textContent).toContain('源码静态解读，尚未进行设备实测');
+    expect(box.querySelector('.sdk-reader-heading')?.textContent).toContain('基于源码整理，设备表现需结合实测');
     expect(box.querySelector('.sdk-provenance dl, .sdk-evidence')).toBeNull();
     expect(box.querySelector('article a[href^="javascript:"]')).toBeNull();
     expect(box.querySelector('article a[href^="file:"]')).toBeNull();
@@ -120,4 +141,29 @@ suite('SDK real content HTTP response to frontend contract', () => {
     expect(tables[1].textContent).toContain('建立两版本发布清单');
   });
 
+});
+
+suite('SDK real document metadata presentation by purpose', () => {
+  const data = fixturePath ? JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+    documents: Record<string, DocumentDetail>; lists_by_kind: Record<string, DocumentList>;
+  } : undefined;
+  const cases = data ? Object.values(data.lists_by_kind).flatMap(list => list.items).filter(doc => doc.kind !== 'knowledge') : [];
+  it.each(cases)('keeps $kind $id article metadata free of unrelated runtime copy', async summary => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    box = document.createElement('div'); document.body.append(box); root = createRoot(box);
+    // Header-only cases use actual response metadata, without inventing article content.
+    const doc = data!.documents[summary.id] ?? { ...summary, markdown: '', sha256: summary.source_sha256, links: {}, conditions: {} };
+    await act(async () => root!.render(<SdkDocumentReader document={doc} />));
+    const heading = box.querySelector('.sdk-reader-heading')!.textContent;
+    expect(heading).not.toMatch(/设备实测|设备表现|运行验证/);
+    if (summary.content_state === 'design_proposal') expect(heading).toContain('设计草案，不代表已实施');
+    if (summary.content_state === 'phase_report') expect(heading).toContain('阶段性分析，结论限于文中范围');
+    expect(box.querySelector('.sdk-provenance dl')).toBeNull();
+  });
+  it.each(['KB-INDEX-ROOT', 'KB-NAV-004'])('does not describe navigation %s as source implementation evidence', async id => {
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    box = document.createElement('div'); document.body.append(box); root = createRoot(box);
+    await act(async () => root!.render(<SdkDocumentReader document={data!.documents[id]} />));
+    expect(box.querySelector('.sdk-reader-heading')!.textContent).not.toMatch(/设备实测|设备表现|运行验证|基于源码/);
+  });
 });
