@@ -2,13 +2,15 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { Account } from "../auth";
 import { navigate } from "../router";
-import { sdkApi, SdkApiError, type PlanRow, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole, type SdkSsoDepartment, type SdkSsoTarget } from "./sdkApi";
+import { sdkApi, SdkApiError, type PlanRow, type ReconciliationIntent, type RequirementDetail, type RequirementList, type SdkApi, type SdkMe, type SdkRole, type SdkSsoDepartment } from "./sdkApi";
+import { NativeSdkWorkspace } from "./NativeSdkWorkspace";
+import type { NativeSdkApi } from "./nativeSdkApi";
 import { RequestIdentity } from "./requestIdentity";
 import { CandidateWorkspace } from "./CandidateWorkspace";
 import { PlanIntake } from "./PlanIntake";
 import "./sdkWorkbench.css";
 
-type Props = { account: Account; storyId?: number; client?: SdkApi };
+type Props = { account: Account; storyId?: number; client?: SdkApi; nativeClient?: NativeSdkApi };
 
 function message(error: unknown): string {
   if (error instanceof SdkApiError) {
@@ -27,7 +29,7 @@ function message(error: unknown): string {
   return "暂时无法连接 SDK 工作台，请稍后重试。";
 }
 
-export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
+export function SdkWorkbench({ account, storyId, client = sdkApi, nativeClient }: Props) {
   const [me, setMe] = useState<SdkMe | null>(null);
   const [list, setList] = useState<RequirementList | null>(null);
   const [detail, setDetail] = useState<RequirementDetail | null>(null);
@@ -35,7 +37,6 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const [hasOlderReviews, setHasOlderReviews] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [enteringZenTao, setEnteringZenTao] = useState(false);
   const [departments, setDepartments] = useState<SdkSsoDepartment[] | null>(null);
   const [departmentSearch, setDepartmentSearch] = useState("");
   const [changingDepartment, setChangingDepartment] = useState<string | null>(null);
@@ -59,53 +60,6 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   const reviewRequest = useRef(new RequestIdentity()).current;
   const memberRequest = useRef(new RequestIdentity()).current;
   const reconciliationRequest = useRef(new RequestIdentity()).current;
-
-  async function enterZenTao(destination: SdkSsoTarget = "home") {
-    if (enteringZenTao) return;
-    setEnteringZenTao(true);
-    setError("");
-    try {
-      const handoff = await client.ssoStart(account.csrf_token, destination);
-      const target = new URL(handoff.consume_url);
-      if (target.protocol !== "https:" || target.pathname !== "/sdk-sso/consume" ||
-          target.username || target.password || target.search || target.hash || !handoff.ticket) {
-        throw new Error("invalid SSO handoff");
-      }
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = target.href;
-      const ticket = document.createElement("input");
-      ticket.type = "hidden";
-      ticket.name = "ticket";
-      ticket.value = handoff.ticket;
-      form.append(ticket);
-      document.body.append(form);
-      let timeout: number;
-      const handoffBlocked = () => {
-        document.removeEventListener("securitypolicyviolation", onPolicyViolation);
-        window.clearTimeout(timeout);
-        form.remove();
-        setError("浏览器阻止了跳转，请刷新 SDK 页面后重试。");
-        setEnteringZenTao(false);
-      };
-      const onPolicyViolation = (event: Event) => {
-        const violation = event as SecurityPolicyViolationEvent;
-        if (violation.effectiveDirective === "form-action" && violation.blockedURI.startsWith(target.origin)) handoffBlocked();
-      };
-      document.addEventListener("securitypolicyviolation", onPolicyViolation);
-      timeout = window.setTimeout(handoffBlocked, 15000);
-      try { form.submit(); }
-      catch (error) {
-        document.removeEventListener("securitypolicyviolation", onPolicyViolation);
-        window.clearTimeout(timeout);
-        form.remove();
-        throw error;
-      }
-    } catch (error) {
-      setError(message(error));
-      setEnteringZenTao(false);
-    }
-  }
 
   useEffect(() => {
     let live = true;
@@ -207,36 +161,12 @@ export function SdkWorkbench({ account, storyId, client = sdkApi }: Props) {
   if (error && !me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p role="alert">{error}</p></section>;
   if (!me) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取工作区…</p></section>;
   if (!me.role && !me.can_manage && !me.can_enter) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>当前账号没有 SDK 工作台权限。</p></section>;
-  if (me.native_only) return <section className="sdk-workbench sdk-native-workspace">
-    <header className="sdk-native-entry">
-      <p className="sdk-eyebrow">OpenOrbbecSDK · 研发工作区</p>
-      <h1>SDK 开发管理</h1>
-      <p>选择今天要做的事，直接进入对应工作页面。</p>
-      {me.sso_enabled && (me.role || me.can_enter) && !me.read_only
-        ? <button className="sdk-native-link" type="button" disabled={enteringZenTao} onClick={() => void enterZenTao("home")}>进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></button>
-        : !me.sso_enabled ? <a className="sdk-native-link" href="https://47.106.112.69/" rel="noopener noreferrer">进入 SDK 禅道工作区 <span aria-hidden="true">↗</span></a>
-          : <p>当前账号尚未获得 SDK 禅道工作区权限。</p>}
-      <p className="sdk-native-hint">{me.sso_enabled ? "使用钉钉身份进入个人禅道账号；禅道中的产品权限决定可查看和编辑的内容。" : "使用个人禅道账号登录。禅道中的产品权限决定可查看和编辑的内容。"}</p>
-      {error && <p role="alert" className="sdk-error">{error}</p>}
-      {enteringZenTao && <p role="status">正在核对或开通个人禅道账号，请稍候…</p>}
-    </header>
-    <div className="sdk-native-actions" aria-label="SDK 日常工作">
-      {([
-        ["requirements", "需求", "整理、评审和跟踪需求"],
-        ["tasks", "我的任务", "查看分配给我的开发工作"],
-        ["tests", "测试", "维护用例与验证结果"],
-        ["releases", "发布", "查看版本和交付记录"],
-      ] as const).map(([target, label, description]) =>
-        <button key={target} type="button" disabled={enteringZenTao || !me.sso_enabled || !(me.role || me.can_enter) || me.read_only}
-          onClick={() => void enterZenTao(target)}>
-          <span className="sdk-native-action-title">{label} <span aria-hidden="true">↗</span></span>
-          <span className="sdk-native-action-description">{description}</span>
-        </button>
-      )}
-    </div>
-    {notice && <p className="sdk-notice" role="status">{notice}</p>}
+  if (me.native_only) return <>
+    <NativeSdkWorkspace account={account} storyId={storyId} readOnly={me.read_only} client={nativeClient} />
+    {error && <p role="alert" className="sdk-error">{error}</p>}
+    {notice && <p role="status" className="sdk-notice">{notice}</p>}
     {departmentSettings}
-  </section>;
+  </>;
   if (!list) return <section className="sdk-workbench"><h1>SDK 开发管理</h1><p>正在读取需求…</p></section>;
 
   return <section className="sdk-workbench">

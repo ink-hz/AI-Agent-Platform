@@ -23,6 +23,7 @@
 .platform-nav-group a.is-current > svg { color:#bddbff; }
 .platform-nav-group .platform-nav-external { margin-left:auto; color:#a9bbd1; }
 .platform-content > .page { min-width:0; }
+.platform-content > .page.is-sdk-workspace { padding:0; background:#f6f8fb; }
 .platform-content .hard-stale-banner { margin:0 0 16px; }
 .platform-content > .is-panorama-page > .hard-stale-banner { margin:12px 20px; width:calc(100% - 40px); }
 .platform-content > .is-brain-workspace,
