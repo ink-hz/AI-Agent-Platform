@@ -38,9 +38,13 @@ async function openDraft(){
 }
 it('protects native links and history; failed submission survives collapse and keeps its idempotency key',async()=>{
  const input=await openDraft();const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
- await act(async()=>box.querySelector<HTMLAnchorElement>('.brain-ai-notes-entry')!.click());
- expect(confirm).toHaveBeenCalledOnce();expect(window.location.pathname).toBe('/brain');expect(box.querySelector('#brain-request')).toBe(input);
+ const notesLink=box.querySelector<HTMLAnchorElement>('.brain-ai-notes-entry')!;
+ expect(notesLink.target).toBe('_blank');
+ notesLink.addEventListener('click',event=>event.preventDefault(),{once:true});
+ await act(async()=>notesLink.click());
+ expect(confirm).not.toHaveBeenCalled();expect(window.location.pathname).toBe('/brain');expect(box.querySelector('#brain-request')).toBe(input);
  await act(async()=>{window.history.replaceState({panorama:true},'', '/ai-notes');window.dispatchEvent(new PopStateEvent('popstate'));});
+ expect(confirm).toHaveBeenCalledOnce();
  expect(window.location.pathname).toBe('/brain');expect(input.value).toBe('保留这条请求');
  await act(async()=>box.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
  expect(requests).toHaveLength(1);

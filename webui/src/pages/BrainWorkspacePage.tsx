@@ -149,7 +149,6 @@ export function BrainWorkspacePage({
         />
         : <BrainPage
           account={account} client={brainClient} onConversationCreated={upsertConversation}
-          onOpenAiNotes={onNavigate}
           onOpenConversation={onNavigate}
         />}
     </section>

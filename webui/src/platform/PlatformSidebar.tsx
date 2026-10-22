@@ -4,7 +4,7 @@ import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
 import { sdkApi } from '../sdk/sdkApi';
 
-interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; routes: readonly string[] }
+interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; newTab?: boolean; routes: readonly string[] }
 interface Group { label: string; items: Item[]; hideHeading?: boolean }
 const aiWork: Item[] = [
   { label:'AI 助手', path:'/brain', icon:MessageSquare, routes:['brain','conversation','conversations'] },
@@ -45,7 +45,7 @@ function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = fa
       ...(account?.role === 'platform_owner' ? [{label:'访问记录',path:'/admin/access',icon:ScanEye,routes:['admin-access']}] : []),
     ]});
   }
-  groups.push({label:'辅助入口',hideHeading:true,items:[{label:'工程笔记',path:'/ai-notes',icon:BookOpen,routes:['ai-notes','ai-note']}]});
+  groups.push({label:'辅助入口',hideHeading:true,items:[{label:'工程笔记',path:'/ai-notes',icon:BookOpen,external:true,newTab:true,routes:['ai-notes','ai-note']}]});
   return groups;
 }
 function follow(event: MouseEvent<HTMLAnchorElement>, item: Item) {
@@ -72,7 +72,8 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
           const current = item.routes.includes(route.name)
             || (route.name === 'admin-permissions' && item.path === '/admin/identity');
           const Icon=item.icon;
-          return <a key={item.path} href={item.external ? item.path : platformPath(item.path)}
+          return <a key={item.path} href={item.newTab ? platformPath(item.path) : item.external ? item.path : platformPath(item.path)}
+            target={item.newTab ? '_blank' : undefined} rel={item.newTab ? 'noopener noreferrer' : undefined}
             className={current ? 'is-current' : undefined} aria-current={current ? 'page' : undefined}
             onClick={event => follow(event,item)}>
             <Icon size={17} aria-hidden="true"/><span>{item.label}</span>

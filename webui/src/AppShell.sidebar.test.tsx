@@ -39,6 +39,8 @@ it('places classified navigation outside main and keeps the topbar to brand and 
  expect(link('/')?.closest('section')).not.toBe(link('/brain')?.closest('section'));
  expect(link('/admin/activity')?.textContent).toBe('运行事件');
  expect(link('/missions')).not.toBeNull();expect(link('/ai-notes')).not.toBeNull();
+ expect(link('/ai-notes')?.getAttribute('target')).toBe('_blank');
+ expect(link('/ai-notes')?.getAttribute('rel')).toBe('noopener noreferrer');
  expect(link('/admin/access')).not.toBeNull();
  expect(box.querySelector('.account-chip')?.textContent).toBe('苍渊');
 });
