@@ -520,7 +520,10 @@ def test_article_body_requires_auth_and_is_absent_from_public_assets(
     )
 
     assert client.get("/api/v1/ai-notes/foundations/handbook").status_code == 401
-    assert client.get("/ai-notes").status_code == 401
+    anonymous_shell = client.get("/ai-notes")
+    assert anonymous_shell.status_code == 200
+    assert sentinel not in anonymous_shell.text
+    assert client.get("/ai-notes/").status_code == 200
     public_bytes = b"".join(
         path.read_bytes() for path in static.rglob("*") if path.is_file()
     )

@@ -43,7 +43,7 @@ _SAFE_RETURN_EXACT = frozenset(
     {
         "/brain", "/ai-engineering", "/organization",
         "/", "/admin/agent-designs", "/account", "/missions", "/conversations", "/agents",
-        "/agents/voc/workspace", "/ai-notes", "/office/", "/voc/",
+        "/agents/voc/workspace", "/ai-notes", "/ai-notes/", "/office/", "/voc/",
         "/fae/", "/fae/manage/", "/daq/", "/hr", "/hr/", "/marketing",
         "/sdk", "/sdk/", "/sdk/tasks",
         "/hr/chat", "/hr/agent", "/hr/panorama", "/hr/positions",

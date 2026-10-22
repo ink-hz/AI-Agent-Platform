@@ -130,6 +130,7 @@ export type LoginReturnPath =
   | "/agents/voc/workspace"
   | `/agents/${string}`
   | "/ai-notes"
+  | "/ai-notes/"
   | `/ai-notes/${string}/${string}`
   | "/office/"
   | "/voc/"
@@ -179,7 +180,7 @@ function safeLoginReturnPath(value: string): boolean {
   const canonicalDetail = canonicalEncodedDetailPath(value);
   if (value.includes("%") && !canonicalDetail) return false;
   if (canonicalDetail) return true;
-  if (value === "/" || value === "/brain" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes" || value === "/voc/") return true;
+  if (value === "/" || value === "/brain" || value === "/account" || value === "/missions" || value === "/conversations" || value === "/agents" || value === "/agents/voc/workspace" || value === "/ai-notes" || value === "/ai-notes/" || value === "/voc/") return true;
   if (/^\/missions\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/conversations\/[0-9a-fA-F-]{36}$/.test(value)) return true;
   if (/^\/agents\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) return true;
