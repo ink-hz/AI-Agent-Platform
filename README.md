@@ -246,6 +246,17 @@ deploy/migrate-observability \
 该路径只提交观测镜像，`review_backfill` 显式标记为
 `not_enabled / daq_observability_only`，不运行相机 review/outbox。
 
+DAQ 持续更新使用独立的 300 秒任务：
+
+```bash
+bash deploy/install-daq-sync-launchagent.sh
+```
+
+云端仍由既有签名加密 replica 推送任务接收，不旁路导入。
+DAQ 健康探针需显式配置 `PLATFORM_DAQ_HEALTH_URL`，见
+[健康探针说明](docs/runbooks/daq-runtime-health.md)及
+[2026-10-22 实际发布记录](docs/operations/2026-10-22-daq-admin-observability-release.md)。
+
 手动执行一次 FAE、ADMIN 与 DAQ 同步：
 
 ```bash
@@ -322,7 +333,7 @@ Operations 初始化、SQLite 迁移、数据源或轮询失败均隔离在该�
 - `GET /api/sessions` / `GET /api/sessions/{session_key}`: Session 列表与回放。
 - `GET /api/turns/{turn_key}/trace`: 脱敏 Trace 详情或明确的 unavailable 状态。
 - `GET /api/flywheel/overview` / `GET /api/flywheel/items`: Feedback、Review 和改进队列。
-- `GET /api/sync/status`: FAE/ADMIN 最近同步状态。
+- `GET /api/sync/status`: 配置的远端源最近同步状态；本机支持 FAE/ADMIN 及可选 DAQ，云副本不伪造源状态。
 - `GET /api/review/overview`、`/inbox`、`/issues`: 闭环总览、待纳管回答和证据计算事项；所有写入要求 `X-Review-Actor`。
 
 ## 测试
