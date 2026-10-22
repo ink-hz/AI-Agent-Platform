@@ -411,6 +411,7 @@ describe("Executive Operations visual contract", () => {
 
   it("gives AI notes an independent two-column reading workspace", () => {
     expect(platformShellStyles).toContain(".ai-notes-standalone-shell { display:flex; flex-direction:column; height:100dvh");
+    expect(platformShellStyles).not.toContain(".ai-notes-standalone-header {");
     expect(platformShellStyles).toContain(".ai-notes-standalone-shell { height:auto; overflow:visible;");
     expect(rule(".page.is-ai-notes-workspace")).toContain("min-height: 0");
     expect(rule(".ai-notes-layout")).toContain("grid-template-columns: 19rem minmax(0, 1fr)");
