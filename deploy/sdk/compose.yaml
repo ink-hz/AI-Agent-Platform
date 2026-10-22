@@ -32,6 +32,7 @@ services:
       ZT_MYSQL_USER: zentao
       ZT_MYSQL_PASSWORD: ${SDK_DB_PASSWORD:?set SDK_DB_PASSWORD in a mode 0600 env file}
       ZT_DEFAULT_LANG: zh-cn
+      ZT_WEB_ROOT: /sdk
       DEBUG: "false"
     volumes:
       - zentao-data:/data
