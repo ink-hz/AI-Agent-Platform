@@ -211,6 +211,24 @@ class SdkSsoService:
             raise HTTPException(403, "sdk_sso_ticket_invalid")
         return await run_in_threadpool(self._zen_login_sync, account), self.target_path(target)
 
+    async def native_account(self, actor: AuthContext) -> str:
+        """Resolve an eligible employee's bound ZenTao account for server-side API use."""
+        if actor.hard_stale_read_only:
+            raise HTTPException(503, "sdk_sso_identity_stale")
+        identity = await run_in_threadpool(self.repository.identity, actor.internal_user_id)
+        if not identity or not identity.get("eligible"):
+            raise HTTPException(403, "sdk_sso_access_or_binding_required")
+        if (not identity.get("account") or identity.get("provision_state") == "suspended") and self.provisioner:
+            await run_in_threadpool(self._ensure_personal_account, actor.internal_user_id)
+            identity = await run_in_threadpool(self.repository.identity, actor.internal_user_id)
+        if not identity or not identity.get("eligible") or not identity.get("account") or identity.get("provision_state") == "suspended":
+            raise HTTPException(403, "sdk_sso_access_or_binding_required")
+        return identity["account"]
+
+    async def login_personal_session(self, account: str) -> str:
+        """Obtain a ZenTao session for a private server-side client only."""
+        return await run_in_threadpool(self._zen_login_sync, account)
+
     def _zen_login_sync(self, account: str) -> str:
         with self.repository.login_slot() as timestamp:
             return self._zen_login_with_timestamp(account, timestamp)
