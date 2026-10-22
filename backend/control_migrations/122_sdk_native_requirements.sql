@@ -9,7 +9,7 @@ create table sdk.native_create_intents (
   device_platform text not null,
   state text not null check (state in ('pending','created','rejected')),
   story_id integer unique check (story_id > 0),
-  rejection_status smallint check (rejection_status in (403,502,503)),
+  rejection_status smallint check (rejection_status in (403,409,422,502,503)),
   rejection_detail text check (rejection_detail = 'sdk_create_rejected'),
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
