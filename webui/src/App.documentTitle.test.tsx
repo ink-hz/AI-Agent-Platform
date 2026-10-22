@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
-import type { Account } from './auth';
+import { IdentityDisabled, type Account } from './auth';
 import { aiEngineeringClient } from './aiEngineeringApi';
 import { PLATFORM_TITLE } from './documentTitle';
 import { navigate } from './router';
@@ -29,6 +29,12 @@ vi.mock('./accessEventReporter', () => ({AccessEventReporter:()=>null}));
 // Page bodies have their own tests; keep the real App, routing, shell and panorama host.
 vi.mock('./sdk-admin/SdkAdminPage', () => ({SdkAdminPage:()=> <p>SDK 文档工作区</p>}));
 vi.mock('./pages/SessionDetailPage', () => ({SessionDetailPage:()=> <p>会话工作区</p>}));
+
+vi.mock('./pages/AccessHistoryPage', () => ({AccessHistoryPage:()=> <p>访问记录页面</p>}));
+vi.mock('./pages/GovernancePage', () => ({GovernancePage:()=> <p>审计页面</p>}));
+vi.mock('./pages/AgentRuntimePage', () => ({AgentRuntimePage:()=> <p>运行详情页面</p>}));
+vi.mock('./pages/ReviewPage', () => ({ReviewPage:()=> <p>任务复审页面</p>}));
+vi.mock('./workspaces/fae/FaeManagementWorkspace', () => ({FaeManagementWorkspace:()=> <p>技术支持页面</p>}));
 
 const account:Account={internal_user_id:'title-owner',display_name:'管理员',role:'platform_admin',departments:[],gender:null,observation_agent_ids:[],workspace_scopes:[],directory_freshness:'fresh',hard_stale_read_only:false,csrf_token:'csrf'};
 let box:HTMLDivElement;let root:ReturnType<typeof createRoot>;
@@ -83,4 +89,45 @@ it('returns title ownership to App when panorama access is denied',async()=>{
  await act(async()=>navigate('/organization'));
  expect(box.textContent).toContain('无权限');
  expect(document.title).toBe(`组织架构 · ${PLATFORM_TITLE}`);
+});
+
+it('uses the destination title when an owner-only route refuses the current panorama account',async()=>{
+ window.history.replaceState({panorama:true},'','/sdk-admin/knowledge/KB-API-001');
+ vi.mocked(fetchPanorama).mockResolvedValue(panoramaTestData('已有全景'));
+ await act(async()=>root.render(<App/>));
+ expect(document.title).toBe(`文档阅读 · 知识与成果 · SDK 开发管理 · ${PLATFORM_TITLE}`);
+ await act(async()=>navigate('/admin/access'));
+ expect(window.history.state?.panorama).toBe(true);
+ expect(box.querySelector('.permission-state')?.textContent).toContain('无权访问');
+ expect(box.querySelector('.panorama-home')).toBeNull();
+ expect(document.title).toBe(`访问记录 · ${PLATFORM_TITLE}`);
+});
+
+it.each([
+ ['member','/sdk-admin/knowledge','SDK 文档工作区'],
+ ['member','/fae/manage/','技术支持页面'],
+ ['member','/admin/review?agent_id=visible','无权访问'],
+ ['platform_admin','/admin/access','无权访问'],
+ ['platform_admin','/admin/sessions/session-title','会话工作区'],
+ ['platform_owner','/admin/access','访问记录页面'],
+ ['management_viewer','/admin/governance','审计页面'],
+ ['management_viewer','/admin/access','无权访问'],
+ ['management_viewer','/admin/agents/visible/runtime','运行详情页面'],
+ ['management_viewer','/admin/agents/hidden/runtime','无权访问'],
+ ['management_viewer','/admin/review?agent_id=visible','任务复审页面'],
+ ['management_viewer','/admin/review?agent_id=visible&agent_id=hidden','无权访问'],
+] as const)('preserves route authorization for %s at %s',async(role,path,content)=>{
+ window.history.replaceState({},'',path);
+ loadAccount.mockResolvedValue({...account,role,observation_agent_ids:['visible']});
+ await act(async()=>root.render(<App/>));
+ expect(box.querySelector('main')?.textContent).toContain(content);
+});
+
+it('preserves the legacy-mode and absent-account boundary of the route authorization guard',async()=>{
+ window.history.replaceState({},'','/admin/access');
+ loadAccount.mockRejectedValue(new IdentityDisabled());
+ await act(async()=>root.render(<App/>));
+ expect(box.querySelector('main')?.textContent).toContain('访问记录页面');
+ expect(box.querySelector('.permission-state')).toBeNull();
+ expect(document.title).toBe(`访问记录 · ${PLATFORM_TITLE}`);
 });

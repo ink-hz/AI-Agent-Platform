@@ -177,9 +177,14 @@ export default function App() {
   const [panoramaAccessDenied, setPanoramaAccessDenied] = useState(false);
   const denyPanoramaAccess = useCallback(() => setPanoramaAccessDenied(true), []);
   const loginRoute = route.name === "login";
+  const usageRoute = ["home", "organization", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "sdk-admin", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
+  const faeManagementRoute = route.name.startsWith("fae-manage-");
+  const ownerOnlyRoute = route.name === "admin-access";
+  const routeAllowed = legacyMode || !account || usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")
+    || (account.role === "management_viewer" && viewerRouteAllowed(account, route));
   const panoramaLocation = isPanoramaLocation(route);
   const panoramaRoleAllowed = account?.role === "platform_admin" || account?.role === "platform_owner";
-  const panorama = panoramaLocation && panoramaRoleAllowed && !loading && !failure && !panoramaAccessDenied;
+  const panorama = panoramaLocation && panoramaRoleAllowed && routeAllowed && !loading && !failure && !panoramaAccessDenied;
   // The rendered panorama host owns both dynamic graph and workspace route titles.
   useDocumentTitle(panorama ? undefined : routeDocumentTitle(route));
   useEffect(() => {
@@ -219,15 +224,8 @@ export default function App() {
     return <AccessState title="无权限" description="请联系苍渊。" />;
   }
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
-  if (!legacyMode && account) {
-    const usageRoute = ["home", "organization", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "sdk-admin", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
-    const faeManagementRoute = route.name.startsWith("fae-manage-");
-    const ownerOnlyRoute = route.name === "admin-access";
-    const allowed = usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")
-      || (account.role === "management_viewer" && viewerRouteAllowed(account, route));
-    if (!allowed) {
-      return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;
-    }
+  if (!routeAllowed) {
+    return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;
   }
   return <AppShell route={route} account={account} panorama={panorama}>
     {account && <AccessEventReporter account={account} route={route} />}
