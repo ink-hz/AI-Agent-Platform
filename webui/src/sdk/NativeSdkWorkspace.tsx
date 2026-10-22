@@ -131,7 +131,9 @@ export function NativeSdkWorkspace({ account, storyId, taskId, tab, readOnly = f
   function created(result: Extract<NativeCreateResult, { status: "created" }>) {
     requestIdentity.clear(); setReconciliationPending(false); setEditor(null); setDetail(result.requirement);
     setView("all"); setPage(1); setRefresh(value => value + 1);
-    setNotice(`需求 #${result.story_id} 已创建。`);
+    setNotice(result.assignment_warning
+      ? `需求 #${result.story_id} 已创建，但负责人分配未成功。请在需求详情中重新分配。`
+      : `需求 #${result.story_id} 已创建。`);
     navigate(`/sdk/requirements/${result.story_id}`);
   }
 

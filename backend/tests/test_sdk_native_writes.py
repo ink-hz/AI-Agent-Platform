@@ -171,6 +171,7 @@ async def test_create_with_reviewer_uses_personal_session_and_is_idempotent():
     assert posted[2]["status"] == "active"
     assert posted[2]["reviewer"] == ["sdk_reviewer"]
     assert "needNotReview" not in posted[2]
+    assert posted[2]["sourceNote"] == "由 SDK 开发管理平台录入"
 
 
 @pytest.mark.asyncio
@@ -231,18 +232,37 @@ async def test_timeout_after_zentao_commit_is_reconciled_from_unique_marker():
 
 
 @pytest.mark.asyncio
-async def test_create_remains_pending_until_requested_assignment_is_visible():
+async def test_reconciliation_keeps_pending_when_marker_story_has_another_zentao_opener():
+    client, repo = FakePersonalClient(), MemoryRepository()
+    client.fail_after_create = True
+    service = NativeSdkService(client, repo, product_id=1)
+    assert (await service.create_requirement(ACTOR, form()))["status"] == "reconciliation_required"
+    client.stories[70]["openedBy"] = "another_employee"
+    result = await service.pending_create(ACTOR)
+    assert result == {"status": "reconciliation_required", "request_id": str(REQUEST)}
+    assert repo.pending_create(ACTOR.internal_user_id) is not None
+    assert [call[1] for call in client.calls].count("stories") == 1
+
+
+@pytest.mark.asyncio
+async def test_created_story_does_not_block_future_work_when_assignment_fails():
     client, repo = FakePersonalClient(), MemoryRepository()
     client.fail_assign = True
     service = NativeSdkService(client, repo, product_id=1)
-    pending = await service.create_requirement(ACTOR, form(assigned_to="sdk_owner"))
+    created = await service.create_requirement(ACTOR, form(assigned_to="sdk_owner"))
     repeated = await service.create_requirement(ACTOR, form(assigned_to="sdk_owner"))
-    assert pending["status"] == repeated["status"] == "reconciliation_required"
+    assert created["status"] == repeated["status"] == "created"
+    assert created["assignment_warning"] is repeated["assignment_warning"] is True
+    assert repo.pending_create(ACTOR.internal_user_id) is None
     assert [call[1] for call in client.calls].count("stories") == 1
     assert [call[1] for call in client.calls].count("stories/70/assign") == 1
-    client.stories[70]["assignedTo"] = "sdk_owner"
+    client.fail_assign = False
+    await service.assign_requirement(ACTOR, 70, expected_version=1,
+                                     expected_token=_edit_token(client.stories[70]),
+                                     assigned_to="sdk_owner")
     resolved = await service.create_requirement(ACTOR, form(assigned_to="sdk_owner"))
     assert resolved["status"] == "created"
+    assert resolved["assignment_warning"] is False
     assert resolved["requirement"]["assigned_to"] == "sdk_owner"
 
 
@@ -397,6 +417,34 @@ async def test_review_writes_employee_action_and_reads_current_status():
     assert posted[2]["comment"] == "可实施"
     assert posted[3] == 1
     assert result["actions"][0]["actor"] == "employee"
+
+
+@pytest.mark.asyncio
+async def test_multi_reviewer_vote_requires_pending_reviewer_to_change():
+    class MultiReviewerClient(FakePersonalClient):
+        async def request(self, actor, method, path, payload=None, params=None, *, api_version=2):
+            if method == "POST" and path == "stories/71/review":
+                self.calls.append((method, path, payload, api_version))
+                if self.record_vote:
+                    self.stories[71]["notReview"] = ["sdk_reviewer"]
+                return {"id": 71}
+            return await super().request(actor, method, path, payload, params, api_version=api_version)
+
+    client, repo = MultiReviewerClient(), MemoryRepository()
+    client.record_vote = False
+    client.stories[71] = {"id": 71, "product": 1, "title": "多人评审", "spec": "场景",
+        "verify": "验收", "status": "reviewing", "version": 1, "sourceNote": "",
+        "openedBy": "employee", "assignedTo": "", "pri": 2,
+        "reviewer": ["employee", "sdk_reviewer"], "notReview": ["employee", "sdk_reviewer"]}
+    service = NativeSdkService(client, repo, product_id=1)
+    with pytest.raises(HTTPException) as unchanged:
+        await service.review_requirement(ACTOR, 71, expected_version=1,
+            expected_token=_edit_token(client.stories[71]), decision="pass")
+    assert (unchanged.value.status_code, unchanged.value.detail) == (502, "sdk_requirement_write_unconfirmed")
+    client.record_vote = True
+    voted = await service.review_requirement(ACTOR, 71, expected_version=1,
+        expected_token=_edit_token(client.stories[71]), decision="pass")
+    assert voted["status"] == "reviewing"
 
 
 @pytest.mark.asyncio

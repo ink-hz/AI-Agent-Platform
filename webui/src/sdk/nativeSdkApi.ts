@@ -32,7 +32,7 @@ export type NativeRequirementInput = {
 export type NativeRequirementEdit = Omit<NativeRequirementInput, "request_id" | "assigned_to" | "reviewer" | "device_platform"> & {
   expected_version: number; expected_token: string; device_platform: string | null;
 };
-export type NativeCreateResult = { status: "created"; story_id: number; requirement: NativeRequirementDetail } |
+export type NativeCreateResult = { status: "created"; story_id: number; requirement: NativeRequirementDetail; assignment_warning?: boolean } |
   { status: "reconciliation_required"; request_id: string };
 export type NativePendingResult = NativeCreateResult | { status: "none" };
 

@@ -158,6 +158,33 @@ async def test_my_tasks_excludes_other_product_before_pagination():
 
 
 @pytest.mark.asyncio
+async def test_multi_product_execution_does_not_expose_other_or_unscoped_tasks():
+    class MultiProduct(PersonalClient):
+        async def request(self, actor, method, path, payload=None, params=None, *, api_version=2):
+            if path == "my/tasks":
+                return {"status": "success", "tasks": [
+                    {"id": 7, "name": "其他产品任务", "assignedTo": "sdk_owner", "story": 70, "execution": 9},
+                    {"id": 8, "name": "无需求任务", "assignedTo": "sdk_owner", "story": 0, "execution": 9},
+                    {"id": 4, "name": "SDK 任务", "assignedTo": "sdk_owner", "story": 69, "execution": 9}],
+                    "pager": {"recTotal": 3, "pageTotal": 1}}
+            if path == "executions/9":
+                return {"id": 9, "name": "混合执行", "products": [{"id": 1}, {"id": 5}]}
+            if path == "tasks/8":
+                return {"status": "success", "task": {"id": 8, "name": "无需求任务",
+                        "assignedTo": "sdk_owner", "story": 0, "execution": 9}, "actions": []}
+            return await super().request(actor, method, path, payload, params, api_version=api_version)
+
+    app, _ = make_app(MultiProduct())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as browser:
+        listed = await browser.get("/api/v1/sdk/native/my-tasks")
+        unscoped = await browser.get("/api/v1/sdk/native/tasks/8")
+    assert listed.status_code == 200
+    assert [task["id"] for task in listed.json()["items"]] == [4]
+    assert listed.json()["total"] == 1
+    assert unscoped.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_owner_filter_uses_exact_zentao_assignee():
     app, _ = make_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as browser:

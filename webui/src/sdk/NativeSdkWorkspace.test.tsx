@@ -130,6 +130,15 @@ it("locks an uncertain create to the original request identity", async () => {
     .toBe((api.createRequirement as ReturnType<typeof vi.fn>).mock.calls[0][0].request_id);
 });
 
+it("warns when a created requirement still needs its selected owner assigned", async () => {
+  const api = client();
+  api.pendingCreate = vi.fn().mockResolvedValue({ status: "created", story_id: 70,
+    requirement: await api.requirement(70), assignment_warning: true });
+  await act(async () => root.render(<NativeSdkWorkspace account={account} client={api} />));
+  expect(container.querySelector('[role="status"]')?.textContent)
+    .toContain("负责人分配未成功。请在需求详情中重新分配");
+});
+
 it("opens Q4 ZenTao requirements and distinguishes business proposer, importer and owner", async () => {
   const api = client();
   await act(async () => root.render(<NativeSdkWorkspace account={account} client={api} />));
