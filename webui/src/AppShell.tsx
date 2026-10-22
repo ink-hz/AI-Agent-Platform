@@ -37,7 +37,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
   const agentDesignWorkspace = route.name === "admin-agent-designs";
   const faeWorkspace = route.name.startsWith("fae-manage-");
   const accountCanReadDeployment = account?.role === "platform_owner" || account?.role === "platform_admin";
-  const shouldLoadDeployment = accountCanReadDeployment || (current === "admin" && !account);
+  const shouldLoadDeployment = !aiNotesWorkspace && (accountCanReadDeployment || (current === "admin" && !account));
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
   const [deploymentResolved, setDeploymentResolved] = useState(!shouldLoadDeployment);
   useEffect(() => {
@@ -74,6 +74,21 @@ export function AppShell({ route, children, account, panorama = false }: { route
       return next;
     });
   };
+  if (aiNotesWorkspace) return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
+    <div className="ai-notes-standalone-shell">
+      <header className="ai-notes-standalone-header">
+        <a className="ai-notes-standalone-return" href={platformPath("/brain")} onClick={(event) => follow(event, "/brain")}>返回平台</a>
+        <strong>AI 工程笔记</strong>
+        {account && <a className="account-chip" href={platformPath("/account")} onClick={(event) => follow(event, "/account")}>{account.display_name}</a>}
+      </header>
+      <main data-platform-layout="reading" className="page is-ai-notes-workspace ai-notes-standalone-main">
+        {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
+          <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
+        </aside>}
+        {children}
+      </main>
+    </div>
+  </DeploymentProvider>;
   return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}${sdkWorkspace ? " is-sdk-workspace-shell" : ""}`}>
       <header className="topbar">
