@@ -22,7 +22,7 @@
 
 **Files:** `backend/app/sdk_workbench/sso.py`、`backend/app/control_plane/authorization.py`、`backend/tests/test_sdk_sso_routes.py`。
 
-**Interfaces:** `GET /api/v1/sdk/sso/entry` 返回带 `zentaosid` 和当前平台会话签名绑定 Cookie（均限 `/sdk/; Secure; HttpOnly; SameSite=Lax`）的 303，目标为 `/sdk/index.php?m=my&f=index`；`GET /api/v1/sdk/sso/access` 对当前已绑定准入且会话签名匹配的员工返回 204，其余返回 401/403/503。`entry` 沿用 `native_account()` 与 `login_personal_session()`；`access` 只读取 `repository.identity()`，不触发建号或禅道登录。
+**Interfaces:** `GET /api/v1/sdk/sso/entry` 返回带 `zentaosid` 和当前平台用户、会话、禅道账号及会话签名绑定 Cookie（均限 `/sdk/; Secure; HttpOnly; SameSite=Lax`）的 303，默认目标为 `/sdk/index.php?m=my&f=index`，可信边缘传入合法 `/sdk/index.php` 深链接时保留原目标；`GET /api/v1/sdk/sso/access` 对当前已绑定准入且会话签名匹配的员工返回 204，其余返回 401/403/503。`entry` 沿用 `native_account()` 与 `login_personal_session()`；`access` 只读取 `repository.identity()`，不触发建号或禅道登录。
 
 - [ ] 先在 `test_sdk_sso_routes.py` 加测试，覆盖准入员工取得个人 Cookie、未准入拒绝、目录过期拒绝、登录失败不设置 Cookie、access 不创建新的禅道浏览器会话；运行测试，确认新接口缺失而失败。
 - [ ] 实现两个 GET 路由；只让 `entry` 调用 `login_personal_session`，`access` 只核对绑定与准入；将两条路由纳入 SDK 授权表。

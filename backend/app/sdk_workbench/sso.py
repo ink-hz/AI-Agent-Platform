@@ -231,23 +231,23 @@ class SdkSsoService:
         """Obtain a ZenTao session for a private server-side client only."""
         return await run_in_threadpool(self._zen_login_sync, account)
 
-    def direct_binding(self, actor: AuthContext, session_id: str) -> str:
-        message = f"sdk-direct-v1:{actor.internal_user_id}:{actor.session_id}:{session_id}"
+    def direct_binding(self, actor: AuthContext, account: str, session_id: str) -> str:
+        message = f"sdk-direct-v2:{actor.internal_user_id}:{actor.session_id}:{account}:{session_id}"
         return hmac.new(self.entry_key.encode("ascii"), message.encode("ascii"), hashlib.sha256).hexdigest()
 
     async def check_direct_access(self, actor: AuthContext, session_id: str | None, binding: str | None) -> None:
         """Read-only check for Nginx auth_request on every ZenTao asset and page."""
         if actor.hard_stale_read_only:
             raise HTTPException(503, "sdk_sso_identity_stale")
-        if (not session_id or not _SID.fullmatch(session_id) or not binding
-                or not _BINDING.fullmatch(binding) or not hmac.compare_digest(
-                    binding, self.direct_binding(actor, session_id)
-                )):
-            raise HTTPException(403, "sdk_sso_session_binding_required")
         identity = await run_in_threadpool(self.repository.identity, actor.internal_user_id)
         if (not identity or not identity.get("eligible") or not identity.get("account")
                 or identity.get("provision_state") == "suspended"):
             raise HTTPException(403, "sdk_sso_access_or_binding_required")
+        if (not session_id or not _SID.fullmatch(session_id) or not binding
+                or not _BINDING.fullmatch(binding) or not hmac.compare_digest(
+                    binding, self.direct_binding(actor, identity["account"], session_id)
+                )):
+            raise HTTPException(403, "sdk_sso_session_binding_required")
 
     def _zen_login_sync(self, account: str) -> str:
         with self.repository.login_slot() as timestamp:
@@ -304,9 +304,15 @@ def build_sdk_sso_router(service: SdkSsoService) -> APIRouter:
         actor = _actor(request)
         account = await service.native_account(actor)
         session_id = await service.login_personal_session(account)
-        response = RedirectResponse("/sdk/index.php?m=my&f=index", status_code=303, headers=_NO_STORE)
+        destination = "/sdk/index.php?m=my&f=index"
+        return_uri = request.headers.get("x-sdk-return-uri", "")
+        if return_uri and len(return_uri) <= 2048 and not any(ord(char) < 32 or ord(char) == 127 or char == "\\" for char in return_uri):
+            parsed = urlsplit(return_uri)
+            if parsed.path == "/sdk/index.php" and not parsed.scheme and not parsed.netloc and not parsed.fragment:
+                destination = return_uri
+        response = RedirectResponse(destination, status_code=303, headers=_NO_STORE)
         response.set_cookie("zentaosid", session_id, path="/sdk/", secure=True, httponly=True, samesite="lax")
-        response.set_cookie("sdk_zen_binding", service.direct_binding(actor, session_id), path="/sdk/", secure=True, httponly=True, samesite="lax")
+        response.set_cookie("sdk_zen_binding", service.direct_binding(actor, account, session_id), path="/sdk/", secure=True, httponly=True, samesite="lax")
         return response
 
     @router.get("/access")

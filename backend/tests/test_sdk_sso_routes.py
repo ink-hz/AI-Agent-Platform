@@ -35,7 +35,7 @@ class Repository:
         self.identity_reads = 0
 
     def identity(self, actor):
-        assert actor == USER
+        assert actor in {USER, OTHER_USER}
         self.identity_reads += 1
         return {"eligible": self.eligible, "account": self.account,
                 "provision_state": self.provision_state}
@@ -479,6 +479,41 @@ async def test_direct_access_checks_binding_without_creating_zentao_session(tmp_
     assert "set-cookie" not in response.headers
     assert repository.identity_reads == 2
     assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_direct_access_rejects_session_after_account_is_rebound(tmp_path):
+    repository = Repository()
+    app, _ = build_app(tmp_path, repository)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        entry = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
+        repository.account = "another_account"
+        response = await client.get("/api/v1/sdk/sso/access", headers={
+            "x-sdk-zen-sid": entry.cookies["zentaosid"],
+            "x-sdk-zen-binding": entry.cookies["sdk_zen_binding"],
+        })
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_direct_entry_preserves_safe_first_visit_zentao_deep_link(tmp_path):
+    app, _ = build_app(tmp_path, Repository())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        entry = await client.get("/api/v1/sdk/sso/entry", headers={
+            "x-sdk-return-uri": "/sdk/index.php?m=project&f=task&projectID=1",
+        }, follow_redirects=False)
+    assert entry.status_code == 303
+    assert entry.headers["location"] == "/sdk/index.php?m=project&f=task&projectID=1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uri", ["//evil.example", "/sdk/api.php", "/sdk/install.php", "/sdk/../admin", "/admin", "/sdk/index.php%0d%0aLocation:evil"])
+async def test_direct_entry_rejects_unsafe_return_uri_and_uses_home(tmp_path, uri):
+    app, _ = build_app(tmp_path, Repository())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        entry = await client.get("/api/v1/sdk/sso/entry", headers={"x-sdk-return-uri": uri}, follow_redirects=False)
+    assert entry.status_code == 303
+    assert entry.headers["location"] == "/sdk/index.php?m=my&f=index"
 
 
 @pytest.mark.asyncio
