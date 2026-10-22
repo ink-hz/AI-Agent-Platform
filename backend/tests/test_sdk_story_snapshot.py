@@ -248,6 +248,32 @@ def test_numeric_id_representation_conflict_preserves_both_raw_values():
     assert report["pages"][0]["raw_response"] == body
 
 
+@pytest.mark.parametrize("left,right,expected", [
+    (story(1, version=True), story(1, version=1), "duplicate_id_conflict"),
+    (story(1, nested={"values": [True]}),
+     story(1, nested={"values": [1]}), "duplicate_id_conflict"),
+    (story(1, version=1), story(1, version=1.0), "duplicate_id_conflict"),
+    ({"id": 1, "product": 1, "extra": {"a": 1, "b": [2]}},
+     {"extra": {"b": [2], "a": 1}, "product": 1, "id": 1}, "duplicate_id"),
+])
+def test_duplicate_payload_comparison_preserves_native_json_types(left, right, expected):
+    body = page([left, right])
+    report, _ = run([body])
+
+    assert report["outcome"] == "failed"
+    assert report["last_valid_page"] == 0
+    assert report["stories"] == []
+    assert report["issues"][0]["code"] == expected
+    raw_items = report["pages"][0]["raw_response"]["stories"]
+    assert raw_items == body["stories"]
+    if "version" in left:
+        assert type(raw_items[0]["version"]) is type(left["version"])
+        assert type(raw_items[1]["version"]) is type(right["version"])
+    if "nested" in left:
+        assert type(raw_items[0]["nested"]["values"][0]) is bool
+        assert type(raw_items[1]["nested"]["values"][0]) is int
+
+
 @pytest.mark.parametrize("pager,reported", [
     ({"pageTotal": "1", "recTotal": "0"}, {"page_total": 1, "rec_total": 0}),
     ({"pageTotal": "bad", "recTotal": 0}, None),

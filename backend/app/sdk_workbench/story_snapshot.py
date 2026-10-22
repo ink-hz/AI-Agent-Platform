@@ -82,6 +82,18 @@ def _parse_reported(raw):
     }
 
 
+def _same_native_payload(left, right):
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(
+            _same_native_payload(value, right[key]) for key, value in left.items())
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _same_native_payload(a, b) for a, b in zip(left, right))
+    return left == right
+
+
 def _validate_page(body, totals, pager_error, page_id, product_id, baseline, prior, accepted_count):
     if (not isinstance(body, dict) or body.get("status") != "success"
             or not isinstance(body.get("stories"), list) or not isinstance(body.get("pager"), dict)):
@@ -115,7 +127,7 @@ def _validate_page(body, totals, pager_error, page_id, product_id, baseline, pri
             raise _PageInvalid("story_product_mismatch", f"{path}.product")
         previous = staged.get(key, prior.get(key))
         if previous is not None:
-            code = "duplicate_id" if previous == item else "duplicate_id_conflict"
+            code = "duplicate_id" if _same_native_payload(previous, item) else "duplicate_id_conflict"
             raise _PageInvalid(code, f"{path}.id")
         staged[key] = item
     count = accepted_count + len(stories)
