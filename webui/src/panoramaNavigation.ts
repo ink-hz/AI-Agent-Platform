@@ -5,7 +5,7 @@ const PATHS: Record<PanoramaActionId, string> = {
  brain: '/brain', agents: '/agents', missions: '/missions', sessions: '/admin/sessions',
  operations: '/admin', review: '/admin/review', activity: '/admin/activity', identity: '/admin/identity',
  governance: '/admin/governance', access: '/admin/access', account: '/account', 'agent-admin': '/admin/agents',
- notes: '/ai-notes', hr: '/hr/', office: '/office/', voc: '/voc/', fae: '/fae/',
+ 'sdk-admin': '/sdk-admin', notes: '/ai-notes', hr: '/hr/', office: '/office/', voc: '/voc/', fae: '/fae/',
 };
 export function actionPath(action: PanoramaActionId) {
  if (action === 'notes') return { path: PATHS[action], external: true, newTab: true };
@@ -15,6 +15,7 @@ export function workspaceGroup(route: Route): PanoramaActionId | null {
  switch(route.name) {
  case 'brain': case 'conversation': case 'conversations': return 'brain';
  case 'agents': return 'agents';
+ case 'sdk-admin': return 'sdk-admin';
  case 'marketing': case 'marketing-conversation': return 'agents';
  case 'missions': case 'mission': return 'missions';
  case 'admin-sessions': case 'admin-session': return 'sessions';

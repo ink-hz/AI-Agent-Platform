@@ -1,6 +1,6 @@
 import type { AiEngineeringDocumentSlug } from "./aiEngineeringApi";
 
-export type PanoramaActionId = "brain" | "agents" | "missions" | "sessions" | "operations" | "review" | "activity" | "identity" | "governance" | "access" | "account" | "agent-admin" | "notes" | "hr" | "office" | "voc" | "fae";
+export type PanoramaActionId = "sdk-admin" | "brain" | "agents" | "missions" | "sessions" | "operations" | "review" | "activity" | "identity" | "governance" | "access" | "account" | "agent-admin" | "notes" | "hr" | "office" | "voc" | "fae";
 export type PanoramaLayerKind = "industry" | "portfolio" | "workflow" | "support";
 export type PanoramaGroupRole = "upstream" | "company" | "downstream" | "products" | "technology" | "marketing" | "delivery" | "support";
 export type PanoramaEdgeKind = "supply" | "supports" | "feedback";

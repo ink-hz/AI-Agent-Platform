@@ -56,7 +56,7 @@ suite('SDK real content HTTP response to frontend contract', () => {
     await act(async () => root!.render(<SdkAdminPage section="overview" account={account} />));
     expect(box.querySelector('a[href="/sdk-admin/knowledge/KB-INDEX-ROOT"]')).not.toBeNull();
     expect(box.querySelector('a[href="/sdk-admin/knowledge/KB-NAV-004"]')).not.toBeNull();
-    expect(box.querySelectorAll('nav[aria-label="SDK 工作区"] [aria-current="page"]')).toHaveLength(1);
+    expect(box.querySelector('nav[aria-label="SDK 工作区"]')).toBeNull();
     window.history.replaceState({}, '', '/sdk-admin/knowledge/KB-API-001');
     await act(async () => root!.render(<SdkAdminPage section="knowledge" documentId="KB-API-001" account={account} />));
     expect(box.querySelector('article')?.textContent).toContain(data.documents['KB-API-001'].title);
@@ -78,4 +78,28 @@ suite('SDK real content HTTP response to frontend contract', () => {
     expect(box.querySelector('article')?.textContent).toContain(api012.title);
     expect(box.querySelector(`article [id="${decodeURIComponent(targetId)}"]`)).not.toBeNull();
   });
+
+  it('renders the real status analysis paragraphs and both evidence tables inside horizontal scroll containers', async () => {
+    const data = install();
+    const status = data.documents['DOC-ANALYSIS-STATUS'];
+    expect(status.title).toBe('SDK阶段性现状盘点（2026-10-22）');
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const account = { internal_user_id: 'sdk-status-reader', display_name: 'SDK reader' } as Account;
+    box = document.createElement('div'); document.body.append(box); root = createRoot(box);
+    window.history.replaceState({}, '', '/sdk-admin/knowledge/DOC-ANALYSIS-STATUS');
+    await act(async () => root!.render(<SdkAdminPage section="knowledge" documentId="DOC-ANALYSIS-STATUS" account={account} />));
+    const article = box.querySelector('article.sdk-reader')!;
+    expect(article.querySelector('.sdk-reader-heading h1')?.textContent).toBe(status.title);
+    const paragraphs = Array.from(article.querySelectorAll('.sdk-markdown p')).map(p => p.textContent);
+    expect(paragraphs.some(p => p?.startsWith('现有证据能定位部分实现'))).toBe(true);
+    expect(paragraphs.some(p => p?.includes('不是额外平台扩项或工期承诺'))).toBe(true);
+    const tables = article.querySelectorAll('.sdk-table-scroll > table');
+    expect(tables).toHaveLength(2);
+    expect(Array.from(tables).map(table => table.querySelectorAll('tbody tr').length)).toEqual([12, 4]);
+    expect(article.querySelectorAll('.sdk-table-scroll tbody td')).toHaveLength(44);
+    expect(tables[0].querySelector('thead')?.textContent).toContain('固定槽位');
+    expect(tables[0].textContent).toContain('P12 ROS/ROS2');
+    expect(tables[1].textContent).toContain('建立两版本发布清单');
+  });
+
 });

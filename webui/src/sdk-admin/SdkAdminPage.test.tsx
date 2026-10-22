@@ -95,9 +95,10 @@ it('keeps native fragment scrolling for a link within the current document', asy
     expect(navigate).not.toHaveBeenCalled();
     window.history.replaceState({}, '', '/');
 });
-it('announces the active workspace location to keyboard and screen-reader users', async () => {
+it('leaves workspace navigation to the platform sidebar and retains the reading breadcrumb', async () => {
     await render('knowledge');
-    expect(box.querySelector('nav a[aria-current="page"]')?.textContent).toContain('知识与成果');
+    expect(box.querySelector('.sdk-sidebar, nav[aria-label="SDK 工作区"]')).toBeNull();
+    expect(box.querySelector('.sdk-breadcrumb')?.textContent).toContain('知识与成果');
 });
 it('shows catalog knowledge recommendations in order without duplicate requests or rows', async () => {
     const client = makeClient();

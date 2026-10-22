@@ -21,8 +21,8 @@ export function PanoramaWorkArea({route,renderWorkspace,onClose,onDirty}: {
  },[route,onClose]);
  const retained=route??saved;
  if(!retained) return null;
- return <section className="panorama-work-area" hidden={!route} aria-label="图内工作区" onInputCapture={()=>onDirty(true)}>
-   <header className="panorama-work-area-heading"><div><span>AI 工程全景 / 共用能力</span><h2>{routeDocumentTitle(retained).split(' · ')[0]}</h2></div><button type="button" onClick={onClose}>回到全景</button></header>
+ return <section className="panorama-work-area" hidden={!route} aria-label="图内工作区" onInputCapture={retained.name === 'sdk-admin' ? undefined : ()=>onDirty(true)}>
+   <header className="panorama-work-area-heading"><div><span>AI 工程全景 / 共用能力</span><h2>{retained.name === 'sdk-admin' ? 'SDK 开发管理' : routeDocumentTitle(retained).split(' · ')[0]}</h2></div><button type="button" onClick={onClose}>回到全景</button></header>
    <div className="panorama-work-area-body"><WorkspaceBoundary key={workspaceGroup(retained)}><WorkspaceDraftCommit.Provider value={() => onDirty(false)}>{renderWorkspace(retained)}</WorkspaceDraftCommit.Provider></WorkspaceBoundary></div>
  </section>;
 }

@@ -48,3 +48,13 @@
   .ai-notes-standalone-shell { height:auto; overflow:visible; display:block; }
   .ai-notes-standalone-main { display:block; overflow:visible; }
 }
+
+.platform-sdk-heading { display:flex; align-items:center; gap:2px; }
+.platform-sdk-heading > a { flex:1; min-width:0; }
+.platform-sdk-heading > a.is-workspace-current { color:#fff; }
+.platform-sdk-heading > button { display:grid; place-items:center; flex:none; width:30px; height:32px; padding:0; color:#afc2d9; background:transparent; border:0; border-radius:7px; cursor:pointer; }
+.platform-sdk-heading > button:hover { color:#fff; background:#2c4b6d; }
+.platform-sdk-heading > button:focus-visible { outline:2px solid #8bbdff; outline-offset:2px; }
+.platform-sdk-children { margin:2px 0 6px 20px; padding-left:7px; border-left:1px solid #496580; }
+.platform-sdk-children[hidden] { display:none; }
+.platform-sdk-children a { gap:8px; font-size:14px; padding-left:10px; }

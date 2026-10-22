@@ -50,6 +50,13 @@ describe("document titles", () => {
     expect(routeDocumentTitle({ name: "not-found" })).toBe(PLATFORM_TITLE);
   });
 
+  it("names each SDK section and document reading context", () => {
+    for (const [section, title] of [['overview','总览'],['products','产品与版本'],['delivery','研发与交付'],['diagnostics','诊断与改进'],['knowledge','知识与成果']] as const) {
+      expect(routeDocumentTitle({name:'sdk-admin',section})).toBe(`${title} · SDK 开发管理 · ${PLATFORM_TITLE}`);
+    }
+    expect(routeDocumentTitle({name:'sdk-admin',section:'knowledge',documentId:'KB-API-001'})).toBe(`文档阅读 · 知识与成果 · SDK 开发管理 · ${PLATFORM_TITLE}`);
+  });
+
   it("updates the browser title when asynchronous content changes", async () => {
     const container = document.createElement("div");
     const root = createRoot(container);
