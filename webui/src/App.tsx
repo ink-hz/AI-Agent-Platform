@@ -125,7 +125,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "missions": return account ? <MissionsPage key={`${account.internal_user_id}:${account.role}`} /> : <PendingPage title="历史任务" description="请登录后查看。" />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
-    case "sdk": return <LegacyRedirect to="/sdk/" navigation="document" />;
+    case "sdk": return <PendingPage title="SDK 入口切换中" description="请稍后刷新页面。" />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
     case "marketing": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
     case "marketing-conversation": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} conversationId={route.conversationId} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
@@ -197,7 +197,9 @@ export default function App() {
     return () => { current = false; };
   }, [identityMode, loginRoute, accountAttempt]);
 
-  if (route.name === "sdk") return <LegacyRedirect to="/sdk/" navigation="document" />;
+  if (route.name === "sdk" && !["/sdk", "/sdk/"].includes(localPathname())) {
+    return <LegacyRedirect to="/sdk/" navigation="document" />;
+  }
   if (loginRoute) return <LoginPage />;
   if (loading) return <AccessState title="正在进入 Agent Platform" description="正在确认您的企业账号，通常只需片刻。" />;
   if (failure === "permission") return isPanoramaLocation(route)

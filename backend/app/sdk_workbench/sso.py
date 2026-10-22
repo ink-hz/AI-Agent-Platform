@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 import secrets
 from http.cookies import SimpleCookie
@@ -24,6 +25,7 @@ from .zentao import _private_origin
 
 _TICKET = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _SID = re.compile(r"[0-9a-f]{32}\Z")
+_BINDING = re.compile(r"[0-9a-f]{64}\Z")
 _CODE = re.compile(r"[a-z][a-z0-9-]{2,19}\Z")
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache", "Referrer-Policy": "no-referrer"}
 
@@ -229,10 +231,19 @@ class SdkSsoService:
         """Obtain a ZenTao session for a private server-side client only."""
         return await run_in_threadpool(self._zen_login_sync, account)
 
-    async def check_direct_access(self, actor: AuthContext) -> None:
+    def direct_binding(self, actor: AuthContext, session_id: str) -> str:
+        message = f"sdk-direct-v1:{actor.internal_user_id}:{actor.session_id}:{session_id}"
+        return hmac.new(self.entry_key.encode("ascii"), message.encode("ascii"), hashlib.sha256).hexdigest()
+
+    async def check_direct_access(self, actor: AuthContext, session_id: str | None, binding: str | None) -> None:
         """Read-only check for Nginx auth_request on every ZenTao asset and page."""
         if actor.hard_stale_read_only:
             raise HTTPException(503, "sdk_sso_identity_stale")
+        if (not session_id or not _SID.fullmatch(session_id) or not binding
+                or not _BINDING.fullmatch(binding) or not hmac.compare_digest(
+                    binding, self.direct_binding(actor, session_id)
+                )):
+            raise HTTPException(403, "sdk_sso_session_binding_required")
         identity = await run_in_threadpool(self.repository.identity, actor.internal_user_id)
         if (not identity or not identity.get("eligible") or not identity.get("account")
                 or identity.get("provision_state") == "suspended"):
@@ -290,15 +301,19 @@ def build_sdk_sso_router(service: SdkSsoService) -> APIRouter:
 
     @router.get("/entry")
     async def direct_entry(request: Request):
-        account = await service.native_account(_actor(request))
+        actor = _actor(request)
+        account = await service.native_account(actor)
         session_id = await service.login_personal_session(account)
         response = RedirectResponse("/sdk/index.php?m=my&f=index", status_code=303, headers=_NO_STORE)
         response.set_cookie("zentaosid", session_id, path="/sdk/", secure=True, httponly=True, samesite="lax")
+        response.set_cookie("sdk_zen_binding", service.direct_binding(actor, session_id), path="/sdk/", secure=True, httponly=True, samesite="lax")
         return response
 
     @router.get("/access")
     async def direct_access(request: Request):
-        await service.check_direct_access(_actor(request))
+        await service.check_direct_access(
+            _actor(request), request.headers.get("x-sdk-zen-sid"), request.headers.get("x-sdk-zen-binding")
+        )
         return Response(status_code=204, headers=_NO_STORE)
 
     @router.post("/start")

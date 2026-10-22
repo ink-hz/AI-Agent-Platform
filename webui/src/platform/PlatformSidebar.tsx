@@ -29,7 +29,7 @@ function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = fa
     ] },
     { label:'AI 工作', items:manager ? [...aiWork.slice(0,2), {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}, ...aiWork.slice(2)] : aiWork },
     { label:'业务工作台', items:[
-      // Load the SDK document with its own form-action policy before SSO.
+      // The SDK document is served directly by ZenTao after edge SSO.
       ...(sdkAvailable ? [{ label:'SDK 开发管理', path:'/sdk/', icon:Code2, external:true, routes:['sdk'] }] : []),
       { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
       { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },

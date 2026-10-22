@@ -17,6 +17,7 @@ from app.sdk_workbench.sso_repository import SdkSsoRepository
 
 
 USER = UUID("11111111-1111-4111-8111-111111111111")
+OTHER_USER = UUID("33333333-3333-4333-8333-333333333333")
 PLATFORM = "https://agent.orbbec.com.cn"
 ZENTAO = "https://47.106.112.69"
 
@@ -71,10 +72,11 @@ class Repository:
             self.login_slot_held = False
 
 
-def build_app(tmp_path, repository, *, actor=USER, role=Role.MEMBER, stale=False, zentao_response=None, provisioner=None):
+def build_app(tmp_path, repository, *, actor=USER, role=Role.MEMBER, stale=False, zentao_response=None, provisioner=None, session_id=None):
     key = tmp_path / "entry-key"
     key.write_text("a" * 32, encoding="utf-8")
     seen = []
+    selected_session_id = session_id or uuid4()
 
     def zen_reply(request):
         assert repository.login_slot_held
@@ -93,7 +95,7 @@ def build_app(tmp_path, repository, *, actor=USER, role=Role.MEMBER, stale=False
     @app.middleware("http")
     async def add_identity(request, call_next):
         if actor is not None:
-            request.state.auth_context = AuthContext(actor, role, uuid4(), stale)
+            request.state.auth_context = AuthContext(actor, role, selected_session_id, stale)
         return await call_next(request)
 
     app.include_router(build_sdk_sso_router(service))
@@ -449,11 +451,15 @@ async def test_direct_entry_sets_only_scoped_personal_zentao_session(tmp_path):
     assert response.status_code == 303
     assert response.headers["location"] == "/sdk/index.php?m=my&f=index"
     assert response.headers["cache-control"] == "no-store"
-    assert response.headers["set-cookie"].startswith("zentaosid=0123456789abcdef0123456789abcdef;")
-    assert "Path=/sdk/" in response.headers["set-cookie"]
-    assert "Secure" in response.headers["set-cookie"]
-    assert "HttpOnly" in response.headers["set-cookie"]
-    assert "SameSite=lax" in response.headers["set-cookie"]
+    cookies = response.headers.get_list("set-cookie")
+    assert len(cookies) == 2
+    assert cookies[0].startswith("zentaosid=0123456789abcdef0123456789abcdef;")
+    assert cookies[1].startswith("sdk_zen_binding=")
+    for cookie in cookies:
+        assert "Path=/sdk/" in cookie
+        assert "Secure" in cookie
+        assert "HttpOnly" in cookie
+        assert "SameSite=lax" in cookie
     assert len(seen) == 1
     assert repository.identity_reads == 1
 
@@ -463,12 +469,39 @@ async def test_direct_access_checks_binding_without_creating_zentao_session(tmp_
     repository = Repository()
     app, seen = build_app(tmp_path, repository)
     async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
-        response = await client.get("/api/v1/sdk/sso/access")
+        entry = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
+        response = await client.get("/api/v1/sdk/sso/access", headers={
+            "x-sdk-zen-sid": entry.cookies["zentaosid"],
+            "x-sdk-zen-binding": entry.cookies["sdk_zen_binding"],
+        })
     assert response.status_code == 204
     assert response.headers["cache-control"] == "no-store"
     assert "set-cookie" not in response.headers
-    assert repository.identity_reads == 1
-    assert seen == []
+    assert repository.identity_reads == 2
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_direct_access_rejects_missing_or_changed_session_binding(tmp_path):
+    repository = Repository()
+    session = uuid4()
+    app, _ = build_app(tmp_path, repository, session_id=session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        entry = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
+        missing = await client.get("/api/v1/sdk/sso/access")
+        tampered = await client.get("/api/v1/sdk/sso/access", headers={
+            "x-sdk-zen-sid": "fedcba9876543210fedcba9876543210",
+            "x-sdk-zen-binding": entry.cookies["sdk_zen_binding"],
+        })
+    headers = {"x-sdk-zen-sid": entry.cookies["zentaosid"],
+               "x-sdk-zen-binding": entry.cookies["sdk_zen_binding"]}
+    other_user_app, _ = build_app(tmp_path, repository, actor=OTHER_USER, session_id=uuid4())
+    renewed_session_app, _ = build_app(tmp_path, repository, session_id=uuid4())
+    async with AsyncClient(transport=ASGITransport(app=other_user_app), base_url=PLATFORM) as client:
+        other_user = await client.get("/api/v1/sdk/sso/access", headers=headers)
+    async with AsyncClient(transport=ASGITransport(app=renewed_session_app), base_url=PLATFORM) as client:
+        renewed = await client.get("/api/v1/sdk/sso/access", headers=headers)
+    assert [result.status_code for result in (missing, tampered, other_user, renewed)] == [403] * 4
 
 
 @pytest.mark.asyncio
@@ -477,15 +510,19 @@ async def test_direct_access_checks_binding_without_creating_zentao_session(tmp_
 ])
 async def test_direct_entry_and_access_deny_out_of_scope_accounts(tmp_path, eligible, account, state):
     repository = Repository()
-    repository.eligible, repository.account, repository.provision_state = eligible, account, state
     app, seen = build_app(tmp_path, repository)
     async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
-        access = await client.get("/api/v1/sdk/sso/access")
+        issued = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
+        repository.eligible, repository.account, repository.provision_state = eligible, account, state
+        access = await client.get("/api/v1/sdk/sso/access", headers={
+            "x-sdk-zen-sid": issued.cookies["zentaosid"],
+            "x-sdk-zen-binding": issued.cookies["sdk_zen_binding"],
+        })
         entry = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
     assert access.status_code == 403
     assert entry.status_code == 403
     assert "set-cookie" not in entry.headers
-    assert seen == []
+    assert len(seen) == 1
 
 
 @pytest.mark.asyncio

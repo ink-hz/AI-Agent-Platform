@@ -8,6 +8,7 @@ import yaml
 ROOT = Path(__file__).parents[2]
 DOMAIN = ROOT / "deploy/cloud/agent-domain.nginx.conf"
 COMPOSE = ROOT / "deploy/sdk/compose.yaml"
+IP_DOMAIN = ROOT / "deploy/sdk/zentao-domain.nginx.conf"
 
 
 def _location(config: str, opening: str) -> str:
@@ -35,6 +36,10 @@ def test_sdk_entry_checks_platform_identity_and_uses_scoped_zen_proxy() -> None:
     assert "proxy_pass http://127.0.0.1:8080/api/v1/sdk/sso/access;" in access
     assert "internal;" in access
     assert "proxy_set_header Cookie $http_cookie;" in access
+    assert "proxy_set_header X-Real-IP $remote_addr;" in access
+    assert "proxy_set_header Forwarded \"\";" in access
+    assert "proxy_set_header X-SDK-Zen-Sid $cookie_zentaosid;" in access
+    assert "proxy_set_header X-SDK-Zen-Binding $cookie_sdk_zen_binding;" in access
     assert "auth_request /_sdk_access;" in proxy
     assert "error_page 401 = @sdk_login;" in proxy
     assert "return 302 /login?return_path=%2Fsdk%2F;" in _location(config, "location @sdk_login {")
@@ -50,10 +55,11 @@ def test_sdk_entry_checks_platform_identity_and_uses_scoped_zen_proxy() -> None:
 
 def test_sdk_public_api_and_installers_are_denied() -> None:
     config = DOMAIN.read_text(encoding="utf-8")
-    for path in ("api.php", "install.php", "upgrade.php"):
-        location = _location(config, f"location = /sdk/{path} {{")
-        assert "return 403;" in location
-    assert "location ^~ /sdk/api.php/ { return 403; }" in config
+    for domain in (config, IP_DOMAIN.read_text(encoding="utf-8")):
+        for path in ("api.php", "install.php", "upgrade.php"):
+            location = _location(domain, f"location = /sdk/{path} {{")
+            assert "return 403;" in location
+            assert f"location ^~ /sdk/{path}/ {{ return 403; }}" in domain
 
 
 def test_zentao_web_root_and_cookie_filter_are_sdk_scoped() -> None:
