@@ -85,6 +85,17 @@ def test_unique_comparison_preserves_inputs_and_preparation():
     assert "new_story_count" not in report
 
 
+def test_bom_only_csv_is_reconcile_empty_error():
+    candidate, _, workbook = fixture()
+    payload = encoded(candidate)
+    csv_bytes = b"\xef\xbb\xbf"
+    before = (payload, csv_bytes, workbook)
+    with pytest.raises(ReconcileError) as caught:
+        reconcile(payload, csv_bytes, workbook)
+    assert (caught.value.code, caught.value.path) == ("sdk_plan_csv_empty", "csv")
+    assert (payload, csv_bytes, workbook) == before
+
+
 def test_duplicate_full_fields_queue_both_sides_without_choosing_first():
     row = ["SDK", "同名", "甲", "", "", "", "", "", "", ""]
     c, data, book = fixture([row, row])
@@ -419,6 +430,23 @@ def cli_inputs(tmp_path, candidate=None, export=None):
 
 def input_hashes(paths):
     return [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths]
+
+
+def test_module_cli_bom_only_csv_returns_fixed_empty_error(tmp_path):
+    import subprocess
+    inputs, output, argv = cli_inputs(tmp_path)
+    inputs[1].write_bytes(b"\xef\xbb\xbf")
+    before = input_hashes(inputs)
+    result = subprocess.run(
+        [sys.executable, "-m", "app.sdk_workbench.source_reconcile_cli", *argv],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert result.stderr == '{"error": "sdk_plan_csv_empty", "path": "csv"}\n'
+    assert "Traceback" not in result.stderr
+    assert not output.exists()
+    assert input_hashes(inputs) == before
 
 
 def test_cli_output_is_explicit_exclusive_and_cannot_replace_input(tmp_path, capsys):

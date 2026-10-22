@@ -220,6 +220,9 @@ def reconcile(candidate_payload: bytes, csv_payload: bytes, workbook_payload: by
         parsed = parse_plan_csv(csv_payload)
     except PlanCsvError as error:
         raise ReconcileError(str(error), "csv") from None
+    except StopIteration:
+        # The legacy parser has no header after decoding a BOM-only payload.
+        raise ReconcileError("sdk_plan_csv_empty", "csv") from None
     sources, old = defaultdict(list), defaultdict(list)
     for r in c["records"]:
         sources[candidate_signature(r)].append(r)
