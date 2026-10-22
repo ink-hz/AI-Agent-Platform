@@ -81,3 +81,16 @@ def test_zentao_web_root_and_cookie_filter_are_sdk_scoped() -> None:
     services = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
     assert services["zentao"]["environment"]["ZT_WEB_ROOT"] == "/sdk"
 
+
+def test_zentao_static_assets_have_private_browser_cache_without_bypassing_auth() -> None:
+    config = DOMAIN.read_text(encoding="utf-8")
+    cache_policy = _location(config, "map $uri $sdk_zentao_cache_control {")
+    sdk_proxy = _location(config, "location ^~ /sdk/ {")
+    assert 'default "no-store";' in cache_policy
+    assert '~^/sdk/(js|css|static|theme)/ "private, max-age=86400";' in cache_policy
+    assert "proxy_hide_header Cache-Control;" in sdk_proxy
+    assert "proxy_hide_header Expires;" in sdk_proxy
+    assert "add_header Cache-Control $sdk_zentao_cache_control always;" in sdk_proxy
+    assert 'add_header Cache-Control "no-store" always;' not in sdk_proxy
+    assert "auth_request /_sdk_access;" in sdk_proxy
+
