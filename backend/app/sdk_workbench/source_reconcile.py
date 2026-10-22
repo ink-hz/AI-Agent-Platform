@@ -123,8 +123,12 @@ def validate_candidate(payload, workbook):
             require("raw_value" in item and item["raw_value"] == raw["value"] and "interpreted_iso" in item and (item["interpreted_iso"] is None or isinstance(item["interpreted_iso"], str)), "candidate_dates", name)
             if raw["value"] not in (None, ""):
                 value = raw["value"]
-                require(value.isdecimal() and int(value) != 60 and 1 <= int(value) <= 2958465 and item.get("date_system") == "1900" and item.get("precision") == "day" and item.get("timezone") is None and raw["number_format_id"] == "14" and raw["formula"] is None, "candidate_dates", name)
-                serial = int(value)
+                require(value.isdecimal(), "candidate_dates", name)
+                try:
+                    serial = int(value)
+                except ValueError:
+                    raise ReconcileError("candidate_dates", name) from None
+                require(serial != 60 and 1 <= serial <= 2958465 and item.get("date_system") == "1900" and item.get("precision") == "day" and item.get("timezone") is None and raw["number_format_id"] == "14" and raw["formula"] is None, "candidate_dates", name)
                 iso = (date(1899, 12, 31) + timedelta(days=serial if serial < 60 else serial - 1)).isoformat()
                 require(item.get("interpreted_iso") == iso, "candidate_dates", name)
             else:
