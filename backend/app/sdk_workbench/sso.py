@@ -27,6 +27,7 @@ _TICKET = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 _SID = re.compile(r"[0-9a-f]{32}\Z")
 _BINDING = re.compile(r"[0-9a-f]{64}\Z")
 _CODE = re.compile(r"[a-z][a-z0-9-]{2,19}\Z")
+_ZEN_PAGE = re.compile(r"/sdk/[a-z][a-z0-9_-]*\.html\Z", re.IGNORECASE)
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache", "Referrer-Policy": "no-referrer"}
 
 
@@ -308,8 +309,13 @@ def build_sdk_sso_router(service: SdkSsoService) -> APIRouter:
         return_uri = request.headers.get("x-sdk-return-uri", "")
         if return_uri and len(return_uri) <= 2048 and not any(ord(char) < 32 or ord(char) == 127 or char == "\\" for char in return_uri):
             parsed = urlsplit(return_uri)
-            if parsed.path == "/sdk/index.php" and not parsed.scheme and not parsed.netloc and not parsed.fragment:
-                destination = return_uri
+            if not parsed.scheme and not parsed.netloc and not parsed.fragment:
+                if parsed.path == "/sdk/index.php":
+                    destination = return_uri
+                elif _ZEN_PAGE.fullmatch(parsed.path):
+                    module = parsed.path[len("/sdk/"):].split("-", 1)[0].lower()
+                    if module not in {"api", "install", "upgrade"} and not parsed.path.lower().startswith("/sdk/user-apilogin-"):
+                        destination = return_uri
         response = RedirectResponse(destination, status_code=303, headers=_NO_STORE)
         response.set_cookie("zentaosid", session_id, path="/sdk/", secure=True, httponly=True, samesite="lax")
         response.set_cookie("sdk_zen_binding", service.direct_binding(actor, account, session_id), path="/sdk/", secure=True, httponly=True, samesite="lax")

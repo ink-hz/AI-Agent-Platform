@@ -496,18 +496,23 @@ async def test_direct_access_rejects_session_after_account_is_rebound(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_direct_entry_preserves_safe_first_visit_zentao_deep_link(tmp_path):
+@pytest.mark.parametrize("uri", [
+    "/sdk/index.php?m=project&f=task&projectID=1",
+    "/sdk/product-browse-1.html",
+    "/sdk/project-task-1.html?orderBy=id_desc",
+])
+async def test_direct_entry_preserves_safe_first_visit_zentao_deep_link(tmp_path, uri):
     app, _ = build_app(tmp_path, Repository())
     async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
         entry = await client.get("/api/v1/sdk/sso/entry", headers={
-            "x-sdk-return-uri": "/sdk/index.php?m=project&f=task&projectID=1",
+            "x-sdk-return-uri": uri,
         }, follow_redirects=False)
     assert entry.status_code == 303
-    assert entry.headers["location"] == "/sdk/index.php?m=project&f=task&projectID=1"
+    assert entry.headers["location"] == uri
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("uri", ["//evil.example", "/sdk/api.php", "/sdk/install.php", "/sdk/../admin", "/admin", "/sdk/index.php%0d%0aLocation:evil"])
+@pytest.mark.parametrize("uri", ["//evil.example", "/sdk/api.php", "/sdk/install.php", "/sdk/install-index.html", "/sdk/upgrade-index.html", "/sdk/user-apilogin-account.html", "/sdk/../admin", "/admin", "/sdk/index.php%0d%0aLocation:evil"])
 async def test_direct_entry_rejects_unsafe_return_uri_and_uses_home(tmp_path, uri):
     app, _ = build_app(tmp_path, Repository())
     async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:

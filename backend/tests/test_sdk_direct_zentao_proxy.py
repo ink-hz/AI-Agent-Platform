@@ -53,6 +53,8 @@ def test_sdk_entry_checks_platform_identity_and_uses_scoped_zen_proxy() -> None:
     assert "proxy_set_header Authorization \"\";" in proxy
     assert "proxy_set_header Cookie $sdk_zentao_cookie;" in proxy
     assert "proxy_set_header Accept-Language \"zh-cn\";" in proxy
+    assert "if ($arg_f = apilogin) { return 403; }" in proxy
+    assert "if ($request_uri ~* \"user-apilogin\") { return 403; }" in proxy
     assert "Content-Security-Policy" not in proxy
     assert "location = /office" in config
 
@@ -67,6 +69,9 @@ def test_sdk_public_api_and_installers_are_denied() -> None:
     ip_domain = IP_DOMAIN.read_text(encoding="utf-8")
     assert "location = /api.php { return 403; }" in ip_domain
     assert "location ^~ /api.php/ { return 403; }" in ip_domain
+    for path in ("install.php", "upgrade.php"):
+        assert f"location = /{path} {{ return 403; }}" in ip_domain
+        assert f"location ^~ /{path}/ {{ return 403; }}" in ip_domain
 
 
 def test_zentao_web_root_and_cookie_filter_are_sdk_scoped() -> None:
