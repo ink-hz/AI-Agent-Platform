@@ -29,6 +29,15 @@ class Repository:
         self.bound = []
         self.login_slot_held = False
         self.department_changes = []
+        self.eligible = True
+        self.provision_state = "bound"
+        self.identity_reads = 0
+
+    def identity(self, actor):
+        assert actor == USER
+        self.identity_reads += 1
+        return {"eligible": self.eligible, "account": self.account,
+                "provision_state": self.provision_state}
 
     def departments(self):
         return [{"id": "22222222-2222-4222-8222-222222222222", "name": "应用SDK组", "selected": True}]
@@ -429,6 +438,79 @@ async def test_bad_zentao_response_never_sets_browser_cookie(tmp_path):
         result = await client.post("/api/v1/sdk/sso/consume", data={"ticket": ticket}, headers={"origin": PLATFORM, "x-forwarded-proto": "https"})
     assert result.status_code == 502
     assert "set-cookie" not in result.headers
+
+
+@pytest.mark.asyncio
+async def test_direct_entry_sets_only_scoped_personal_zentao_session(tmp_path):
+    repository = Repository()
+    app, seen = build_app(tmp_path, repository)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        response = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/sdk/index.php?m=my&f=index"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["set-cookie"].startswith("zentaosid=0123456789abcdef0123456789abcdef;")
+    assert "Path=/sdk/" in response.headers["set-cookie"]
+    assert "Secure" in response.headers["set-cookie"]
+    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "SameSite=lax" in response.headers["set-cookie"]
+    assert len(seen) == 1
+    assert repository.identity_reads == 1
+
+
+@pytest.mark.asyncio
+async def test_direct_access_checks_binding_without_creating_zentao_session(tmp_path):
+    repository = Repository()
+    app, seen = build_app(tmp_path, repository)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        response = await client.get("/api/v1/sdk/sso/access")
+    assert response.status_code == 204
+    assert response.headers["cache-control"] == "no-store"
+    assert "set-cookie" not in response.headers
+    assert repository.identity_reads == 1
+    assert seen == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("eligible,account,state", [
+    (False, "cangyuan", "bound"), (True, None, None), (True, "cangyuan", "suspended"),
+])
+async def test_direct_entry_and_access_deny_out_of_scope_accounts(tmp_path, eligible, account, state):
+    repository = Repository()
+    repository.eligible, repository.account, repository.provision_state = eligible, account, state
+    app, seen = build_app(tmp_path, repository)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        access = await client.get("/api/v1/sdk/sso/access")
+        entry = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
+    assert access.status_code == 403
+    assert entry.status_code == 403
+    assert "set-cookie" not in entry.headers
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_direct_entry_and_access_reject_stale_or_missing_identity(tmp_path):
+    repository = Repository()
+    stale_app, seen = build_app(tmp_path, repository, stale=True)
+    missing_app, _ = build_app(tmp_path, repository, actor=None)
+    async with AsyncClient(transport=ASGITransport(app=stale_app), base_url=PLATFORM) as client:
+        stale_access = await client.get("/api/v1/sdk/sso/access")
+        stale_entry = await client.get("/api/v1/sdk/sso/entry")
+    async with AsyncClient(transport=ASGITransport(app=missing_app), base_url=PLATFORM) as client:
+        missing_access = await client.get("/api/v1/sdk/sso/access")
+        missing_entry = await client.get("/api/v1/sdk/sso/entry")
+    assert (stale_access.status_code, stale_entry.status_code) == (503, 503)
+    assert (missing_access.status_code, missing_entry.status_code) == (401, 401)
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_direct_entry_failed_zentao_login_does_not_set_cookie(tmp_path):
+    app, _ = build_app(tmp_path, Repository(), zentao_response=httpx.Response(200, text="error"))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=PLATFORM) as client:
+        response = await client.get("/api/v1/sdk/sso/entry", follow_redirects=False)
+    assert response.status_code == 502
+    assert "set-cookie" not in response.headers
 
 
 @pytest.mark.asyncio

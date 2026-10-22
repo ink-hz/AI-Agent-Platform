@@ -14,7 +14,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.control_plane.models import AuthContext, Role
@@ -229,6 +229,15 @@ class SdkSsoService:
         """Obtain a ZenTao session for a private server-side client only."""
         return await run_in_threadpool(self._zen_login_sync, account)
 
+    async def check_direct_access(self, actor: AuthContext) -> None:
+        """Read-only check for Nginx auth_request on every ZenTao asset and page."""
+        if actor.hard_stale_read_only:
+            raise HTTPException(503, "sdk_sso_identity_stale")
+        identity = await run_in_threadpool(self.repository.identity, actor.internal_user_id)
+        if (not identity or not identity.get("eligible") or not identity.get("account")
+                or identity.get("provision_state") == "suspended"):
+            raise HTTPException(403, "sdk_sso_access_or_binding_required")
+
     def _zen_login_sync(self, account: str) -> str:
         with self.repository.login_slot() as timestamp:
             return self._zen_login_with_timestamp(account, timestamp)
@@ -278,6 +287,19 @@ def _actor(request: Request) -> AuthContext:
 
 def build_sdk_sso_router(service: SdkSsoService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/sdk/sso", tags=["sdk-sso"])
+
+    @router.get("/entry")
+    async def direct_entry(request: Request):
+        account = await service.native_account(_actor(request))
+        session_id = await service.login_personal_session(account)
+        response = RedirectResponse("/sdk/index.php?m=my&f=index", status_code=303, headers=_NO_STORE)
+        response.set_cookie("zentaosid", session_id, path="/sdk/", secure=True, httponly=True, samesite="lax")
+        return response
+
+    @router.get("/access")
+    async def direct_access(request: Request):
+        await service.check_direct_access(_actor(request))
+        return Response(status_code=204, headers=_NO_STORE)
 
     @router.post("/start")
     async def start(request: Request, body: StartRequest | None = None):

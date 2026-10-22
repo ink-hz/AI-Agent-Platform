@@ -41,6 +41,8 @@ _SDK_WORKBENCH_ROUTES = frozenset({
     ("GET", "/api/v1/sdk/members"),
     ("POST", "/api/v1/sdk/members"),
     ("POST", "/api/v1/sdk/sso/start"),
+    ("GET", "/api/v1/sdk/sso/entry"),
+    ("GET", "/api/v1/sdk/sso/access"),
     ("PUT", "/api/v1/sdk/sso/bindings/{user_id}"),
     ("GET", "/api/v1/sdk/sso/departments"),
     ("PUT", "/api/v1/sdk/sso/departments/{department_id}"),
