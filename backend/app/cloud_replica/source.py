@@ -79,6 +79,7 @@ select
     a.delivery_status, a.expires_at
 from platform_read.attachments a
 join platform_read.turns t on a.turn_key = t.native_id
+  and t.source_kind = 'metabot'
 where t.turn_key = any(%(turn_keys)s)
   and a.received_or_generated_at <= %(through)s
 order by t.turn_key, a.received_or_generated_at, a.attachment_id

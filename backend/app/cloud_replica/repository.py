@@ -677,7 +677,7 @@ class ReplicaObservabilityRepository:
         for profile in self._catalog.all_profiles():
             owned = [record for record in records if record["agent_id"] == profile.id]
             source = owned[0]["source_kind"] if owned else (
-                "fae" if profile.id == "ai-fae-agent" else "admin" if profile.id == "ai-admin-agent" else "metabot"
+                "fae" if profile.id in {"ai-fae-agent", "ai-daq-fae-agent"} else "admin" if profile.id == "ai-admin-agent" else "metabot"
             )
             result.append(
                 AgentSummary(

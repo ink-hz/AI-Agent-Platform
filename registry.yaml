@@ -56,3 +56,18 @@ agents:
       type: "generic"
     version: ""
     tags: ["platform-extension", "employee-self-service"]
+
+  - id: daq
+    name: "数采 FAE Agent"
+    domain: "数采技术支持"
+    description: "数采产品 / 采集流程 / SDK / 排障"
+    icon: "🛠️"
+    env: "prod"
+    status: "active"
+    entry_url: "http://47.106.112.69/daq/app/"
+    health:
+      url: "http://47.106.112.69/daq/health"
+      type: "generic"
+    api_base: "http://47.106.112.69/daq"
+    flywheel_agent_id: "ai-daq-fae-agent"
+    tags: ["pg-flywheel"]

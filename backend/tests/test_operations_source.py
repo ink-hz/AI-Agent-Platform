@@ -134,7 +134,7 @@ def test_remote_usage_snapshot_filters_source_and_optional_true_time():
     assert "t.created_at > %s" in statement
     assert "t.created_at <= %s" in statement
     assert "source_synced_at" not in statement
-    assert cursor.params == [("fae", NOW - timedelta(hours=24), NOW)]
+    assert cursor.params == [("fae", "ai-fae-agent", NOW - timedelta(hours=24), NOW)]
     assert occurrences[0].occurred_at == occurred_at
 
 
@@ -187,8 +187,8 @@ def test_usage_batch_reads_occurrences_and_totals_in_one_repeatable_read_snapsho
     assert "select distinct t.turn_key" in cursor.statements[1].lower()
     assert "t.created_at > %s" in cursor.statements[1]
     assert "count(distinct t.turn_key)" in cursor.statements[2].lower()
-    assert cursor.params[1] == ("fae", NOW - timedelta(hours=24), NOW)
-    assert cursor.params[2] == ("fae",)
+    assert cursor.params[1] == ("fae", "ai-fae-agent", NOW - timedelta(hours=24), NOW)
+    assert cursor.params[2] == ("fae", "ai-fae-agent")
 
 
 def test_execution_query_emits_only_supported_explicit_signals():
@@ -238,7 +238,7 @@ def test_remote_execution_snapshot_filters_source_without_mutable_watermark():
     statement = cursor.statements[0].lower()
     assert statement.count("t.source_kind=%s") == 4
     assert "source_synced_at" not in statement
-    assert cursor.params == [("fae",) * 4]
+    assert cursor.params == [("fae", "ai-fae-agent") * 4]
     assert signals[0].occurred_at == occurred_at
 
 

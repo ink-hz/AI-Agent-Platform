@@ -76,7 +76,7 @@ class YamlRepository:
             )
 
         canonical_ids = set(CANONICAL_AGENT_IDS)
-        fixed_joins = {"fae": "ai-fae-agent", "admin": "ai-admin-agent"}
+        fixed_joins = {"fae": "ai-fae-agent", "admin": "ai-admin-agent", "daq": "ai-daq-fae-agent"}
         for agent in registry.agents:
             if (
                 agent.id in fixed_joins

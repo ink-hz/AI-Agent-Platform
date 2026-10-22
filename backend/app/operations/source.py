@@ -25,6 +25,7 @@ REMOTE_USAGE_SQL = """
 select distinct t.turn_key, t.agent_id, t.source_kind, t.created_at
 from platform_read.turns t
 where t.source_kind=%s
+  and t.agent_id=%s
   and nullif(btrim(t.answer), '') is not null
 """
 
@@ -43,6 +44,7 @@ REMOTE_USAGE_TOTALS_SQL = """
 select t.agent_id, count(distinct t.turn_key)::bigint as cumulative_conversations
 from platform_read.turns t
 where t.source_kind=%s
+  and t.agent_id=%s
   and nullif(btrim(t.answer), '') is not null
 group by t.agent_id
 order by t.agent_id
@@ -150,7 +152,7 @@ class PsycopgOperationsSource:
             statement,
             params,
             REMOTE_USAGE_TOTALS_SQL,
-            (source_kind,),
+            self._validate_remote_source(source_kind),
         )
 
     def _remote_usage_query(
@@ -160,9 +162,9 @@ class PsycopgOperationsSource:
         created_after: datetime | None,
         created_through: datetime | None,
     ) -> tuple[str, tuple]:
-        self._validate_remote_source(source_kind)
+        identity = self._validate_remote_source(source_kind)
         statement = REMOTE_USAGE_SQL
-        params: list[object] = [source_kind]
+        params: list[object] = list(identity)
         if created_after is not None:
             statement += "  and t.created_at > %s\n"
             params.append(created_after)
@@ -258,9 +260,9 @@ class PsycopgOperationsSource:
         created_after: datetime | None = None,
         created_through: datetime | None = None,
     ) -> tuple[ExecutionObservation, ...]:
-        self._validate_remote_source(source_kind)
-        filters = ["t.source_kind=%s"]
-        values: list[object] = [source_kind]
+        identity = self._validate_remote_source(source_kind)
+        filters = ["t.source_kind=%s", "t.agent_id=%s"]
+        values: list[object] = list(identity)
         if created_after is not None:
             filters.append("t.created_at > %s")
             values.append(created_after)
@@ -309,9 +311,16 @@ class PsycopgOperationsSource:
         return tuple(observations)
 
     @staticmethod
-    def _validate_remote_source(source_kind: str) -> None:
-        if source_kind not in {"fae", "admin"}:
-            raise ValueError("remote Operations source must be fae or admin")
+    def _validate_remote_source(source_kind: str) -> tuple[str, str]:
+        # Sync generations use producer identities; read views use runtime family.
+        identities = {
+            "fae": ("fae", "ai-fae-agent"),
+            "admin": ("admin", "ai-admin-agent"),
+            "daq": ("fae", "ai-daq-fae-agent"),
+        }
+        if source_kind not in identities:
+            raise ValueError("remote Operations source must be fae, admin or daq")
+        return identities[source_kind]
 
     def _fetchall(self, statement: str, params: tuple) -> list[dict]:
         with self._connect(

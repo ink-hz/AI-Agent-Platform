@@ -476,7 +476,7 @@ def _sanitize_trace(trace):
     return SanitizedTraceAggregate(
         status=_safe_enum(
             trace.status,
-            {"success", "failed", "partial", "timeout", "running", "unknown"},
+            {"success", "succeeded", "completed", "failed", "partial", "timeout", "running", "unknown"},
         ),
         duration_ms=_safe_count(trace.duration_ms),
         engine=_safe_identifier(trace.engine),
@@ -544,7 +544,18 @@ def sanitize_session(
                 or "unavailable",
                 outcome=_safe_enum(
                     turn.outcome,
-                    {"success", "failed", "partial", "timeout", "unknown"},
+                    {
+                        "success", "failed", "partial", "timeout", "unknown",
+                        "resolved", "safe_abstained", "escalate_rd", "escalate_fae",
+                        "unsafe_fail_suspected", "budget_exhausted", "max_duration",
+                        "empty_answer", "truncated_answer", "tool_xml_leak",
+                        "unstructured_final", "invalid_answer_contract",
+                        "provider_refusal", "provider_unavailable",
+                        "provider_configuration_error", "provider_protocol_error",
+                        "provider_rate_limited", "provider_error", "internal_error",
+                        "schema_error", "persistence_error",
+                        "authorization_error",
+                    },
                 ),
                 fallback_used=turn.fallback_used,
                 duration_ms=max(turn.duration_ms, 0)
@@ -566,7 +577,7 @@ def sanitize_session(
         agent_id=raw.agent_id,
         source_kind=_safe_enum(raw.source_kind, {"metabot", "fae", "admin"})
         or "unknown",
-        channel=_safe_enum(raw.channel, {"feishu", "dingtalk", "web", "api"}),
+        channel=_safe_enum(raw.channel, {"feishu", "dingtalk", "web", "api", "fae"}),
         title=title,
         primary_sender_name=raw.primary_sender_name,
         primary_sender_department=raw.primary_sender_department,

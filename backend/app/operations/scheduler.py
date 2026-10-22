@@ -231,8 +231,9 @@ class OperationsScheduler:
         statuses = await self._sync_statuses()
         source_kinds = [status.source_kind for status in statuses]
         if (
-            len(source_kinds) != len(_REQUIRED_SYNC_SOURCES)
-            or set(source_kinds) != _REQUIRED_SYNC_SOURCES
+            len(source_kinds) != len(set(source_kinds))
+            or not _REQUIRED_SYNC_SOURCES.issubset(source_kinds)
+            or not set(source_kinds).issubset(_REQUIRED_SYNC_SOURCES | {"daq"})
         ):
             raise RuntimeError("required sync source coverage incomplete")
         observations: list[SyncObservation] = []
@@ -480,7 +481,8 @@ class OperationsScheduler:
                 status.source_kind,
                 **filters,
             )
-            batches.append((status.source_kind, batch))
+            family = "fae" if status.source_kind == "daq" else status.source_kind
+            batches.append((family, batch))
             generations[status.source_kind] = generation
         return batches, generations
 
@@ -544,7 +546,7 @@ class OperationsScheduler:
 
     @staticmethod
     def _source_kind(agent_id: str) -> str:
-        if agent_id == "ai-fae-agent":
+        if agent_id in {"ai-fae-agent", "ai-daq-fae-agent"}:
             return "fae"
         if agent_id == "ai-admin-agent":
             return "admin"
