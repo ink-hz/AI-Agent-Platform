@@ -178,6 +178,32 @@ def test_semantic_conflicts_are_quarantined_without_losing_raw(change, code, pat
     assert observation == before and report["raw_observation"] == before
 
 
+def test_unavailable_position_with_two_observed_heads_reports_drift():
+    observation = valid_observation()
+    position = observation["positions"][1]
+    position["availability"] = "unavailable"
+    position["head_after"] = "f" * 40
+    before = copy.deepcopy(observation)
+
+    report = freeze_source_snapshot(observation)
+
+    assert report["issues"] == [
+        {"code": "head_changed_during_observation", "path": "FrameProcessor"},
+        {"code": "location_unavailable", "path": "FrameProcessor"},
+    ]
+    assert report["source_state"] == "quarantined"
+    assert report["raw_observation"] == before
+    assert report["raw_observation"]["positions"][1]["availability"] == "unavailable"
+    assert (
+        report["raw_observation"]["positions"][1]["observed_sha"]
+        == before["positions"][1]["observed_sha"]
+    )
+    assert report["raw_observation"]["positions"][1]["head_after"] == "f" * 40
+    assert report["source_content"] is None and report["source_snapshot_id"] is None
+    assert report["build_ready"] is False and report["promotion_eligible"] is False
+    assert observation == before
+
+
 def test_duplicate_positions_do_not_supply_parent_or_child_comparisons():
     observation = valid_observation()
     observation["positions"].append(copy.deepcopy(observation["positions"][0]))

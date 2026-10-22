@@ -182,14 +182,14 @@ def freeze_source_snapshot(observation: dict) -> dict:
         position = unique_positions[path] = group[0]
         if position["repo_ref"] != _POSITIONS[path]:
             issues.add((path, "repository_identity_conflict"))
+        before, after = position["observed_sha"], position["head_after"]
+        if before is not None and after is not None and before != after:
+            issues.add((path, "head_changed_during_observation"))
         if position["availability"] != "observed":
             issues.add((path, "location_" + position["availability"]))
             continue
-        before, after = position["observed_sha"], position["head_after"]
         if before is None or after is None:
             issues.add((path, "head_not_observed"))
-        elif before != after:
-            issues.add((path, "head_changed_during_observation"))
         tracked = position["tracked_porcelain"]
         if tracked is None:
             issues.add((path, "tracked_status_unknown"))
