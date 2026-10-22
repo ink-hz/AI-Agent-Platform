@@ -145,3 +145,47 @@ it.each(['constructor', 'toString', '__proto__'])('displays unknown state %s lit
     expect(states).toEqual([code, code, code]);
     expect(box.querySelector('.sdk-provenance')?.textContent).toContain(`${code} / ${code} / ${code}`);
 });
+it('keeps an explicit evidence anchor targeted by a rewritten package link', async () => {
+    const fragment = 'KB-API-012-S2-C003';
+    await act(async () => root.render(<SdkDocumentReader document={{ ...detail, id: 'KB-REF-001', markdown: `[已弃用契约](../02-public-api/KB-API-012.md#${fragment})`, links: { [`../02-public-api/KB-API-012.md#${fragment}`]: { document_id: 'KB-API-012', fragment } } }} />));
+    const href = box.querySelector<HTMLAnchorElement>('.sdk-markdown a')!.href;
+    expect(new URL(href).pathname).toBe('/sdk-admin/knowledge/KB-API-012');
+    await act(async () => root.render(<SdkDocumentReader document={{ ...detail, id: 'KB-API-012', markdown: `<a id="${fragment}"></a>\n\n## 废弃接口契约` }} />));
+    const target = box.querySelector(`[id="${decodeURIComponent(new URL(href).hash.slice(1))}"]`);
+    expect(target).not.toBeNull();
+    expect(target?.textContent).toBe('');
+    expect(target?.getAttributeNames()).toEqual(['id']);
+});
+it('keeps raw HTML disabled for scripts, event attributes, unsafe IDs and nonempty anchors', async () => {
+    const markdown = [
+        '<script>globalThis.sdkUnsafeAnchor = true</script>',
+        '<a id="KB-EVENT-001" onclick="globalThis.sdkUnsafeAnchor = true"></a>',
+        '<a id="KB-ESCAPE-001\" onmouseover=\"bad()"></a>',
+        '<a id="javascript:bad"></a>',
+        '<a id="__proto__"></a>',
+        '<a id="KB-BAD ID"></a>',
+        '<a id="KB-CONTENT-001">nonempty</a>',
+        '<a id="KB-HREF-001" href="javascript:bad()"></a>',
+        '```html\n<a id="KB-CODE-001"></a>\n```'
+    ].join('\n\n');
+    await act(async () => root.render(<SdkDocumentReader document={{ ...detail, markdown }} />));
+    expect(box.querySelector('.sdk-markdown [id], script, [onclick], [onmouseover], a[href^="javascript:"]')).toBeNull();
+    expect((globalThis as Record<string, unknown>).sdkUnsafeAnchor).toBeUndefined();
+    expect(box.querySelector('.sdk-markdown pre')?.textContent).toContain('<a id="KB-CODE-001"></a>');
+});
+it('offers only groups belonging to the selected kind and clears group when the kind changes', async () => {
+    const client = makeClient();
+    const kinds = [['process', '流程与规范'], ['analysis', '分析成果'], ['design', '设计方案'], ['acceptance', '接收记录'], ['execution', '执行记录']] as const;
+    vi.mocked(client.catalog).mockResolvedValue({ ...catalog, groups: [...catalog.groups, { id: 'root', title: '根目录', count: 1 }, { id: '_meta', title: '元数据', count: 1 }, ...kinds.map(([id, title]) => ({ id, title, count: 1 }))] });
+    await render('knowledge', client);
+    const select = box.querySelector<HTMLSelectElement>('select[aria-label="知识分组"]')!;
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['', '01-system', 'root', '_meta']);
+    await act(async () => { select.value = 'root'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+    for (const [kind, label] of kinds) {
+        await act(async () => click(label));
+        expect(Array.from(select.options).map(option => option.value)).toEqual(['', kind]);
+        expect(select.value).toBe('');
+        expect(client.documents).toHaveBeenLastCalledWith(expect.objectContaining({ kind, group: undefined, offset: 0 }), expect.any(AbortSignal));
+        await act(async () => { select.value = kind; select.dispatchEvent(new Event('change', { bubbles: true })); });
+    }
+});

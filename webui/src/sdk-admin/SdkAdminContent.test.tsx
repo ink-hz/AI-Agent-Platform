@@ -63,5 +63,19 @@ suite('SDK real content HTTP response to frontend contract', () => {
     expect(box.querySelector('article')?.textContent).toContain('not_run');
     expect(box.querySelector('article a[href^="javascript:"]')).toBeNull();
     expect(box.querySelector('article a[href^="file:"]')).toBeNull();
+    const fragment = 'KB-API-012-S2-C003';
+    // These are actual authorized HTTP responses from the frozen release.
+    const api012 = await sdkAdminClient.document('KB-API-012');
+    expect(api012.markdown).toContain(`<a id="${fragment}"></a>`);
+    const reference = await sdkAdminClient.document('KB-REF-001');
+    expect(Object.values(reference.links)).toContainEqual({ document_id: 'KB-API-012', fragment });
+    await act(async () => root!.render(<SdkAdminPage section="knowledge" documentId="KB-REF-001" account={account} />));
+    const links = box.querySelectorAll(`article a[href="/sdk-admin/knowledge/KB-API-012#${fragment}"]`);
+    expect(links).toHaveLength(4);
+    const targetId = new URL((links[0] as HTMLAnchorElement).href).hash.slice(1);
+    window.history.replaceState({}, '', `/sdk-admin/knowledge/KB-API-012#${targetId}`);
+    await act(async () => root!.render(<SdkAdminPage section="knowledge" documentId="KB-API-012" account={account} />));
+    expect(box.querySelector('article')?.textContent).toContain(api012.title);
+    expect(box.querySelector(`article [id="${decodeURIComponent(targetId)}"]`)).not.toBeNull();
   });
 });

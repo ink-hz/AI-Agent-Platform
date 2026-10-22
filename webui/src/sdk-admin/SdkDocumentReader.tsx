@@ -1,6 +1,7 @@
 import { isValidElement, type MouseEvent, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { remarkEvidenceAnchors } from './remarkEvidenceAnchors';
 import { platformPath } from '../auth';
 import { navigate } from '../router';
 import { isDocumentId, type DocumentDetail } from './sdkAdminApi';
@@ -55,7 +56,7 @@ export function SdkDocumentReader({ document: doc }: {
   <div className="sdk-reader-heading"><span className="sdk-eyebrow">{doc.id} · {doc.kind}</span><h1>{doc.title}</h1><p>基于锁定来源阅读；静态结论与设备运行验证分别记录。</p></div>
   <dl className="sdk-evidence"><div><dt>源码基线</dt><dd>{doc.baseline_id ?? '来源未声明'}</dd></div><div><dt>阅读层级</dt><dd>{doc.level ?? '未分级'} · {doc.group}</dd></div><div><dt>内容状态</dt><dd>{statusLabel(doc.content_state)}</dd></div><div><dt>静态审阅</dt><dd>{statusLabel(doc.review_status)}</dd></div><div><dt>运行验证</dt><dd>{statusLabel(doc.runtime_validation)}</dd></div></dl>
   <details className="sdk-provenance"><summary>适用条件与来源摘要</summary><dl><dt>原始状态 code（内容 / 审阅 / 运行）</dt><dd><code>{doc.content_state} / {doc.review_status} / {doc.runtime_validation}</code></dd><dt>适用条件</dt><dd>{Object.keys(doc.conditions).length ? <pre>{JSON.stringify(doc.conditions, null, 2)}</pre> : '来源未声明，请结合正文确认设备、固件、平台、配置与状态。'}</dd><dt>原始来源</dt><dd><code>{doc.source_path}</code></dd><dt>原件 SHA-256</dt><dd><code>{doc.source_sha256}</code></dd><dt>阅读正文 SHA-256</dt><dd><code>{doc.sha256}</code></dd></dl></details>
-  <div className="sdk-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={value => value} components={{
+  <div className="sdk-markdown"><ReactMarkdown remarkPlugins={[remarkGfm, remarkEvidenceAnchors]} skipHtml urlTransform={value => value} components={{
             a: ({ href = '', children }) => {
                 const link = doc.links[href] ?? normalizedLinks.get(markdownHref(href));
                 if (link && isDocumentId(link.document_id)) {
