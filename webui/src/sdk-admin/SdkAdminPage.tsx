@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { BookOpen, Boxes, ChevronRight, CircleHelp, Compass, GitBranch, Layers, Search, ShieldCheck } from 'lucide-react';
+import { BookOpen, ChevronRight, Search, ShieldCheck } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { DocumentLink, portalClick, safeExternal, SdkDocumentReader, statusLabel } from './SdkDocumentReader';
 import { isDocumentId, sdkAdminClient, SdkAdminApiError, type Catalog, type DocumentDetail, type DocumentKind, type DocumentList, type DocumentSummary, type SdkAdminClient } from './sdkAdminApi';
+import { sdkAdminSection } from './sdkAdminNavigation';
 import './sdkAdmin.css';
-export type SdkAdminSection = 'overview' | 'products' | 'delivery' | 'diagnostics' | 'knowledge';
+import type { SdkAdminSection } from './sdkAdminPaths';
+export type { SdkAdminSection } from './sdkAdminPaths';
 export interface SdkAdminPageProps {
     section: SdkAdminSection;
     documentId?: string;
     account: Account;
     client?: SdkAdminClient;
 }
-const sections = [{ id: 'overview', title: '总览', subtitle: '目标与下一动作', icon: Compass }, { id: 'products', title: '产品与版本', subtitle: '范围、来源与业务对象', icon: Boxes }, { id: 'delivery', title: '研发与交付', subtitle: '阶段标准与交接依据', icon: GitBranch }, { id: 'diagnostics', title: '诊断与改进', subtitle: '技术与过程中的问题', icon: CircleHelp }, { id: 'knowledge', title: '知识与成果', subtitle: '深入阅读与证据检索', icon: BookOpen }] as const;
 const kindNames: Record<DocumentKind, string> = { knowledge: '代码知识', process: '流程与规范', analysis: '分析成果', design: '设计方案', acceptance: '接收记录', execution: '执行记录' };
 function PortalLink({ path, children, className, current }: {
     path: string;
@@ -45,8 +46,8 @@ export function SdkAdminPage({ section, documentId, account, client = sdkAdminCl
         if (active)
             setState({ error });
     } })(); return () => { active = false; controller.abort(); }; }, [client, account.internal_user_id]);
-    const meta = sections.find(s => s.id === section)!;
-    return <div className="sdk-admin"><aside className="sdk-sidebar"><div className="sdk-brand"><span className="sdk-brand-mark"><Layers size={23}/></span><div><strong>SDK 开发管理</strong><span>研发协作工作台</span></div></div><nav aria-label="SDK 工作区">{sections.map(({ id, title, subtitle, icon: Icon }) => <PortalLink key={id} current={section === id} className={`sdk-nav-link${section === id ? ' is-current' : ''}`} path={id === 'overview' ? '/sdk-admin' : `/sdk-admin/${id}`}><Icon size={19}/><span><strong>{title}</strong><small>{subtitle}</small></span>{section === id && <ChevronRight size={15}/>}</PortalLink>)}</nav><div className="sdk-sidebar-note"><ShieldCheck size={17}/><span>内部只读成果<br />业务操作进入禅道</span></div></aside>
+    const meta = sdkAdminSection(section);
+    return <div className="sdk-admin">
  <div className="sdk-main"><header className="sdk-page-header"><div><div className="sdk-breadcrumb">SDK 工作区 <ChevronRight size={12}/> {meta.title}{documentId && <> <ChevronRight size={12}/> 文档阅读</>}</div><h1>{documentId ? '知识与成果阅读' : meta.title}</h1><p>{meta.subtitle} · {state.catalog ? `资料快照 ${new Date(state.catalog.generated_at).toLocaleString('zh-CN', { hour12: false })}` : '等待授权内容'}</p></div><a className="sdk-primary-link" href={platformPath('/sdk/')}>进入禅道 <ChevronRight size={15}/></a></header>
  {state.denied ? <Problem error={new SdkAdminApiError(403)}/> : state.error ? <Problem error={state.error}/> : !state.catalog ? <Loading /> : <><div className="sdk-scope-line"><span>当前范围：已发布的 SDK 内部成果</span><span>基线 <code>{state.catalog.baseline_id}</code></span><span>发布 <code>{state.catalog.release_id}</code></span></div><AuthorizedBody key={`${section}:${account.internal_user_id}`} section={section} documentId={documentId} catalog={state.catalog} client={client}/></>}
  </div></div>;

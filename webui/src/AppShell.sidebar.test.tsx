@@ -51,11 +51,13 @@ it('gives SDK requirements the full work area without the platform sidebar',asyn
  expect(box.querySelector('main')?.classList.contains('is-sdk-workspace')).toBe(true);
  expect(box.querySelector('main')?.textContent).toContain('SDK 需求管理');
 });
-it('gives SDK management its own navigation area and keeps enterprise identity',async()=>{
+it('keeps SDK management in the platform frame with enterprise identity',async()=>{
  await act(async()=>root.render(<AppShell route={{name:'sdk-admin',section:'knowledge',documentId:'KB-API-001'}} account={member}><p>SDK 知识正文</p></AppShell>));
- expect(box.querySelector('.platform-sidebar')).toBeNull();
- expect(box.querySelector('.platform-nav-toggle')).toBeNull();
- expect(box.querySelector('main')?.classList.contains('is-sdk-workspace')).toBe(true);
+ expect(box.querySelectorAll('.platform-sidebar')).toHaveLength(1);
+ expect(box.querySelector('.platform-nav-toggle')).not.toBeNull();
+ expect(box.querySelector('main')?.classList.contains('is-sdk-workspace')).toBe(false);
+ expect(box.querySelector('main')?.getAttribute('data-platform-layout')).toBe('workspace');
+ expect(box.querySelector('.brand-name')?.textContent).toContain('Agent Platform');
  expect(box.querySelector('.account-chip')?.textContent).toBe('苍渊');
  expect(box.querySelector('main')?.textContent).toContain('SDK 知识正文');
 });
@@ -137,4 +139,44 @@ it('places Agent designs in AI work for managers only', async()=>{
  expect(link('/admin/agent-designs')?.closest('section')?.getAttribute('aria-label')).toBe('AI 工作');
  expect(link('/admin/agent-designs')?.getAttribute('aria-current')).toBe('page');
  await render('member'); expect(link('/admin/agent-designs')).toBeNull();
+});
+
+it('shows five nested SDK destinations and selects only knowledge on a direct article visit',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({allowed:true}),{status:200})));
+ await render('member',{name:'sdk-admin',section:'knowledge',documentId:'KB-API-001'});
+ const submenu=box.querySelector<HTMLElement>('#sdk-workspace-navigation')!;
+ expect(submenu).not.toBeNull();
+ expect(submenu.hidden).toBe(false);
+ expect(Array.from(submenu.querySelectorAll('a')).map(a=>[a.textContent,a.getAttribute('href')])).toEqual([
+  ['总览','/sdk-admin'],['产品与版本','/sdk-admin/products'],['研发与交付','/sdk-admin/delivery'],['诊断与改进','/sdk-admin/diagnostics'],['知识与成果','/sdk-admin/knowledge'],
+ ]);
+ expect(submenu.querySelector('a[aria-current="page"]')?.getAttribute('href')).toBe('/sdk-admin/knowledge');
+ expect(box.querySelectorAll('.platform-sidebar [aria-current="page"]')).toHaveLength(1);
+ expect(box.querySelector('.platform-sdk-heading > a')?.hasAttribute('aria-current')).toBe(false);
+ const toggle=box.querySelector<HTMLButtonElement>('[aria-controls="sdk-workspace-navigation"]')!;
+ await act(async()=>toggle.click());
+ expect(submenu.hidden).toBe(true);expect(toggle.getAttribute('aria-expanded')).toBe('false');
+ await render('member',{name:'sdk-admin',section:'products'});
+ expect(submenu.hidden).toBe(false);
+ expect(submenu.querySelector('a[aria-current="page"]')?.getAttribute('href')).toBe('/sdk-admin/products');
+ await act(async()=>toggle.click());await act(async()=>toggle.click());expect(submenu.hidden).toBe(false);
+});
+it('opens SDK navigation from another platform destination and preserves native modified clicks',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({allowed:true}),{status:200})));
+ await render('member',{name:'brain'});
+ const submenu=box.querySelector<HTMLElement>('#sdk-workspace-navigation')!;
+ expect(submenu).not.toBeNull();expect(submenu.hidden).toBe(true);
+ await act(async()=>box.querySelector<HTMLButtonElement>('[aria-controls="sdk-workspace-navigation"]')!.click());
+ expect(submenu.hidden).toBe(false);
+ const destination=submenu.querySelector<HTMLAnchorElement>('a[href="/sdk-admin/products"]')!;
+ const modified=new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:true});
+ destination.addEventListener('click',event=>{expect(event.defaultPrevented).toBe(false);event.preventDefault();},{once:true});
+ await act(async()=>destination.dispatchEvent(modified));expect(window.location.pathname).toBe('/');
+ await act(async()=>destination.click());expect(window.location.pathname).toBe('/sdk-admin/products');
+});
+it('does not expose SDK navigation after an access denial',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({allowed:false}),{status:200})));
+ await render('member',{name:'sdk-admin',section:'knowledge'});
+ expect(box.querySelector('#sdk-workspace-navigation')).toBeNull();
+ expect(link('/sdk-admin')).toBeNull();
 });

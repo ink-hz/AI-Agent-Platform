@@ -9,6 +9,7 @@ import { availableExplorations, explorationNodes, type PanoramaExploration } fro
 
 
 const ACTION_LABELS: Record<PanoramaActionId, string> = {
+  "sdk-admin": "SDK 开发管理",
   brain: "AI 助手", agents: "Agent 目录", missions: "任务", sessions: "会话", operations: "运行概览",
   review: "复审", activity: "运行事件", identity: "账号与权限", governance: "审计日志", access: "访问记录",
   account: "账号", "agent-admin": "Agent 状态", notes: "工程笔记", hr: "人力资源 · 独立入口",

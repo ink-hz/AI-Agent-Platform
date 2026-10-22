@@ -1,7 +1,8 @@
 import { useEffect, useState, type MouseEvent } from 'react';
-import { Activity, BookOpen, Bot, Boxes, ClipboardList, Code2, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
+import { Activity, ChevronDown, ChevronRight, BookOpen, Bot, Boxes, ClipboardList, Code2, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
+import { SDK_ADMIN_SECTIONS } from '../sdk-admin/sdkAdminNavigation';
 import { sdkAdminClient } from '../sdk-admin/sdkAdminApi';
 
 interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; newTab?: boolean; routes: readonly string[] }
@@ -56,6 +57,10 @@ function follow(event: MouseEvent<HTMLAnchorElement>, item: Item) {
 }
 export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route;account?:Account|null;readOnly:boolean;collapsed:boolean}) {
   const [sdkAvailable, setSdkAvailable] = useState(false);
+  const [sdkExpanded, setSdkExpanded] = useState(route.name === 'sdk-admin');
+  useEffect(() => {
+    if (route.name === 'sdk-admin') setSdkExpanded(true);
+  }, [route]);
   useEffect(() => {
     if (!account) { setSdkAvailable(false); return; }
     let live = true;
@@ -68,6 +73,26 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
       {groupsFor(account,readOnly,sdkAvailable).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
         {!group.hideHeading && <h2>{group.label}</h2>}
         {group.items.map(item => {
+          if (item.path === '/sdk-admin') return <div className="platform-sdk-navigation" key={item.path}>
+            <div className="platform-sdk-heading">
+              <a href={platformPath(item.path)} className={route.name === 'sdk-admin' ? 'is-workspace-current' : undefined} onClick={event => follow(event,item)}>
+                <Code2 size={17} aria-hidden="true"/><span>{item.label}</span>
+              </a>
+              <button type="button" aria-controls="sdk-workspace-navigation" aria-expanded={sdkExpanded}
+                aria-label={sdkExpanded ? '收起 SDK 工作区' : '展开 SDK 工作区'} onClick={() => setSdkExpanded(value => !value)}>
+                {sdkExpanded ? <ChevronDown size={15} aria-hidden="true"/> : <ChevronRight size={15} aria-hidden="true"/>}
+              </button>
+            </div>
+            <div id="sdk-workspace-navigation" className="platform-sdk-children" role="group" aria-label="SDK 工作区" hidden={!sdkExpanded}>
+              {SDK_ADMIN_SECTIONS.map(({id,path,title,icon:Icon}) => {
+                const current = route.name === 'sdk-admin' && route.section === id;
+                return <a key={id} href={platformPath(path)} className={current ? 'is-current' : undefined} aria-current={current ? 'page' : undefined}
+                  onClick={event => follow(event,{path,label:title,icon:Icon,routes:[]})}>
+                  <Icon size={15} aria-hidden="true"/><span>{title}</span>
+                </a>;
+              })}
+            </div>
+          </div>;
           const current = item.routes.includes(route.name)
             || (route.name === 'admin-permissions' && item.path === '/admin/identity');
           const Icon=item.icon;

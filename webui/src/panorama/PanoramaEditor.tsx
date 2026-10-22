@@ -7,6 +7,7 @@ const ACTIONS: PanoramaActionId[] = [
   "access", "account", "agent-admin", "notes", "hr", "office", "voc", "fae",
 ];
 const ACTION_LABEL: Record<PanoramaActionId, string> = {
+  "sdk-admin": "SDK 开发管理",
   brain: "大脑", agents: "Agent", missions: "任务", sessions: "会话", operations: "运行", review: "复审",
   activity: "记录", identity: "身份", governance: "治理", access: "访问", account: "账号", "agent-admin": "Agent 管理",
   notes: "笔记", hr: "HR", office: "行政", voc: "VOC", fae: "FAE",
