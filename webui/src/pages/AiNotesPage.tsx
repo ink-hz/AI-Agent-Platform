@@ -74,10 +74,7 @@ export function AiNotesPage({
     if (!index || categorySlug || articleSlug) return;
     const selected = firstArticle(index);
     setAutomaticSelection(selected);
-    if (selected) {
-      onNavigate(`/ai-notes/${selected.categorySlug}/${selected.articleSlug}`, { replace: true });
-    }
-  }, [articleSlug, categorySlug, index, onNavigate]);
+  }, [articleSlug, categorySlug, index]);
 
   const selectedPath = useMemo<AiNotesSelection | null>(() => {
     if (categorySlug && articleSlug) return { categorySlug, articleSlug };

@@ -51,13 +51,13 @@ it('gives SDK requirements the full work area without the platform sidebar',asyn
  expect(box.querySelector('main')?.classList.contains('is-sdk-workspace')).toBe(true);
  expect(box.querySelector('main')?.textContent).toContain('SDK 需求管理');
 });
-it('opens AI notes as a standalone reading page with a platform return link',async()=>{
+it('opens AI notes without a top navigation bar or platform sidebar',async()=>{
  await act(async()=>root.render(<AppShell route={{name:'ai-note',categorySlug:'foundations',articleSlug:'handbook'}} account={member}><p>文章正文</p></AppShell>));
  expect(box.querySelector('.ai-notes-standalone-shell')).not.toBeNull();
  expect(box.querySelector('.platform-sidebar')).toBeNull();
  expect(box.querySelector('.platform-nav-toggle')).toBeNull();
- expect(box.querySelector('.ai-notes-standalone-header')?.textContent).toContain('AI 工程笔记');
- expect(box.querySelector<HTMLAnchorElement>('.ai-notes-standalone-return')?.getAttribute('href')).toBe('/brain');
+ expect(box.querySelector('.ai-notes-standalone-header')).toBeNull();
+ expect(box.querySelector('main')?.hasAttribute('data-platform-layout')).toBe(false);
  expect(box.querySelector('main')?.textContent).toContain('文章正文');
 });
 it('keeps management and scoped workbench permissions distinct',async()=>{

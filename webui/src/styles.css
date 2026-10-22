@@ -1022,6 +1022,9 @@ body {
 .ai-notes-tree-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 4px 18px; }
 .ai-notes-tree-header h1 { margin: 0; color: var(--ink); font-size: 18px; letter-spacing: -.02em; }
 .ai-notes-tree-header span { color: var(--ink-faint); font-size: 12px; }
+.ai-notes-tree-return { display: inline-block; margin: 0 4px 18px; color: var(--brand); font-size: 12.5px; font-weight: 650; text-decoration: none; }
+.ai-notes-tree-return:hover { text-decoration: underline; }
+.ai-notes-tree-return:focus-visible { outline: 2px solid var(--brand-bright); outline-offset: 3px; }
 .ai-notes-search { display: block; }
 .ai-notes-search input { width: 100%; min-height: 38px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
 .ai-notes-categories { display: grid; gap: 5px; margin-top: 18px; }

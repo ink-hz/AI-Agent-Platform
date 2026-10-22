@@ -64,17 +64,22 @@ describe("AiNotesPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("opens the first article and replaces the index URL", async () => {
+  it("opens the first article while keeping the index URL", async () => {
     const client = clientWith(index);
     const onNavigate = vi.fn();
     await act(async () => root.render(<AiNotesPage client={client} onNavigate={onNavigate} />));
 
     expect(client.fetchArticle).toHaveBeenCalledWith("foundations", "handbook", expect.any(AbortSignal));
-    expect(onNavigate).toHaveBeenCalledWith("/ai-notes/foundations/handbook", { replace: true });
+    expect(onNavigate).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Agent 系统手册");
   });
 
-  it("opens the first article when navigation returns from a deep link to the index", async () => {
+  it("keeps the return link inside the article directory", async () => {
+    await act(async () => root.render(<AiNotesPage client={clientWith(index)} onNavigate={vi.fn()} />));
+    expect(container.querySelector<HTMLAnchorElement>(".ai-notes-sidebar a[href='/brain']")).not.toBeNull();
+  });
+
+  it("opens the first article when navigation returns from a deep link to the index without redirecting", async () => {
     const client = clientWith(index);
     const onNavigate = vi.fn();
     await act(async () => root.render(
@@ -88,7 +93,7 @@ describe("AiNotesPage", () => {
 
     await act(async () => root.render(<AiNotesPage client={client} onNavigate={onNavigate} />));
 
-    expect(onNavigate).toHaveBeenCalledWith("/ai-notes/foundations/handbook", { replace: true });
+    expect(onNavigate).not.toHaveBeenCalled();
     expect(client.fetchArticle).toHaveBeenLastCalledWith(
       "foundations",
       "handbook",

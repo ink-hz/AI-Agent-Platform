@@ -76,12 +76,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
   };
   if (aiNotesWorkspace) return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className="ai-notes-standalone-shell">
-      <header className="ai-notes-standalone-header">
-        <a className="ai-notes-standalone-return" href={platformPath("/brain")} onClick={(event) => follow(event, "/brain")}>返回平台</a>
-        <strong>AI 工程笔记</strong>
-        {account && <a className="account-chip" href={platformPath("/account")} onClick={(event) => follow(event, "/account")}>{account.display_name}</a>}
-      </header>
-      <main data-platform-layout="reading" className="page is-ai-notes-workspace ai-notes-standalone-main">
+      <main className="page is-ai-notes-workspace ai-notes-standalone-main">
         {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
           <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
         </aside>}
