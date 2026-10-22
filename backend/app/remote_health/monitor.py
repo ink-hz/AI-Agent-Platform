@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import httpx
 
 from .models import RemoteAgentStatus, RemoteHealthSnapshot
-from .probes import Runner, probe_fae, probe_remote_ops, run_command
+from .probes import Runner, probe_daq, probe_fae, probe_remote_ops, run_command
 
 
 def _uptime(now: datetime, started_at: datetime | None) -> int | None:
@@ -23,12 +23,14 @@ class RemoteHealthMonitor:
         ssh_key_path: str,
         *,
         fae_health_url: str = "http://47.106.112.69/health",
+        daq_health_url: str | None = None,
         timeout: float = 4,
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._ssh_host = ssh_host
         self._ssh_key_path = ssh_key_path
         self._fae_health_url = fae_health_url
+        self._daq_health_url = daq_health_url
         self._timeout = timeout
         self._now = now
         self._snapshot = RemoteHealthSnapshot(
@@ -44,6 +46,11 @@ class RemoteHealthMonitor:
                 ),
             ],
         )
+        if self._daq_health_url:
+            self._snapshot.agents.append(RemoteAgentStatus(
+                id="ai-daq-fae-agent", name="AI DAQ FAE Agent",
+                status="unknown", error="not_checked", channel="WebUI",
+            ))
 
     async def poll_once(
         self,
@@ -53,7 +60,7 @@ class RemoteHealthMonitor:
     ) -> None:
         checked_at = self._now()
         previous = {agent.id: agent for agent in self._snapshot.agents}
-        fae, ops_result = await asyncio.gather(
+        probes = [
             probe_fae(
                 client,
                 self._fae_health_url,
@@ -66,7 +73,12 @@ class RemoteHealthMonitor:
                 runner=runner,
                 timeout=max(12, self._timeout),
             ),
-        )
+        ]
+        if self._daq_health_url:
+            probes.append(probe_daq(
+                client, self._daq_health_url, self._timeout, now=self._now,
+            ))
+        fae, ops_result, *daq = await asyncio.gather(*probes)
         ops, ops_error = ops_result
         if ops is not None:
             fae.uptime_seconds = _uptime(checked_at, ops.fae_started_at)
@@ -104,7 +116,22 @@ class RemoteHealthMonitor:
             )
             if fae.uptime_seconds is None:
                 fae.uptime_seconds = previous["ai-fae-agent"].uptime_seconds
-        agents = [fae, admin]
+        self._update_snapshot([fae, admin, *daq], checked_at)
+
+    async def poll_daq_once(self, client: httpx.AsyncClient) -> None:
+        """Poll only the explicitly configured HTTP service in cloud mode."""
+        if not self._daq_health_url:
+            return
+        daq = await probe_daq(
+            client, self._daq_health_url, self._timeout, now=self._now,
+        )
+        agents = [
+            daq if agent.id == daq.id else agent
+            for agent in self._snapshot.agents
+        ]
+        self._update_snapshot(agents, self._now())
+
+    def _update_snapshot(self, agents: list[RemoteAgentStatus], checked_at: datetime) -> None:
         errors = [agent.error for agent in agents if agent.error]
         self._snapshot = RemoteHealthSnapshot(
             healthy=not errors,
@@ -121,4 +148,11 @@ async def remote_poll_loop(monitor: RemoteHealthMonitor, interval: float) -> Non
     async with httpx.AsyncClient(trust_env=False) as client:
         while True:
             await monitor.poll_once(client)
+            await asyncio.sleep(interval)
+
+
+async def daq_poll_loop(monitor: RemoteHealthMonitor, interval: float) -> None:
+    async with httpx.AsyncClient(trust_env=False) as client:
+        while True:
+            await monitor.poll_daq_once(client)
             await asyncio.sleep(interval)

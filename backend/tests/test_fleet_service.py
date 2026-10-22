@@ -298,6 +298,7 @@ async def test_overview_combines_six_local_and_two_remote_agents():
         }),
         "ai-fae-agent",
         "ai-admin-agent",
+        "ai-daq-fae-agent",
         "voc",
     }
 
@@ -349,8 +350,8 @@ async def test_cloud_roster_completion_keeps_catalog_agents_and_usage():
 
     overview = await service.overview(now=NOW)
 
-    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 9
-    assert overview.summary.total_agents == 9
+    assert len({agent.id for agent in overview.agents}) == len(overview.agents) == 10
+    assert overview.summary.total_agents == 10
     assert {"fae-bot", "codex-assistant"}.isdisjoint(
         agent.id for agent in overview.agents
     )
@@ -373,3 +374,45 @@ async def test_minute_level_remote_health_is_not_stale_between_poll_cycles():
     overview = await service.overview(now=NOW)
 
     assert overview.runtime_source.stale is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("last_synced_at", "expected"),
+    [(None, "stale"), (NOW - timedelta(hours=37), "stale"), (NOW, "fresh")],
+)
+async def test_daq_remote_usage_freshness_follows_synced_source(last_synced_at, expected):
+    service = make_service(UsageRecord(
+        "ai-daq-fae-agent", 4, 3, 1, NOW, "DAQ question",
+        session_count=2, last_synced_at=last_synced_at,
+    ))
+    service._remote_monitor = StaticRemoteMonitor(RemoteHealthSnapshot(
+        healthy=True, checked_at=NOW,
+        agents=[RemoteAgentStatus(
+            id="ai-daq-fae-agent", name="AI DAQ FAE Agent", status="healthy",
+        )],
+    ))
+
+    overview = await service.overview(now=NOW)
+
+    assert get_agent(overview, "ai-daq-fae-agent").data_freshness == expected
+
+
+@pytest.mark.asyncio
+async def test_daq_failed_runtime_is_unknown_even_with_recent_usage():
+    service = make_service(UsageRecord(
+        "ai-daq-fae-agent", 4, 3, 1, NOW, "DAQ question",
+        session_count=2, last_synced_at=NOW,
+    ))
+    service._remote_monitor = StaticRemoteMonitor(RemoteHealthSnapshot(
+        healthy=False, checked_at=NOW, error="transport",
+        agents=[RemoteAgentStatus(
+            id="ai-daq-fae-agent", name="AI DAQ FAE Agent", status="unknown",
+            error="transport",
+        )],
+    ))
+
+    overview = await service.overview(now=NOW)
+
+    assert get_agent(overview, "ai-daq-fae-agent").state == "unknown"
+    assert overview.runtime_source.error == "transport"
