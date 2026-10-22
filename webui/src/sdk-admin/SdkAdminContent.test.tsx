@@ -29,7 +29,7 @@ suite('SDK real content HTTP response to frontend contract', () => {
       const url = new URL(input, 'https://local.test');
       const path = url.pathname.replace('/api/v1/sdk-admin', '');
       const body = path === '/access' ? { allowed: true } : path === '/catalog' ? data.catalog
-        : path === '/documents' ? data.lists_by_kind[url.searchParams.get('kind') ?? 'knowledge']
+        : path === '/documents' ? (url.searchParams.get('kind') === 'knowledge' && url.searchParams.get('limit') === '30' ? data.knowledge_page : data.lists_by_kind[url.searchParams.get('kind') ?? 'knowledge'])
         : data.documents[path.replace('/documents/', '')];
       return new Response(JSON.stringify(body), { status: body ? 200 : 404 });
     }));
@@ -46,6 +46,21 @@ suite('SDK real content HTTP response to frontend contract', () => {
     for (const id of Object.keys(data.documents)) expect(await sdkAdminClient.document(id)).toEqual(data.documents[id]);
   });
 
+  it.each(['overview', 'products', 'delivery', 'diagnostics', 'knowledge'] as const)('keeps real %s defaults free of maintenance metadata', async section => {
+    const data = install();
+    (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const account = { internal_user_id: 'sdk-default-reader', display_name: 'SDK reader' } as Account;
+    box = document.createElement('div'); document.body.append(box); root = createRoot(box);
+    await act(async () => root!.render(<SdkAdminPage section={section} account={account} />));
+    expect(box.querySelector('.sdk-document-list a')).not.toBeNull();
+    expect(box.querySelector('.sdk-scope-line, .sdk-doc-meta, .sdk-ai-note, .sdk-focus-facts, .sdk-sources')).toBeNull();
+    expect(box.textContent).not.toContain(data.catalog.release_id);
+    expect(box.textContent).not.toContain(data.catalog.baseline_id);
+    expect(box.textContent).not.toContain('not_run');
+    expect(box.querySelector('a[href="/sdk/"]')).not.toBeNull();
+    if (section === 'products' || section === 'delivery') expect(box.querySelector('.sdk-document-list')?.textContent).toContain('设计草案，不代表已实施');
+  });
+
   it('exposes real layered entry points and reads a real article with its evidence labels', async () => {
     const data = install();
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -60,7 +75,8 @@ suite('SDK real content HTTP response to frontend contract', () => {
     window.history.replaceState({}, '', '/sdk-admin/knowledge/KB-API-001');
     await act(async () => root!.render(<SdkAdminPage section="knowledge" documentId="KB-API-001" account={account} />));
     expect(box.querySelector('article')?.textContent).toContain(data.documents['KB-API-001'].title);
-    expect(box.querySelector('article')?.textContent).toContain('not_run');
+    expect(box.querySelector('.sdk-reader-heading')?.textContent).toContain('源码静态解读，尚未进行设备实测');
+    expect(box.querySelector('.sdk-provenance dl, .sdk-evidence')).toBeNull();
     expect(box.querySelector('article a[href^="javascript:"]')).toBeNull();
     expect(box.querySelector('article a[href^="file:"]')).toBeNull();
     const fragment = 'KB-API-012-S2-C003';
@@ -90,6 +106,8 @@ suite('SDK real content HTTP response to frontend contract', () => {
     await act(async () => root!.render(<SdkAdminPage section="knowledge" documentId="DOC-ANALYSIS-STATUS" account={account} />));
     const article = box.querySelector('article.sdk-reader')!;
     expect(article.querySelector('.sdk-reader-heading h1')?.textContent).toBe(status.title);
+    expect(article.querySelector('.sdk-reader-heading')?.textContent).toContain('阶段性分析，结论限于文中范围');
+    expect(article.querySelector('.sdk-provenance dl, .sdk-evidence')).toBeNull();
     const paragraphs = Array.from(article.querySelectorAll('.sdk-markdown p')).map(p => p.textContent);
     expect(paragraphs.some(p => p?.startsWith('现有证据能定位部分实现'))).toBe(true);
     expect(paragraphs.some(p => p?.includes('不是额外平台扩项或工期承诺'))).toBe(true);
