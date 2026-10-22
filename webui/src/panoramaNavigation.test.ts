@@ -27,5 +27,10 @@ describe('panorama navigation boundary', () => {
    expect(workspaceGroup({ name: 'admin-session', sessionKey: 's1' })).toBe('sessions');
    expect(workspaceGroup({ name: 'legacy-redirect', to: '/office/', navigation: 'document' })).toBeNull();
    expect(actionPath('office')).toEqual({ path: '/office/', external: true });
+   expect(actionPath('notes')).toEqual({ path: '/ai-notes', external: true, newTab: true });
+   expect(workspaceGroup({ name: 'ai-notes' })).toBeNull();
+   navigate('/ai-notes', { state: { panorama: true } });
+   expect(isPanoramaLocation(parseRoute('/ai-notes'))).toBe(false);
+   expect(window.history.state?.panorama).not.toBe(true);
  });
 });

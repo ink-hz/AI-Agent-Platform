@@ -50,7 +50,10 @@ it('protects native links and history; failed submission survives collapse and k
  expect(requests).toHaveLength(1);
  await act(async()=>[...box.querySelectorAll('button')].find(b=>b.textContent==='回到全景')!.click());
  expect(window.location.pathname).toBe('/');
- await act(async()=>box.querySelector<HTMLButtonElement>('[data-action-id="notes"]')!.click());
+ const panoramaNotes=box.querySelector<HTMLAnchorElement>('[data-action-id="notes"]')!;
+ expect(panoramaNotes.target).toBe('_blank');
+ panoramaNotes.addEventListener('click',event=>event.preventDefault(),{once:true});
+ await act(async()=>panoramaNotes.click());
  expect(window.location.pathname).toBe('/');expect(box.querySelector('#brain-request')).toBe(input);
  await act(async()=>box.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
  await act(async()=>box.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));

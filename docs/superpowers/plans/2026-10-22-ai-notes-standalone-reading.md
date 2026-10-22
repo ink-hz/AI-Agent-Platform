@@ -4,7 +4,7 @@
 
 **Goal:** 让工程笔记在已有地址以独立阅读页打开，同时从平台入口进入时保留原工作页。
 
-**Architecture:** `AppShell` 按笔记路由选独立框架；`AiNotesPage` 继续负责目录和正文。平台侧栏与 AI 助手首页用原生新页签链接指向已有笔记地址。后端路由、鉴权和部署入口保持现有契约。
+**Architecture:** `AppShell` 按笔记路由选独立框架；`AiNotesPage` 继续负责目录和正文。平台侧栏、AI 助手首页和公司全景用原生新页签链接指向已有笔记地址；全景状态不再包含笔记。后端路由、鉴权和部署入口保持现有契约。
 
 **Tech Stack:** React 19、TypeScript、Vitest、FastAPI、Docker Compose。
 
@@ -18,7 +18,7 @@
 
 ### Task 1: 独立笔记框架
 
-**Files:** `webui/src/AppShell.tsx`, `webui/src/platform/platformShell.css`, `webui/src/AppShell.sidebar.test.tsx`。
+**Files:** `webui/src/AppShell.tsx`, `webui/src/platform/platformShell.css`, `webui/src/styles.css`, `webui/src/AppShell.sidebar.test.tsx`, `webui/src/AppShell.brain.test.tsx`, `webui/src/styles.test.ts`。
 
 **Interfaces:** 输入现有 `Route`、`Account` 与 `children`；笔记路由输出独立 header/main，其他路由输出原平台框架。
 
@@ -30,13 +30,13 @@
 
 ### Task 2: 原生新页签入口
 
-**Files:** `webui/src/platform/PlatformSidebar.tsx`, `webui/src/pages/BrainPage.tsx`, `webui/src/pages/BrainWorkspacePage.tsx`, `webui/src/AppShell.sidebar.test.tsx`, `webui/src/pages/BrainPage.test.tsx`, `webui/src/PanoramaRecovery.test.tsx`。
+**Files:** `webui/src/platform/PlatformSidebar.tsx`, `webui/src/pages/BrainPage.tsx`, `webui/src/pages/BrainWorkspacePage.tsx`, `webui/src/panorama/PanoramaCanvas.tsx`, `webui/src/panorama/panorama.css`, `webui/src/panoramaNavigation.ts`, `webui/src/pages/AiEngineeringPage.tsx`, `webui/src/AppShell.sidebar.test.tsx`, `webui/src/pages/BrainPage.test.tsx`, `webui/src/PanoramaRecovery.test.tsx`, `webui/src/panorama/PanoramaView.test.tsx`, `webui/src/panoramaNavigation.test.ts`。
 
-**Interfaces:** 两处入口的 `href` 均为 `platformPath('/ai-notes')`，`target='_blank'`，`rel='noopener noreferrer'`；不触发 `navigate('/ai-notes')`。
+**Interfaces:** 三处入口的 `href` 均为 `platformPath('/ai-notes')`，`target='_blank'`，`rel='noopener noreferrer'`；不触发 `navigate('/ai-notes')`。
 
-- [ ] **Step 1: Write failing tests.** 两处入口断言新页签属性；平台原工作页及草稿在入口激活后保留。
+- [ ] **Step 1: Write failing tests.** 三处入口断言新页签属性；平台原工作页及草稿在入口激活后保留；带旧全景状态的笔记路由仍独立。
 - [ ] **Step 2: Run red.** `cd webui && ./node_modules/.bin/vitest run src/AppShell.sidebar.test.tsx src/pages/BrainPage.test.tsx src/PanoramaRecovery.test.tsx`；预期缺少新页签属性。
-- [ ] **Step 3: Implement.** 侧栏笔记项使用新页签原生链接，AI 助手首页删除拦截点击并移除已无用途的 `onOpenAiNotes` 回调。
+- [ ] **Step 3: Implement.** 侧栏笔记项与全景动作使用新页签原生链接，AI 助手首页删除拦截点击并移除已无用途的 `onOpenAiNotes` 回调；全景工作区分组排除笔记。
 - [ ] **Step 4: Run green.** 重跑上述测试；预期通过。
 - [ ] **Step 5: Commit.** 提交入口及回归测试。
 

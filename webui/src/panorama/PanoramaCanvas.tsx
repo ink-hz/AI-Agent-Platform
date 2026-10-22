@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { AiEngineeringDocumentSlug } from "../aiEngineeringApi";
+import { platformPath } from "../auth";
 import type { PanoramaActionId, PanoramaData, PanoramaGroup, PanoramaNode } from "../panoramaTypes";
 import { routePanoramaEdge, type PanoramaRect } from "../panoramaRouting";
 import { ExplorationPanel } from "./PanoramaExploration";
@@ -13,7 +14,7 @@ const ACTION_LABELS: Record<PanoramaActionId, string> = {
   account: "账号", "agent-admin": "Agent 状态", notes: "工程笔记", hr: "人力资源 · 独立入口",
   office: "行政服务 · 独立入口", voc: "客户洞察 · 独立入口", fae: "技术支持 · 独立入口",
 };
-const EXTERNAL_ACTIONS = new Set<PanoramaActionId>(["hr", "office", "voc", "fae"]);
+const EXTERNAL_ACTIONS = new Set<PanoramaActionId>(["notes", "hr", "office", "voc", "fae"]);
 
 interface CanvasProps {
   data: PanoramaData;
@@ -73,6 +74,10 @@ function NodeCard({ node, selected, related, match, company, explored, onSelect 
 }
 
 function ActionButton({ id, onAction }: { id: PanoramaActionId; onAction: CanvasProps["onAction"] }) {
+  if (id === "notes") return <a className="panorama-action panorama-action--external" data-action-id={id}
+    href={platformPath("/ai-notes")} target="_blank" rel="noopener noreferrer">
+    {ACTION_LABELS[id]}<span aria-hidden="true"> ↗</span>
+  </a>;
   return <button type="button" className={`panorama-action${EXTERNAL_ACTIONS.has(id) ? " panorama-action--external" : ""}`} data-action-id={id} onClick={() => onAction(id)}>
     {ACTION_LABELS[id]}{EXTERNAL_ACTIONS.has(id) && <span aria-hidden="true"> ↗</span>}
   </button>;

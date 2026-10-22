@@ -8,6 +8,7 @@ const PATHS: Record<PanoramaActionId, string> = {
  notes: '/ai-notes', hr: '/hr/', office: '/office/', voc: '/voc/', fae: '/fae/',
 };
 export function actionPath(action: PanoramaActionId) {
+ if (action === 'notes') return { path: PATHS[action], external: true, newTab: true };
  return { path: PATHS[action], external: ['hr', 'office', 'voc', 'fae'].includes(action) };
 }
 export function workspaceGroup(route: Route): PanoramaActionId | null {
@@ -25,7 +26,6 @@ export function workspaceGroup(route: Route): PanoramaActionId | null {
  case 'admin-governance': return 'governance';
  case 'admin-access': return 'access';
  case 'account': return 'account';
- case 'ai-notes': case 'ai-note': return 'notes';
  default: return null;
  }
 }

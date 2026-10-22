@@ -166,6 +166,16 @@ describe("PanoramaView", () => {
     expect(container.querySelector(".panorama-exploration")?.textContent).toContain("客户场景");
     expect(container.querySelector('[data-action-id="fae"]')).toBeNull();
   });
+  it("opens the engineering notes action as an independent tab", async () => {
+    const onAction = vi.fn();
+    await act(async () => root.render(<PanoramaView data={data} onAction={onAction} onEvidence={vi.fn()} />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="digital"] button')!.click());
+    const notes = container.querySelector<HTMLAnchorElement>('a[data-action-id="notes"]');
+    expect(notes?.getAttribute("href")).toBe("/ai-notes");
+    expect(notes?.getAttribute("target")).toBe("_blank");
+    expect(notes?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(onAction).not.toHaveBeenCalled();
+  });
 
   it("uses current node names and skips absent themes without recreating deleted nodes", async () => {
     const customized = structuredClone(data);

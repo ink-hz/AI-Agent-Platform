@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+const platformShellStyles = readFileSync(new URL("./platform/platformShell.css", import.meta.url), "utf8");
 const panoramaStyles = readFileSync(new URL("./panoramaWorkspace.css", import.meta.url), "utf8");
 
 function rule(selector: string): string {
@@ -409,7 +410,8 @@ describe("Executive Operations visual contract", () => {
   });
 
   it("gives AI notes an independent two-column reading workspace", () => {
-    expect(rule(".app.is-ai-notes-workspace-shell")).toContain("height: 100dvh");
+    expect(platformShellStyles).toContain(".ai-notes-standalone-shell { display:flex; flex-direction:column; height:100dvh");
+    expect(platformShellStyles).toContain(".ai-notes-standalone-shell { height:auto; overflow:visible;");
     expect(rule(".page.is-ai-notes-workspace")).toContain("min-height: 0");
     expect(rule(".ai-notes-layout")).toContain("grid-template-columns: 19rem minmax(0, 1fr)");
     expect(rule(".ai-notes-layout")).toContain("min-height: 0");

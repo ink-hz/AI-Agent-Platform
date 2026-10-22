@@ -186,13 +186,13 @@ describe("usage navigation", () => {
     expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/voc"]')?.getAttribute("aria-current")).toBe("page");
   });
 
-  it("keeps the AI notes workspace with its navigation entry", async () => {
+  it("opens the AI notes root outside the platform navigation", async () => {
     await act(async () => root.render(
       <AppShell route={{ name: "ai-notes" }} account={member}><p>文章</p></AppShell>,
     ));
-    expect(container.querySelector('.platform-sidebar a[href="/ai-notes"]')).not.toBeNull();
+    expect(container.querySelector('.platform-sidebar')).toBeNull();
     expect(container.querySelector("main.page.is-ai-notes-workspace")).not.toBeNull();
-    expect(container.querySelector(".app.is-ai-notes-workspace-shell")).not.toBeNull();
+    expect(container.querySelector(".ai-notes-standalone-shell")).not.toBeNull();
     expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 

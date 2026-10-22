@@ -32,7 +32,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
   const hrWorkspace = route.name === "hr" || route.name === "hr-chat" || route.name === "hr-agent" || route.name === "hr-positions"
     || route.name === "hr-position" || route.name === "hr-position-section"
     || route.name === "hr-panorama";
-  const aiNotesWorkspace = !panorama && (route.name === "ai-notes" || route.name === "ai-note");
+  const aiNotesWorkspace = route.name === "ai-notes" || route.name === "ai-note";
   const sdkWorkspace = route.name === "sdk";
   const agentDesignWorkspace = route.name === "admin-agent-designs";
   const faeWorkspace = route.name.startsWith("fae-manage-");
@@ -90,7 +90,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
     </div>
   </DeploymentProvider>;
   return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
-    <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace-shell" : ""}${sdkWorkspace ? " is-sdk-workspace-shell" : ""}`}>
+    <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${sdkWorkspace ? " is-sdk-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
           {!hrWorkspace && !sdkWorkspace && <button type="button" className="platform-nav-toggle" aria-controls="platform-navigation"
@@ -118,7 +118,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
         <strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span>
       </aside>}
         {children}</main>
-      {!panorama && !brainWorkspace && !hrWorkspace && !aiNotesWorkspace && !sdkWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
+      {!panorama && !brainWorkspace && !hrWorkspace && !sdkWorkspace && <footer className="site-foot"><span>Orbbec Agent Platform</span></footer>}
         </div>
       </div>
     </div>

@@ -26,10 +26,8 @@
 .platform-content > .page.is-sdk-workspace { padding:0; background:#f6f8fb; }
 .platform-content .hard-stale-banner { margin:0 0 16px; }
 .platform-content > .is-panorama-page > .hard-stale-banner { margin:12px 20px; width:calc(100% - 40px); }
-.platform-content > .is-brain-workspace,
-.platform-content > .is-ai-notes-workspace { display:flex; flex-direction:column; overflow:hidden; }
-.platform-content > .is-brain-workspace > :not(.hard-stale-banner),
-.platform-content > .is-ai-notes-workspace > :not(.hard-stale-banner) { flex:1; min-height:0; }
+.platform-content > .is-brain-workspace { display:flex; flex-direction:column; overflow:hidden; }
+.platform-content > .is-brain-workspace > :not(.hard-stale-banner) { flex:1; min-height:0; }
 .platform-content > .is-brain-workspace > .hard-stale-banner { flex:none; }
 @media(max-width:900px) {
   .platform-shell .topbar-inner { padding:0 12px; gap:9px; }
@@ -55,4 +53,9 @@
 @media(max-width:720px) {
   .ai-notes-standalone-header { grid-template-columns:auto 1fr auto; gap:10px; padding:0 14px; }
   .ai-notes-standalone-header > strong { font-size:14px; }
+}
+@media print {
+  .ai-notes-standalone-shell { height:auto; overflow:visible; display:block; }
+  .ai-notes-standalone-header { display:none; }
+  .ai-notes-standalone-main { display:block; overflow:visible; }
 }

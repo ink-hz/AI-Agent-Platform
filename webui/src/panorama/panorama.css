@@ -90,7 +90,7 @@
 .panorama-detail header button { background: transparent; border: 0; color: var(--panorama-muted); cursor: pointer; }
 .panorama-detail ul { color: #3e5369; line-height: 1.5; margin: 12px 0; padding-left: 20px; }
 .panorama-detail__actions, .panorama-detail__sources { display: flex; flex-wrap: wrap; gap: 7px; }
-.panorama-action, .panorama-detail__sources button { background: #edf4ff; border: 1px solid #c8daf2; border-radius: 8px; color: #174f9d; cursor: pointer; padding: 7px 10px; }
+.panorama-action, .panorama-detail__sources button { display: inline-flex; align-items: center; background: #edf4ff; border: 1px solid #c8daf2; border-radius: 8px; color: #174f9d; cursor: pointer; padding: 7px 10px; text-decoration: none; }
 .panorama-action--external { background: #eef9f7; border-color: #c0e2dd; color: #08766d; }
 .panorama-detail__relations { border-block: 1px solid #e5ebf1; display: grid; gap: 5px; margin: 12px 0; padding: 9px 0; }
 .panorama-detail__relations div { display: grid; font-size: 12px; gap: 8px; grid-template-columns: 72px 1fr; }
