@@ -40,7 +40,6 @@ import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspac
 import { FaeManagementWorkspace } from "./workspaces/fae/FaeManagementWorkspace";
 import { AccessEventReporter } from "./accessEventReporter";
 import { AccessHistoryPage } from "./pages/AccessHistoryPage";
-import { SdkWorkbench } from "./sdk/SdkWorkbench";
 
 
 function PendingPage({ title, description }: { title: string; description: string }) {
@@ -126,7 +125,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "missions": return account ? <MissionsPage key={`${account.internal_user_id}:${account.role}`} /> : <PendingPage title="历史任务" description="请登录后查看。" />;
     case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
-    case "sdk": return account ? <SdkWorkbench account={account} storyId={route.storyId} taskId={route.taskId} tab={route.tab} /> : <PendingPage title="SDK 开发管理" description="请启用企业身份后使用。" />;
+    case "sdk": return <LegacyRedirect to="/sdk/" navigation="document" />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
     case "marketing": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
     case "marketing-conversation": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} conversationId={route.conversationId} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
@@ -198,6 +197,7 @@ export default function App() {
     return () => { current = false; };
   }, [identityMode, loginRoute, accountAttempt]);
 
+  if (route.name === "sdk") return <LegacyRedirect to="/sdk/" navigation="document" />;
   if (loginRoute) return <LoginPage />;
   if (loading) return <AccessState title="正在进入 Agent Platform" description="正在确认您的企业账号，通常只需片刻。" />;
   if (failure === "permission") return isPanoramaLocation(route)
