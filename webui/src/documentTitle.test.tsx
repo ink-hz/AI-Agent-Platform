@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PLATFORM_TITLE, routeDocumentTitle, useDocumentTitle } from "./documentTitle";
 
 
-function TitleProbe({ title }: { title: string }) {
+function TitleProbe({ title }: { title: string | undefined }) {
   useDocumentTitle(title);
   return null;
 }
@@ -68,4 +68,20 @@ describe("document titles", () => {
     expect(document.title).toBe("AI FAE · Orbbec Agent Platform");
     await act(async () => root.unmount());
   });
+
+  it("leaves another title owner untouched when ownership is delegated", async () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    document.title = "宿主标题";
+    try {
+      await act(async () => root.render(<TitleProbe title={undefined} />));
+      expect(document.title).toBe("宿主标题");
+      await act(async () => root.render(<TitleProbe title="路由标题" />));
+      expect(document.title).toBe("路由标题");
+      document.title = "异步宿主标题";
+      await act(async () => root.render(<TitleProbe title={undefined} />));
+      expect(document.title).toBe("异步宿主标题");
+    } finally { await act(async () => root.unmount()); }
+  });
+
 });

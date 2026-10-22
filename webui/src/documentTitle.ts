@@ -68,8 +68,8 @@ export function routeDocumentTitle(route: Route): string {
 }
 
 
-export function useDocumentTitle(title: string): void {
+export function useDocumentTitle(title: string | undefined): void {
   useEffect(() => {
-    document.title = title;
+    if (title !== undefined) document.title = title;
   }, [title]);
 }

@@ -11,7 +11,7 @@ import {
   type AiEngineeringIndex,
 } from "../aiEngineeringApi";
 import { platformPath, type Account } from "../auth";
-import { PLATFORM_TITLE, useDocumentTitle } from "../documentTitle";
+import { PLATFORM_TITLE, routeDocumentTitle, useDocumentTitle } from "../documentTitle";
 import { navigate, currentLocationPath, type Route } from "../router";
 import { PanoramaView } from "../panorama/PanoramaView";
 import { OrganizationLayout } from "../organization/OrganizationLayout";
@@ -287,7 +287,7 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   const workspaceHeading = useRef<HTMLDivElement>(null);
   const graph = useRef<HTMLDivElement>(null);
   const evidencePanel = useRef<HTMLElement>(null);
-  useDocumentTitle(view === "organization" ? `组织架构 · ${PLATFORM_TITLE}` : data ? `${data.title} · ${PLATFORM_TITLE}` : PLATFORM_TITLE);
+  useDocumentTitle(workspaceRoute ? routeDocumentTitle(workspaceRoute) : view === "organization" ? `组织架构 · ${PLATFORM_TITLE}` : data ? `${data.title} · ${PLATFORM_TITLE}` : PLATFORM_TITLE);
   const deny = useCallback(() => { setData(null); setDocument(null); setEvidence(null); setAccess("denied"); dirty.current = false; layoutDirty.current = false; }, []);
   const authorizationFailure = useCallback((failure: unknown) => {
     deny();

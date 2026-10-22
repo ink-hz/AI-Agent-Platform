@@ -177,7 +177,11 @@ export default function App() {
   const [panoramaAccessDenied, setPanoramaAccessDenied] = useState(false);
   const denyPanoramaAccess = useCallback(() => setPanoramaAccessDenied(true), []);
   const loginRoute = route.name === "login";
-  useDocumentTitle(routeDocumentTitle(route));
+  const panoramaLocation = isPanoramaLocation(route);
+  const panoramaRoleAllowed = account?.role === "platform_admin" || account?.role === "platform_owner";
+  const panorama = panoramaLocation && panoramaRoleAllowed && !loading && !failure && !panoramaAccessDenied;
+  // The rendered panorama host owns both dynamic graph and workspace route titles.
+  useDocumentTitle(panorama ? undefined : routeDocumentTitle(route));
   useEffect(() => {
     if (loginRoute) { setLoading(false); return; }
     if (!identityMode) { setLegacyMode(true); setLoading(false); return; }
@@ -211,7 +215,7 @@ export default function App() {
     : <AccessState title="无权访问" description="当前账号没有该入口的访问权限。" />;
   if (failure === "directory") return <AccessState title="暂时无法确认企业账号" description="企业通讯录同步可能延迟，请稍后重试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
   if (failure) return <AccessState title="暂时无法进入平台" description="连接服务时遇到短暂问题，请重新尝试。" onRetry={() => setAccountAttempt((value) => value + 1)} />;
-  if (isPanoramaLocation(route) && (panoramaAccessDenied || !account || (account.role !== "platform_admin" && account.role !== "platform_owner"))) {
+  if (panoramaLocation && (panoramaAccessDenied || !panoramaRoleAllowed)) {
     return <AccessState title="无权限" description="请联系苍渊。" />;
   }
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
@@ -225,7 +229,6 @@ export default function App() {
       return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;
     }
   }
-  const panorama = !!account && isPanoramaLocation(route);
   return <AppShell route={route} account={account} panorama={panorama}>
     {account && <AccessEventReporter account={account} route={route} />}
     {panorama && account ? <AiEngineeringLanding account={account} direct fallback={null}

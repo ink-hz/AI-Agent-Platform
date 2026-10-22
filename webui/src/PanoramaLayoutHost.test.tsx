@@ -8,7 +8,8 @@ import type { SdkAdminClient } from './sdk-admin/sdkAdminApi';
 import { AppShell } from './AppShell';
 import { AiEngineeringLanding } from './pages/AiEngineeringPage';
 import { AiEngineeringApiError } from './aiEngineeringApi';
-import { allowPanoramaNavigation } from './panoramaNavigation';
+import { allowPanoramaNavigation, workspaceGroup } from './panoramaNavigation';
+import { PLATFORM_TITLE, routeDocumentTitle } from './documentTitle';
 import { fetchPanorama } from './panorama/panoramaApi';
 import { panoramaTestData } from './panoramaTestData';
 vi.mock('./api', () => ({fetchDeployment: async () => ({mode:'cloud-replica',read_only:true,freshness:'current'})}));
@@ -108,4 +109,26 @@ it('keeps SDK search, article and return links in the shared host without draft 
  expect(window.location.pathname).toBe('/brain');expect(box.textContent).toContain('其他工作区');
  const unload=new Event('beforeunload',{cancelable:true});window.dispatchEvent(unload);
  expect(unload.defaultPrevented).toBe(false);expect(confirm).not.toHaveBeenCalled();
+});
+
+it.each(['/sdk-admin/knowledge/KB-API-001','/admin/sessions/session-title'])('keeps the refreshed workspace title after panorama resolves asynchronously at %s',async(path)=>{
+ window.history.replaceState({panorama:true},'',path);
+ vi.stubGlobal('requestAnimationFrame',vi.fn());
+ let resolvePanorama!:(value:ReturnType<typeof panoramaTestData>)=>void;
+ vi.mocked(fetchPanorama).mockReturnValue(new Promise(resolve=>{resolvePanorama=resolve;}));
+ const client:any={fetchAccess:vi.fn().mockResolvedValue({allowed:true})};
+ function Host(){
+  const route=useRoute();
+  return <AppShell panorama route={route} account={account}><AiEngineeringLanding account={account} client={client} direct fallback={null} onNavigate={navigate} workspaceRoute={workspaceGroup(route)?route:undefined} renderWorkspace={workspace=><p>{routeDocumentTitle(workspace)}</p>}/></AppShell>;
+ }
+ await act(async()=>root.render(<Host/>));
+ const expectedTitle=path.startsWith('/sdk-admin')?`文档阅读 · 知识与成果 · SDK 开发管理 · ${PLATFORM_TITLE}`:`会话回放 · ${PLATFORM_TITLE}`;
+ expect(document.title).toBe(expectedTitle);
+ expect(fetchPanorama).toHaveBeenCalledTimes(1);
+ await act(async()=>resolvePanorama(panoramaTestData('异步加载的全景')));
+ expect(document.title).toBe(expectedTitle);
+ expect(box.querySelector('.panorama-work-area')?.textContent).toContain(expectedTitle);
+ await click('回到全景');
+ expect(window.location.pathname).toBe('/');
+ expect(document.title).toBe(`异步加载的全景 · ${PLATFORM_TITLE}`);
 });
