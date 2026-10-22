@@ -124,6 +124,8 @@ class FakePersonalClient:
         if method == "POST" and path.endswith("/review"):
             story_id = int(path.split("/")[1])
             self.stories[story_id]["status"] = "active" if payload["result"] == "pass" else "closed"
+            self.stories[story_id]["pri"] = payload.get("pri", 0)
+            self.stories[story_id]["assignedTo"] = ""
             self.actions.setdefault(story_id, []).append({"id": 1, "actor": "employee",
                 "action": "reviewed", "date": "2026-10-22 12:00:00", "comment": payload["comment"]})
             return {"id": story_id}
@@ -415,8 +417,59 @@ async def test_review_writes_employee_action_and_reads_current_status():
     posted = next(call for call in client.calls if call[1] == "stories/71/review")
     assert posted[2]["result"] == "pass"
     assert posted[2]["comment"] == "可实施"
+    assert posted[2]["pri"] == 2
     assert posted[3] == 1
     assert result["actions"][0]["actor"] == "employee"
+
+
+@pytest.mark.asyncio
+async def test_review_restores_priority_and_owner_cleared_by_zentao():
+    client, repo = FakePersonalClient(), MemoryRepository()
+    client.stories[71] = {"id": 71, "product": 1, "title": "待评审", "spec": "场景",
+        "verify": "验收", "status": "reviewing", "version": 1, "sourceNote": "",
+        "openedBy": "employee", "assignedTo": "sdk_owner", "pri": 2, "reviewer": ["employee"]}
+    service = NativeSdkService(client, repo, product_id=1)
+    result = await service.review_requirement(ACTOR, 71, expected_version=1,
+        expected_token=_edit_token(client.stories[71]), decision="pass")
+    assert result["status"] == "active" and result["priority"] == 2
+    assert result["assigned_to"] == "sdk_owner"
+    assert result.get("assignment_warning") is not True
+    assert [call[1] for call in client.calls].count("stories/71/assign") == 1
+
+
+@pytest.mark.asyncio
+async def test_review_reports_success_with_explicit_owner_warning_if_restore_fails():
+    client, repo = FakePersonalClient(), MemoryRepository()
+    client.fail_assign = True
+    client.stories[71] = {"id": 71, "product": 1, "title": "待评审", "spec": "场景",
+        "verify": "验收", "status": "reviewing", "version": 1, "sourceNote": "",
+        "openedBy": "employee", "assignedTo": "sdk_owner", "pri": 2, "reviewer": ["employee"]}
+    service = NativeSdkService(client, repo, product_id=1)
+    result = await service.review_requirement(ACTOR, 71, expected_version=1,
+        expected_token=_edit_token(client.stories[71]), decision="pass")
+    assert result["status"] == "active" and result["assigned_to"] == ""
+    assert result["assignment_warning"] is True
+
+
+@pytest.mark.asyncio
+async def test_review_preserves_a_different_owner_assigned_concurrently():
+    class ConcurrentAssignmentClient(FakePersonalClient):
+        async def request(self, actor, method, path, payload=None, params=None, *, api_version=2):
+            result = await super().request(actor, method, path, payload, params, api_version=api_version)
+            if method == "POST" and path == "stories/71/review":
+                self.stories[71]["assignedTo"] = "sdk_reviewer"
+            return result
+
+    client, repo = ConcurrentAssignmentClient(), MemoryRepository()
+    client.stories[71] = {"id": 71, "product": 1, "title": "待评审", "spec": "场景",
+        "verify": "验收", "status": "reviewing", "version": 1, "sourceNote": "",
+        "openedBy": "employee", "assignedTo": "sdk_owner", "pri": 2, "reviewer": ["employee"]}
+    service = NativeSdkService(client, repo, product_id=1)
+    result = await service.review_requirement(ACTOR, 71, expected_version=1,
+        expected_token=_edit_token(client.stories[71]), decision="pass")
+    assert result["assigned_to"] == "sdk_reviewer"
+    assert result["owner_changed_warning"] is True
+    assert not any(call[1] == "stories/71/assign" for call in client.calls)
 
 
 @pytest.mark.asyncio

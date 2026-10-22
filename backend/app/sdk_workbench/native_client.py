@@ -114,9 +114,14 @@ class NativeZenTaoClient:
                 raise ZenTaoProtocolError("zentao_invalid_json") from None
             if not isinstance(body, dict):
                 raise ZenTaoProtocolError("zentao_invalid_envelope")
-            if api_version == 2 and not isinstance(body.get("status"), str):
-                raise ZenTaoProtocolError("zentao_invalid_envelope")
-            if "status" in body and body["status"] != "success":
+            if api_version == 2:
+                if not isinstance(body.get("status"), str):
+                    raise ZenTaoProtocolError("zentao_invalid_envelope")
+                if body["status"] != "success":
+                    raise ZenTaoRejected("zentao_rejected")
+            elif body.get("status") in ("fail", "error") or "error" in body:
+                # ZenTao v1 write endpoints return the story itself, whose
+                # status is typically "reviewing" or "active".
                 raise ZenTaoRejected("zentao_rejected")
             return body
         raise AssertionError("unreachable")
