@@ -7,6 +7,7 @@ import json
 from uuid import UUID
 
 from fastapi import HTTPException
+from fastapi.concurrency import run_in_threadpool
 
 from app.control_plane.models import AuthContext
 from .zentao import (ZenTaoAuthenticationError, ZenTaoProtocolError,
@@ -33,12 +34,14 @@ def _text(value: object) -> str:
 
 
 class NativeSdkService:
-    def __init__(self, personal_client, repository, *, product_id: int) -> None:
+    def __init__(self, personal_client, repository, *, product_id: int,
+                 sso_service=None) -> None:
         if product_id < 1:
             raise ValueError("sdk_product_invalid")
         self.client = personal_client
         self.repository = repository
         self.product_id = product_id
+        self.sso_service = sso_service
 
     async def _all_stories(self, actor: AuthContext) -> list[dict]:
         result: list[dict] = []
@@ -63,7 +66,8 @@ class NativeSdkService:
             page += 1
 
     async def list_requirements(self, actor: AuthContext, *, page: int = 1,
-                                view: str = "q4", query: str = "", status: str = "") -> dict:
+                                view: str = "q4", query: str = "", status: str = "",
+                                owner: str = "") -> dict:
         stories = await self._all_stories(actor)
         selected = [story for story in stories
                     if int(story.get("product", self.product_id)) == self.product_id
@@ -74,6 +78,8 @@ class NativeSdkService:
             selected = [story for story in selected if query.casefold() in _text(story.get("title")).casefold()]
         if status:
             selected = [story for story in selected if story.get("status") == status]
+        if owner:
+            selected = [story for story in selected if story.get("assignedTo") == owner]
         total = len(selected)
         selected = selected[(page - 1) * _PAGE_SIZE:page * _PAGE_SIZE]
         sources = self.repository.sources_for([_positive_id(story.get("id")) for story in selected])
@@ -140,6 +146,51 @@ class NativeSdkService:
                           for task in tasks if isinstance(task, dict)],
                 "page": page, "total": int(pager.get("recTotal", 0))}
 
+    async def task(self, actor: AuthContext, task_id: int) -> dict:
+        if task_id < 1:
+            raise HTTPException(404, "sdk_task_not_found")
+        account = await self.client.account(actor)
+        body = await self.client.request(actor, "GET", f"tasks/{task_id}")
+        task = body.get("task")
+        if not isinstance(task, dict) or _positive_id(task.get("id")) != task_id:
+            raise HTTPException(502, "sdk_zentao_response_invalid")
+        if task.get("deleted") in {"1", 1, True} or task.get("assignedTo") != account:
+            raise HTTPException(404, "sdk_task_not_found")
+        execution_id = _positive_id(task.get("execution"))
+        execution = await self.client.request(actor, "GET", f"executions/{execution_id}", api_version=1)
+        if (not isinstance(execution, dict) or _positive_id(execution.get("id")) != execution_id
+                or not isinstance(execution.get("products"), list)):
+            raise HTTPException(502, "sdk_zentao_response_invalid")
+        if not any(isinstance(product, dict) and str(product.get("id")) == str(self.product_id)
+                   for product in execution["products"]):
+            raise HTTPException(404, "sdk_task_not_found")
+        story_id = int(task.get("story") or task.get("storyID") or 0)
+        if story_id:
+            try:
+                await self._current_story(actor, story_id)
+            except HTTPException as error:
+                if error.status_code == 404:
+                    raise HTTPException(404, "sdk_task_not_found") from None
+                raise
+        actions = body.get("actions", [])
+        if not isinstance(actions, list):
+            raise HTTPException(502, "sdk_zentao_response_invalid")
+        names = self.repository.names_for([account, *[_text(action.get("actor"))
+                                                     for action in actions if isinstance(action, dict)]])
+        return {"id": task_id, "name": _text(task.get("name")),
+                "status": _text(task.get("status")), "assignee": account,
+                "assignee_name": names.get(account, account), "story_id": story_id,
+                "opened_date": _text(task.get("openedDate")),
+                "planned_start": _text(task.get("estStarted")),
+                "deadline": _text(task.get("deadline")),
+                "description": _text(task.get("desc")), "execution_id": execution_id,
+                "execution_name": _text(execution.get("name")),
+                "actions": [{"id": action.get("id"), "action": _text(action.get("action")),
+                             "actor": _text(action.get("actor")),
+                             "actor_name": names.get(_text(action.get("actor")), _text(action.get("actor"))),
+                             "date": _text(action.get("date")), "comment": _text(action.get("comment"))}
+                            for action in actions if isinstance(action, dict)][:100]}
+
     async def members(self, actor: AuthContext) -> dict:
         # The personal transport verifies SDK eligibility before exposing the selector.
         await self.client.account(actor)
@@ -157,8 +208,12 @@ class NativeSdkService:
             "device_platform": intent["device_platform"],
         })
 
-    def _member(self, account: str | None) -> None:
-        if account is not None and not self.repository.member_account(account):
+    async def _member(self, account: str | None) -> None:
+        if account is None:
+            return
+        if self.sso_service is not None:
+            await run_in_threadpool(self.repository.ensure_member, account, self.sso_service)
+        elif not self.repository.member_account(account):
             raise HTTPException(422, "sdk_member_not_bound")
 
     async def _current_story(self, actor: AuthContext, story_id: int,
@@ -203,9 +258,9 @@ class NativeSdkService:
                 "requirement": await self.requirement(actor, story_id)}
 
     async def create_requirement(self, actor: AuthContext, body: dict) -> dict:
+        if not body.get("reviewer"):
+            raise HTTPException(422, "sdk_reviewer_required")
         account = await self.client.account(actor)
-        self._member(body.get("assigned_to"))
-        self._member(body.get("reviewer"))
         request_id = body["request_id"]
         if not isinstance(request_id, UUID):
             request_id = UUID(str(request_id))
@@ -224,7 +279,16 @@ class NativeSdkService:
                 raise HTTPException(intent["rejection_status"], intent["rejection_detail"])
             return await self._reconcile_create(actor, intent, body)
 
-        reviewer = body.get("reviewer")
+        try:
+            for target in {body.get("assigned_to"), body["reviewer"]} - {None}:
+                await self._member(target)
+        except HTTPException as error:
+            # No story request has been sent, so the intent can be rejected safely.
+            self.repository.reject_create(actor.internal_user_id, request_id,
+                                          error.status_code, "sdk_create_rejected")
+            raise HTTPException(error.status_code, "sdk_create_rejected") from None
+
+        reviewer = body["reviewer"]
         source = "由 SDK 开发管理平台录入"
         if body.get("business_proposer"):
             source += f"；业务提出人：{body['business_proposer']}"
@@ -233,8 +297,8 @@ class NativeSdkService:
         payload = {"product": self.product_id, "title": body["title"],
                    "spec": body["scenario"], "verify": body["acceptance"],
                    "pri": body["priority"], "category": "feature",
-                   "reviewer": [reviewer] if reviewer else [],
-                   "status": "active" if reviewer else "draft",
+                   "reviewer": [reviewer],
+                   "status": "active",
                    "source": "user", "sourceNote": source, "keywords": marker}
         try:
             created = await self.client.request(actor, "POST", "stories", payload,
@@ -293,7 +357,7 @@ class NativeSdkService:
     async def assign_requirement(self, actor: AuthContext, story_id: int, *,
                                  expected_version: int, assigned_to: str) -> dict:
         await self.client.account(actor)
-        self._member(assigned_to)
+        await self._member(assigned_to)
         before = await self._current_story(actor, story_id, expected_version)
         if before.get("status") not in {"draft", "reviewing", "active"}:
             raise HTTPException(409, "sdk_requirement_status_conflict")

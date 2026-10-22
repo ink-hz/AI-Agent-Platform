@@ -7,6 +7,9 @@ from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 from app.control_plane.dsn import validate_control_dsn
+from .annual_reconcile import _prepare_account
+from .provision import ProvisionConflict, ProvisionRejected, ProvisionUnavailable
+from .sso_repository import SdkSsoRepository
 
 
 class NativeSdkRepository:
@@ -64,7 +67,14 @@ class NativeSdkRepository:
                     "on person.internal_user_id=binding.internal_user_id "
                     "where binding.account=any(%s)", (selected,),
                 ).fetchall()
-            return {row["account"]: row["display_name"] for row in rows}
+                directory = connection.execute("select * from sdk.scoped_people()").fetchall()
+            names = {row["account"]: row["display_name"] for row in rows}
+            for row in directory:
+                if row["identity_available"]:
+                    account = self._member_account(row)
+                    if account in selected:
+                        names[account] = row["display_name"]
+            return names
         except psycopg.Error:
             raise HTTPException(503, "sdk_source_store_unavailable") from None
 
@@ -86,14 +96,66 @@ class NativeSdkRepository:
         try:
             with self._connection() as connection:
                 rows = connection.execute(
-                    "select binding.account,person.display_name as name "
-                    "from sdk.sso_bindings binding "
-                    "join platform_control.internal_users person "
-                    "on person.internal_user_id=binding.internal_user_id "
-                    "where sdk.sso_eligible(binding.internal_user_id) "
-                    "order by person.display_name,binding.account limit 500",
+                    "select * from sdk.scoped_people()",
                 ).fetchall()
-            return [dict(row) for row in rows]
+            selected = [row for row in rows if row["identity_available"]]
+            counts: dict[str, int] = {}
+            for row in selected:
+                counts[row["display_name"]] = counts.get(row["display_name"], 0) + 1
+            members = []
+            for row in selected:
+                account = self._member_account(row)
+                name = row["display_name"]
+                members.append({"account": account, "name": name,
+                                "label": f"{name}（{account[-8:]}）" if counts[name] > 1 else name})
+            return sorted(members, key=lambda item: (item["name"], item["account"]))
+        except psycopg.Error:
+            raise HTTPException(503, "sdk_member_store_unavailable") from None
+
+    @staticmethod
+    def _member_account(row: dict) -> str:
+        return (row["bound_account"] or row["intent_account"]
+                or SdkSsoRepository.account_for(row["member_key"]))
+
+    def ensure_member(self, account: str, sso_service) -> str:
+        """Recheck directory scope, then prepare a selectable ZenTao account."""
+        if not account:
+            raise HTTPException(422, "sdk_member_not_eligible")
+        try:
+            with self._connection() as connection:
+                rows = connection.execute("select * from sdk.scoped_people()").fetchall()
+                matches = [row for row in rows if row["identity_available"]
+                           and self._member_account(row) == account]
+                if len(matches) != 1:
+                    raise HTTPException(422, "sdk_member_not_eligible")
+                row = matches[0]
+                if row["bound_account"]:
+                    if row["intent_state"] == "suspended" and row["internal_user_id"]:
+                        sso_service._ensure_personal_account(row["internal_user_id"])
+                    return account
+                if row["intent_account"]:
+                    if not row["internal_user_id"]:
+                        raise HTTPException(409, "sdk_member_identity_conflict")
+                    sso_service._ensure_personal_account(row["internal_user_id"])
+                    return account
+                if sso_service.provisioner is None:
+                    raise HTTPException(503, "sdk_provision_unavailable")
+                prepared = _prepare_account(connection, sso_service.provisioner, row)
+                if prepared != account:
+                    raise HTTPException(409, "sdk_member_identity_conflict")
+                return account
+        except ProvisionUnavailable:
+            raise HTTPException(503, "sdk_provision_reconcile_required") from None
+        except ProvisionConflict:
+            raise HTTPException(409, "sdk_provision_account_conflict") from None
+        except ProvisionRejected:
+            raise HTTPException(502, "sdk_provision_zentao_rejected") from None
+        except ValueError:
+            raise HTTPException(422, "sdk_provision_identity_invalid") from None
+        except RuntimeError as error:
+            if str(error) == "sdk_directory_person_changed":
+                raise HTTPException(422, "sdk_member_not_eligible") from None
+            raise HTTPException(409, str(error)) from None
         except psycopg.Error:
             raise HTTPException(503, "sdk_member_store_unavailable") from None
 

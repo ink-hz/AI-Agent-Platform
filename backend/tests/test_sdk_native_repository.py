@@ -66,6 +66,11 @@ class Connection:
             return Result(all=[self.supplements[i] for i in args[0] if i in self.supplements])
         if "from sdk.plan_story_sources" in sql:
             return Result(all=[])
+        if "from sdk.scoped_people()" in sql:
+            return Result(all=[{"member_key": ACTOR, "internal_user_id": ACTOR,
+                                "display_name": "行云", "bound_account": "sdk_owner",
+                                "intent_account": None, "intent_state": "bound",
+                                "identity_available": True}])
         if "from sdk.sso_bindings" in sql:
             if "where binding.account=" in sql:
                 return Result(one={"account": args[0]} if args[0] == "sdk_owner" else None)
@@ -97,14 +102,15 @@ def test_create_intent_is_durable_and_repeated_request_cannot_change_payload():
     assert repository.source_for(77)["device_platform"] == "Gemini 330"
 
 
-def test_member_selector_contains_only_current_bound_sdk_users():
+def test_member_selector_reads_current_directory_scope():
     connection = Connection()
     repository = repo(connection)
     assert repository.member_account("sdk_owner")
     assert not repository.member_account("outsider")
-    assert repository.members() == [{"account": "sdk_owner", "name": "行云"}]
+    assert repository.members() == [{"account": "sdk_owner", "name": "行云", "label": "行云"}]
     statements = "\n".join(sql for sql, _ in connection.statements)
     assert "sdk.sso_eligible" in statements
+    assert "sdk.scoped_people()" in statements
 
 
 def test_native_write_migration_limits_grants_to_platform_app():

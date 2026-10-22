@@ -92,9 +92,11 @@ def build_sdk_native_router() -> APIRouter:
     async def requirements(request: Request, page: int = Query(1, ge=1, le=1000),
                            view: str = Query("q4", pattern="^(q4|all)$"),
                            query: str = Query("", max_length=200),
+                           owner: str = Query("", max_length=40),
                            status: str = Query("", pattern="^(|draft|reviewing|active|closed|changing)$")):
         return await _respond(_service(request).list_requirements(
-            _actor(request), page=page, view=view, query=query.strip(), status=status))
+            _actor(request), page=page, view=view, query=query.strip(), status=status,
+            owner=owner.strip()))
 
     @router.get("/members")
     async def members(request: Request):
@@ -133,5 +135,9 @@ def build_sdk_native_router() -> APIRouter:
     @router.get("/my-tasks")
     async def my_tasks(request: Request, page: int = Query(1, ge=1, le=1000)):
         return await _respond(_service(request).my_tasks(_actor(request), page=page))
+
+    @router.get("/tasks/{task_id}")
+    async def task(request: Request, task_id: int):
+        return await _respond(_service(request).task(_actor(request), task_id))
 
     return router

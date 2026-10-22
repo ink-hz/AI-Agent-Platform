@@ -1408,6 +1408,7 @@ def create_app(
             sdk_native_service = NativeSdkService(
                 sdk_native_client, NativeSdkRepository(control_database_url),
                 product_id=config.sdk_zentao_product_id,
+                sso_service=sdk_sso_service,
             )
     if config.voc_extension_enabled and identity_enabled:
         bot_subject_resolver = getattr(

@@ -136,7 +136,7 @@ class FakePersonalClient:
         raise AssertionError((method, path))
 
 
-def form(*, reviewer=None, assigned_to=None):
+def form(*, reviewer="sdk_reviewer", assigned_to=None):
     return {"request_id": REQUEST, "title": "新需求", "scenario": "客户现场采集",
             "device_platform": "Gemini 330 / Linux", "acceptance": "连续采集一小时",
             "priority": 2, "business_proposer": "客户A", "reviewer": reviewer,
@@ -144,21 +144,32 @@ def form(*, reviewer=None, assigned_to=None):
 
 
 @pytest.mark.asyncio
-async def test_create_draft_uses_personal_session_and_is_idempotent():
+async def test_create_requires_explicit_reviewer_before_reserving_or_writing():
+    client, repo = FakePersonalClient(), MemoryRepository()
+    service = NativeSdkService(client, repo, product_id=1)
+    with pytest.raises(HTTPException) as error:
+        await service.create_requirement(ACTOR, form(reviewer=None))
+    assert (error.value.status_code, error.value.detail) == (422, "sdk_reviewer_required")
+    assert client.calls == []
+    assert repo.intents == {}
+
+
+@pytest.mark.asyncio
+async def test_create_with_reviewer_uses_personal_session_and_is_idempotent():
     client, repo = FakePersonalClient(), MemoryRepository()
     service = NativeSdkService(client, repo, product_id=1)
     first = await service.create_requirement(ACTOR, form())
     second = await service.create_requirement(ACTOR, form())
     assert first["status"] == second["status"] == "created"
-    assert first["requirement"]["status"] == "draft"
+    assert first["requirement"]["status"] == "reviewing"
     assert first["requirement"]["business_proposer"] == "客户A"
     assert first["requirement"]["device_platform"] == "Gemini 330 / Linux"
     assert first["requirement"]["source"]["device_platform"] == "Gemini 330 / Linux"
     assert [call[1] for call in client.calls].count("stories") == 1
     posted = next(call for call in client.calls if call[1] == "stories")
     assert posted[3] == 1
-    assert posted[2]["status"] == "draft"
-    assert posted[2]["reviewer"] == []
+    assert posted[2]["status"] == "active"
+    assert posted[2]["reviewer"] == ["sdk_reviewer"]
     assert "needNotReview" not in posted[2]
 
 
@@ -172,6 +183,27 @@ async def test_create_with_reviewer_stays_in_review_and_assigns_bound_member():
     posted = next(call for call in client.calls if call[1] == "stories")
     assert posted[2]["reviewer"] == ["sdk_reviewer"]
     assert posted[2]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_selected_unbound_people_are_prepared_before_create_and_repeated_request_is_safe():
+    class DirectoryRepository(MemoryRepository):
+        def __init__(self):
+            super().__init__()
+            self.prepared = []
+
+        def ensure_member(self, account, sso_service):
+            assert sso_service is not None
+            self.prepared.append(account)
+            return account
+
+    client, repo = FakePersonalClient(), DirectoryRepository()
+    service = NativeSdkService(client, repo, product_id=1, sso_service=object())
+    first = await service.create_requirement(ACTOR, form(reviewer="sdk_future", assigned_to="sdk_future"))
+    again = await service.create_requirement(ACTOR, form(reviewer="sdk_future", assigned_to="sdk_future"))
+    assert first["requirement"]["assigned_to"] == again["requirement"]["assigned_to"] == "sdk_future"
+    assert repo.prepared == ["sdk_future"]
+    assert [call[1] for call in client.calls].count("stories") == 1
 
 
 @pytest.mark.asyncio
@@ -228,6 +260,52 @@ async def test_pending_create_blocks_new_request_id_and_can_be_recovered_without
     assert recovered["status"] == "created"
     assert recovered["story_id"] == 70
     assert [call[1] for call in client.calls].count("stories") == 1
+
+
+@pytest.mark.asyncio
+async def test_pending_intent_blocks_new_request_before_other_target_is_provisioned():
+    class TrackingRepository(MemoryRepository):
+        def __init__(self):
+            super().__init__()
+            self.provisioned = []
+
+        def ensure_member(self, account, sso_service):
+            self.provisioned.append(account)
+            return account
+
+    client, repo = FakePersonalClient(), TrackingRepository()
+    client.fail_create = True
+    service = NativeSdkService(client, repo, product_id=1, sso_service=object())
+    assert (await service.create_requirement(ACTOR, form()))["status"] == "reconciliation_required"
+    with pytest.raises(HTTPException) as blocked:
+        await service.create_requirement(ACTOR, {**form(assigned_to="sdk_new_person"),
+            "request_id": UUID("44444444-4444-4444-8444-444444444444")})
+    assert blocked.value.detail == "sdk_create_pending_reconciliation"
+    assert repo.provisioned == ["sdk_reviewer"]
+
+
+@pytest.mark.asyncio
+async def test_failed_target_provision_rejects_intent_without_posting_story():
+    class FailingRepository(MemoryRepository):
+        fail = True
+
+        def ensure_member(self, account, sso_service):
+            if self.fail:
+                raise HTTPException(503, "sdk_provision_reconcile_required")
+            return account
+
+    client, repo = FakePersonalClient(), FailingRepository()
+    service = NativeSdkService(client, repo, product_id=1, sso_service=object())
+    for _ in range(2):
+        with pytest.raises(HTTPException) as failure:
+            await service.create_requirement(ACTOR, form())
+        assert (failure.value.status_code, failure.value.detail) == (503, "sdk_create_rejected")
+    assert repo.pending_create(ACTOR.internal_user_id) is None
+    assert not any(call[1] == "stories" for call in client.calls)
+    repo.fail = False
+    result = await service.create_requirement(ACTOR, {**form(),
+        "request_id": UUID("44444444-4444-4444-8444-444444444444")})
+    assert result["status"] == "created"
 
 
 @pytest.mark.asyncio

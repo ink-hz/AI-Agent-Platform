@@ -26,6 +26,9 @@ class PersonalClient:
              "sourceNote": "", "openedBy": "sdk_import", "assignedTo": "", "version": 1},
         ]
 
+    async def account(self, actor):
+        return "sdk_owner"
+
     async def request(self, actor, method, path, payload=None, params=None, *, api_version=2):
         self.calls.append((actor.internal_user_id, method, path, params, api_version))
         if path == "products/1/stories":
@@ -41,6 +44,20 @@ class PersonalClient:
             return {"status": "success", "tasks": [{"id": 4, "name": "实现", "status": "doing", "assignedTo": "sdk_owner", "story": 69,
                 "openedDate": "2026-10-21 08:00:00", "estStarted": "2026-10-22", "deadline": "2026-10-29"}],
                 "pager": {"recTotal": 1, "pageTotal": 1}}
+        if path in {"tasks/4", "tasks/7"}:
+            task_id = int(path.split("/")[1])
+            return {"status": "success", "task": {
+                "id": task_id, "name": "实现", "status": "doing", "assignedTo": "sdk_owner",
+                "story": 69 if task_id == 4 else 70,
+                "execution": 9 if task_id == 4 else 8,
+                "desc": "实现接口", "openedDate": "2026-10-21 08:00:00",
+                "estStarted": "2026-10-22", "deadline": "2026-10-29",
+            }, "actions": [{"id": 2, "actor": "sdk_owner", "action": "started",
+                            "date": "2026-10-22 10:00:00", "comment": "开始"}]}
+        if path in {"executions/9", "executions/8"}:
+            execution_id = int(path.split("/")[1])
+            return {"id": execution_id, "name": "SDK 项目" if execution_id == 9 else "其他项目",
+                    "products": [{"id": 1 if execution_id == 9 else 5}]}
         raise AssertionError(path)
 
 
@@ -118,6 +135,30 @@ async def test_my_tasks_are_read_with_the_current_personal_zen_session():
         "assignee_name": "行云", "story_id": 69, "opened_date": "2026-10-21 08:00:00",
         "planned_start": "2026-10-22", "deadline": "2026-10-29"}]
     assert personal.calls[0][2] == "my/tasks"
+
+
+@pytest.mark.asyncio
+async def test_owner_filter_uses_exact_zentao_assignee():
+    app, _ = make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as browser:
+        selected = await browser.get("/api/v1/sdk/native/requirements?view=all&owner=sdk_owner")
+        empty = await browser.get("/api/v1/sdk/native/requirements?view=all&owner=sdk_reviewer")
+    assert [item["id"] for item in selected.json()["items"]] == [69]
+    assert empty.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_task_detail_requires_personal_assignment_and_sdk_execution_product():
+    app, personal = make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as browser:
+        detail = await browser.get("/api/v1/sdk/native/tasks/4")
+        outside = await browser.get("/api/v1/sdk/native/tasks/7")
+    assert detail.status_code == 200
+    assert detail.json()["description"] == "实现接口"
+    assert detail.json()["execution_id"] == 9
+    assert detail.json()["actions"][0]["actor_name"] == "行云"
+    assert outside.status_code == 404
+    assert (ACTOR, "GET", "executions/9", None, 1) in personal.calls
 
 
 @pytest.mark.asyncio
