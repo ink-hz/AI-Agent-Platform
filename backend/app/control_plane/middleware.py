@@ -12,6 +12,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Match
 
 from app.spa import is_public_build_asset
+from app.sdk_admin_paths import SDK_ADMIN_SHELL
 
 from .client_address import UntrustedForwardingHeaders, resolve_edge_source
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limit_response
@@ -281,6 +282,7 @@ def is_public_request(
         or _PUBLIC_MARKETING_WORKSPACE_SHELL.fullmatch(local) is not None
         or _PUBLIC_AI_NOTES_SHELL.fullmatch(local) is not None
         or _PUBLIC_SDK_WORKSPACE_SHELL.fullmatch(local) is not None
+        or SDK_ADMIN_SHELL.fullmatch(local) is not None
     ):
         return True
     if (

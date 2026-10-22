@@ -51,6 +51,20 @@ it('gives SDK requirements the full work area without the platform sidebar',asyn
  expect(box.querySelector('main')?.classList.contains('is-sdk-workspace')).toBe(true);
  expect(box.querySelector('main')?.textContent).toContain('SDK 需求管理');
 });
+it('gives SDK management its own navigation area and keeps enterprise identity',async()=>{
+ await act(async()=>root.render(<AppShell route={{name:'sdk-admin',section:'knowledge',documentId:'KB-API-001'}} account={member}><p>SDK 知识正文</p></AppShell>));
+ expect(box.querySelector('.platform-sidebar')).toBeNull();
+ expect(box.querySelector('.platform-nav-toggle')).toBeNull();
+ expect(box.querySelector('main')?.classList.contains('is-sdk-workspace')).toBe(true);
+ expect(box.querySelector('.account-chip')?.textContent).toBe('苍渊');
+ expect(box.querySelector('main')?.textContent).toContain('SDK 知识正文');
+});
+it('uses the portal access decision for its SDK management navigation entry',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async(input:string)=>new Response(JSON.stringify(input.endsWith('/api/v1/sdk-admin/access') ? {allowed:true} : {}),{status:input.endsWith('/api/v1/sdk-admin/access') ? 200 : 503})));
+ await render('member',{name:'brain'});
+ expect(link('/sdk-admin')?.textContent).toContain('SDK 开发管理');
+ expect(link('/sdk/')).toBeNull();
+});
 it('opens AI notes without a top navigation bar or platform sidebar',async()=>{
  await act(async()=>root.render(<AppShell route={{name:'ai-note',categorySlug:'foundations',articleSlug:'handbook'}} account={member}><p>文章正文</p></AppShell>));
  expect(box.querySelector('.ai-notes-standalone-shell')).not.toBeNull();

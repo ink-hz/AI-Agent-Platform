@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent } from 'react';
 import { Activity, BookOpen, Bot, Boxes, ClipboardList, Code2, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
-import { sdkApi } from '../sdk/sdkApi';
+import { sdkAdminClient } from '../sdk-admin/sdkAdminApi';
 
 interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; newTab?: boolean; routes: readonly string[] }
 interface Group { label: string; items: Item[]; hideHeading?: boolean }
@@ -29,8 +29,7 @@ function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = fa
     ] },
     { label:'AI 工作', items:manager ? [...aiWork.slice(0,2), {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}, ...aiWork.slice(2)] : aiWork },
     { label:'业务工作台', items:[
-      // The SDK document is served directly by ZenTao after edge SSO.
-      ...(sdkAvailable ? [{ label:'SDK 开发管理', path:'/sdk/', icon:Code2, external:true, routes:['sdk'] }] : []),
+      ...(sdkAvailable ? [{ label:'SDK 开发管理', path:'/sdk-admin', icon:Code2, routes:['sdk-admin'] }] : []),
       { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
       { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },
       { label:'行政服务', path:'/office/', icon:Building2, external:true, routes:[] },
@@ -60,7 +59,7 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
   useEffect(() => {
     if (!account) { setSdkAvailable(false); return; }
     let live = true;
-    void sdkApi.me().then(me => { if (live) setSdkAvailable(Boolean(me.role || me.can_manage)); })
+    void sdkAdminClient.access().then(access => { if (live) setSdkAvailable(access.allowed); })
       .catch(() => { if (live) setSdkAvailable(false); });
     return () => { live = false; };
   }, [account?.internal_user_id]);

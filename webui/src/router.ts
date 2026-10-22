@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { parseSdkAdminPath, type SdkAdminSection } from "./sdk-admin/sdkAdminPaths";
 import { workspaceGroup, allowPanoramaNavigation } from "./panoramaNavigation";
 
 import { localPathname, platformPath } from "./auth";
@@ -23,6 +24,7 @@ export type Route =
   | { name: "mission"; missionId: string }
   | { name: "agents" }
   | { name: "sdk"; storyId?: number; taskId?: number; tab?: "tasks" }
+  | { name: "sdk-admin"; section: SdkAdminSection; documentId?: string }
   | { name: "voc-workspace" }
   | { name: "hr"; positionId?: string; workId?: string }
   | { name: "hr-chat" }
@@ -214,6 +216,10 @@ export function safeLegacyWorkspaceSearch(targetPath: string, sourceSearch: stri
 
 export function parseRoute(pathname: string, search = ""): Route {
   const local = localPathname(pathname);
+  if (local.startsWith("/sdk-admin")) {
+    const sdkAdmin = parseSdkAdminPath(local);
+    return sdkAdmin ? { name: "sdk-admin", ...sdkAdmin } : { name: "not-found" };
+  }
   const clean = local === "/" ? "/" : local.replace(/\/+$/, "");
   if (clean === "/login") return { name: "login" };
   if (clean === "/account") return { name: "account" };
@@ -426,6 +432,7 @@ export function routePath(route: Route): string {
     case "mission": return `/missions/${encodeURIComponent(route.missionId)}`;
     case "agents": return "/agents";
     case "sdk": return route.storyId ? `/sdk/requirements/${route.storyId}` : route.taskId ? `/sdk/tasks/${route.taskId}` : route.tab === "tasks" ? "/sdk/tasks" : "/sdk/";
+    case "sdk-admin": return route.documentId ? `/sdk-admin/knowledge/${route.documentId}` : route.section === "overview" ? "/sdk-admin" : `/sdk-admin/${route.section}`;
     case "voc-workspace": return "/agents/voc/workspace";
 
     case "hr-chat": return "/hr/chat";
@@ -480,7 +487,7 @@ export function routeSection(route: Route): RouteSection | null {
   if (route.name === "missions" || route.name === "mission") return "missions";
   if (route.name === "ai-notes" || route.name === "ai-note") return "ai-notes";
   if (route.name === "account") return "account";
-  if (route.name === "sdk") return "sdk";
+  if (route.name === "sdk" || route.name === "sdk-admin") return "sdk";
   if (route.name.startsWith("fae-manage-")) return "fae";
   if (route.name.startsWith("admin-")) return "admin";
   return null;

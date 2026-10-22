@@ -19,6 +19,26 @@ afterEach(() => {
 
 
 describe("Platform router", () => {
+  it.each([
+    ["/sdk-admin", "overview"], ["/sdk-admin/", "overview"],
+    ["/sdk-admin/products", "products"], ["/sdk-admin/delivery", "delivery"],
+    ["/sdk-admin/diagnostics", "diagnostics"], ["/sdk-admin/knowledge", "knowledge"],
+  ])("opens the independent SDK management destination %s", (path, section) => {
+    const route = parseRoute(path);
+    expect(route).toEqual({ name: "sdk-admin", section });
+    expect(routeSection(route)).toBe("sdk");
+    expect(parseRoute(routePath(route))).toEqual(route);
+  });
+  it("preserves knowledge IDs without entering the ZenTao proxy", () => {
+    const route = parseRoute("/sdk-admin/knowledge/KB-PROP-OB_PROP_COLOR_GAIN_INT");
+    expect(route).toEqual({ name: "sdk-admin", section: "knowledge", documentId: "KB-PROP-OB_PROP_COLOR_GAIN_INT" });
+    expect(routePath(route)).toBe("/sdk-admin/knowledge/KB-PROP-OB_PROP_COLOR_GAIN_INT");
+  });
+  it.each(["/sdk-admin-evil", "/sdk-admin/other", "/sdk-admin/knowledge/..", "/sdk-admin/knowledge/%2e%2e",
+    "/sdk-admin/knowledge/KB-API-001/extra", "/sdk-admin/knowledge/KB%2fAPI", "/sdk-admin/knowledge/a\\b",
+    "/sdk-admin//", `/sdk-admin/knowledge/${"a".repeat(161)}`])("rejects noncanonical SDK management route %s", path => {
+    expect(parseRoute(path)).toEqual({ name: "not-found" });
+  });
   it("keeps SDK requirement and detail routes inside the Platform shell", () => {
     expect(parseRoute("/sdk/")).toEqual({ name: "sdk" });
     expect(parseRoute("/sdk/requirements/12")).toEqual({ name: "sdk", storyId: 12 });
