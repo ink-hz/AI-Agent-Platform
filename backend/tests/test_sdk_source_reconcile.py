@@ -399,3 +399,271 @@ def test_excel_row_and_merge_upper_boundary_are_accepted():
     report = run(c, data, book)
     assert report["source_records"] == c["records"]
     assert len(report["alias_proposals"]) == 1
+
+
+def cli_inputs(tmp_path, candidate=None, export=None):
+    c, data, book = fixture()
+    paths = [tmp_path / n for n in ("candidate.json", "plan.csv", "source.xlsx")]
+    for path, payload in zip(paths, (encoded(c if candidate is None else candidate), data, book)):
+        path.write_bytes(payload)
+    argv = [item for flag, path in zip(("--candidates", "--csv", "--workbook"), paths)
+            for item in (flag, str(path))]
+    if export is not None:
+        path = tmp_path / "export.json"
+        path.write_bytes(encoded(export))
+        paths.append(path)
+        argv += ["--existing-export", str(path)]
+    output = tmp_path / "report.json"
+    return paths, output, argv + ["--output", str(output)]
+
+
+def input_hashes(paths):
+    return [hashlib.sha256(p.read_bytes()).hexdigest() for p in paths]
+
+
+def test_cli_output_is_explicit_exclusive_and_cannot_replace_input(tmp_path, capsys):
+    from app.sdk_workbench.source_reconcile_cli import main
+    inputs, output, argv = cli_inputs(tmp_path)
+    before = input_hashes(inputs)
+    assert main(argv) == 0
+    original = output.read_bytes()
+    assert json.loads(original)["existing_objects"]["collection_state"] == "not_collected"
+    assert capsys.readouterr() == ("", "")
+    assert main(argv) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "output_exists", "path": "output"}
+    assert output.read_bytes() == original
+    for target in inputs:
+        assert main(argv[:-1] + [str(target)]) == 2
+        assert json.loads(capsys.readouterr().err) == {"error": "output_is_input", "path": "output"}
+    hardlink = tmp_path / "alias.json"
+    hardlink.hardlink_to(inputs[0])
+    assert main(argv[:-1] + [str(hardlink)]) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "output_is_input", "path": "output"}
+    assert input_hashes(inputs) == before
+
+
+@pytest.mark.parametrize("kind", ["input", "dangling", "loop"])
+def test_cli_never_replaces_existing_symlink(tmp_path, capsys, kind):
+    from app.sdk_workbench.source_reconcile_cli import main
+    inputs, output, argv = cli_inputs(tmp_path)
+    before = input_hashes(inputs)
+    target = inputs[0] if kind == "input" else tmp_path / "never-created"
+    if kind == "loop":
+        target = output
+    output.symlink_to(target)
+    assert main(argv) == 2
+    error = json.loads(capsys.readouterr().err)
+    assert error == {"error": "output_is_input" if kind == "input" else "output_exists", "path": "output"}
+    assert output.is_symlink()
+    assert input_hashes(inputs) == before
+    if kind == "dangling":
+        assert not target.exists()
+
+
+@pytest.mark.parametrize("change,expected", [
+    (lambda c: c.update(schema_version="private-original-content"), {"error": "candidate_schema", "path": "schema_version"}),
+    (lambda c: c["records"][0].update(source_date_interpretations=[dict(cell="E2", raw_value="")]),
+     {"error": "candidate_dates", "path": "E2"}),
+])
+def test_cli_invalid_input_leaves_no_report(tmp_path, capsys, change, expected):
+    from app.sdk_workbench.source_reconcile_cli import main
+    c, _, _ = fixture()
+    change(c)
+    inputs, output, argv = cli_inputs(tmp_path, candidate=c)
+    before = input_hashes(inputs)
+    assert main(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == expected
+    assert not output.exists()
+    assert input_hashes(inputs) == before
+
+
+@pytest.mark.parametrize("payload,expected", [
+    (b"private-original-content", {"error": "candidate_json", "path": "$"}),
+    (b"{}", {"error": "candidate_schema", "path": "schema_version"}),
+])
+def test_cli_bad_json_is_sanitized(tmp_path, capsys, payload, expected):
+    from app.sdk_workbench.source_reconcile_cli import main
+    inputs, output, argv = cli_inputs(tmp_path)
+    inputs[0].write_bytes(payload)
+    before = input_hashes(inputs)
+    assert main(argv) == 2
+    assert json.loads(capsys.readouterr().err) == expected
+    assert not output.exists()
+    assert input_hashes(inputs) == before
+
+
+@pytest.mark.parametrize("arguments", [[], ["--unknown", "private-argument"],
+    ["--candidates"], ["--candidates", "private-argument"],
+    ["--candidates", "a", "--csv", "b", "--workbook", "c", "--output", "d", "--unknown=private-argument"],
+    ["--candidates", "a", "--csv", "b", "--workbook", "c", "--out", "private-argument"]])
+def test_cli_argument_errors_return_fixed_json_without_values(capsys, arguments):
+    from app.sdk_workbench.source_reconcile_cli import main
+    assert main(arguments) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {"error": "invalid_arguments", "path": "arguments"}
+
+
+def test_cli_help_returns_zero_without_reading_files(capsys):
+    from app.sdk_workbench.source_reconcile_cli import main
+    assert main(["--help"]) == 0
+    captured = capsys.readouterr()
+    assert "--existing-export" in captured.out
+    assert captured.err == ""
+
+
+def test_cli_preserves_csv_error_code_without_original_content(tmp_path, capsys):
+    from app.sdk_workbench.source_reconcile_cli import main
+    inputs, output, argv = cli_inputs(tmp_path)
+    inputs[1].write_bytes(b"private-original-content")
+    before = input_hashes(inputs)
+    assert main(argv) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "sdk_plan_csv_header", "path": "csv"}
+    assert not output.exists()
+    assert input_hashes(inputs) == before
+
+
+@pytest.mark.parametrize("kind", ["missing_input", "input_directory", "missing_parent", "nul_input", "nul_output"])
+def test_cli_file_failures_are_sanitized(tmp_path, capsys, kind):
+    from app.sdk_workbench.source_reconcile_cli import main
+    inputs, output, argv = cli_inputs(tmp_path)
+    before = input_hashes(inputs)
+    if kind == "missing_input":
+        argv[1] = str(tmp_path / "private-missing-input")
+    elif kind == "input_directory":
+        argv[1] = str(tmp_path)
+    elif kind == "missing_parent":
+        argv[-1] = str(tmp_path / "private-missing-parent" / "report.json")
+    elif kind == "nul_input":
+        argv[1] = "private\x00input"
+    else:
+        argv[-1] = "private\x00output"
+    assert main(argv) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "file_io", "path": "explicit_files"}
+    assert not output.exists()
+    assert input_hashes(inputs) == before
+
+
+def test_cli_optional_export_readonly_and_output_alias_protection(tmp_path, capsys):
+    from app.sdk_workbench.source_reconcile_cli import main
+    c, data, _ = fixture()
+    inputs, output, argv = cli_inputs(tmp_path, export=existing(c, data))
+    before = input_hashes(inputs)
+    assert main(argv) == 0
+    report = json.loads(output.read_bytes())
+    assert report["existing_objects"]["collection_state"] == "observed"
+    assert report["production_import_eligible"] is False
+    assert capsys.readouterr() == ("", "")
+    assert main(argv[:-1] + [str(inputs[-1])]) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "output_is_input", "path": "output"}
+    assert input_hashes(inputs) == before
+
+
+def test_cli_output_race_preserves_existing_file(tmp_path, monkeypatch, capsys):
+    from app.sdk_workbench import source_reconcile_cli as cli
+    inputs, output, argv = cli_inputs(tmp_path)
+    before = input_hashes(inputs)
+    original = Path.open
+    def raced_open(path, mode="r", *args, **kwargs):
+        if path == output and mode == "x":
+            output.write_bytes(b"other writer")
+        return original(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", raced_open)
+    assert cli.main(argv) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "output_exists", "path": "output"}
+    assert output.read_bytes() == b"other writer"
+    assert input_hashes(inputs) == before
+
+
+def test_cli_write_failure_is_sanitized_and_keeps_failure_evidence(tmp_path, monkeypatch, capsys):
+    from app.sdk_workbench import source_reconcile_cli as cli
+    inputs, output, argv = cli_inputs(tmp_path)
+    before = input_hashes(inputs)
+    original = Path.open
+    class BrokenWriter:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def write(self, value):
+            raise OSError("private filesystem details")
+    def broken_open(path, mode="r", *args, **kwargs):
+        if path == output and mode == "x":
+            output.write_bytes(b"partial failure evidence")
+            return BrokenWriter()
+        return original(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", broken_open)
+    assert cli.main(argv) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "file_io", "path": "explicit_files"}
+    assert output.read_bytes() == b"partial failure evidence"
+    assert input_hashes(inputs) == before
+
+
+def test_cli_does_not_hide_unexpected_core_errors(tmp_path, monkeypatch):
+    from app.sdk_workbench import source_reconcile_cli as cli
+    _, output, argv = cli_inputs(tmp_path)
+    def broken_core(*args):
+        raise ValueError("core defect")
+    monkeypatch.setattr(cli, "reconcile", broken_core)
+    with pytest.raises(ValueError, match="core defect"):
+        cli.main(argv)
+    assert not output.exists()
+
+
+def test_cli_offline_boundary_and_module_entrypoint(tmp_path, monkeypatch, capsys):
+    import ast
+    import subprocess
+    from app.sdk_workbench import source_reconcile_cli as cli
+    tree = ast.parse(Path(cli.__file__).read_text())
+    imports = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    assert imports <= {"__future__", "pathlib", "source_reconcile"}
+    names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    assert names <= {"argparse", "json", "os", "sys"}
+    def forbidden(*args, **kwargs):
+        raise AssertionError("network called")
+    monkeypatch.setattr(socket, "socket", forbidden)
+    _, output, argv = cli_inputs(tmp_path)
+    assert cli.main(argv) == 0
+    assert capsys.readouterr() == ("", "")
+    second = tmp_path / "subprocess.json"
+    result = subprocess.run([sys.executable, "-m", "app.sdk_workbench.source_reconcile_cli", *argv[:-1], str(second)],
+                            capture_output=True, text=True, check=False)
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert output.read_bytes() == second.read_bytes()
+    failed = subprocess.run([sys.executable, "-m", "app.sdk_workbench.source_reconcile_cli", "--private=secret"],
+                            capture_output=True, text=True, check=False)
+    assert (failed.returncode, failed.stdout) == (2, "")
+    assert json.loads(failed.stderr) == {"error": "invalid_arguments", "path": "arguments"}
+
+
+def test_real_candidate_csv_end_to_end_if_explicit_paths(tmp_path):
+    import os
+    names = ("SDK_R0A_CANDIDATES", "SDK_R0A_CSV", "SDK_R0A_WORKBOOK")
+    paths = [os.environ.get(name) for name in names]
+    if not all(paths):
+        pytest.skip("real source paths not explicitly supplied")
+    from app.sdk_workbench.source_reconcile_cli import main
+    inputs = [Path(p) for p in paths]
+    before = input_hashes(inputs)
+    assert before == ["fd21cbe900ef08b647a8bc45f7499adc8ae7f9cf02f88c7085cd898c107939b8",
+                      "41df018a029f1d27417bec3008bbe7aab3becd785cc38b312c563ce18ee8370d",
+                      "402030f9a76fb966b23fc6c9ad843d5f9abd85bcdce1d685835440ae6c51b7d0"]
+    argv = ["--candidates", paths[0], "--csv", paths[1], "--workbook", paths[2]]
+    reports = []
+    for name in ("real-report.json", "again.json"):
+        output = tmp_path / name
+        assert main(argv + ["--output", str(output)]) == 0
+        reports.append(output.read_bytes())
+        assert input_hashes(inputs) == before
+    assert reports[0] == reports[1]
+    report = json.loads(reports[0])
+    assert report["control_counts"]["records"] == 69
+    assert report["control_counts"]["task_candidate"] == 67
+    assert report["control_counts"]["category_only"] == 2
+    assert report["control_counts"]["categories"] == 17
+    assert len(report["alias_proposals"]) == 69
+    assert report["review_queue"] == []
+    assert report["existing_objects"]["collection_state"] == "not_collected"
+    assert report["production_import_eligible"] is False
