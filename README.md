@@ -214,9 +214,9 @@ launchctl kickstart -k gui/$(id -u)/com.orbbec.ai-agent-platform
 
 ## 远端每日同步
 
-ADMIN 同步依赖的 observability schema 必须先由 owner 显式迁移。迁移命令只接受
-当前仓库内指定的 `011_admin_session_subject_links.sql` 和
-`014_admin_verified_sender_view.sql`，使用 advisory lock 和
+ADMIN 与 DAQ 同步依赖的 observability schema 必须先由 owner 显式迁移。迁移命令只接受
+当前仓库内指定的 `011_admin_session_subject_links.sql`、
+`014_admin_verified_sender_view.sql` 与 `015_daq_observability.sql`，使用 advisory lock 和
 SHA-256 ledger 防止并发执行与历史 SQL 漂移；owner DSN 文件必须是当前用户拥有的
 绝对路径、普通非链接文件且权限严格为 `0600`：
 
@@ -228,12 +228,25 @@ deploy/migrate-observability \
 deploy/migrate-observability \
   /absolute/private/path/flywheel-owner-database-url \
   "$(pwd)/backend/migrations/014_admin_verified_sender_view.sql"
+
+deploy/migrate-observability \
+  /absolute/private/path/flywheel-owner-database-url \
+  "$(pwd)/backend/migrations/015_daq_observability.sql"
 ```
 
 命令成功后还会校验对应的关系或视图确实存在。迁移、摘要
 校验或最终关系校验任一步失败都会返回非零；不会自动批量补跑无 ledger 的旧迁移。
 
-手动执行一次 FAE 与 ADMIN 同步：
+迁移按 011 → 014 → 015 顺序运行；015 保留 014 的已验证身份视图依赖，
+已记录的 014 可在 015 后重新校验。DAQ 的传输源标记为 `daq`，独立镜像为
+`platform_source_daq`；归一化 `source_kind=fae` 表示 FAE 运行时家族，
+`agent_id=ai-daq-fae-agent` 与 `daq:` 会话、轮次和 trace 键保持独立。
+只有 DAQ 容器的 `DAQ_DATABASE_URL`、`daq_fae` schema 与安装身份检查全部通过
+才导出；源事务只读。DAQ 单独同步命令为 `deploy/sync-remote-agents --source daq`，
+该路径只提交观测镜像，`review_backfill` 显式标记为
+`not_enabled / daq_observability_only`，不运行相机 review/outbox。
+
+手动执行一次 FAE、ADMIN 与 DAQ 同步：
 
 ```bash
 deploy/sync-remote-agents
@@ -254,7 +267,7 @@ launchctl print gui/$(id -u)/com.orbbec.ai-agent-platform-sync
 ```
 
 同步只通过 SSH 执行只读导出，再原子写入本机隔离镜像。每个源镜像成功提交后，
-同步器使用独立 review writer 幂等纳管新增负反馈回答；FAE 顺序固定为
+FAE 与 ADMIN 同步器使用独立 review writer 幂等纳管新增负反馈回答；FAE 顺序固定为
 `source_sync` → `review_backfill` → `closure_handoff`。最后一步扫描当前用户私有的
 `~/Library/Application Support/OrbbecAI-Agent-Platform/feedback-closure-outbox`
 （目录 0700、文件 0600），导入已发布修复批次的事项、合并与部署证据。路径可用

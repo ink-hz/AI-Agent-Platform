@@ -132,7 +132,7 @@ class PsycopgObservabilityRepository:
                 if profile.id in seen:
                     continue
                 source = (
-                    "fae" if profile.id == "ai-fae-agent"
+                    "fae" if profile.id in {"ai-fae-agent", "ai-daq-fae-agent"}
                     else "admin" if profile.id == "ai-admin-agent"
                     else "metabot"
                 )

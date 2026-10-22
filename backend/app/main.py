@@ -216,7 +216,7 @@ from .operations.service import OperationsService
 from .operations.source import PsycopgOperationsSource
 from .registry import routes as registry_routes
 from .registry.repository import YamlRepository
-from .remote_health.monitor import RemoteHealthMonitor, remote_poll_loop
+from .remote_health.monitor import RemoteHealthMonitor, daq_poll_loop, remote_poll_loop
 from .review import routes as review_routes
 from .review.database import resolve_review_database_url
 from .review.replay import ReplayRunner
@@ -1024,6 +1024,7 @@ def create_app(
     remote_monitor = RemoteHealthMonitor(
         config.remote_ssh_host,
         config.remote_ssh_key_path,
+        daq_health_url=config.daq_health_url,
         timeout=config.probe_timeout_seconds,
     )
     catalog = AgentCatalog.default()
@@ -1422,6 +1423,10 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         tasks = []
+        if start_poller and cloud_mode and config.daq_health_url:
+            tasks.append(asyncio.create_task(daq_poll_loop(
+                remote_monitor, config.remote_poll_interval_seconds,
+            )))
         if runtime_pollers_enabled:
             tasks = [
                 asyncio.create_task(

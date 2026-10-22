@@ -31,7 +31,7 @@ class RuntimeObservation(BaseModel):
 
 
 class SyncObservation(BaseModel):
-    source_kind: Literal["fae", "admin"]
+    source_kind: Literal["fae", "admin", "daq"]
     status: Literal["running", "succeeded", "failed"]
     completed_at: datetime | None
     observed_at: datetime
@@ -47,6 +47,7 @@ class DataAccessObservation(BaseModel):
 _SYNC_AGENTS = {
     "fae": "ai-fae-agent",
     "admin": "ai-admin-agent",
+    "daq": "ai-daq-fae-agent",
 }
 _SYNC_STALE_AFTER = timedelta(hours=36)
 _LOCAL_ZONE = ZoneInfo("Asia/Shanghai")

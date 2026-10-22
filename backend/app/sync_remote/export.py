@@ -27,7 +27,7 @@ class ExportBundle:
     @property
     def source_counts(self) -> dict[str, int]:
         counts = {table: len(rows) for table, rows in self.tables.items()}
-        if self.source_kind == "fae":
+        if self.source_kind in {"fae", "daq"}:
             counts["trace_spans"] = len(self.trace_spans)
             counts["malformed_trace_lines"] = self.malformed_lines
         return counts
@@ -59,6 +59,9 @@ database_url = environment[b"DATABASE_URL"].decode()
 
 
 def build_remote_program(source: SyncSource) -> str:
+    if source.kind == "daq":
+        from .daq_export import build_daq_program
+        return build_daq_program(source)
     table_specs = [(table.remote_name, table.order_by) for table in source.tables]
     trace_path = source.trace_jsonl_path
     return f"""
@@ -127,6 +130,9 @@ def build_ssh_command(source: SyncSource) -> list[str]:
 
 
 def parse_export(source_kind: str, output: str) -> ExportBundle:
+    if source_kind == "daq":
+        from .daq_export import validate_daq_records
+        validate_daq_records(output)
     tables: defaultdict[str, list[dict]] = defaultdict(list)
     spans: list[dict] = []
     malformed = 0
@@ -145,6 +151,8 @@ def parse_export(source_kind: str, output: str) -> ExportBundle:
             tables[record["table"]].append(row)
         elif record_type == "trace_span" and isinstance(row, dict):
             spans.append(row)
+        elif source_kind == "daq" and record_type in {"source_identity", "table_complete"}:
+            continue
         elif record_type in {"malformed_trace_line", "trace_file_missing"}:
             malformed += 1
         else:

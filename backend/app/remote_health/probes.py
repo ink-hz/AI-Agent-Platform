@@ -146,6 +146,59 @@ async def probe_fae(
     )
 
 
+async def probe_daq(
+    client: httpx.AsyncClient,
+    url: str,
+    timeout: float,
+    *,
+    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+) -> RemoteAgentStatus:
+    status = RemoteAgentStatus(
+        id="ai-daq-fae-agent", name="AI DAQ FAE Agent", status="unknown",
+        checked_at=now(), channel="WebUI",
+    )
+    try:
+        response = await client.get(url, timeout=timeout, follow_redirects=False)
+    except httpx.TimeoutException:
+        status.error = "timeout"
+        return status
+    except httpx.RequestError:
+        status.error = "transport"
+        return status
+
+    status.status = "degraded"
+    status.channel_status = "failed"
+    if response.status_code != 200:
+        status.error = "http_status"
+        status.details = {"http_status": response.status_code}
+        return status
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    if not isinstance(payload, dict):
+        status.error = "invalid_response"
+        return status
+
+    status.details = payload
+    if payload.get("agent_id") != status.id:
+        status.error = "identity_mismatch"
+        return status
+    if payload.get("environment") != "production" or payload.get("local_dev_only") is True:
+        status.error = "environment_mismatch"
+        return status
+    provider = payload.get("provider_mode")
+    model = payload.get("llm_model")
+    status.backend = provider if isinstance(provider, str) and provider.strip() else None
+    status.model = model if isinstance(model, str) and model.strip() else None
+    if payload.get("status") != "ok":
+        status.error = "service_status"
+        return status
+    status.status = "healthy"
+    status.channel_status = "connected"
+    return status
+
+
 async def probe_remote_ops(
     ssh_host: str,
     ssh_key_path: str,

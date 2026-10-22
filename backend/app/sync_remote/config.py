@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-SourceKind = Literal["fae", "admin"]
+SourceKind = Literal["fae", "admin", "daq"]
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class SyncSource:
 
 
 def default_sources(ssh_host: str, ssh_key_path: str) -> dict[SourceKind, SyncSource]:
-    return {
+    sources = {
         "fae": SyncSource(
             kind="fae",
             ssh_host=ssh_host,
@@ -71,3 +71,12 @@ def default_sources(ssh_host: str, ssh_key_path: str) -> dict[SourceKind, SyncSo
             ),
         ),
     }
+
+    # Transport identity is separate from the normalized FAE runtime family.
+    sources["daq"] = SyncSource(
+        kind="daq", ssh_host=ssh_host, ssh_key_path=ssh_key_path,
+        remote_python="python", remote_container="ai-daq-fae-backend",
+        tables=sources["fae"].tables,
+        trace_jsonl_path="/app/data/daq_traces.jsonl",
+    )
+    return sources

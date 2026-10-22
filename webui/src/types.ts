@@ -379,7 +379,7 @@ export interface FlywheelOverview {
 }
 
 export interface SyncStatus {
-  source_kind: "fae" | "admin";
+  source_kind: "fae" | "admin" | "daq";
   status: "running" | "succeeded" | "failed";
   started_at: string;
   completed_at: string | null;

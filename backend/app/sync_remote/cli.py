@@ -49,6 +49,31 @@ def required_admin_schema_available(
         return False
 
 
+def required_daq_schema_available(
+    database_url: str, *, connection_factory=psycopg.connect
+) -> bool:
+    """A missing DAQ migration must never redirect data to the camera mirror."""
+    try:
+        with connection_factory(database_url, autocommit=True) as connection:
+            row = connection.execute(
+                "select (select count(*)=8 from pg_catalog.pg_class c "
+                "join pg_catalog.pg_namespace n on n.oid=c.relnamespace "
+                "where n.nspname='platform_source_daq' and c.relkind='r' "
+                "and c.relname in ('chat_sessions','chat_turns','turn_feedback',"
+                "'turn_reviews','eval_candidates','knowledge_improvement_tasks',"
+                "'qa_review_items','trace_spans')) and "
+                "(select count(*)=7 from pg_catalog.pg_class c "
+                "join pg_catalog.pg_namespace n on n.oid=c.relnamespace "
+                "where n.nspname='platform_read' and c.relkind='v' "
+                "and c.relname in ('sessions_without_daq','turns_without_daq',"
+                "'traces_without_daq','trace_steps_without_daq','feedback_without_daq',"
+                "'reviews_without_daq','improvement_items_without_daq'))"
+            ).fetchone()
+        return row == (True,)
+    except Exception:  # noqa: BLE001 -- fail closed without DSN/SQL details
+        return False
+
+
 def sync_feedback_closure_outbox(directory: Path, importer) -> dict[str, int]:
     summary = {state: 0 for state in HANDOFF_STATES}
     summary["invalid"] = 0
@@ -84,7 +109,7 @@ def sync_feedback_closure_outbox(directory: Path, importer) -> dict[str, int]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Sync remote Agent observability data")
-    parser.add_argument("--source", choices=("fae", "admin", "all"), default="all")
+    parser.add_argument("--source", choices=("fae", "admin", "daq", "all"), default="all")
     parser.add_argument("--export-only", action="store_true")
     args = parser.parse_args(argv)
     config = load_config()
@@ -100,7 +125,8 @@ def main(argv: list[str] | None = None) -> int:
             except SecretFileUnavailable:
                 print("sync_database_unavailable", file=sys.stderr)
                 return 1
-        review_database_url = resolve_review_database_url(config)
+        if any(kind != "daq" for kind in selected):
+            review_database_url = resolve_review_database_url(config)
 
     if (
         not args.export_only
@@ -111,6 +137,11 @@ def main(argv: list[str] | None = None) -> int:
         print("admin: schema_preflight_failed", file=sys.stderr)
         return 1
 
+    if (not args.export_only and "daq" in selected and database_url is not None
+            and not required_daq_schema_available(database_url)):
+        print("daq: schema_preflight_failed", file=sys.stderr)
+        return 1
+
     failed = False
     for kind in selected:
         try:
@@ -119,7 +150,18 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{kind}: exported {bundle.source_counts}")
                 continue
             assert database_url is not None
-            if review_database_url:
+            if kind == "daq":
+                result = import_bundle(database_url, bundle)
+                print(json.dumps(
+                    {"source_kind": kind, "source_sync": asdict(result)},
+                    ensure_ascii=False, sort_keys=True,
+                ))
+                print(json.dumps(
+                    {"source_kind": kind, "review_backfill": {
+                        "status": "not_enabled", "reason": "daq_observability_only"}},
+                    ensure_ascii=False, sort_keys=True,
+                ))
+            elif review_database_url:
                 review_repository = PsycopgReviewRepository(review_database_url)
                 coordinated = import_bundle_with_review(
                     database_url,

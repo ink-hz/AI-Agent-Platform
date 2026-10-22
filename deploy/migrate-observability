@@ -13,7 +13,8 @@ migration_file="$2"
 repository_root="$(cd "$(dirname "$0")/.." && pwd -P)"
 case "$migration_file" in
   "$repository_root/backend/migrations/011_admin_session_subject_links.sql"|\
-  "$repository_root/backend/migrations/014_admin_verified_sender_view.sql") ;;
+  "$repository_root/backend/migrations/014_admin_verified_sender_view.sql"|\
+  "$repository_root/backend/migrations/015_daq_observability.sql") ;;
   *) fail ;;
 esac
 
@@ -77,9 +78,10 @@ select (
        and sha256 <> :'expected_sha256'
   )
 )::int as checksum_ok \gset
+-- SQL errors under ON_ERROR_STOP work on psql versions that ignore exit arguments to \quit.
 \if :checksum_ok
 \else
-  \quit 4
+  select 1 / 0 as checksum_mismatch;
 \endif
 
 select exists (
@@ -101,15 +103,31 @@ select (
       to_regclass('platform_identity.session_subject_links') is not null
     when :'expected_version'::integer = 14 then
       to_regclass('platform_read.sessions') is not null
-      and position('session_subject_links' in
+      and (
+        position('session_subject_links' in
+          pg_get_viewdef(to_regclass('platform_read.sessions'))) > 0
+        or (
+          position('sessions_without_daq' in
+            pg_get_viewdef(to_regclass('platform_read.sessions'))) > 0
+          and position('session_subject_links' in
+            pg_get_viewdef(to_regclass('platform_read.sessions_without_daq'))) > 0
+        )
+      )
+    when :'expected_version'::integer = 15 then
+      to_regclass('platform_source_daq.chat_sessions') is not null
+      and to_regclass('platform_source_daq.trace_spans') is not null
+      and to_regclass('platform_read.sessions_without_daq') is not null
+      and position('platform_source_daq' in
         pg_get_viewdef(to_regclass('platform_read.sessions'))) > 0
+      and position('platform_source_daq' in
+        pg_get_viewdef(to_regclass('platform_read.traces'))) > 0
     else false
   end
 )::int
   as required_relation_ok \gset
 \if :required_relation_ok
 \else
-  \quit 3
+  select 1 / 0 as required_relation_missing;
 \endif
 
 select pg_advisory_unlock(1095780177);

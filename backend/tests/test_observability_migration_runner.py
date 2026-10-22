@@ -52,7 +52,7 @@ def test_runner_verifies_the_required_relation_and_never_downgrades_failure() ->
 
     assert "to_regclass('platform_identity.session_subject_links')" in source
     assert "required_relation_ok" in source
-    assert "\\quit 3" in source
+    assert "1 / 0 as required_relation_missing" in source
     assert "OBSERVABILITY_MIGRATION_FAILED" in source
     assert "|| true" not in source
 

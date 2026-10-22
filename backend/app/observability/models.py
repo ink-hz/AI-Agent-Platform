@@ -248,7 +248,7 @@ class FlywheelOverview(BaseModel):
 
 
 class SyncStatus(BaseModel):
-    source_kind: Literal["fae", "admin"]
+    source_kind: Literal["fae", "admin", "daq"]
     status: Literal["running", "succeeded", "failed"]
     started_at: datetime
     completed_at: datetime | None = None

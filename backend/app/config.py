@@ -128,6 +128,31 @@ class Config:
     hr_knowledge_root: str = ""
     hr_knowledge_agent_root: str = ""
     hr_knowledge_commit: str = ""
+    daq_health_url: str | None = None
+
+
+def _daq_health_url() -> str | None:
+    value = os.getenv("PLATFORM_DAQ_HEALTH_URL", "").strip()
+    if not value:
+        return None
+    message = "DAQ health URL must be an HTTP /health URL without credentials"
+    try:
+        parsed = urlparse(value)
+        _ = parsed.port
+    except ValueError:
+        raise ValueError(message) from None
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.path != "/health"
+        or parsed.params
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(message)
+    return value
 
 
 def _enabled(name: str, default: str = "0") -> bool:
@@ -968,6 +993,7 @@ def load_config() -> Config:
         remote_poll_interval_seconds=float(
             os.getenv("PLATFORM_REMOTE_POLL_INTERVAL", "60")
         ),
+        daq_health_url=_daq_health_url(),
         feedback_closure_outbox_dir=_feedback_closure_outbox_dir(),
         operations_database_path=os.getenv(
             "PLATFORM_OPERATIONS_DATABASE_PATH", "../data/platform-operations.db"

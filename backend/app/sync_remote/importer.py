@@ -90,6 +90,11 @@ FAE_COLUMNS: dict[str, tuple[str, ...]] = {
 }
 
 
+DAQ_COLUMNS = {**FAE_COLUMNS, "chat_sessions": FAE_COLUMNS["chat_sessions"] + (
+    "owner_subject_id", "owner_subject_type",
+)}
+
+
 ADMIN_COLUMNS: dict[str, tuple[str, ...]] = {
     "admin_chat_sessions": FAE_COLUMNS["chat_sessions"],
     "admin_chat_turns": (
@@ -123,6 +128,7 @@ ADMIN_COLUMNS: dict[str, tuple[str, ...]] = {
 
 PRESERVE_ON_NULL_COLUMNS: dict[tuple[str, str], tuple[str, ...]] = {
     ("fae", "chat_turns"): ("question_at", "answer_at"),
+    ("daq", "chat_turns"): ("question_at", "answer_at"),
     ("admin", "admin_chat_turns"): ("question_at", "answer_at"),
 }
 
@@ -172,10 +178,10 @@ def normalize_session_subject_link(
 
 
 def _target_table(source_kind: str, source_table: str) -> tuple[str, str]:
-    if source_kind == "fae":
+    if source_kind in {"fae", "daq"}:
         if source_table not in FAE_COLUMNS:
             raise ImportValidationError("unknown_source_table")
-        return "platform_source_fae", source_table
+        return f"platform_source_{source_kind}", source_table
     if source_kind == "admin" and source_table == "admin_directory_members":
         return "platform_identity", "dingtalk_directory_members"
     if source_kind == "admin" and source_table in ADMIN_COLUMNS:
@@ -215,8 +221,8 @@ def normalize_row(
             ("staff_id",),
         )
     columns = (
-        FAE_COLUMNS[source_table]
-        if source_kind == "fae"
+        (DAQ_COLUMNS if source_kind == "daq" else FAE_COLUMNS)[source_table]
+        if source_kind in {"fae", "daq"}
         else ADMIN_COLUMNS[source_table]
     )
     if not row.get("id"):
@@ -239,7 +245,9 @@ def normalize_row(
     )
 
 
-def normalize_trace_span(row: dict, synced_at: datetime) -> NormalizedRow:
+def normalize_trace_span(row: dict, synced_at: datetime, *, source_kind: str = "fae") -> NormalizedRow:
+    if source_kind not in {"fae", "daq"}:
+        raise ImportValidationError("unknown_source_kind")
     for key in ("trace_id", "span_id", "node", "started_at"):
         if not row.get(key):
             raise ImportValidationError("missing_required_key")
@@ -256,11 +264,11 @@ def normalize_trace_span(row: dict, synced_at: datetime) -> NormalizedRow:
         "output_summary": row.get("output_summary") or {},
         "metadata": row.get("metadata") or {},
         "error": row.get("error"),
-        "details": {"is_root": bool(row.get("is_root"))},
+        "details": {"is_root": row.get("type") == "root" or bool(row.get("is_root"))},
         "source_synced_at": synced_at,
     }
     return NormalizedRow(
-        "platform_source_fae",
+        f"platform_source_{source_kind}",
         "trace_spans",
         values,
         ("trace_id", "span_id"),
@@ -275,7 +283,13 @@ def validate_bundle(bundle: ExportBundle) -> dict[str, int]:
         "admin_chat_turns": ("id", "session_id", "trace_id"),
     }
     for table, rows in bundle.tables.items():
+        _target_table(bundle.source_kind, table)
         for row in rows:
+            if bundle.source_kind == "daq" and (
+                (table == "chat_sessions" and not str(row.get("external_session_id", "")).startswith("daq:"))
+                or (table == "chat_turns" and (row.get("metadata") or {}).get("agent_id") != "ai-daq-fae-agent")
+            ):
+                raise ImportValidationError("source_identity_unverified")
             identity_key = "staff_id" if table == "admin_directory_members" else "id"
             if not row.get(identity_key):
                 raise ImportValidationError("missing_required_key")
@@ -283,13 +297,21 @@ def validate_bundle(bundle: ExportBundle) -> dict[str, int]:
                 if not row.get(key):
                     raise ImportValidationError("missing_required_key")
 
-    session_table = "chat_sessions" if bundle.source_kind == "fae" else "admin_chat_sessions"
-    turn_table = "chat_turns" if bundle.source_kind == "fae" else "admin_chat_turns"
+    session_table = "chat_sessions" if bundle.source_kind in {"fae", "daq"} else "admin_chat_sessions"
+    turn_table = "chat_turns" if bundle.source_kind in {"fae", "daq"} else "admin_chat_turns"
     session_ids = {str(row["id"]) for row in bundle.tables.get(session_table, ()) if row.get("id")}
     turns = bundle.tables.get(turn_table, ())
     orphan_turn_sessions = sum(
         1 for row in turns if row.get("session_id") and str(row["session_id"]) not in session_ids
     )
+    if bundle.source_kind == "daq":
+        trace_ids = {row["trace_id"] for row in turns}
+        for span in bundle.trace_spans:
+            if span.get("trace_id") not in trace_ids or (
+                (span.get("type") == "root" or not span.get("parent_span_id"))
+                and (span.get("metadata") or {}).get("agent_id") != "ai-daq-fae-agent"
+            ):
+                raise ImportValidationError("source_trace_unverified")
     root_trace_ids = {
         str(row["trace_id"])
         for row in bundle.trace_spans
@@ -297,7 +319,7 @@ def validate_bundle(bundle: ExportBundle) -> dict[str, int]:
     }
     turns_without_root = (
         sum(1 for row in turns if str(row.get("trace_id")) not in root_trace_ids)
-        if bundle.source_kind == "fae"
+        if bundle.source_kind in {"fae", "daq"}
         else 0
     )
     return {
@@ -394,9 +416,9 @@ def import_bundle(
                         validation["admin_sessions_subject_unresolved"] = unresolved_subjects
                     if bundle.source_kind == "admin" and "admin_directory_members" in bundle.tables:
                         cursor.execute("select platform_identity.refresh_dingtalk_matches()")
-                    if bundle.source_kind == "fae":
+                    if bundle.source_kind in {"fae", "daq"}:
                         for span in bundle.trace_spans:
-                            _upsert(cursor, normalize_trace_span(span, synced_at))
+                            _upsert(cursor, normalize_trace_span(span, synced_at, source_kind=bundle.source_kind))
                         applied["trace_spans"] = len(bundle.trace_spans)
                     cursor.execute(
                         """
