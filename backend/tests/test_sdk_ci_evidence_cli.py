@@ -141,3 +141,28 @@ def test_hardlink_input_output_preserved(run_files, unknown):
     assert result.returncode == 3
     assert json.loads(source.read_text()) == data
     assert output.exists()
+
+
+@pytest.mark.parametrize('input_args', [[], ['--input']])
+def test_structural_parse_error_clears_unambiguous_output(run_files, input_args):
+    root, data = run_files
+    result, output = invoke(root, data)
+    assert result.returncode == 0
+    result = subprocess.run([sys.executable, str(CLI), *input_args, '--output', str(output)],
+                            cwd=REPO, capture_output=True, text=True, check=False)
+    assert result.returncode == 3
+    assert not output.exists()
+    assert str(root) not in result.stderr
+
+
+def test_ambiguous_outputs_are_preserved(run_files):
+    root, data = run_files
+    _, output = invoke(root, data)
+    other = root / 'other.json'
+    other.write_text('preserve')
+    result = subprocess.run([sys.executable, str(CLI), '--input', str(root / 'run.json'),
+                             '--output', str(output), '--output', str(other)], cwd=REPO,
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 3
+    assert output.exists()
+    assert other.read_text() == 'preserve'

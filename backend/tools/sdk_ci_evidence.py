@@ -37,8 +37,51 @@ def load_run(source):
     return verify_ci_run(Path(root), **data)
 
 
+
+def invalidate_explicit_output(argv):
+    """Clear only one explicit output, preserving every identifiable input."""
+    values = {'--input': [], '--output': []}
+    for index, token in enumerate(argv):
+        if token == '--':
+            break
+        option, separator, value = token.partition('=')
+        if option not in values:
+            continue
+        if not separator:
+            value = argv[index + 1] if index + 1 < len(argv) else ''
+            if value.startswith('-'):
+                value = ''
+        values[option].append(value)
+    outputs = values['--output']
+    if len(outputs) > 1:
+        raise ValueError('ambiguous output')
+    if not outputs or not outputs[0]:
+        return
+    output = Path(outputs[0])
+    for value in values['--input']:
+        if not value:
+            continue
+        source = Path(value)
+        if os.path.abspath(source) == os.path.abspath(output):
+            raise ValueError('same input and output')
+        try:
+            resolved_source = source.resolve()
+        except RuntimeError:
+            resolved_source = None
+        if resolved_source == output.resolve() or (
+                source.exists() and output.exists() and os.path.samefile(source, output)):
+            raise ValueError('same input and output')
+    output.unlink(missing_ok=True)
+
+
 def main(argv=None):
-    parser = Parser(description=__doc__)
+    argv = list(sys.argv[1:] if argv is None else argv)
+    try:
+        invalidate_explicit_output(argv)
+    except (OSError, ValueError, RuntimeError):
+        print('CI evidence input or output error', file=sys.stderr)
+        return 3
+    parser = Parser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--input', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     args, unknown = parser.parse_known_args(argv)
