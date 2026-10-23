@@ -28,7 +28,7 @@ create table platform_control.office_operations_receipts (
 );
 create index office_operations_receipts_rate on platform_control.office_operations_receipts(actor_key,occurred_at);
 
-create function platform_control.office_actor_key_v123(actor uuid) returns text
+create function platform_control.office_actor_key_v124(actor uuid) returns text
 language sql stable security definer set search_path=pg_catalog,platform_control as $$
  select encode(sha256(convert_to(actor_salt || ':' || actor::text,'UTF8')),'hex')
  from platform_control.office_operations_state where singleton
@@ -85,16 +85,16 @@ insert into platform_control.access_page_catalog(workspace_key,page_key,display_
  select 'office',page_key,label,false,label from platform_control.office_operations_catalog where metric='page_view'
  on conflict(page_key) do update set display_name=excluded.display_name,module_display_name=excluded.module_display_name;
 
-create function platform_control.add_office_operations_fact_v123(event_id uuid,actor uuid,page text,department text,occurred timestamptz)
+create function platform_control.add_office_operations_fact_v124(event_id uuid,actor uuid,page text,department text,occurred timestamptz)
 returns void language plpgsql security definer set search_path=pg_catalog,platform_control as $$
-declare actor_token text:=platform_control.office_actor_key_v123(actor);
+declare actor_token text:=platform_control.office_actor_key_v124(actor);
 begin
  insert into platform_control.office_operations_receipts values(event_id,actor_token,page,occurred);
  insert into platform_control.office_operations_daily values((occurred at time zone 'Asia/Shanghai')::date,actor_token,department,page,'live',1)
  on conflict on constraint office_operations_daily_pkey do update set events=office_operations_daily.events+1;
 end $$;
 
-create function platform_control.append_office_page_view_v123(event_id uuid,actor uuid,session uuid,page text,department text)
+create function platform_control.append_office_page_view_v124(event_id uuid,actor uuid,session uuid,page text,department text)
 returns table(outcome text,retry_after_seconds integer)
 language plpgsql security definer set search_path=pg_catalog,platform_control as $$
 declare result record; occurred timestamptz;
@@ -104,15 +104,15 @@ begin
  select * into result from platform_control.append_page_view_v65(event_id,actor,session,'office',page,null);
  if result.outcome='inserted' then
   select occurred_at into occurred from platform_control.user_access_events where access_event_id=event_id;
-  perform platform_control.add_office_operations_fact_v123(event_id,actor,page,department,occurred);
+  perform platform_control.add_office_operations_fact_v124(event_id,actor,page,department,occurred);
  end if;
  return query select result.outcome,result.retry_after_seconds;
 end $$;
 
-create function platform_control.append_office_click_v123(event_id uuid,actor uuid,session uuid,module text,department text)
+create function platform_control.append_office_click_v124(event_id uuid,actor uuid,session uuid,module text,department text)
 returns table(outcome text,retry_after_seconds integer)
 language plpgsql security definer set search_path=pg_catalog,platform_control as $$
-declare page text:='entry.' || module; actor_token text:=platform_control.office_actor_key_v123(actor); stored record; now_at timestamptz:=clock_timestamp();
+declare page text:='entry.' || module; actor_token text:=platform_control.office_actor_key_v124(actor); stored record; now_at timestamptz:=clock_timestamp();
 begin
  if session_user not in ('platform_control_app','platform_control_app_preview') then raise insufficient_privilege; end if;
  if event_id is null or department is null or char_length(department) not between 1 and 160
@@ -120,8 +120,8 @@ begin
  perform 1 from platform_control.web_sessions s join platform_control.internal_users u using(internal_user_id)
  where s.session_id=session and s.internal_user_id=actor and s.revoked_at is null and s.idle_expires_at>now_at and s.absolute_expires_at>now_at and u.status='active' and u.locally_invalidated_at is null;
  if not found then raise insufficient_privilege; end if;
- perform pg_advisory_xact_lock(hashtextextended(actor_token,123));
- select * into stored from platform_control.office_operations_receipts r where r.event_id=append_office_click_v123.event_id;
+ perform pg_advisory_xact_lock(hashtextextended(actor_token,124));
+ select * into stored from platform_control.office_operations_receipts r where r.event_id=append_office_click_v124.event_id;
  if found then
   if stored.actor_key<>actor_token or stored.page_key<>page then raise check_violation; end if;
   return query select 'duplicate'::text,null::integer; return;
@@ -129,11 +129,11 @@ begin
  if (select count(*) from platform_control.office_operations_receipts r where r.actor_key=actor_token and r.page_key like 'entry.%' and r.occurred_at>now_at-interval '60 seconds')>=120 then
   return query select 'rate_limited'::text,60; return;
  end if;
- perform platform_control.add_office_operations_fact_v123(event_id,actor,page,department,now_at);
+ perform platform_control.add_office_operations_fact_v124(event_id,actor,page,department,now_at);
  return query select 'inserted'::text,null::integer;
 end $$;
 
-create function platform_control.read_office_operations_v123(from_day date,to_day date,grain text,metric text,scope text,department text,module text)
+create function platform_control.read_office_operations_v124(from_day date,to_day date,grain text,metric text,scope text,department text,module text)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,platform_control as $$
 declare answer jsonb;
 begin
@@ -145,13 +145,13 @@ begin
  or not exists(select 1 from platform_control.office_operations_exclusions) then raise object_not_in_prerequisite_state; end if;
  with catalog as materialized (
   select c.* from platform_control.office_operations_catalog c
-  where c.metric=read_office_operations_v123.metric and (read_office_operations_v123.scope='all' or c.scope=read_office_operations_v123.scope)
+  where c.metric=read_office_operations_v124.metric and (read_office_operations_v124.scope='all' or c.scope=read_office_operations_v124.scope)
  ), base as materialized (
   select d.*,c.module_key,c.label,c.historical_mixed from platform_control.office_operations_daily d join catalog c using(page_key)
   where d.day between from_day and to_day and not exists(select 1 from platform_control.office_operations_exclusions x where x.actor_key=d.actor_key)
  ), chosen as materialized (
   select b.*,case when grain='month' then to_char(b.day,'YYYY-MM') else to_char(b.day,'YYYY-MM-DD') end period from base b
-  where (read_office_operations_v123.department is null or b.department=read_office_operations_v123.department) and (module is null or b.module_key=module)
+  where (read_office_operations_v124.department is null or b.department=read_office_operations_v124.department) and (module is null or b.module_key=module)
  ), module_totals as (
   select module_key,sum(events) events,count(distinct actor_key) users from chosen group by module_key
  ), module_catalog as (
@@ -185,7 +185,7 @@ begin
 end $$;
 
 -- Restricted maintenance input includes only encrypted primary departments, no names.
-create function platform_control.office_backfill_profiles_v123()
+create function platform_control.office_backfill_profiles_v124()
 returns table(internal_user_id uuid,generation_id uuid,member_key uuid,primary_department_ciphertext bytea,primary_department_nonce bytea,primary_department_encryption_key_version integer,departments text[])
 language plpgsql security definer set search_path=pg_catalog,platform_control as $$
 begin
@@ -197,18 +197,18 @@ begin
  left join platform_control.directory_members m on m.generation_id=s.active_generation_id and m.internal_user_id=u.internal_user_id and m.status='active';
 end $$;
 
-create function platform_control.backfill_office_operations_v123(department_by_actor jsonb,excluded_actor uuid)
+create function platform_control.backfill_office_operations_v124(department_by_actor jsonb,excluded_actor uuid)
 returns bigint language plpgsql security definer set search_path=pg_catalog,platform_control as $$
 declare inserted bigint;
 begin
  if session_user not in ('platform_control_maintenance','platform_control_maintenance_preview') then raise insufficient_privilege; end if;
  if jsonb_typeof(department_by_actor)<>'object' or excluded_actor is null or not exists(select 1 from platform_control.internal_users where internal_user_id=excluded_actor and status='active') then raise check_violation; end if;
  perform 1 from platform_control.office_operations_state for update;
- insert into platform_control.office_operations_exclusions values(platform_control.office_actor_key_v123(excluded_actor)) on conflict do nothing;
+ insert into platform_control.office_operations_exclusions values(platform_control.office_actor_key_v124(excluded_actor)) on conflict do nothing;
  if exists(select 1 from platform_control.office_operations_state where backfilled_at is not null) then return 0; end if;
  if exists(select 1 from platform_control.user_access_events e where e.workspace_key='office' and e.occurred_at>='2026-09-14 00:00:00+08' and not exists(select 1 from platform_control.office_operations_catalog c where c.page_key=e.page_key)) then raise check_violation using message='unmapped Office history'; end if;
  insert into platform_control.office_operations_daily(day,actor_key,department,page_key,source,events)
- select (e.occurred_at at time zone 'Asia/Shanghai')::date,platform_control.office_actor_key_v123(e.internal_user_id),
+ select (e.occurred_at at time zone 'Asia/Shanghai')::date,platform_control.office_actor_key_v124(e.internal_user_id),
   coalesce(nullif(trim(department_by_actor->>e.internal_user_id::text),''),'未归属部门'),e.page_key,'legacy',count(*)
  from platform_control.user_access_events e
  where e.workspace_key='office' and e.event_kind='page_view' and e.occurred_at>='2026-09-14 00:00:00+08'
@@ -219,7 +219,7 @@ begin
  return inserted;
 end $$;
 
-create function platform_control.retain_office_operations_receipts_v123() returns bigint
+create function platform_control.retain_office_operations_receipts_v124() returns bigint
 language plpgsql security definer set search_path=pg_catalog,platform_control as $$
 declare removed bigint;
 begin
@@ -235,11 +235,11 @@ begin
  if current_database()='agent_platform_control' and current_user='platform_control_owner' then app_role:='platform_control_app'; maintenance_role:='platform_control_maintenance';
  elsif current_database()='agent_platform_control_preview' and current_user='platform_control_owner_preview' then app_role:='platform_control_app_preview'; maintenance_role:='platform_control_maintenance_preview';
  else raise insufficient_privilege; end if;
- for f in select p.oid::regprocedure signature,p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='platform_control' and p.proname like '%office%v123' loop
+ for f in select p.oid::regprocedure signature,p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='platform_control' and p.proname like '%office%v124' loop
   execute format('revoke all on function %s from public',f.signature);
-  if f.proname in ('append_office_page_view_v123','append_office_click_v123','read_office_operations_v123') then
+  if f.proname in ('append_office_page_view_v124','append_office_click_v124','read_office_operations_v124') then
    execute format('grant execute on function %s to %I',f.signature,app_role);
-  elsif f.proname in ('office_backfill_profiles_v123','backfill_office_operations_v123','retain_office_operations_receipts_v123') then
+  elsif f.proname in ('office_backfill_profiles_v124','backfill_office_operations_v124','retain_office_operations_receipts_v124') then
    execute format('grant execute on function %s to %I',f.signature,maintenance_role);
   end if;
  end loop;

@@ -75,7 +75,7 @@ class OfficeOperationsRepository:
         department = trusted_department(context, self.department_resolver)
         try:
             with self._connection() as connection:
-                row = connection.execute('select * from platform_control.append_office_click_v123(%s,%s,%s,%s,%s)',
+                row = connection.execute('select * from platform_control.append_office_click_v124(%s,%s,%s,%s,%s)',
                     (event_id, context.internal_user_id, context.session_id, module, department)).fetchone()
             if row is None or row['outcome'] not in {'inserted', 'duplicate', 'rate_limited'}:
                 raise AccessHistoryUnavailable('operations unavailable')
@@ -90,7 +90,7 @@ class OfficeOperationsRepository:
     def _query(self, query: OperationsQuery):
         try:
             with self._connection() as connection:
-                row = connection.execute('select platform_control.read_office_operations_v123(%s,%s,%s,%s,%s,%s,%s) report',
+                row = connection.execute('select platform_control.read_office_operations_v124(%s,%s,%s,%s,%s,%s,%s) report',
                     tuple(asdict(query).values())).fetchone()
             if row is None or not isinstance(row['report'], dict):
                 raise AccessHistoryUnavailable('operations unavailable')

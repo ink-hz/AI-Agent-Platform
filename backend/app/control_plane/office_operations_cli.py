@@ -19,7 +19,7 @@ from .dsn import validate_control_dsn
 def backfill(database_url, *, codec, corp_id, excluded_actor):
     validate_control_dsn(database_url,purpose='maintenance')
     with psycopg.connect(database_url,connect_timeout=3,options='-c statement_timeout=30000',row_factory=dict_row) as connection:
-        rows=connection.execute('select * from platform_control.office_backfill_profiles_v123()').fetchall()
+        rows=connection.execute('select * from platform_control.office_backfill_profiles_v124()').fetchall()
         departments={}
         for row in rows:
             value=None
@@ -38,7 +38,7 @@ def backfill(database_url, *, codec, corp_id, excluded_actor):
             if actor in departments:
                 raise ValueError('ambiguous historical identity')
             departments[actor]=value
-        result=connection.execute('select platform_control.backfill_office_operations_v123(%s,%s) inserted',
+        result=connection.execute('select platform_control.backfill_office_operations_v124(%s,%s) inserted',
             (Jsonb(departments),excluded_actor)).fetchone()
         return {'daily_rows_inserted':result['inserted'],'directory_subjects':len(departments)}
 

@@ -106,7 +106,7 @@ class AccessHistoryRepository:
                         raise AccessHistoryInvalid('office agent invalid')
                     department = trusted_department(context, self._department_resolver)
                     row = connection.execute(
-                        'select * from platform_control.append_office_page_view_v123(%s,%s,%s,%s,%s)',
+                        'select * from platform_control.append_office_page_view_v124(%s,%s,%s,%s,%s)',
                         (event_id, context.internal_user_id, context.session_id, page.page_key, department),
                     ).fetchone()
                 else:

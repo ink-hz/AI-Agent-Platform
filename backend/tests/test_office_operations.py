@@ -54,9 +54,9 @@ def test_durable_exact_counts_exclusion_filters_and_privileges(control_database)
     with psycopg.connect(env['admin']) as c:
         for actor in (a,b,developer):
             c.execute("insert into platform_control.internal_users(internal_user_id,display_name,status,role) values (%s,'合成测试','active','member')",(actor,))
-        c.execute("insert into platform_control.office_operations_exclusions(actor_key) values(platform_control.office_actor_key_v123(%s))",(developer,))
+        c.execute("insert into platform_control.office_operations_exclusions(actor_key) values(platform_control.office_actor_key_v124(%s))",(developer,))
         for day,actor,dept,page,count in [('2026-09-14',a,'研发','office.shuttle',3),('2026-09-15',a,'研发','office.shuttle',2),('2026-09-15',b,'行政','office.lodging',1),('2026-09-15',developer,'研发','office.shuttle',50),('2026-09-15',a,'研发','office.shuttle_admin',4),('2026-09-15',a,'研发','office.service.other',2)]:
-            c.execute("insert into platform_control.office_operations_daily(day,actor_key,department,page_key,source,events) values(%s,platform_control.office_actor_key_v123(%s),%s,%s,'legacy',%s)",(day,actor,dept,page,count))
+            c.execute("insert into platform_control.office_operations_daily(day,actor_key,department,page_key,source,events) values(%s,platform_control.office_actor_key_v124(%s),%s,%s,'legacy',%s)",(day,actor,dept,page,count))
         c.execute("update platform_control.office_operations_state set backfilled_at=now()")
         c.execute("update platform_control.internal_users set display_name='已经改名' where internal_user_id=%s",(developer,))
     repo=OfficeOperationsRepository(env['urls']['platform_control_app'])
@@ -132,7 +132,7 @@ def test_backfill_is_idempotent_preserves_mixed_history_and_live_facts(control_d
         assert c.execute('select count(*) from platform_control.user_access_events where access_event_id=%s',(event,)).fetchone()[0]==1
     with psycopg.connect(env['urls']['platform_control_app']) as c:
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            c.execute('select platform_control.backfill_office_operations_v123(%s,%s)',(Jsonb({}),actor))
+            c.execute('select platform_control.backfill_office_operations_v124(%s,%s)',(Jsonb({}),actor))
 
 
 def test_department_uses_trusted_primary_then_unique_membership():
