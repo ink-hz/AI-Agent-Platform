@@ -123,6 +123,9 @@ services:
       # mounted. Enabling requires validated Provider release evidence created
       # by docs/runbooks/fae-partner-provider-probe.md; the Reference Provider
       # can never be used here.
+      # Prepared independently; enabling still requires validated real-account evidence.
+      PLATFORM_PARTNER_ENCRYPTION_KEYRING_FILE: /run/secrets/partner-encryption-keyring
+      PLATFORM_PARTNER_HMAC_KEYRING_FILE: /run/secrets/partner-hmac-keyring
       PLATFORM_PARTNER_IDENTITY_ENABLED: "0"
       PLATFORM_PARTNER_PROVIDER_KIND: ""
       PLATFORM_PARTNER_PROVIDER_RELEASE_FILE: ""

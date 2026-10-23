@@ -235,6 +235,9 @@ class ControlRateLimiter:
         except (psycopg.Error, KeyError, TypeError, ValueError):
             raise RateLimitUnavailable() from None
 
+    def check_login_start(self, edge_ip: str | IPv4Address | IPv6Address) -> None:
+        self._consume("edge_login", self._canonical_ip(edge_ip), self.edge_login_per_minute)
+
     def check_callback(self, edge_ip: str | IPv4Address | IPv6Address) -> None:
         self._consume(
             "edge_callback",

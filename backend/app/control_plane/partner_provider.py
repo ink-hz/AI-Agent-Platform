@@ -18,6 +18,8 @@ from .partner_models import (
 _PROVIDER_KIND = re.compile(r"[a-z][a-z0-9_-]{0,127}\Z")
 _CALLBACK_PATH = re.compile(r"/partner-auth/[A-Za-z0-9][A-Za-z0-9/_-]{0,127}\Z")
 _FIXED_FAE_RETURN_PATH = "/app/"
+EXTERNAL_DINGTALK_STATE_PREFIX = "fae-dt-v1."
+EXTERNAL_DINGTALK_NONCE_COOKIE = "__Host-fae-dt-nonce"
 
 
 def validate_partner_callback(method: str, path: str) -> tuple[str, str]:
@@ -155,6 +157,7 @@ def create_registered_partner_provider(kind: str) -> PartnerIdentityProvider:
 class StartedPartnerAuthentication:
     authorization_url: str = field(repr=False)
     return_path: str = _FIXED_FAE_RETURN_PATH
+    browser_nonce: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -189,14 +192,26 @@ class PartnerAuthenticationBroker:
         )
 
     def begin_auth(self) -> StartedPartnerAuthentication:
-        state = self.state_secrets.random_token()
+        external = self.provider.kind == "dingtalk_external"
+        nonce = self.state_secrets.random_token() if external else None
+        state = (
+            (EXTERNAL_DINGTALK_STATE_PREFIX if external else "")
+            + self.state_secrets.random_token()
+        )
         digest = self.state_secrets.digest("oauth-state", state)
         try:
-            self.service.create_login_attempt(
-                provider_kind=self.provider.kind,
-                state_digest=digest,
-                state_key_version=self.state_secrets.key_version,
-            )
+            if external:
+                self.service.create_external_login_attempt(
+                    state_digest=digest,
+                    state_key_version=self.state_secrets.key_version,
+                    browser_nonce_digest=self.state_secrets.digest("browser-challenge", nonce),
+                )
+            else:
+                self.service.create_login_attempt(
+                    provider_kind=self.provider.kind,
+                    state_digest=digest,
+                    state_key_version=self.state_secrets.key_version,
+                )
         except PartnerIdentityError:
             raise
         except Exception:  # noqa: BLE001 - storage failures are redacted
@@ -207,20 +222,38 @@ class PartnerAuthenticationBroker:
             raise _provider_boundary_error(error) from None
         if not isinstance(authorization_url, str) or not authorization_url:
             raise PartnerIdentityError("partner_identity_unavailable")
-        return StartedPartnerAuthentication(authorization_url=authorization_url)
+        return StartedPartnerAuthentication(authorization_url=authorization_url, browser_nonce=nonce)
 
     async def finish_auth(
-        self, callback: Mapping[str, str]
+        self, callback: Mapping[str, str], *, browser_nonce: str | None = None
     ) -> CompletedPartnerAuthentication:
         state = callback.get("state", "")
         if not isinstance(state, str) or not state:
             raise PartnerIdentityError("partner_auth_state_invalid", 401)
+        external = self.provider.kind == "dingtalk_external"
+        attempt_id = None
+        nonce_digest = None
+        if external:
+            if (
+                not state.startswith(EXTERNAL_DINGTALK_STATE_PREFIX)
+                or not isinstance(browser_nonce, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", browser_nonce)
+            ):
+                raise PartnerIdentityError("partner_auth_state_invalid", 401)
+            nonce_digest = self.state_secrets.digest("browser-challenge", browser_nonce)
         try:
-            self.service.consume_login_attempt(
-                provider_kind=self.provider.kind,
-                state_digest=self.state_secrets.digest("oauth-state", state),
-                state_key_version=self.state_secrets.key_version,
-            )
+            if external:
+                attempt_id = self.service.consume_external_login_attempt(
+                    state_digest=self.state_secrets.digest("oauth-state", state),
+                    state_key_version=self.state_secrets.key_version,
+                    browser_nonce_digest=nonce_digest,
+                )
+            else:
+                self.service.consume_login_attempt(
+                    provider_kind=self.provider.kind,
+                    state_digest=self.state_secrets.digest("oauth-state", state),
+                    state_key_version=self.state_secrets.key_version,
+                )
         except PartnerIdentityError:
             raise
         except Exception:  # noqa: BLE001 - storage failures are redacted
@@ -251,7 +284,12 @@ class PartnerAuthenticationBroker:
             raise PartnerIdentityError("partner_identity_unavailable")
 
         try:
-            resolution = self.service.resolve_verified_identity(verified)
+            if external:
+                resolution = self.service.provision_external_identity(
+                    verified, login_attempt_id=attempt_id, browser_nonce_digest=nonce_digest,
+                )
+            else:
+                resolution = self.service.resolve_verified_identity(verified)
         except PartnerIdentityError:
             raise
         except Exception:  # noqa: BLE001 - storage failures are redacted
@@ -290,4 +328,16 @@ register_partner_provider(
     "reference",
     lambda: ReferencePartnerIdentityProvider({}),
     production_release=False,
+)
+
+
+def _external_provider_requires_configuration() -> PartnerIdentityProvider:
+    # The application factory supplies credentials and the durable verification loader.
+    # Registration makes the adapter eligible; real-account release evidence is still
+    # separately required by validate_partner_release before production startup.
+    raise PartnerIdentityError("partner_identity_unavailable")
+
+
+register_partner_provider(
+    "dingtalk_external", _external_provider_requires_configuration, production_release=True,
 )

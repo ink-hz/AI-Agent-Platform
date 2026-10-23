@@ -329,6 +329,7 @@ _VOC_MANAGEMENT_ROUTES = frozenset({
 })
 
 _PARTNER_OWNER_ROUTES = frozenset({
+    ("POST", "/api/v1/manage/partners/subjects/{subject_id}/external-identity-detail"),
     ("GET", "/api/v1/manage/partners/organizations"),
     ("POST", "/api/v1/manage/partners/organizations"),
     (

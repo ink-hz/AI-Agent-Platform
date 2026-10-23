@@ -379,7 +379,17 @@ def build_auth_router(
         )
 
     @router.get("/api/v1/auth/dingtalk/callback")
-    async def callback(request: Request, state: str, code: str):
+    async def callback(request: Request, state: str | None = None, code: str | None = None):
+        from .partner_provider import EXTERNAL_DINGTALK_STATE_PREFIX
+        from .routes_partner import finish_external_dingtalk_authentication
+
+        if any(
+            value.startswith(EXTERNAL_DINGTALK_STATE_PREFIX)
+            for value in request.query_params.getlist("state")
+        ):
+            return await finish_external_dingtalk_authentication(request)
+        if state is None or code is None:
+            raise HTTPException(422, "state and code required")
         token = request.cookies.get(auth.cookie_name)
         if token and auth.authenticate(token) is not None:
             return RedirectResponse(

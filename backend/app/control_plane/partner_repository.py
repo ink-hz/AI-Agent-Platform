@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 import psycopg
 from psycopg.rows import dict_row
 
+from app.execution_relay.content_crypto import SealedContent
+
 from .dsn import validate_control_dsn
 from .partner_identity_crypto import (
     PartnerProviderIdentityCodec,
@@ -83,6 +85,8 @@ class PartnerRepository:
     def _database_code(error: psycopg.Error, *, mutation: bool) -> tuple[str, int]:
         message = getattr(error.diag, "message_primary", "") or ""
         stable = {
+            **{code: (code, 401) for code in ("partner_auth_state_invalid", "partner_auth_state_replay", "partner_auth_state_expired")},
+            **{code: (code, 403) for code in ("provider_identity_inactive", "subject_inactive", "fae_access_denied")},
             "required_audit_unavailable": ("required_audit_unavailable", 503),
             "organization_inactive": ("organization_inactive", 409),
             "operator_inactive": ("operator_inactive", 409),
@@ -668,3 +672,108 @@ class PartnerRepository:
             raise
         except psycopg.Error as error:
             self._raise_database_error(error, mutation=True)
+
+    def create_external_login_attempt(
+        self, *, state_digest: bytes, state_key_version: int, browser_nonce_digest: bytes,
+    ) -> UUID:
+        try:
+            with self._connection() as connection:
+                return connection.execute(
+                    'select platform_control.create_external_dingtalk_attempt_v123(%s,%s,%s) as id',
+                    (state_digest, state_key_version, browser_nonce_digest),
+                ).fetchone()['id']
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=True)
+
+    def consume_external_login_attempt(
+        self, *, state_digest: bytes, state_key_version: int, browser_nonce_digest: bytes,
+    ) -> UUID:
+        try:
+            with self._connection() as connection:
+                return connection.execute(
+                    'select platform_control.consume_external_dingtalk_attempt_v123(%s,%s,%s) as id',
+                    (state_digest, state_key_version, browser_nonce_digest),
+                ).fetchone()['id']
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=True)
+
+    def _external_identity_rows(
+        self, connection, protected: ProtectedPartnerProviderIdentity,
+    ) -> list[dict[str, Any]]:
+        candidates = self._lookup_candidates(protected)
+        rows = connection.execute(
+            'select i.*,o.subject_id,o.partner_organization_id from '
+            'platform_control.partner_provider_identities i join '
+            'platform_control.partner_operators o using(partner_operator_id) '
+            'join unnest(%s::integer[],%s::bytea[]) c(v,h) '
+            'on i.lookup_key_version=c.v and i.provider_subject_lookup_hmac=c.h '
+            "where i.provider_kind='dingtalk_external'",
+            ([version for version, _ in candidates], [value for _, value in candidates]),
+        ).fetchall()
+        if len(rows) > 1 or any(
+            not self.identity_codec.equivalent(self._protected_from_row(row), protected)
+            for row in rows
+        ):
+            raise PartnerRepositoryError('partner_identity_conflict', 409)
+        return rows
+
+    def provision_external_identity(
+        self, *, protected: ProtectedPartnerProviderIdentity, verified_at: datetime,
+        login_attempt_id: UUID, browser_nonce_digest: bytes,
+        seal_display: Callable[[UUID], SealedContent], realm_display: SealedContent,
+    ) -> PartnerIdentityResolution:
+        try:
+            candidates = self._lookup_candidates(protected)
+            with self._connection() as connection:
+                # This transaction holds the policy lock until nickname encryption,
+                # identity creation/reuse, grant and audit have all committed.
+                self._ensure_identity_key_policy(connection)
+                rows = self._external_identity_rows(connection, protected)
+                subject_id = rows[0]['subject_id'] if rows else uuid4()
+                display = seal_display(subject_id)
+                row = connection.execute(
+                    'select * from platform_control.provision_external_dingtalk_v123('
+                    '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (login_attempt_id, browser_nonce_digest,
+                     [v for v, _ in candidates], [h for _, h in candidates],
+                     protected.lookup_hmac, protected.lookup_key_version,
+                     protected.ciphertext, protected.encryption_key_version,
+                     subject_id, display.ciphertext, display.key_version,
+                     realm_display.ciphertext, realm_display.key_version, verified_at),
+                ).fetchone()
+            if row is None:
+                raise PartnerRepositoryError('partner_identity_unavailable')
+            return PartnerIdentityResolution(
+                subject_id=row['subject_id'], partner_operator_id=row['partner_operator_id'],
+                partner_organization_id=row['partner_organization_id'], binding_request_id=None,
+                status='linked',
+            )
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=True)
+
+    def external_verified_at(
+        self, protected: ProtectedPartnerProviderIdentity,
+    ) -> datetime | None:
+        try:
+            with self._connection() as connection:
+                rows = self._external_identity_rows(connection, protected)
+            if not rows or rows[0]['revoked_at'] is not None:
+                return None
+            return rows[0]['verified_at']
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=False)
+
+    def external_identity_detail(
+        self, *, actor_id: UUID, subject_id: UUID, request_id: UUID,
+    ) -> dict[str, Any]:
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    'select * from platform_control.read_external_dingtalk_identity_v123(%s,%s,%s)',
+                    (actor_id, subject_id, request_id),
+                ).fetchall()
+            if len(rows) != 1:
+                raise PartnerRepositoryError('provider_identity_inactive', 404)
+            return rows[0]
+        except psycopg.Error as error:
+            self._raise_database_error(error, mutation=False)
