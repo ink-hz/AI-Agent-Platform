@@ -13,6 +13,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .crypto import BatchVerifier, FieldCipher
+from .models import VerifiedSubject
 from .protocol import (
     BatchLimits,
     SignedBatch,
@@ -81,6 +82,26 @@ _SESSION_KEYS = {
     "turns",
     "sanitizer_policy_version",
 }
+
+
+def validate_session_shape(record: object) -> None:
+    """Accept exactly the legacy shape or the scoped subject-reference shape."""
+    if (
+        not isinstance(record, dict)
+        or set(record) not in (_SESSION_KEYS, _SESSION_KEYS | {"verified_subject"})
+        or record.get("kind") != "session"
+    ):
+        raise ReplicaStoreError("record_invalid")
+    if "verified_subject" in record:
+        try:
+            reference = VerifiedSubject.from_value(record["verified_subject"])
+            reference.require_fae_scope(
+                record.get("agent_id"), record.get("source_kind")
+            )
+        except (TypeError, ValueError):
+            raise ReplicaStoreError("record_invalid") from None
+
+
 _SAFE_KEY = re.compile(r"[a-z2-7]{40,64}\Z")
 _SAFE_RECORD_KEY = re.compile(
     r"(?:[a-z2-7]{40,64}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
@@ -197,8 +218,7 @@ class ReplicaStore:
             raise ReplicaStoreError("migration_failed") from None
 
     def prepare_session(self, record: dict[str, Any]) -> PreparedSession:
-        if set(record) != _SESSION_KEYS or record.get("kind") != "session":
-            raise ReplicaStoreError("record_invalid")
+        validate_session_shape(record)
         session_key = record.get("key")
         user_id = record.get("user_id")
         agent_id = record.get("agent_id")

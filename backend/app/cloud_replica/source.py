@@ -24,6 +24,7 @@ from .models import (
     ReviewFeedbackTotalsProjection,
     ReviewInboxProjection,
     ReviewIssueProjection,
+    VerifiedSubject,
 )
 
 SESSION_SQL = """
@@ -31,6 +32,7 @@ with candidate_sessions as (
   select
     session_key, agent_id, source_kind, channel, title, user_identity,
     created_at, last_active_at, primary_sender_name, primary_sender_department,
+    details->'verified_subject' as verified_subject,
     greatest(last_active_at, coalesce(source_synced_at, last_active_at))
       as replica_updated_at
   from platform_read.sessions
@@ -39,6 +41,7 @@ with candidate_sessions as (
 select
   session_key, agent_id, source_kind, channel, title, user_identity,
   created_at, last_active_at, primary_sender_name, primary_sender_department,
+  verified_subject,
   replica_updated_at
 from candidate_sessions
 where (replica_updated_at, session_key) > (%(after)s, %(after_key)s)
@@ -678,6 +681,10 @@ class ReplicaSource:
                 last_active_at=row["last_active_at"],
                 replica_updated_at=row["replica_updated_at"],
                 turns=tuple(turns_by_session.get(row["session_key"], ())),
+                verified_subject=(
+                    VerifiedSubject.from_value(row["verified_subject"])
+                    if row.get("verified_subject") is not None else None
+                ),
             )
             for row in session_rows
         )

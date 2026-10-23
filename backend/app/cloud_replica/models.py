@@ -2,8 +2,38 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedSubject:
+    """Opaque Platform subject reference; never a name or channel identity."""
+
+    subject_id: str
+    subject_type: Literal["enterprise_member", "partner_operator"]
+
+    def __post_init__(self) -> None:
+        try:
+            valid = (
+                isinstance(self.subject_id, str)
+                and str(UUID(self.subject_id)) == self.subject_id
+                and self.subject_type in {"enterprise_member", "partner_operator"}
+            )
+        except (TypeError, ValueError):
+            valid = False
+        if not valid:
+            raise ValueError("verified_subject_invalid")
+
+    @classmethod
+    def from_value(cls, value: object) -> VerifiedSubject:
+        if not isinstance(value, dict) or set(value) != {"subject_id", "subject_type"}:
+            raise ValueError("verified_subject_invalid")
+        return cls(**value)
+
+    def require_fae_scope(self, agent_id: str, source_kind: str) -> None:
+        if agent_id != "ai-fae-agent" or source_kind != "fae":
+            raise ValueError("verified_subject_scope_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +100,7 @@ class RawSession:
     replica_updated_at: datetime | None = None
     turns: tuple[RawTurn, ...] = ()
     details: dict[str, Any] = field(default_factory=dict)
+    verified_subject: VerifiedSubject | None = None
 
     @property
     def replication_cursor_at(self) -> datetime:
@@ -141,6 +172,7 @@ class SanitizedSessionRecord:
     last_active_at: datetime
     turns: tuple[SanitizedTurnRecord, ...]
     sanitizer_policy_version: str
+    verified_subject: VerifiedSubject | None = None
 
 
 @dataclass(frozen=True, slots=True)
