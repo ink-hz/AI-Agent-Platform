@@ -75,8 +75,8 @@ partner repository/service/provider、routes_auth/routes_partner、main/config �
 
 ### Task 4: 独立Development真实授权验证入口
 
-- [ ] 仅preview DSN、独立keyrings的窄接口进程，复用真实Provider/Broker/Repository/Service；无问答、launch或管理页面。
-- [ ] 共用已登记回调URL，edge仅将external state命名空间导向Dev；企业callback保持当前API。禁止生产独立Nginx配置测试，先隔离容器验证，再受控完整配置检查。
+- [x] 仅preview DSN、独立keyrings的窄接口进程，复用真实Provider/Broker/Repository/Service；无问答、launch或管理页面。
+- [x] 共用已登记回调URL，edge仅将external state命名空间导向Dev；企业callback保持当前API。禁止生产独立Nginx配置测试，先隔离容器验证，再受控完整配置检查。
 - [ ] 两个不在企业通讯录的真实钉钉账号重复授权；仅保存加密身份和脱敏验收摘要，验证重放、状态撤销和账号隔离。
 - [ ] 证据完成后关闭Dev入口/路由，按准确主线制品和固定真实证据启用生产外部身份。
 
