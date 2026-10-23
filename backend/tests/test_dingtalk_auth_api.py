@@ -125,7 +125,7 @@ class _FaeLaunch:
         self.calls.append((context.internal_user_id, agent_id))
         return SimpleNamespace(
             launch_url=(
-                "https://agent.orbbec.com.cn/fae/"
+                "https://fae.orbbec.com.cn/"
                 f"#platform_launch={'l' * 43}"
             ),
             expires_at=datetime.now(UTC) + timedelta(minutes=1),
@@ -1462,7 +1462,7 @@ def test_revoked_fae_grant_denies_the_next_request_without_breaking_direct_use(
     assert revoked.json() == {"detail": "fae workbench access required"}
     assert direct_use.status_code == 200
     assert direct_use.json()["launch_url"] == (
-        "https://agent.orbbec.com.cn/fae/"
+        "https://fae.orbbec.com.cn/"
         f"#platform_launch={'l' * 43}"
     )
     assert launch.calls == [(auth.context.internal_user_id, "ai-fae-agent")]

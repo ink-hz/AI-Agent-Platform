@@ -22,8 +22,8 @@ from .partner_models import PartnerIdentityError
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 _FAE_AGENT_ID = "ai-fae-agent"
-_FAE_LAUNCH_BASE = "https://agent.orbbec.com.cn/fae/"
-_FAE_PARTNER_LAUNCH_BASE = "https://fae.orbbec.com.cn/app/"
+_FAE_LAUNCH_BASE = "https://fae.orbbec.com.cn/"
+_FAE_PARTNER_LAUNCH_BASE = "https://fae.orbbec.com.cn/"
 _ENTERPRISE_LAUNCH_BASES = {
     _FAE_AGENT_ID: _FAE_LAUNCH_BASE,
     "ai-daq-fae-agent": "https://agent.orbbec.com.cn/daq/",

@@ -170,7 +170,7 @@ async def test_partner_launch_contains_only_generic_subject() -> None:
     exchanged = await service.exchange(issued.code)
 
     assert issued.launch_url == (
-        "https://fae.orbbec.com.cn/app/"
+        "https://fae.orbbec.com.cn/"
         "#partner_launch=single-use-agent-launch-code-123456"
     )
     assert repository.issued == [
@@ -344,7 +344,7 @@ async def test_launch_code_is_opaque_single_use_and_agent_authorized() -> None:
     exchanged = await service.exchange(issued.code)
 
     assert issued.launch_url == (
-        "https://agent.orbbec.com.cn/fae/"
+        "https://fae.orbbec.com.cn/"
         "#platform_launch=single-use-agent-launch-code-123456"
     )
     assert issued.code not in repr(issued)
@@ -550,7 +550,7 @@ def test_create_app_mounts_authenticated_agent_launch(
 
     assert response.status_code == 200
     assert response.json()["launch_url"].startswith(
-        "https://agent.orbbec.com.cn/fae/#platform_launch="
+        "https://fae.orbbec.com.cn/#platform_launch="
     )
 
 

@@ -1704,7 +1704,7 @@ if not isinstance(url, str):
     raise SystemExit(1)
 parsed = urllib.parse.urlsplit(url)
 if (parsed.scheme, parsed.netloc, parsed.path) != (
-    "https", "agent.orbbec.com.cn", "/fae/"
+    "https", "fae.orbbec.com.cn", "/"
 ):
     raise SystemExit(1)
 if parsed.query or parsed.fragment.count("=") != 1:
@@ -2456,7 +2456,7 @@ value=json.load(open(sys.argv[1],encoding='utf-8'))
 url=value.get('launch_url')
 if not isinstance(url,str): raise SystemExit(1)
 parsed=urllib.parse.urlsplit(url)
-if (parsed.scheme,parsed.netloc,parsed.path) != ('https','agent.orbbec.com.cn','/fae/'): raise SystemExit(1)
+if (parsed.scheme,parsed.netloc,parsed.path) != ('https','fae.orbbec.com.cn','/'): raise SystemExit(1)
 if parsed.query or parsed.fragment.count('=') != 1: raise SystemExit(1)
 fragment_key,fragment_code=parsed.fragment.split('=',1)
 if fragment_key != 'platform_launch': raise SystemExit(1)
