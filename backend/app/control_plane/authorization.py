@@ -34,6 +34,10 @@ _FAE_WORKBENCH_SHELL_ROUTES = frozenset({
 })
 
 _SDK_WORKBENCH_ROUTES = frozenset({
+    ("GET", "/api/v1/sdk-knowledge/search"),
+    ("GET", "/api/v1/sdk-knowledge/pages/{page_id}"),
+    ("POST", "/api/v1/sdk-knowledge/changes/inspect"),
+    ("POST", "/api/v1/sdk-knowledge/changes/analyze"),
     ("GET", "/sdk-admin"),
     ("GET", "/sdk-admin/"),
     ("GET", "/sdk-admin/{client_path:path}"),

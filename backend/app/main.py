@@ -235,6 +235,7 @@ from .sdk_workbench.native_client import NativeZenTaoClient
 from .sdk_workbench.native_repository import NativeSdkRepository
 from .sdk_workbench.native_routes import build_sdk_native_router
 from .sdk_admin.routes import build_sdk_admin_router
+from .sdk_knowledge.routes import build_sdk_knowledge_router
 from .sdk_workbench.native_service import NativeSdkService
 from .sdk_workbench.sso_repository import SdkSsoRepository
 from .sdk_workbench.service import SdkService
@@ -1727,6 +1728,7 @@ def create_app(
     app.include_router(build_sdk_router())
     app.include_router(build_sdk_native_router())
     app.include_router(build_sdk_admin_router())
+    app.include_router(build_sdk_knowledge_router())
     if sdk_sso_service is not None:
         app.include_router(build_sdk_sso_router(sdk_sso_service))
     if voc_internal_router is not None:

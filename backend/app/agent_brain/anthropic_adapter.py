@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import stat
 import time
-from typing import Any, Callable, Literal
+from collections.abc import Callable
+from pathlib import Path
+from typing import Literal
 
 import httpx
 
@@ -20,7 +21,6 @@ from app.agent_brain.model_adapter import (
     ProviderUnavailable,
     ThinkingDelta,
 )
-
 
 _THINKING_FLUSH_SECONDS = 0.5
 _THINKING_FLUSH_BYTES = 4096
@@ -95,6 +95,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
         auth_scheme: Literal["x-api-key", "bearer"] = "x-api-key",
         client: httpx.Client,
         now: Callable[[], float] = time.monotonic,
+        max_attempts: int = 2,
     ) -> None:
         if (
             not isinstance(base_url, str)
@@ -104,6 +105,8 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
             or auth_scheme not in {"x-api-key", "bearer"}
             or not isinstance(client, httpx.Client)
             or not callable(now)
+            or type(max_attempts) is not int
+            or max_attempts not in {1, 2}
         ):
             raise ValueError("Anthropic Adapter configuration invalid")
         self._base_url = base_url.rstrip("/")
@@ -111,6 +114,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
         self._auth_scheme = auth_scheme
         self._client = client
         self._now = now
+        self._max_attempts = max_attempts
 
     @classmethod
     def from_secret_file(
@@ -120,6 +124,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
         api_key_file: str,
         auth_scheme: Literal["x-api-key", "bearer"] = "x-api-key",
         client: httpx.Client,
+        max_attempts: int = 2,
     ) -> AnthropicMessagesAdapter:
         try:
             path = Path(api_key_file)
@@ -142,10 +147,15 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
             api_key=api_key,
             auth_scheme=auth_scheme,
             client=client,
+            max_attempts=max_attempts,
         )
 
     def __repr__(self) -> str:
         return "AnthropicMessagesAdapter(base_url=<redacted>, api_key=<redacted>)"
+
+    @property
+    def max_attempts(self) -> int:
+        return self._max_attempts
 
     def _auth_headers(self) -> dict[str, str]:
         if self._auth_scheme == "bearer":
@@ -160,7 +170,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
     ) -> BrainModelResponse:
         if not isinstance(request, BrainModelRequest):
             raise ValueError("Brain model request required")
-        for attempt in range(2):
+        for attempt in range(self._max_attempts):
             saw_event = False
             try:
                 with self._client.stream(
@@ -174,7 +184,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
                     },
                 ) as response:
                     if response.status_code == 429 or response.status_code >= 500:
-                        if attempt == 0:
+                        if attempt + 1 < self._max_attempts:
                             continue
                         raise ProviderUnavailable()
                     if response.status_code < 200 or response.status_code >= 300:
@@ -229,7 +239,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
                         coalescer.flush_all(provider_id)
                     return _aggregate_events(events)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout):
-                if saw_event or attempt == 1:
+                if saw_event or attempt + 1 == self._max_attempts:
                     raise ProviderInterrupted() if saw_event else ProviderUnavailable()
                 continue
             except (ProviderRefused, ProviderTruncated, ProviderUnavailable):
@@ -237,7 +247,7 @@ class AnthropicMessagesAdapter(BrainModelAdapter):
             except ProviderInterrupted:
                 raise
             except httpx.HTTPError:
-                if saw_event or attempt == 1:
+                if saw_event or attempt + 1 == self._max_attempts:
                     raise ProviderInterrupted() if saw_event else ProviderUnavailable()
         raise ProviderUnavailable()
 
@@ -287,10 +297,10 @@ def _aggregate_events(events: list[dict[str, object]]) -> BrainModelResponse:
                 else:
                     raise ValueError
             elif event_type == "content_block_stop":
-                index = event["index"]
-                if index in partial_json:
-                    if partial_json[index]:
-                        blocks[index]["input"] = json.loads(partial_json[index])
+                # Defer tool JSON decoding until the final stop reason is known.
+                # Truncated JSON is a length failure, not a broken transport.
+                if type(event.get("index")) is not int:
+                    raise ValueError
             elif event_type == "message_delta":
                 delta = event.get("delta")
                 if not isinstance(delta, dict):
@@ -307,12 +317,15 @@ def _aggregate_events(events: list[dict[str, object]]) -> BrainModelResponse:
                 raise ValueError
         if provider_id is None or not stopped or not isinstance(stop_reason, str):
             raise ValueError
-        ordered = tuple(blocks[index] for index in sorted(blocks))
         if stop_reason == "refusal":
             category = stop_details.get("category") if stop_details else None
             raise ProviderRefused(category if isinstance(category, str) else None)
         if stop_reason == "max_tokens":
             raise ProviderTruncated()
+        for index, raw in partial_json.items():
+            if raw:
+                blocks[index]["input"] = json.loads(raw)
+        ordered = tuple(blocks[index] for index in sorted(blocks))
         return BrainModelResponse(
             provider_request_id=provider_id,
             content_blocks=ordered,
