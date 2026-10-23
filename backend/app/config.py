@@ -115,6 +115,8 @@ class Config:
     control_plane: ControlPlaneConfig
     partner_encryption_keyring_file: str = ""
     partner_hmac_keyring_file: str = ""
+    partner_dingtalk_client_id: str = ""
+    partner_dingtalk_client_secret_file: str = ""
     sdk_sso_enabled: bool = False
     sdk_sso_public_origin: str = ""
     sdk_sso_entry_code: str = ""
@@ -287,6 +289,7 @@ _INLINE_CONTROL_SECRET_ENV = (
     "PLATFORM_CONTROL_DATABASE_URL",
     "PLATFORM_CONTROL_AUDIT_DATABASE_URL",
     "PLATFORM_DINGTALK_APP_SECRET",
+    "PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET",
     "PLATFORM_PARTNER_ENCRYPTION_KEYRING",
     "PLATFORM_PARTNER_HMAC_KEYRING",
     "PLATFORM_IDENTITY_ENCRYPTION_KEYRING",
@@ -1135,6 +1138,8 @@ def load_config() -> Config:
         partner_callback_path=partner_callback_path,
         partner_encryption_keyring_file=os.getenv("PLATFORM_PARTNER_ENCRYPTION_KEYRING_FILE", "").strip(),
         partner_hmac_keyring_file=os.getenv("PLATFORM_PARTNER_HMAC_KEYRING_FILE", "").strip(),
+        partner_dingtalk_client_id=os.getenv("PLATFORM_PARTNER_DINGTALK_CLIENT_ID", "").strip(),
+        partner_dingtalk_client_secret_file=os.getenv("PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET_FILE", "").strip(),
         control_plane=_load_control_plane_config(),
         hr_agent_settings=load_hr_agent_settings(os.environ),
         hr_role_package_root=os.getenv("PLATFORM_HR_ROLE_PACKAGE_ROOT", "").strip(),

@@ -679,9 +679,13 @@ def build_partner_service(config: Config) -> PartnerService:
 def build_external_dingtalk_provider(config: Config, service: PartnerService):
     from .control_plane.dingtalk_external_provider import DingTalkExternalIdentityProvider
 
+    if not config.partner_dingtalk_client_id or not config.partner_dingtalk_client_secret_file:
+        raise RuntimeError("external_dingtalk_credentials_required")
+    if config.partner_dingtalk_client_id == config.control_plane.dingtalk_app_key:
+        raise RuntimeError("external_dingtalk_registration_must_differ_from_enterprise")
     return DingTalkExternalIdentityProvider(
-        client_id=config.control_plane.dingtalk_app_key,
-        client_secret=read_secret_file(config.control_plane.dingtalk_app_secret_file),
+        client_id=config.partner_dingtalk_client_id,
+        client_secret=read_secret_file(config.partner_dingtalk_client_secret_file),
         redirect_uri="https://agent.orbbec.com.cn/api/v1/auth/dingtalk/callback",
         verified_at_for_subject=service.external_verified_at,
     )

@@ -216,6 +216,10 @@ def test_factory_builds_partner_service_without_brain_or_relay(monkeypatch, tmp_
     assert not config.agent_brain_enabled and not config.execution_relay_enabled
     secret = tmp_path / "oauth-secret"
     secret.write_text("test-secret"); secret.chmod(0o600)
+    external_secret = tmp_path / "external-oauth-secret"
+    external_secret.write_text("external-test-secret"); external_secret.chmod(0o600)
+    monkeypatch.setenv("PLATFORM_PARTNER_DINGTALK_CLIENT_ID", "external-test-app")
+    monkeypatch.setenv("PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET_FILE", str(external_secret))
     control = replace(config.control_plane, dingtalk_app_key="test-app", dingtalk_app_secret_file=str(secret))
     original_load = main.load_config
     monkeypatch.setattr(main, "load_config", lambda **kwargs: replace(original_load(**kwargs), control_plane=control))
@@ -225,6 +229,8 @@ def test_factory_builds_partner_service_without_brain_or_relay(monkeypatch, tmp_
     assert isinstance(app.state.partner_service, PartnerService)
     assert isinstance(app.state.partner_provider, DingTalkExternalIdentityProvider)
     assert app.state.partner_auth_broker.service is app.state.partner_service
+    query = parse_qs(urlsplit(app.state.partner_provider.begin_auth("factory-state")).query)
+    assert query["client_id"] == ["external-test-app"]
     with TestClient(app, base_url="https://agent.example.test") as client:
         assert client.get("/partner-auth/start?return_path=/", follow_redirects=False).status_code == 400
 
