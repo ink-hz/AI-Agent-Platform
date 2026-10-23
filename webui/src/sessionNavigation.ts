@@ -1,7 +1,7 @@
 import { FAE_MANAGEMENT_PATH } from "./platform/workspaces";
 
 
-export type SessionSource = "" | "metabot" | "fae" | "admin";
+export type SessionSource = "" | "metabot" | "fae" | "admin" | "voc";
 export type SessionSentiment = "" | "positive" | "negative" | "other";
 
 export type SessionFilters = {
@@ -42,7 +42,7 @@ export const EMPTY_SESSION_FILTERS: SessionFilters = {
 };
 
 
-const SOURCES = new Set<SessionSource>(["", "metabot", "fae", "admin"]);
+const SOURCES = new Set<SessionSource>(["", "metabot", "fae", "admin", "voc"]);
 const SENTIMENTS = new Set<SessionSentiment>(["", "positive", "negative", "other"]);
 
 

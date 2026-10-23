@@ -132,6 +132,7 @@ class PsycopgObservabilityRepository:
                 if profile.id in seen:
                     continue
                 source = (
+                    "voc" if profile.id == "voc" else
                     "fae" if profile.id in {"ai-fae-agent", "ai-daq-fae-agent"}
                     else "admin" if profile.id == "ai-admin-agent"
                     else "metabot"
@@ -247,8 +248,10 @@ class PsycopgObservabilityRepository:
             created_at=row["created_at"],
             last_active_at=row["last_active_at"],
             turn_count=int(row["turn_count"]),
-            feedback_count=int(row["feedback_count"]),
-            review_count=int(row["review_count"]),
+            feedback_count=int(row["feedback_count"]) if row["feedback_count"] is not None else None,
+            review_count=int(row["review_count"]) if row["review_count"] is not None else None,
+            feedback_availability="unavailable" if row["source_kind"] == "voc" else "available",
+            review_availability="unavailable" if row["source_kind"] == "voc" else "available",
             latest_outcome=row["latest_outcome"],
             source_synced_at=row["source_synced_at"],
             participant_count=row.get("participant_count"),
@@ -430,6 +433,8 @@ class PsycopgObservabilityRepository:
             trace_key=row["trace_key"], outcome=row["outcome"], fallback_used=row["fallback_used"],
             duration_ms=row["duration_ms"], sources=sources, evidence=evidence,
             evidence_availability=availability, feedback=feedback, reviews=reviews,
+            feedback_availability="unavailable" if row["source_kind"] == "voc" else "available",
+            review_availability="unavailable" if row["source_kind"] == "voc" else "available",
             improvements=improvements,
             input_attachments=input_attachments or [],
             output_attachments=output_attachments or [],

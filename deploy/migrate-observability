@@ -14,7 +14,8 @@ repository_root="$(cd "$(dirname "$0")/.." && pwd -P)"
 case "$migration_file" in
   "$repository_root/backend/migrations/011_admin_session_subject_links.sql"|\
   "$repository_root/backend/migrations/014_admin_verified_sender_view.sql"|\
-  "$repository_root/backend/migrations/015_daq_observability.sql") ;;
+  "$repository_root/backend/migrations/015_daq_observability.sql"|\
+  "$repository_root/backend/migrations/016_voc_observability.sql") ;;
   *) fail ;;
 esac
 
@@ -121,6 +122,13 @@ select (
         pg_get_viewdef(to_regclass('platform_read.sessions'))) > 0
       and position('platform_source_daq' in
         pg_get_viewdef(to_regclass('platform_read.traces'))) > 0
+    when :'expected_version'::integer = 16 then
+      to_regclass('platform_source_voc.chat_sessions') is not null
+      and to_regclass('platform_source_voc.chat_turns') is not null
+      and position('platform_source_voc' in
+        pg_get_viewdef(to_regclass('platform_read.sessions'))) > 0
+      and position('platform_source_voc' in
+        pg_get_viewdef(to_regclass('platform_read.turns'))) > 0
     else false
   end
 )::int

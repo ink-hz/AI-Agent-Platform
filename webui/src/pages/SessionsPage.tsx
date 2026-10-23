@@ -148,7 +148,7 @@ export function SessionsView({
       <label><span>搜索</span><input name="q" value={draft.q} onChange={(event) => setDraft((current) => ({ ...current, q: event.target.value }))} placeholder="用户提问或 Agent 回答" /></label>
       {showScopeFilters && <>
         <label><span>Agent</span><select name="agent_id" value={draft.agent_id} onChange={(event) => { const agent_id = event.target.value; setDraft((current) => ({ ...current, agent_id, page: 1 })); apply({ ...applied, agent_id, page: 1 }); }}><option value="">全部业务 Agent</option>{selectableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label>
-        <label><span>来源</span><select name="source_kind" value={draft.source_kind} onChange={(event) => { const source_kind = event.target.value as SessionSource; setDraft((current) => ({ ...current, source_kind, page: 1 })); apply({ ...applied, source_kind, page: 1 }); }}><option value="">全部来源</option><option value="metabot">MetaBot</option><option value="fae">FAE</option><option value="admin">Admin</option></select></label>
+        <label><span>来源</span><select name="source_kind" value={draft.source_kind} onChange={(event) => { const source_kind = event.target.value as SessionSource; setDraft((current) => ({ ...current, source_kind, page: 1 })); apply({ ...applied, source_kind, page: 1 }); }}><option value="">全部来源</option><option value="metabot">MetaBot</option><option value="fae">FAE</option><option value="admin">Admin</option><option value="voc">VOC</option></select></label>
       </>}
       {!showScopeFilters && <>
         <label><span>Channel</span><input name="channel" value={draft.channel} onChange={(event) => setDraft((current) => ({ ...current, channel: event.target.value }))} /></label>

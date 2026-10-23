@@ -234,7 +234,7 @@ class FleetReadService:
     def _data_freshness(self, agent_id: str, usage, now: datetime) -> str:
         if usage is None:
             return "unavailable"
-        if agent_id not in {"ai-fae-agent", "ai-admin-agent", "ai-daq-fae-agent"}:
+        if agent_id not in {"ai-fae-agent", "ai-admin-agent", "ai-daq-fae-agent", "voc"}:
             return "live"
         if usage.last_synced_at is None or now - usage.last_synced_at > timedelta(hours=36):
             return "stale"

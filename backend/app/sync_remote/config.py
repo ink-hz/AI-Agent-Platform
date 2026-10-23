@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-SourceKind = Literal["fae", "admin", "daq"]
+SourceKind = Literal["fae", "admin", "daq", "voc"]
 
 
 @dataclass(frozen=True)
@@ -78,5 +78,10 @@ def default_sources(ssh_host: str, ssh_key_path: str) -> dict[SourceKind, SyncSo
         remote_python="python", remote_container="ai-daq-fae-backend",
         tables=sources["fae"].tables,
         trace_jsonl_path="/app/data/daq_traces.jsonl",
+    )
+    sources["voc"] = SyncSource(
+        kind="voc", ssh_host=ssh_host, ssh_key_path=ssh_key_path,
+        remote_python="python3", remote_container=None,
+        tables=(TableExport("chat_sessions", "chat_sessions"), TableExport("chat_turns", "chat_turns")),
     )
     return sources

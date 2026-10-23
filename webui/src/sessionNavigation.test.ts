@@ -4,6 +4,11 @@ import { EMPTY_SESSION_FILTERS, sessionFiltersFromSearch, sessionsPath } from ".
 
 
 describe("Session URL state", () => {
+  it("preserves the VOC source and agent filter", () => {
+    expect(sessionFiltersFromSearch("?agent_id=voc&source_kind=voc")).toEqual({
+      ...EMPTY_SESSION_FILTERS, agent_id: "voc", source_kind: "voc",
+    });
+  });
   it("round-trips Agent, source, and Unicode query text", () => {
     const path = sessionsPath({
       ...EMPTY_SESSION_FILTERS,

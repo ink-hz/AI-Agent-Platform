@@ -24,7 +24,7 @@ export function SessionListItem({
 }) {
   const sender = session.source_kind === "metabot"
     ? formatSenderIdentity(session.primary_sender_name, session.primary_sender_department)
-    : session.source_kind === "admin" && session.primary_sender_name
+    : (session.source_kind === "admin" || session.source_kind === "voc") && session.primary_sender_name
       ? [session.primary_sender_name, session.primary_sender_department].filter(Boolean).join(" · ")
       : null;
   const additionalParticipants = additionalParticipantLabel(session.participant_count);

@@ -559,7 +559,8 @@ def sanitize_session(
                         "provider_configuration_error", "provider_protocol_error",
                         "provider_rate_limited", "provider_error", "internal_error",
                         "schema_error", "persistence_error",
-                        "authorization_error",
+                        "authorization_error", "sent", "delivery_pending", "delivery_failed",
+                        "pending", "processing", "unavailable",
                     },
                 ),
                 fallback_used=turn.fallback_used,
@@ -580,7 +581,7 @@ def sanitize_session(
         )
     return SanitizedSessionRecord(
         agent_id=raw.agent_id,
-        source_kind=_safe_enum(raw.source_kind, {"metabot", "fae", "admin"})
+        source_kind=_safe_enum(raw.source_kind, {"metabot", "fae", "admin", "voc"})
         or "unknown",
         channel=_safe_enum(raw.channel, {"feishu", "dingtalk", "web", "api", "fae"}),
         title=title,

@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
-SourceKind = Literal["metabot", "fae", "admin"]
+SourceKind = Literal["metabot", "fae", "admin", "voc"]
 AgentVisibility = Literal["business", "system"]
 Availability = Literal["available", "missing", "unavailable", "restricted"]
 Freshness = Literal["live", "fresh", "stale"]
@@ -183,7 +183,7 @@ class TurnDetail(BaseModel):
     answer_time_status: MessageTimeStatus = "unavailable"
     trace_key: str | None = None
     outcome: str | None = None
-    fallback_used: bool = False
+    fallback_used: bool | None = False
     duration_ms: int | None = None
     sources: list[dict] = Field(default_factory=list)
     evidence: list[EvidenceSummary] = Field(default_factory=list)
@@ -257,7 +257,7 @@ class FlywheelOverview(BaseModel):
 
 
 class SyncStatus(BaseModel):
-    source_kind: Literal["fae", "admin", "daq"]
+    source_kind: Literal["fae", "admin", "daq", "voc"]
     status: Literal["running", "succeeded", "failed"]
     started_at: datetime
     completed_at: datetime | None = None

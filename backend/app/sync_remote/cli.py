@@ -74,6 +74,19 @@ def required_daq_schema_available(
         return False
 
 
+def required_voc_schema_available(database_url: str, *, connection_factory=psycopg.connect) -> bool:
+    try:
+        with connection_factory(database_url, autocommit=True) as connection:
+            return connection.execute(
+                "select to_regclass('platform_source_voc.chat_sessions') is not null "
+                "and to_regclass('platform_source_voc.chat_turns') is not null "
+                "and position('platform_source_voc' in pg_get_viewdef('platform_read.sessions'::regclass)) > 0 "
+                "and position('platform_source_voc' in pg_get_viewdef('platform_read.turns'::regclass)) > 0"
+            ).fetchone() == (True,)
+    except Exception:
+        return False
+
+
 def sync_feedback_closure_outbox(directory: Path, importer) -> dict[str, int]:
     summary = {state: 0 for state in HANDOFF_STATES}
     summary["invalid"] = 0
@@ -109,7 +122,7 @@ def sync_feedback_closure_outbox(directory: Path, importer) -> dict[str, int]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Sync remote Agent observability data")
-    parser.add_argument("--source", choices=("fae", "admin", "daq", "all"), default="all")
+    parser.add_argument("--source", choices=("fae", "admin", "daq", "voc", "all"), default="all")
     parser.add_argument("--export-only", action="store_true")
     args = parser.parse_args(argv)
     config = load_config()
@@ -125,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             except SecretFileUnavailable:
                 print("sync_database_unavailable", file=sys.stderr)
                 return 1
-        if any(kind != "daq" for kind in selected):
+        if any(kind not in {"daq", "voc"} for kind in selected):
             review_database_url = resolve_review_database_url(config)
 
     if (
@@ -142,6 +155,11 @@ def main(argv: list[str] | None = None) -> int:
         print("daq: schema_preflight_failed", file=sys.stderr)
         return 1
 
+    if (not args.export_only and "voc" in selected and database_url is not None
+            and not required_voc_schema_available(database_url)):
+        print("voc: schema_preflight_failed", file=sys.stderr)
+        return 1
+
     failed = False
     for kind in selected:
         try:
@@ -150,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{kind}: exported {bundle.source_counts}")
                 continue
             assert database_url is not None
-            if kind == "daq":
+            if kind in {"daq", "voc"}:
                 result = import_bundle(database_url, bundle)
                 print(json.dumps(
                     {"source_kind": kind, "source_sync": asdict(result)},
@@ -158,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
                 ))
                 print(json.dumps(
                     {"source_kind": kind, "review_backfill": {
-                        "status": "not_enabled", "reason": "daq_observability_only"}},
+                        "status": "not_enabled", "reason": f"{kind}_observability_only"}},
                     ensure_ascii=False, sort_keys=True,
                 ))
             elif review_database_url:

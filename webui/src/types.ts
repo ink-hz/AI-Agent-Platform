@@ -128,7 +128,7 @@ export interface OperationsBrief {
   changes: OperationalEvent[];
 }
 
-export type SourceKind = "metabot" | "fae" | "admin";
+export type SourceKind = "metabot" | "fae" | "admin" | "voc";
 export type Freshness = "live" | "fresh" | "stale";
 export type Availability = "available" | "missing" | "unavailable" | "restricted";
 export type SenderIdentityStatus = "resolved" | "name_only" | "unavailable";
@@ -306,7 +306,7 @@ export interface TurnDetail {
   answer_time_status: MessageTimeStatus;
   trace_key: string | null;
   outcome: string | null;
-  fallback_used: boolean;
+  fallback_used: boolean | null;
   duration_ms: number | null;
   sources: Record<string, unknown>[];
   evidence: EvidenceSummary[];
@@ -379,7 +379,7 @@ export interface FlywheelOverview {
 }
 
 export interface SyncStatus {
-  source_kind: "fae" | "admin" | "daq";
+  source_kind: "fae" | "admin" | "daq" | "voc";
   status: "running" | "succeeded" | "failed";
   started_at: string;
   completed_at: string | null;

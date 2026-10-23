@@ -42,6 +42,11 @@ generation_sequence, display_payload, payload_nonce, payload_sha256
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
+def _counted_turns(record: dict) -> list[dict]:
+    turns = list(record.get("turns") or [])
+    return [turn for turn in turns if turn.get("outcome") == "sent"] if record.get("source_kind") == "voc" else turns
+
+
 def _b64(value: bytes | memoryview) -> str:
     return base64.urlsafe_b64encode(bytes(value)).rstrip(b"=").decode("ascii")
 
@@ -248,7 +253,7 @@ class ReplicaObservabilityRepository:
         if any(
             turn.get("outcome") is not None
             and str(turn["outcome"]).casefold()
-            not in {"resolved", "completed", "succeeded", "success"}
+            not in {"resolved", "completed", "succeeded", "success", "sent"}
             for turn in turns
         ):
             return "failed_outcome"
@@ -370,8 +375,8 @@ class ReplicaObservabilityRepository:
         deployment = deployment or self.deployment_status()
         title = record.get("title") or {}
         turns = list(record.get("turns") or [])
-        feedback_available = all("feedback_sentiments" in turn for turn in turns)
-        review_available = all("review_statuses" in turn for turn in turns)
+        feedback_available = record["source_kind"] != "voc" and all("feedback_sentiments" in turn for turn in turns)
+        review_available = record["source_kind"] != "voc" and all("review_statuses" in turn for turn in turns)
         return SessionSummary(
             session_key=record["key"],
             agent_id=record["agent_id"],
@@ -380,7 +385,7 @@ class ReplicaObservabilityRepository:
             title=title.get("text"),
             created_at=_time(record["created_at"]),
             last_active_at=_time(record["last_active_at"]),
-            turn_count=len(turns),
+            turn_count=len(_counted_turns(record)),
             feedback_count=(
                 sum(len(turn.get("feedback_sentiments") or []) for turn in turns)
                 if feedback_available else None
@@ -571,8 +576,8 @@ class ReplicaObservabilityRepository:
             for index, value in enumerate(turn.get("attachments", []), start=1)
         ]
         trace = turn.get("trace")
-        feedback_available = "feedback_sentiments" in turn
-        review_available = "review_statuses" in turn
+        feedback_available = record["source_kind"] != "voc" and "feedback_sentiments" in turn
+        review_available = record["source_kind"] != "voc" and "review_statuses" in turn
         feedback_summary = {
             sentiment: list(turn.get("feedback_sentiments") or []).count(sentiment)
             for sentiment in sorted(set(turn.get("feedback_sentiments") or []))
@@ -590,14 +595,16 @@ class ReplicaObservabilityRepository:
             question=(turn.get("question") or {}).get("text", ""),
             answer=(turn.get("answer") or {}).get("text", ""),
             created_at=_time(turn["created_at"]),
-            question_at=_optional_time(turn.get("question_at"))
-            or _time(turn["created_at"]),
+            question_at=(
+                _optional_time(turn.get("question_at")) if record["source_kind"] == "voc"
+                else _optional_time(turn.get("question_at")) or _time(turn["created_at"])
+            ),
             question_time_status=turn.get("question_time_status") or "estimated",
             answer_at=_optional_time(turn.get("answer_at")),
             answer_time_status=turn.get("answer_time_status") or "unavailable",
             trace_key=turn["key"] if trace else None,
             outcome=turn.get("outcome"),
-            fallback_used=bool(turn.get("fallback_used")),
+            fallback_used=turn.get("fallback_used") if record["source_kind"] == "voc" else bool(turn.get("fallback_used")),
             duration_ms=turn.get("duration_ms"),
             sources=[],
             evidence=[],
@@ -681,7 +688,7 @@ class ReplicaObservabilityRepository:
         for profile in self._catalog.all_profiles():
             owned = [record for record in records if record["agent_id"] == profile.id]
             source = owned[0]["source_kind"] if owned else (
-                "fae" if profile.id in {"ai-fae-agent", "ai-daq-fae-agent"} else "admin" if profile.id == "ai-admin-agent" else "metabot"
+                "voc" if profile.id == "voc" else "fae" if profile.id in {"ai-fae-agent", "ai-daq-fae-agent"} else "admin" if profile.id == "ai-admin-agent" else "metabot"
             )
             result.append(
                 AgentSummary(
@@ -695,7 +702,7 @@ class ReplicaObservabilityRepository:
                     source_kind=source,
                     deployment="Cloud replica",
                     session_count=len(owned),
-                    total_turns=sum(len(record.get("turns", [])) for record in owned),
+                    total_turns=sum(len(_counted_turns(record)) for record in owned),
                     last_activity_at=max(
                         (_time(record["last_active_at"]) for record in owned),
                         default=None,
@@ -754,14 +761,14 @@ class ReplicaObservabilityRepository:
         daily: dict[tuple[str, date], int] = {}
         for record in records:
             by_agent.setdefault(record["agent_id"], []).append(record)
-            for turn in record.get("turns", []):
+            for turn in _counted_turns(record):
                 day = _time(turn["created_at"]).astimezone(_SHANGHAI).date()
                 daily[(record["agent_id"], day)] = daily.get((record["agent_id"], day), 0) + 1
         usage = []
         today = now.astimezone(_SHANGHAI).date()
         last_success = self._latest_success()
         for agent_id, sessions in by_agent.items():
-            turns = [turn for session in sessions for turn in session.get("turns", [])]
+            turns = [turn for session in sessions for turn in _counted_turns(session)]
             latest_session = max(sessions, key=lambda item: _time(item["last_active_at"]))
             recent_turn = max(turns, key=lambda item: _time(item["created_at"]), default=None)
             usage.append(

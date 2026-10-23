@@ -94,6 +94,13 @@ DAQ_COLUMNS = {**FAE_COLUMNS, "chat_sessions": FAE_COLUMNS["chat_sessions"] + (
     "owner_subject_id", "owner_subject_type",
 )}
 
+VOC_COLUMNS = {
+    "chat_sessions": FAE_COLUMNS["chat_sessions"] + (
+        "owner_subject_id", "owner_subject_type", "primary_sender_name", "primary_sender_department",
+    ),
+    "chat_turns": FAE_COLUMNS["chat_turns"],
+}
+
 
 ADMIN_COLUMNS: dict[str, tuple[str, ...]] = {
     "admin_chat_sessions": FAE_COLUMNS["chat_sessions"],
@@ -178,6 +185,10 @@ def normalize_session_subject_link(
 
 
 def _target_table(source_kind: str, source_table: str) -> tuple[str, str]:
+    if source_kind == "voc":
+        if source_table not in VOC_COLUMNS:
+            raise ImportValidationError("unknown_source_table")
+        return "platform_source_voc", source_table
     if source_kind in {"fae", "daq"}:
         if source_table not in FAE_COLUMNS:
             raise ImportValidationError("unknown_source_table")
@@ -220,7 +231,7 @@ def normalize_row(
             },
             ("staff_id",),
         )
-    columns = (
+    columns = VOC_COLUMNS[source_table] if source_kind == "voc" else (
         (DAQ_COLUMNS if source_kind == "daq" else FAE_COLUMNS)[source_table]
         if source_kind in {"fae", "daq"}
         else ADMIN_COLUMNS[source_table]
@@ -234,6 +245,17 @@ def normalize_row(
     if source_kind == "admin" and source_table == "admin_chat_sessions":
         known |= _SUBJECT_EVIDENCE_COLUMNS
     details.update({key: value for key, value in row.items() if key not in known})
+    if source_kind == "voc" and source_table == "chat_sessions":
+        details.pop("verified_subject", None)
+        if row.get("owner_subject_id") is not None:
+            try:
+                owner = str(UUID(str(row["owner_subject_id"])))
+            except (ValueError, TypeError, AttributeError):
+                raise ImportValidationError("source_identity_unverified") from None
+            if row.get("owner_subject_type") != "enterprise_member" or row.get("user_id") != owner:
+                raise ImportValidationError("source_identity_unverified")
+            # The replica's verified_subject contract is FAE-scoped. Keep VOC's
+            # canonical owner in its private mirror, not in that wire claim.
     if source_kind == "fae" and source_table == "chat_sessions":
         # Metadata claims never establish ownership. Only server owner columns
         # plus their persisted authentication mode can mint this projection.
@@ -328,6 +350,11 @@ def validate_bundle(bundle: ExportBundle) -> dict[str, int]:
     for table, rows in bundle.tables.items():
         _target_table(bundle.source_kind, table)
         for row in rows:
+            if bundle.source_kind == "voc" and (
+                not str(row.get("external_session_id", "")).startswith("voc:")
+                or (table == "chat_turns" and (row.get("metadata") or {}).get("agent_id") != "voc")
+            ):
+                raise ImportValidationError("source_identity_unverified")
             if bundle.source_kind == "daq" and (
                 (table == "chat_sessions" and not str(row.get("external_session_id", "")).startswith("daq:"))
                 or (table == "chat_turns" and (row.get("metadata") or {}).get("agent_id") != "ai-daq-fae-agent")
@@ -337,11 +364,13 @@ def validate_bundle(bundle: ExportBundle) -> dict[str, int]:
             if not row.get(identity_key):
                 raise ImportValidationError("missing_required_key")
             for key in required.get(table, ()):
+                if bundle.source_kind == "voc" and key == "trace_id":
+                    continue
                 if not row.get(key):
                     raise ImportValidationError("missing_required_key")
 
-    session_table = "chat_sessions" if bundle.source_kind in {"fae", "daq"} else "admin_chat_sessions"
-    turn_table = "chat_turns" if bundle.source_kind in {"fae", "daq"} else "admin_chat_turns"
+    session_table = "chat_sessions" if bundle.source_kind in {"fae", "daq", "voc"} else "admin_chat_sessions"
+    turn_table = "chat_turns" if bundle.source_kind in {"fae", "daq", "voc"} else "admin_chat_turns"
     session_ids = {str(row["id"]) for row in bundle.tables.get(session_table, ()) if row.get("id")}
     turns = bundle.tables.get(turn_table, ())
     orphan_turn_sessions = sum(

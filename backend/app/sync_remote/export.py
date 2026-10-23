@@ -59,6 +59,9 @@ database_url = environment[b"DATABASE_URL"].decode()
 
 
 def build_remote_program(source: SyncSource) -> str:
+    if source.kind == "voc":
+        from .voc_export import build_voc_program
+        return build_voc_program(source)
     if source.kind == "daq":
         from .daq_export import build_daq_program
         return build_daq_program(source)
@@ -130,6 +133,9 @@ def build_ssh_command(source: SyncSource) -> list[str]:
 
 
 def parse_export(source_kind: str, output: str) -> ExportBundle:
+    if source_kind == "voc":
+        from .voc_export import validate_voc_records
+        validate_voc_records(output)
     if source_kind == "daq":
         from .daq_export import validate_daq_records
         validate_daq_records(output)
@@ -151,7 +157,7 @@ def parse_export(source_kind: str, output: str) -> ExportBundle:
             tables[record["table"]].append(row)
         elif record_type == "trace_span" and isinstance(row, dict):
             spans.append(row)
-        elif source_kind == "daq" and record_type in {"source_identity", "table_complete"}:
+        elif source_kind in {"daq", "voc"} and record_type in {"source_identity", "table_complete"}:
             continue
         elif record_type in {"malformed_trace_line", "trace_file_missing"}:
             malformed += 1

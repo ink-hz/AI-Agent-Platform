@@ -52,3 +52,13 @@ def test_sync_wrapper_exports_feedback_closure_outbox() -> None:
     assert "security find-generic-password" not in script
     assert 'set -- --source all' in script
     assert 'app.sync_remote.cli "$@"' in script
+
+
+def test_voc_sync_is_an_independent_five_minute_source_job() -> None:
+    plist = plistlib.loads((ROOT / "deploy/com.orbbec.ai-agent-platform-voc-sync.plist").read_bytes())
+    assert plist["StartInterval"] == 300 and plist["RunAtLoad"] is True
+    assert plist["ProgramArguments"][-2:] == ["--source", "voc"]
+    assert "KeepAlive" not in plist
+    installer = (ROOT / "deploy/install-voc-sync-launchagent.sh").read_text()
+    assert "com.orbbec.ai-agent-platform-voc-sync" in installer
+    assert "launchctl bootstrap" in installer
