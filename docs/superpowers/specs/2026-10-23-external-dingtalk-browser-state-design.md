@@ -25,9 +25,13 @@ with an opaque deterministic suffix derived from that attempt's validated state.
 nonce and five-minute expiry remain server-validated; no anonymous/enterprise fallback,
 no provider protocol switch, no callback replay and no client-provided identity. Each
 callback reads/clears only its own cookie. Multiple active QR pages in one browser must
-work independently, while another browser still cannot complete them. Bound pending
-cookies to3, matching existing internal-login concurrency intent; when full, create no
-new attempt and explicitly report pending-limit429, retaining existing valid QR flows.
+work independently, while another browser still cannot complete them. Use request-level advisory admission: when a request presents3 or more matching pending
+cookies, create no new attempt and explicitly report pending-limit429, retaining existing
+valid QR flows. This is not an atomic cross-request concurrency quota: simultaneous requests
+with the same earlier Cookie snapshot can create additional independent attempts. They must
+remain independently completable; subsequent requests presenting>=3 are rejected. Existing
+backend/IP rate limits bound server pressure. A strict global browser quota would require
+new shared browser coordination and is outside this authentication correctness hotfix.
 Cookies expire after300seconds; clear only completed attempt. Do not reuse one global
 nonce and do not adopt a client-supplied nonce to relax browser binding.
 

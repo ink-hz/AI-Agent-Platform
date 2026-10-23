@@ -27,8 +27,11 @@ backend/tests/test_external_dingtalk_integration.py, focused browser/state regre
 - [ ] Implement per-attempt cookie namespace derived from validated state, secure flags
   and300second TTL; callback lookup/delete only matching cookie. Test stranger/missing/
   mismatched/duplicate/legacy/replay/expired cases still fail before provider as appropriate.
-- [ ] Enforce3 pending cookies before creating another DB attempt; explicit429 response
-  and unchanged existing cookies/attempts. Completed attempts free their own slot.
+- [ ] Enforce request-level admission when3 pending cookies are presented, before creating
+  another DB attempt; explicit429 and unchanged existing cookies/attempts. Completed attempts
+  free their own slot. Overlapping requests can exceed advisory3: test a shared two-cookie
+  request snapshot yields independent additional flows, all remain completable, and a later
+  request presenting>=3 is rejected. Do not claim a global atomic concurrency cap.
 - [ ] HTML Accept receives safe401 recovery for state failures and429 pending-limit;
   API Accept retains JSON codes. Fixed retry URL https://fae.orbbec.com.cn/partner/login,
   return URL https://fae.orbbec.com.cn/. No dynamic HTML/token/query reflection.
