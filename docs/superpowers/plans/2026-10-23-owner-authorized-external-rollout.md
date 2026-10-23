@@ -23,11 +23,15 @@ Alternatives rejected: setting v1 test booleans true would fabricate evidence; r
 
 ## Tasks
 
-- [ ] Platform gate + new separate v2 JSON schema + RED/GREEN compatibility/negative tests.
-- [ ] FAE gate + RED/GREEN v1/v2 parity and unknown fields, pending state, date, kind, file/digest tests. Public capabilities remains exact v1 bool shape.
-- [ ] Independent review of both gate diffs and whole rollout configuration.
-- [ ] Production backup and additive123 migration only; new purpose-separated production partner keys; archive honest authorization document and install identical pinned service copies.
-- [ ] Disable temporary Dev edge routes before enabling production namespace; preserve enterprise callback, shared Nginx/temp permissions and unrelated locations. Stop only Dev probe after its evidence is retained.
-- [ ] Publish reviewed Platform main image/config via image-only scoped Compose transaction preserving latest complete overlays. Gate configuration changes explicitly reviewed; do not reset other applications.
-- [ ] Publish FAE through standard full release gates, same provider/digest file. Anonymous remains401; external capability true and /partner/login -> production personalopenid authorization.
-- [ ] Verify public script completeness, services, exact releases, no anonymous/invalid nonce bypass. Report external real-person login still pending until observed; no model/eval against production.
+- [x] Platform gate + new separate v2 JSON schema + RED/GREEN compatibility/negative tests.
+- [x] FAE gate + RED/GREEN v1/v2 parity and unknown fields, pending state, date, kind, file/digest tests. Public capabilities remains exact v1 bool shape.
+- [x] Independent review of both gate diffs and whole rollout configuration.
+- [x] Production backup and additive123 migration only; new purpose-separated production partner keys; archive honest authorization document and install identical pinned service copies.
+- [x] Disable temporary Dev edge routes before enabling production namespace; preserve enterprise callback, shared Nginx/temp permissions and unrelated locations. Stop only Dev probe after its evidence is retained.
+- [x] Publish reviewed Platform main image/config via image-only scoped Compose transaction preserving latest complete overlays. Gate configuration changes explicitly reviewed; do not reset other applications.
+- [x] Publish FAE through standard full release gates, same provider/digest file. Anonymous remains401; external capability true and /partner/login -> production personalopenid authorization.
+- [x] Verify public script completeness, services, exact releases, no anonymous/invalid nonce bypass. Report external real-person login still pending until observed; no model/eval against production.
+
+## Release outcome
+
+Both services successfully published. API72d636e3, FAE d969092 / ai-fae-agent-20261023032048. Independent policy review approved. Production external login enabled under explicit owner authorization; real-account acceptance remains pending, not marked passed. Public authorization handoff/security/health probes passed. Private receipts and backup in /opt/orbbec-agent-platform/private/fae-owner-rollout-20261023/ and the API transaction receipt directory.

@@ -87,3 +87,17 @@ provisioning904, subject reference167 (overlapping runs, not a combined count).
 Two real external accounts and current AppKey eligibility remain untested; no
 production evidence file or activation was created. Required lookup reason currently
 selects a fixed protected audit purpose; arbitrary reason text is not retained.
+
+## Current production decision and release (2026-10-23)
+
+The user explicitly authorized direct rollout: “我觉得可以直接上线，然后内外部登录扫码的区别是什么”. This supersedes the earlier requirement to complete two real accounts before activation. A separate strict v2 owner authorization is pinned; v1 real-account evidence remains unchanged. V2 declares real_account_acceptance=pending and contains no invented real-account pass flags. See the owner-authorized rollout plan for the exact six-field contract.
+
+Production API now runs72d636e3559dffbb53850fda677ae170e2c53e5d; FAE runs releaseai-fae-agent-20261023032048 / d96909283a5887980605b84933895b5b17e99db3. Identical owner-release copies use SHA2569426e1e9504004ba45a20e15362d26330997a7b76c9a773d2a8a0b69b367c486; API root:10001 mode0640, root-running FAE root:root mode0600. The archive records authorization, engineering review and pending real accounts.
+
+Production control DB was backed up, then additive123 applied under exact production DB/baseline122 guards, advisory transaction lock and owner role; no existing role grants changed. New purpose-separated production partner keys differ from Development. The API transaction preserved all30 current Compose inputs and latest SDKf1b47ba3 runtime configuration, allowed only image/release SHA/six partner settings, unchanged mounts/command and other containers (FAE excluded as its own authorized standard release). API healthy, restart0, no rollback.
+
+The temporary Development callback maps/start route were removed only after verifying the current file still matched the saved candidate hash. Actual full Nginx config validation and reload passed with temp owners/permissions unchanged; only the Dev probe container was stopped. Encrypted preview test data and backup are retained.
+
+Verification: independent gate review passed163 Platform and87 FAE cases. FAE standard release passed3609 Python tests,3 existing exclusions,278 frontend tests and TypeScript/Vite; release verification hashes/containers/ingress/logs passed. Public capabilities nowexactly {"partner_login_available":true}; /partner/login302 to production /partner-auth/start; production start302 to DingTalk personalopenid only, fixed callback and secure browser nonce. Missing-nonce callback401 before Provider exchange, enterprise invalid-state callback unchanged, anonymous FAE history/review/chat401, production health200. Nginx and both MetaBot services active. No production model/eval request was sent.
+
+Real external-account first login, repeated identity, two-account isolation and real revocation/replay acceptance remain pending; engineering/public auth smoke is not represented as real-user acceptance. Canonical workspace remains https://fae.orbbec.com.cn/ .

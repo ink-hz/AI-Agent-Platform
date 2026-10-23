@@ -53,3 +53,10 @@ callback HTTP 测试和 FAE 企业/外部两身份会话隔离测试。不会通
 
 参考：钉钉官方浏览器 OAuth 文档
 https://opensource.dingtalk.com/developerpedia/docs/develop/permission/token/browser/get_user_app_token_browser/
+
+## 最新发布策略裁定
+
+用户随后明确授权直接上线。平台/FAE均支持独立v2所有者授权文档：仅个人钉钉Provider、
+授权时间、授权证据摘要和real_account_acceptance=pending；v1真实账号验收契约继续
+保持。该变更只影响发布依据，不跳过钉钉验证、权限、加密、隔离、state/nonce、撤销或
+审计。具体生产版本、验证结果和未完成真人验收见外部钉钉runbook最新发布记录。
