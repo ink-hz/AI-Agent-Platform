@@ -117,6 +117,49 @@ def test_three_pending_limit_precedes_attempt_creation_and_completion_frees_slot
 
 
 @pytest.mark.postgres
+def test_simultaneous_start_snapshots_preserve_every_independent_attempt(browser_app, control_database):
+    app, calls, launches, _, auth = browser_app
+    env = control_database['environments']['production']
+    with TestClient(app, base_url='https://agent.orbbec.com.cn') as client:
+        states = [start(client)[0] for _ in range(2)]
+        snapshot = '; '.join(name + '=' + nonce for name, nonce in client.cookies.items())
+        # Two in-flight tabs can each send the same two-cookie snapshot before
+        # either response reaches the shared browser jar. Model that ordering
+        # deterministically, then let the client merge both Set-Cookie headers.
+        for _ in range(2):
+            response = client.get('/partner-auth/start', headers={'cookie': snapshot}, follow_redirects=False)
+            assert response.request.headers['cookie'] == snapshot
+            assert response.status_code == 302, response.text
+            states.append(parse_qs(urlsplit(response.headers['location']).query)['state'][0])
+        assert len(set(states)) == 4
+        assert set(client.cookies) == {cookie_name(state) for state in states}
+        pending_cookies = dict(client.cookies)
+        with psycopg.connect(env['admin']) as conn:
+            attempt_count = conn.execute('select count(*) from platform_control.partner_login_attempts').fetchone()[0]
+        full = client.get('/partner-auth/start', follow_redirects=False)
+        assert full.status_code == 429
+        assert full.json() == {'detail': {'code': 'partner_auth_pending_limit'}}
+        assert 'set-cookie' not in full.headers
+        assert dict(client.cookies) == pending_cookies
+        with psycopg.connect(env['admin']) as conn:
+            assert conn.execute('select count(*) from platform_control.partner_login_attempts').fetchone()[0] == attempt_count
+        assert not calls and not launches
+        with TestClient(app, base_url='https://agent.orbbec.com.cn') as stranger:
+            for state in states:
+                assert complete(stranger, state).status_code == 401
+        assert not calls and not launches
+        for index, state in enumerate(states):
+            completed = complete(client, state)
+            assert completed.status_code == 302, completed.text
+            assert completed.headers['location'].startswith('https://fae.orbbec.com.cn/')
+            assert set(client.cookies) == {cookie_name(pending) for pending in states[index + 1:]}
+            assert len(calls) == index + 1 and len(launches) == index + 1
+            assert complete(client, state).status_code == 401
+            assert len(calls) == index + 1
+        assert not dict(client.cookies) and auth.provider_calls == 0
+
+
+@pytest.mark.postgres
 def test_cookie_namespace_security_and_only_matching_cookie_deleted(browser_app):
     app, _, _, _, _ = browser_app
     with TestClient(app, base_url='https://agent.orbbec.com.cn') as client:
