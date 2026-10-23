@@ -37,6 +37,26 @@ def canonical(value) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
 
 
+def proposal_schema() -> dict:
+    """Inline local schema references without changing the response contract."""
+    schema = AnalysisProposal.model_json_schema()
+    definitions = schema.get('$defs', {})
+
+    def resolve(value, stack=()):
+        if isinstance(value, list):
+            return [resolve(v, stack) for v in value]
+        if not isinstance(value, dict):
+            return value
+        if '$ref' in value:
+            reference = value['$ref']
+            if not reference.startswith('#/$defs/') or reference in stack:
+                raise ValueError('analysis_schema_reference_invalid')
+            return resolve(definitions[reference.removeprefix('#/$defs/')], (*stack, reference))
+        return {k: resolve(v, stack) for k, v in value.items() if k != '$defs'}
+
+    return resolve(schema)
+
+
 def model_context(packet: dict) -> dict:
     """Keep direct claims and one hop of shared-evidence supporting constraints."""
     pages = []
@@ -85,7 +105,7 @@ class ChangeAnalyzer:
         if len(raw) > 160 * 1024:
             raise AnalysisFailure('analysis_context_too_large')
         tool = {'name': 'submit_sdk_analysis', 'description': '提交有引用、待人审的SDK影响和回归建议',
-                'input_schema': AnalysisProposal.model_json_schema()}
+                'input_schema': proposal_schema()}
         request = BrainModelRequest(
             model_id=self.model_id, max_tokens=4096, thinking_display='summarized', effort='medium',
             tools=(tool,), system=({'type': 'text', 'text': SYSTEM_PROMPT},),

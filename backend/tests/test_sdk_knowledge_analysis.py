@@ -142,3 +142,15 @@ def test_context_preserves_one_hop_supporting_claims_for_coherent_contracts():
     context = model.requests[0].messages[0]['content']
     assert '生成头与运行接口的关联约束' in context
     assert 'supporting_claim_ids' in context
+
+
+def test_provider_tool_schema_is_self_contained_and_preserves_nested_constraints():
+    import json
+
+    model = Model()
+    ChangeAnalyzer(model, model_id='configured-model').analyze(packet(), '检查')
+    schema = model.requests[0].tools[0]['input_schema']
+    assert '$ref' not in json.dumps(schema) and '$defs' not in schema
+    assert schema['properties']['regressions']['maxItems'] == 3
+    item = schema['properties']['regressions']['items']
+    assert 'preconditions' in item['required'] and item['additionalProperties'] is False
