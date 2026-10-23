@@ -21,7 +21,7 @@ def _invalid(field):
 
 
 def _file(root, value, field):
-    if not isinstance(value, str) or not value or '\\' in value:
+    if not isinstance(value, str) or not value or '\\' in value or '\x00' in value:
         _invalid(field)
     relative = Path(value)
     path = root / relative
@@ -79,6 +79,7 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
             reasons.add('artifact_empty')
         artifact_records.append({'path': relative, 'size': size, 'sha256': _sha(path)})
     suite_records = []
+    report_paths = set()
     if not suites:
         reasons.add('suite_missing')
     for name, config in suites.items():
@@ -91,6 +92,10 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
             _invalid(f'suites.{name}.minimum_executed_cases')
         field = f'suites.{name}.path'
         path, relative = _file(root, value, field)
+        report_path = path.resolve()
+        if report_path in report_paths:
+            _invalid(field)
+        report_paths.add(report_path)
         if not path.exists():
             reasons.add('suite_missing')
             continue
@@ -100,7 +105,7 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
             raise CiEvidenceError('junit_invalid', field)
         try:
             xml = ElementTree.fromstring(data)
-        except ElementTree.ParseError as exc:
+        except (ElementTree.ParseError, LookupError, ValueError) as exc:
             raise CiEvidenceError('junit_invalid', field) from exc
         if xml.tag not in ('testsuite', 'testsuites'):
             raise CiEvidenceError('junit_invalid', field)

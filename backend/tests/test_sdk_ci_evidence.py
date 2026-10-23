@@ -106,3 +106,32 @@ def test_parent_symlink_rejected(workspace):
     (workspace / 'linkdir').symlink_to(workspace, target_is_directory=True)
     with pytest.raises(CiEvidenceError):
         run(workspace, artifacts=['linkdir/sdk.tgz'])
+
+
+@pytest.mark.parametrize(('changes', 'field'), [
+    ({'artifacts': ['sdk\x00.tgz']}, 'artifacts[0]'),
+    ({'suites': {'unit': ('unit\x00.xml', 1)}}, 'suites.unit.path'),
+])
+def test_nul_path_is_input_invalid(workspace, changes, field):
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace, **changes)
+    assert error.value.code == 'input_invalid'
+    assert error.value.field == field
+
+
+@pytest.mark.parametrize('encoding', ['unknown-ci-encoding', 'UTF-7'])
+def test_unsupported_xml_encoding_is_junit_invalid(workspace, encoding):
+    (workspace / 'unit.xml').write_bytes(
+        f'<?xml version="1.0" encoding="{encoding}"?><testsuite><testcase/></testsuite>'.encode()
+    )
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace)
+    assert error.value.code == 'junit_invalid'
+    assert error.value.field == 'suites.unit.path'
+
+
+def test_suites_cannot_reuse_report_path(workspace):
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace, suites={'unit': ('unit.xml', 1), 'integration': ('./unit.xml', 1)})
+    assert error.value.code == 'input_invalid'
+    assert error.value.field == 'suites.integration.path'
