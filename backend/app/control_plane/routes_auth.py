@@ -24,7 +24,12 @@ from app.spa import (
     open_public_static_file,
 )
 
-from .auth import AuthenticationError, CompletedLogin, cookie_policy
+from .auth import (
+    AuthenticationError,
+    CompletedLogin,
+    cookie_policy,
+    validate_return_path,
+)
 from .fae_access import FaeWorkbenchAccessUnavailable
 from .models import AuthContext, IssuedWebSession, Role
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable
@@ -226,6 +231,20 @@ def build_auth_router(
 
     @router.get("/login", include_in_schema=False)
     async def login(request: Request):
+        token = request.cookies.get(auth.cookie_name)
+        if token and auth.authenticate(token) is not None:
+            values = request.query_params.getlist("return_path")
+            try:
+                if len(values) > 1:
+                    raise ValueError
+                target = validate_return_path(
+                    values[0] if values else _local_path(auth, "/account"),
+                    route_prefix=auth.route_prefix,
+                )
+            except ValueError:
+                raise HTTPException(400, "login return path invalid", headers=_NO_STORE) from None
+            response = RedirectResponse(target, status_code=302, headers=_NO_STORE)
+            return login_challenge_response(request, response)
         csp = _login_csp(auth)
         try:
             opened = open_public_static_file(static_dir, "index.html")
@@ -237,6 +256,9 @@ def build_auth_router(
                 csp=csp,
                 asset_base=auth.route_prefix,
             )
+        return login_challenge_response(request, response)
+
+    def login_challenge_response(request: Request, response: Response) -> Response:
         issuer = getattr(auth, "issue_browser_challenge", None)
         if issuer is not None:
             challenge = issuer(request.cookies.get(auth.challenge_cookie_name))

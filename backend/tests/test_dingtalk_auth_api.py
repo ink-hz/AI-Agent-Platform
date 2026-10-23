@@ -822,6 +822,44 @@ def test_manifest_authorized_asset_symlink_never_exposes_outside_content(
     assert "TOP SECRET" not in response.text
 
 
+@pytest.mark.parametrize("target", ["/fae/", "/fae/conversations/c-1", "/account"])
+def test_login_reuses_verified_session_and_resumes_validated_workspace(tmp_path, monkeypatch, target) -> None:
+    auth = FakeAuth()
+    auth.challenge_cookie_name = "__Host-platform_login_challenge"
+    auth.issue_browser_challenge = lambda _current: "renewed-browser-challenge"
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/login", params={"return_path": target},
+        cookies={auth.cookie_name: "valid-cookie"}, follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.headers["location"] == target
+    assert "__Host-platform_login_challenge=renewed-browser-challenge" in response.headers["set-cookie"]
+    assert response.headers["cache-control"] == "no-store"
+    assert auth.started_count == 0
+    assert auth.provider_calls == 0
+
+
+@pytest.mark.parametrize("query", ["?return_path=//evil.test", "?return_path=/fae/&return_path=/account", "?return_path=/login"])
+def test_authenticated_login_rejects_unsafe_or_ambiguous_return_path(tmp_path, monkeypatch, query) -> None:
+    auth = FakeAuth()
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/login" + query, cookies={auth.cookie_name: "valid-cookie"}, follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert "location" not in response.headers
+
+
+@pytest.mark.parametrize("token", ["expired-cookie", "valid-cookie"])
+def test_login_does_not_reuse_invalid_or_revoked_session(tmp_path, monkeypatch, token) -> None:
+    auth = FakeAuth()
+    auth.revoked = True
+    response = TestClient(_app(tmp_path, monkeypatch, auth)).get(
+        "/login?return_path=/fae/", cookies={auth.cookie_name: token}, follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "LOGIN SHELL" in response.text
+
+
 def test_qr_start_uses_fixed_flow_safe_return_and_no_store(tmp_path, monkeypatch) -> None:
     auth = FakeAuth()
     client = TestClient(_app(tmp_path, monkeypatch, auth))
