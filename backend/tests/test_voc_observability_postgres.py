@@ -38,6 +38,12 @@ def test_voc_migration_import_usage_and_session_replay(request, tmp_path):
         result = subprocess.run([str(ROOT / "deploy/migrate-observability"), str(credential), str(migration)], text=True, capture_output=True)
         assert result.returncode == 0, result.stderr
         assert "version=016" in result.stdout
+    from app.sync_remote.cli import required_voc_schema_available
+    def sync_writer_connection(*args, **kwargs):
+        connection = psycopg.connect(*args, **kwargs)
+        connection.execute("set session authorization platform_sync_writer")
+        return connection
+    assert required_voc_schema_available(dsn, connection_factory=sync_writer_connection)
     bundle = parse_export("voc", bundle_text(project_voc_rows(source_rows())))
     for _ in range(2):
         result = import_bundle(dsn, bundle)

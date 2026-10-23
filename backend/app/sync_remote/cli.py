@@ -78,10 +78,11 @@ def required_voc_schema_available(database_url: str, *, connection_factory=psyco
     try:
         with connection_factory(database_url, autocommit=True) as connection:
             return connection.execute(
-                "select to_regclass('platform_source_voc.chat_sessions') is not null "
-                "and to_regclass('platform_source_voc.chat_turns') is not null "
-                "and position('platform_source_voc' in pg_get_viewdef('platform_read.sessions'::regclass)) > 0 "
-                "and position('platform_source_voc' in pg_get_viewdef('platform_read.turns'::regclass)) > 0"
+                "select (select count(*)=2 from pg_class c join pg_namespace n on n.oid=c.relnamespace "
+                "where n.nspname='platform_source_voc' and c.relkind='r' and c.relname in ('chat_sessions','chat_turns')) "
+                "and (select count(*)=2 from pg_class c join pg_namespace n on n.oid=c.relnamespace "
+                "where n.nspname='platform_read' and c.relkind='v' and c.relname in ('sessions','turns') "
+                "and position('platform_source_voc' in pg_get_viewdef(c.oid))>0)"
             ).fetchone() == (True,)
     except Exception:
         return False
