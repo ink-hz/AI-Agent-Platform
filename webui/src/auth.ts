@@ -372,6 +372,22 @@ export async function loadAccount(prefix = routePrefix()): Promise<Account> {
 }
 
 
+async function loginMutationHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { Accept: "application/json", "Content-Type": "application/json" };
+  const response = await fetch(platformPath("/api/v1/account"), {
+    credentials: "include", cache: "no-store", headers: { Accept: "application/json" },
+  });
+  if (response.status === 401) return headers;
+  await checked(response);
+  const account: unknown = await response.json();
+  if (!isObject(account) || typeof account.csrf_token !== "string" || !account.csrf_token) {
+    throw new Error("login session CSRF unavailable");
+  }
+  headers["X-CSRF-Token"] = account.csrf_token;
+  return headers;
+}
+
+
 export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<string> {
   // SPA navigation does not visit the server login route, and its HttpOnly
   // challenge expires while the page is idle. Obtain it before QR admission.
@@ -380,10 +396,11 @@ export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<s
     cache: "no-store",
   });
   await checked(challenge);
+  const headers = await loginMutationHeaders();
   const response = await fetch(platformPath("/api/v1/auth/dingtalk/start"), {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ return_path: platformPath(returnPath) }),
   });
   await checked(response);
@@ -400,10 +417,11 @@ export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<s
 
 
 export async function exchangeInClientCode(code: string, appId = "platform"): Promise<void> {
+  const headers = await loginMutationHeaders();
   const response = await fetch(platformPath("/api/v1/auth/dingtalk/in-client/exchange"), {
     method: "POST",
     credentials: "include",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ code, app_id: appId }),
   });
   await checked(response);

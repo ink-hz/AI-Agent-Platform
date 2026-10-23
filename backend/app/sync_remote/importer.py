@@ -234,6 +234,13 @@ def normalize_row(
     if source_kind == "admin" and source_table == "admin_chat_sessions":
         known |= _SUBJECT_EVIDENCE_COLUMNS
     details.update({key: value for key, value in row.items() if key not in known})
+    if source_kind == "fae" and source_table == "chat_sessions":
+        # Metadata claims never establish ownership. Only server owner columns
+        # plus their persisted authentication mode can mint this projection.
+        details.pop("verified_subject", None)
+        verified_subject = _fae_verified_subject(row)
+        if verified_subject is not None:
+            details["verified_subject"] = verified_subject
     values["details"] = details
     values["source_synced_at"] = synced_at
     return NormalizedRow(
@@ -243,6 +250,42 @@ def normalize_row(
         ("id",),
         PRESERVE_ON_NULL_COLUMNS.get((source_kind, source_table), ()),
     )
+
+
+def _fae_verified_subject(row: dict[str, Any]) -> dict[str, str] | None:
+    owner_id = row.get("owner_subject_id")
+    owner_type = row.get("owner_subject_type")
+    if owner_id is None and owner_type is None:
+        return None
+    try:
+        if not isinstance(owner_id, (str, UUID)):
+            raise ValueError
+        subject_id = str(UUID(str(owner_id)))
+        metadata = row.get("metadata")
+        mode = (
+            metadata.get("authentication_mode") if isinstance(metadata, dict) else None
+        )
+        if owner_type == "partner_operator":
+            if mode != "platform_partner" or row.get("user_id") is not None:
+                raise ValueError
+        elif owner_type == "enterprise_member":
+            if (
+                mode != "platform_enterprise"
+                or str(UUID(str(row.get("user_id")))) != subject_id
+            ):
+                raise ValueError
+        else:
+            raise ValueError
+        # FAE's persisted internal identity is user_id. If an export also
+        # carries an explicit internal_user_id, it must agree with that column.
+        if row.get("internal_user_id") is not None and (
+            owner_type != "enterprise_member"
+            or str(UUID(str(row["internal_user_id"]))) != subject_id
+        ):
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ImportValidationError("fae_session_owner_invalid") from None
+    return {"subject_id": subject_id, "subject_type": owner_type}
 
 
 def normalize_trace_span(row: dict, synced_at: datetime, *, source_kind: str = "fae") -> NormalizedRow:

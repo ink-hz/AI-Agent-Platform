@@ -22,6 +22,8 @@ import {
   changeAdministrator,
   loadAccount,
   inClientLogin,
+  startQrLogin,
+  exchangeInClientCode,
   inClientLoginAvailable,
   loginReturnPath,
   listManagedUsers,
@@ -453,6 +455,7 @@ describe("authenticated account bootstrap", () => {
     const storage = vi.spyOn(Storage.prototype, "setItem");
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ client_id: "office-client", corp_id: "corp", app_id: "office" }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response("{}", { status: 401 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrf_token: "not-persisted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 DingTalk/7.6.50 Android");
@@ -462,8 +465,8 @@ describe("authenticated account bootstrap", () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/auth/dingtalk/config?return_path=%2Foffice%2F");
     expect(requestAuthCode).toHaveBeenCalledWith({ clientId: "office-client", corpId: "corp" });
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/auth/dingtalk/in-client/exchange");
-    expect(fetchMock.mock.calls[1][1]?.body).toBe(JSON.stringify({ code: "one-time-code", app_id: "office" }));
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/auth/dingtalk/in-client/exchange");
+    expect(fetchMock.mock.calls[2][1]?.body).toBe(JSON.stringify({ code: "one-time-code", app_id: "office" }));
     expect(storage).not.toHaveBeenCalled();
   });
 
@@ -566,4 +569,50 @@ it('preserves cloud home context through login',()=>{
  expect(loginReturnPath(`?${new URLSearchParams({return_path:path})}`)).toBe(path);
  expect(loginReturnPath(`?${new URLSearchParams({return_path:path+'&work='+work})}`)).toBe('/');
  expect(loginReturnPath(`?${new URLSearchParams({return_path:'/hr/?redirect=https://evil.test'})}`)).toBe('/');
+});
+
+
+describe("existing-session login credentials", () => {
+  it("includes bootstrapped session CSRF when starting QR from a cached login page", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("login", { status: 200 }))
+      .mockResolvedValueOnce(accountResponse())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ authorization_url: "https://login.dingtalk.com/oauth2/auth?state=state" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await startQrLogin("/fae/");
+    const post = fetchMock.mock.calls.find(([, options]) => options?.method === "POST");
+    expect(post?.[1]?.headers).toMatchObject({ "X-CSRF-Token": "csrf" });
+    expect(post?.[1]?.body).toBe(JSON.stringify({ return_path: "/fae/" }));
+  });
+
+  it("includes bootstrapped session CSRF when exchanging in-client code", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(accountResponse())
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await exchangeInClientCode("one-time-code");
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({ "X-CSRF-Token": "csrf" });
+  });
+
+  it("keeps anonymous login available only after explicit account 401", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response("{}", { status: 401 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await exchangeInClientCode("one-time-code");
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).not.toHaveProperty("X-CSRF-Token");
+    expect(fetchMock.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({ code: "one-time-code", app_id: "platform" }));
+  });
+
+  it.each([403, 503])("stops before spending OAuth code when account bootstrap fails with %s", async (status) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response("{}", { status }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(exchangeInClientCode("one-time-code")).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an active session with missing CSRF before spending OAuth code", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ csrf_token: "" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(exchangeInClientCode("one-time-code")).rejects.toThrow("login session CSRF unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

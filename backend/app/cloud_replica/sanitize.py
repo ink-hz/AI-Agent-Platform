@@ -27,6 +27,7 @@ from .models import (
     SanitizedText,
     SanitizedTraceAggregate,
     SanitizedTurnRecord,
+    VerifiedSubject,
 )
 
 _DICTIONARY_GROUPS = (
@@ -501,6 +502,10 @@ def _sanitize_trace(trace):
 def sanitize_session(
     raw: RawSession, policy: SanitizationPolicy
 ) -> SanitizedSessionRecord:
+    if raw.verified_subject is not None:
+        if not isinstance(raw.verified_subject, VerifiedSubject):
+            raise ValueError("verified_subject_invalid")
+        raw.verified_subject.require_fae_scope(raw.agent_id, raw.source_kind)
     title = _sanitize_text(raw.title, policy)
     turns: list[SanitizedTurnRecord] = []
     for turn in sorted(raw.turns, key=lambda item: item.turn_index):
@@ -585,4 +590,5 @@ def sanitize_session(
         last_active_at=raw.last_active_at,
         turns=tuple(turns),
         sanitizer_policy_version=policy.version,
+        verified_subject=raw.verified_subject,
     )

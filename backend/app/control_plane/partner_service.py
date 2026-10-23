@@ -656,3 +656,90 @@ class PartnerService:
             )
         except PartnerRepositoryError as error:
             raise self._translate(error) from None
+
+    def create_external_login_attempt(
+        self, *, state_digest: bytes, state_key_version: int, browser_nonce_digest: bytes,
+    ) -> UUID:
+        try:
+            return self.repository.create_external_login_attempt(
+                state_digest=self._state_digest(state_digest),
+                state_key_version=self._state_key_version(state_key_version),
+                browser_nonce_digest=self._state_digest(browser_nonce_digest),
+            )
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+
+    def consume_external_login_attempt(
+        self, *, state_digest: bytes, state_key_version: int, browser_nonce_digest: bytes,
+    ) -> UUID:
+        try:
+            return self.repository.consume_external_login_attempt(
+                state_digest=self._state_digest(state_digest),
+                state_key_version=self._state_key_version(state_key_version),
+                browser_nonce_digest=self._state_digest(browser_nonce_digest),
+            )
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+
+    def provision_external_identity(
+        self, verified: VerifiedProviderSubject, *, login_attempt_id: UUID,
+        browser_nonce_digest: bytes,
+    ) -> PartnerIdentityResolution:
+        if not isinstance(verified, VerifiedProviderSubject) or verified.provider_kind != 'dingtalk_external':
+            raise PartnerIdentityError('verified_partner_identity_required', 422)
+        if not isinstance(verified.verified_at, datetime) or verified.verified_at.tzinfo is None:
+            raise PartnerIdentityError('verified_partner_identity_required', 422)
+        display_name = self._text(verified.display_name, 'display_name_invalid', maximum=256)
+        try:
+            protected = self.identity_codec.seal(verified.provider_kind, verified.provider_subject)
+            realm_display = self.content_codec.seal_json(
+                'partner-organization-display:c6cb4d5c-3d10-4bc7-b487-f6ffdf724a81',
+                {'display_name': 'DingTalk external users'},
+            )
+            return self.repository.provision_external_identity(
+                protected=protected, verified_at=verified.verified_at,
+                login_attempt_id=self._uuid(login_attempt_id, 'partner_auth_state_invalid'),
+                browser_nonce_digest=self._state_digest(browser_nonce_digest),
+                seal_display=lambda subject_id: self.content_codec.seal_json(
+                    f'agent-subject-display:{subject_id}', {'display_name': display_name}),
+                realm_display=realm_display,
+            )
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+        except (ContentCryptoError, PartnerProviderIdentityCryptoError):
+            raise PartnerIdentityError('partner_identity_unavailable') from None
+
+    def external_verified_at(self, provider_subject: str) -> datetime | None:
+        try:
+            protected = self.identity_codec.seal('dingtalk_external', provider_subject)
+            return self.repository.external_verified_at(protected)
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+        except PartnerProviderIdentityCryptoError:
+            raise PartnerIdentityError('partner_identity_unavailable') from None
+
+    def external_identity_detail(
+        self, *, actor_id: UUID, subject_id: UUID, request_id: UUID,
+    ) -> dict[str, object]:
+        try:
+            record = self.repository.external_identity_detail(
+                actor_id=self._uuid(actor_id, 'owner_required'),
+                subject_id=self._uuid(subject_id, 'partner_subject_invalid'),
+                request_id=self._uuid(request_id, 'request_id_invalid'),
+            )
+            protected = self.repository._protected_from_row(record)
+            provider_subject = self.identity_codec.unseal(protected)
+            registration, union_id = provider_subject.split(':', 1)
+            display_name = self._display_name(
+                subject=f"agent-subject-display:{subject_id}",
+                ciphertext=record["display_name_ciphertext"],
+                key_version=record["display_name_key_version"],
+            )
+            return {'subject_id': str(subject_id), 'provider_kind': 'dingtalk_external',
+                    'registration_sha256': registration, 'union_id': union_id,
+                    'display_name': display_name, 'verified_at': record['verified_at'],
+                    'revoked_at': record['revoked_at']}
+        except PartnerRepositoryError as error:
+            raise self._translate(error) from None
+        except (PartnerProviderIdentityCryptoError, ValueError, KeyError):
+            raise PartnerIdentityError('partner_identity_unavailable') from None

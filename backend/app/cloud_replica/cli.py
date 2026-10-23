@@ -51,7 +51,9 @@ def _starting_watermark(state_path: Path, fallback: datetime) -> datetime:
         raise RuntimeError("replica export state unavailable") from None
 
 
-def _export(clock: Callable[[], datetime]) -> int:
+def _export(
+    clock: Callable[[], datetime], *, include_verified_subject: bool = False
+) -> int:
     through = clock().astimezone(UTC)
     database_url = read_secret_file(
         _required_environment("PLATFORM_REPLICA_SOURCE_DATABASE_URL_FILE")
@@ -81,6 +83,7 @@ def _export(clock: Callable[[], datetime]) -> int:
         state_path=state_path,
         queue_dir=_required_environment("PLATFORM_REPLICA_EXPORT_QUEUE_DIR"),
         clock=lambda: through,
+        include_verified_subject=include_verified_subject,
     )
     after = _starting_watermark(state_path, through - timedelta(days=365))
     result = exporter.export_batch(after=after, through=through, limit=100)
@@ -296,6 +299,7 @@ def main(
         ),
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--include-verified-subject", action="store_true")
     parser.add_argument("--source-instance-id")
     parser.add_argument("--output")
     parser.add_argument("--to")
@@ -303,7 +307,9 @@ def main(
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "export":
-            return _export(clock)
+            return _export(
+                clock, include_verified_subject=arguments.include_verified_subject
+            )
         if arguments.command == "rewind-export":
             return _rewind_export(
                 arguments.to,

@@ -124,7 +124,7 @@ async def test_catalog_detail_full_body_search_filters_and_stable_pagination(tmp
     app = app_for(root)
     catalog = (await get(app, "/catalog")).json()
     assert catalog["counts"] == {"knowledge_pages": 1, "knowledge_navigation": 1, "documents": 3}
-    assert catalog["sources"] == manifest["sources"]
+    assert catalog["sources"] == []  # Integration status is not a reading source.
     assert catalog["ai"]["available"] is False
     assert catalog["manifest_sha256"] == (root / "manifest.sha256").read_text().strip()
     assert next(row for row in catalog["groups"] if row["id"] == "01-system")["title"] == "系统架构"
@@ -141,6 +141,61 @@ async def test_catalog_detail_full_body_search_filters_and_stable_pagination(tmp
     assert [page["items"][0]["id"] for page in pages[:3]] == sorted(row["id"] for row in manifest["documents"])
     assert pages[3]["items"] == []
     assert all(page["total"] == 3 and page["limit"] == 1 for page in pages)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("document_id,kind", [
+    ("DOC-PLATFORM-PROCESS", "process"), ("DOC-OBJECT-STATES", "process"),
+    ("DOC-RELATION-RULES", "process"), ("DOC-PORTAL-DESIGN", "design"),
+    ("DOC-KB-ACCEPTANCE", "acceptance"), ("DOC-SDK-R0-RELEASE", "execution"),
+    ("DOC-EXECUTION-LEDGER", "execution"),
+])
+async def test_development_records_are_not_product_content(tmp_path, document_id, kind):
+    root, manifest = package(tmp_path)
+    body = "# 平台开发过程专用内容\n内部任务、验收和发布记录。"
+    row = document(document_id, "平台开发过程专用内容", body, kind=kind, group=kind)
+    manifest["documents"].append(row)
+    manifest["featured_ids"].append(document_id)
+    knowledge_source = {"id": "knowledge", "label": "SDK技术知识", "state": "accepted_static", "description": "源码知识"}
+    manifest["sources"].extend([knowledge_source, {"id": kind, "label": "内部建设记录", "state": "source_record", "description": "内部过程"}])
+    manifest["documents"][0]["links"]["internal.md"] = {"document_id": document_id, "fragment": ""}
+    (root / row["file"]).write_text(body, encoding="utf-8")
+    write_manifest(root, manifest)
+    app = app_for(root)
+
+    catalog = (await get(app, "/catalog")).json()
+    assert catalog["counts"] == {"knowledge_pages": 1, "knowledge_navigation": 1, "documents": 3}
+    assert document_id not in catalog["featured_ids"]
+    assert catalog["sources"] == [knowledge_source]
+    assert kind not in {group["id"] for group in catalog["groups"]}
+    for params in ({"q": "平台开发过程专用内容"}, {"kind": kind}, {"group": kind}):
+        found = (await get(app, "/documents", params=params)).json()
+        assert found["total"] == 0
+        assert found["items"] == []
+    page = (await get(app, "/documents", params={"offset": 0, "limit": 2})).json()
+    assert page["total"] == 3
+    assert document_id not in {item["id"] for item in page["items"]}
+    removed = await get(app, f"/documents/{document_id}")
+    assert removed.status_code == 404
+    assert removed.json() == {"detail": "sdk_admin_document_not_found"}
+    technical = (await get(app, "/documents/KB-SYS-001")).json()
+    assert "depthbuffer" in technical["markdown"]
+    assert technical["conditions"] == manifest["documents"][0]["conditions"]
+    assert technical["sha256"] == manifest["documents"][0]["sha256"]
+    assert technical["links"] == {"../index.md#系统": {"document_id": "KB-INDEX-SYS", "fragment": "系统"}}
+    assert (await get(app, "/documents/DOC-REPORT")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_withdrawn_records_remain_part_of_immutable_release_validation(tmp_path):
+    root, manifest = package(tmp_path)
+    row = document("DOC-EXECUTION-LEDGER", "内部台账", "原始正文", kind="execution", group="execution")
+    manifest["documents"].append(row)
+    (root / row["file"]).write_text("被修改的正文", encoding="utf-8")
+    write_manifest(root, manifest)
+    response = await get(app_for(root), "/catalog")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "sdk_admin_content_unavailable"}
 
 
 @pytest.mark.asyncio

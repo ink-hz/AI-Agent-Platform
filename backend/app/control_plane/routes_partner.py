@@ -5,14 +5,17 @@ from typing import Annotated, Any
 from urllib.parse import parse_qsl
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 from starlette.responses import JSONResponse, RedirectResponse
 
 from .agent_launch import AgentLaunchError
 from .models import AuthContext, Role
 from .partner_models import PartnerIdentityError, PartnerStatus
-from .partner_provider import PartnerAuthenticationBroker, validate_partner_callback
+from .partner_provider import (
+    EXTERNAL_DINGTALK_NONCE_COOKIE, PartnerAuthenticationBroker, validate_partner_callback,
+)
+from .rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limit_response
 from .partner_service import PartnerService
 from .routes_manage import authenticated_context, csrf_protection
 
@@ -508,6 +511,7 @@ def build_partner_auth_router(
     )
 
     auth_router = APIRouter(tags=["partner-authentication"])
+    external = getattr(getattr(broker, "provider", None), "kind", None) == "dingtalk_external"
 
     @auth_router.get("/partner-auth/start")
     def start_partner_authentication(request: Request):
@@ -518,14 +522,22 @@ def build_partner_auth_router(
                 headers=_NO_STORE,
             )
         try:
+            if external:
+                limiter = getattr(getattr(request.app.state, "identity_auth", None), "rate_limiter", None)
+                if limiter is not None:
+                    limiter.check_login_start(request.state.edge_source.ip)
             started = broker.begin_auth()
+        except RateLimitExceeded as error:
+            return rate_limit_response(error)
+        except RateLimitUnavailable:
+            raise HTTPException(503, "rate limit unavailable", headers=_NO_STORE) from None
         except PartnerIdentityError as error:
             raise _partner_auth_error(error) from None
-        return RedirectResponse(
-            started.authorization_url,
-            status_code=302,
-            headers=_NO_STORE,
-        )
+        response = RedirectResponse(started.authorization_url, status_code=302, headers=_NO_STORE)
+        if getattr(started, "browser_nonce", None) is not None:
+            response.set_cookie(EXTERNAL_DINGTALK_NONCE_COOKIE, started.browser_nonce,
+                                max_age=300, path="/", secure=True, httponly=True, samesite="lax")
+        return response
 
     async def finish_partner_authentication(request: Request):
         callback: dict[str, str] = {}
@@ -599,9 +611,53 @@ def build_partner_auth_router(
             headers=_NO_STORE,
         )
 
-    auth_router.add_api_route(
-        callback_path,
-        finish_partner_authentication,
-        methods=[selected_method],
-    )
+    if not external:
+        auth_router.add_api_route(
+            callback_path,
+            finish_partner_authentication,
+            methods=[selected_method],
+        )
     return auth_router
+
+
+async def finish_external_dingtalk_authentication(request: Request):
+    broker = getattr(request.app.state, "partner_auth_broker", None)
+    launch = getattr(request.app.state, "agent_launch_service", None)
+    if not isinstance(broker, PartnerAuthenticationBroker) or broker.provider.kind != "dingtalk_external" or launch is None:
+        raise HTTPException(503, detail={"code": "partner_identity_unavailable"}, headers=_NO_STORE)
+    callback = {}
+    for key, value in request.query_params.multi_items():
+        if key in callback:
+            raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
+        callback[key] = value
+    if "code" in callback or (not callback.get("authCode") and not callback.get("error")):
+        raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
+    limiter = getattr(getattr(request.app.state, "identity_auth", None), "rate_limiter", None)
+    try:
+        if limiter is None:
+            completed = await broker.finish_auth(callback, browser_nonce=request.cookies.get(EXTERNAL_DINGTALK_NONCE_COOKIE))
+        else:
+            limiter.check_callback(request.state.edge_source.ip)
+            async with limiter.provider_exchange():
+                completed = await broker.finish_auth(callback, browser_nonce=request.cookies.get(EXTERNAL_DINGTALK_NONCE_COOKIE))
+        issued = await launch.issue_partner(completed.subject_id)
+    except PartnerIdentityError as error:
+        raise _partner_auth_error(error) from None
+    except AgentLaunchError as error:
+        raise HTTPException(error.status_code, detail={"code": error.code}, headers=_NO_STORE) from None
+    except RateLimitExceeded as error:
+        return rate_limit_response(error)
+    except RateLimitUnavailable:
+        raise HTTPException(503, "rate limit unavailable", headers=_NO_STORE) from None
+    response = RedirectResponse(issued.launch_url, status_code=302, headers=_NO_STORE)
+    response.delete_cookie(EXTERNAL_DINGTALK_NONCE_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    return response
+
+
+@router.post("/subjects/{subject_id}/external-identity-detail")
+def external_identity_detail(subject_id: StrictUUID, body: _MutationBody, response: Response,
+                             context: OwnerAuth, service: Service, _csrf_verified: Csrf):
+    _owner(context)
+    response.headers.update(_NO_STORE)
+    return _read(lambda: service.external_identity_detail(
+        actor_id=context.internal_user_id, subject_id=subject_id, request_id=body.request_id))

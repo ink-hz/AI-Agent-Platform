@@ -101,7 +101,7 @@ from .control_plane.authorization import (
     AuthorizationRepository,
     AuthorizationService,
 )
-from .control_plane.crypto import IdentityKeyring, ProviderIdentityCodec
+from .control_plane.crypto import IdentityCryptoError, IdentityKeyring, ProviderIdentityCodec
 from .control_plane.dingtalk import DingTalkClient
 from .control_plane.dsn import validate_control_dsn
 from .control_plane.fae_access import (
@@ -650,6 +650,43 @@ def build_office_recipient_directory(
     )
 
 
+def build_partner_service(config: Config) -> PartnerService:
+    """Load the partner identity boundary independently of Agent Brain/relay."""
+    from .control_plane.partner_identity_crypto import PartnerProviderIdentityCodec
+    from .control_plane.partner_repository import PartnerRepository
+
+    encryption = IdentityKeyring.from_file(
+        config.partner_encryption_keyring_file,
+        expected_purpose="partner-provider-encryption", expected_key_length=32,
+    )
+    lookup = IdentityKeyring.from_file(
+        config.partner_hmac_keyring_file,
+        expected_purpose="partner-provider-lookup-hmac", expected_key_length=32,
+    )
+    content = IdentityKeyring.from_file(
+        config.content_encryption_keyring_file,
+        expected_purpose="platform-content-encryption", expected_key_length=32,
+    )
+    if encryption.overlaps(lookup) or encryption.overlaps(content) or lookup.overlaps(content):
+        raise ValueError("partner_identity_key_reuse_forbidden")
+    codec = PartnerProviderIdentityCodec(encryption, lookup)
+    return PartnerService(
+        PartnerRepository(read_secret_file(config.control_plane.control_database_url_file), identity_codec=codec),
+        content_codec=ContentCodec(content),
+    )
+
+
+def build_external_dingtalk_provider(config: Config, service: PartnerService):
+    from .control_plane.dingtalk_external_provider import DingTalkExternalIdentityProvider
+
+    return DingTalkExternalIdentityProvider(
+        client_id=config.control_plane.dingtalk_app_key,
+        client_secret=read_secret_file(config.control_plane.dingtalk_app_secret_file),
+        redirect_uri="https://agent.orbbec.com.cn/api/v1/auth/dingtalk/callback",
+        verified_at_for_subject=service.external_verified_at,
+    )
+
+
 def build_identity_auth(config: Config) -> DingTalkWebAuth:
     control = config.control_plane
     database_url = read_secret_file(control.control_database_url_file)
@@ -883,11 +920,20 @@ def create_app(
         identity_auth is not None
         or config.control_plane.mode is not IdentityMode.DISABLED
     )
+    if config.partner_provider_kind and partner_service is None:
+        if not identity_enabled:
+            raise RuntimeError("partner_identity_unavailable")
+        try:
+            partner_service = build_partner_service(config)
+        except (IdentityCryptoError, OSError, ValueError):
+            raise RuntimeError("partner_identity_unavailable") from None
     selected_partner_provider = partner_provider
+    owns_partner_provider = partner_provider is None
     if selected_partner_provider is None and config.partner_provider_kind:
-        selected_partner_provider = create_registered_partner_provider(
-            config.partner_provider_kind
-        )
+        if config.partner_provider_kind == "dingtalk_external":
+            selected_partner_provider = build_external_dingtalk_provider(config, partner_service)
+        else:
+            selected_partner_provider = create_registered_partner_provider(config.partner_provider_kind)
     if selected_partner_provider is not None:
         if config.environment == "production":
             if selected_partner_provider.kind == "reference":
@@ -1499,6 +1545,10 @@ def create_app(
                 await review_service.close()
             if owns_identity_auth and identity_auth is not None:
                 await identity_auth.aclose()
+            if owns_partner_provider and selected_partner_provider is not None:
+                close_provider = getattr(selected_partner_provider, "aclose", None)
+                if close_provider is not None:
+                    await close_provider()
             if owns_voc_extension_client and voc_extension_client is not None:
                 await voc_extension_client.aclose()
             if sdk_zentao_client is not None:

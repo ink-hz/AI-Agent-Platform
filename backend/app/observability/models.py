@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Generic, Literal, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 SourceKind = Literal["metabot", "fae", "admin"]
@@ -64,6 +64,13 @@ class RuntimeObservation(BaseModel):
     observed_at: datetime
 
 
+class VerifiedSubjectReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_id: UUID
+    subject_type: Literal["enterprise_member", "partner_operator"]
+
+
 class SessionSummary(BaseModel):
     session_key: str
     agent_id: str
@@ -82,6 +89,7 @@ class SessionSummary(BaseModel):
     participant_count: int | None = None
     primary_sender_name: str | None = None
     primary_sender_department: str | None = None
+    verified_subject: VerifiedSubjectReference | None = None
     sender_identity_status: SenderIdentityStatus = "unavailable"
     freshness: Freshness
 
@@ -191,6 +199,7 @@ class TurnDetail(BaseModel):
     output_attachments: list[AttachmentSummary] = Field(default_factory=list)
     sender_name: str | None = None
     sender_department: str | None = None
+    verified_subject: VerifiedSubjectReference | None = None
     sender_identity_status: SenderIdentityStatus = "unavailable"
     details: dict = Field(default_factory=dict)
 

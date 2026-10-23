@@ -39,7 +39,8 @@ suite('SDK real content HTTP response to frontend contract', () => {
 
   it('accepts the real catalog, lists and knowledge/reference documents through the API client', async () => {
     const data = install();
-    expect((await sdkAdminClient.catalog()).counts).toEqual({ knowledge_pages: 865, knowledge_navigation: 19, documents: 893 });
+    expect((await sdkAdminClient.catalog()).counts).toEqual({ knowledge_pages: 865, knowledge_navigation: 19, documents: 886 });
+    expect(Object.values(data.lists_by_kind).flatMap(list => list.items).every(doc => doc.kind === 'knowledge' || doc.kind === 'analysis')).toBe(true);
     for (const kind of Object.keys(data.lists_by_kind)) {
       const list = await sdkAdminClient.documents({ kind: kind as 'knowledge', limit: 100 });
       expect(list).toEqual(data.lists_by_kind[kind]);
@@ -53,35 +54,33 @@ suite('SDK real content HTTP response to frontend contract', () => {
     const account = { internal_user_id: 'sdk-default-reader', display_name: 'SDK reader' } as Account;
     box = document.createElement('div'); document.body.append(box); root = createRoot(box);
     await act(async () => root!.render(<SdkAdminPage section={section} account={account} />));
-    expect(box.querySelector('.sdk-document-list a')).not.toBeNull();
+    if (section === 'knowledge') expect(box.querySelector('.sdk-document-list a')).not.toBeNull();
+    else expect(box.querySelector('.sdk-document-list')).toBeNull();
     expect(box.querySelector('.sdk-scope-line, .sdk-doc-meta, .sdk-ai-note, .sdk-focus-facts, .sdk-sources')).toBeNull();
     expect(box.textContent).not.toContain(data.catalog.release_id);
     expect(box.textContent).not.toContain(data.catalog.baseline_id);
     expect(box.textContent).not.toContain('not_run');
-    expect(box.querySelector('.sdk-document-list')?.textContent).not.toMatch(/设备实测|运行验证|设备表现/);
+    if (section === 'knowledge') expect(box.querySelector('.sdk-document-list')!.textContent).not.toMatch(/设备实测|运行验证|设备表现/);
     expect(box.querySelector('.sdk-breadcrumb')).toBeNull();
     expect(box.textContent?.split('需求与进度在禅道查看')).toHaveLength(2);
     expect(box.querySelector('a[href="/sdk/"]')).not.toBeNull();
-    if (section === 'products' || section === 'delivery') expect(box.querySelector('.sdk-document-list')?.textContent).toContain('流程与规范 · 草稿');
+    expect(box.textContent).not.toMatch(/推荐阅读|平台设计|接收记录|执行记录|流程与规范/);
   });
 
-  it.each([
-    ['delivery', '开发与集成', ['流程与规范', '分析成果']],
-    ['delivery', '准出与交付', ['执行记录', '流程与规范']],
-    ['diagnostics', '改进行动', ['执行记录', '设计方案']],
-  ] as const)('keeps real %s / %s lists concise by purpose', async (section, title, types) => {
+  it.each(['overview', 'products', 'delivery', 'diagnostics'] as const)('does not load article content for the real %s work entry', async section => {
     install();
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const account = { internal_user_id: 'sdk-stage-reader', display_name: 'SDK reader' } as Account;
     box = document.createElement('div'); document.body.append(box); root = createRoot(box);
     await act(async () => root!.render(<SdkAdminPage section={section} account={account} />));
-    const tab = Array.from(box.querySelectorAll<HTMLButtonElement>('.sdk-tabs button')).find(button => button.textContent?.endsWith(title))!;
-    await act(async () => tab.click());
-    const list = box.querySelector('.sdk-document-list')!;
-    for (const type of types) expect(list.textContent).toContain(type);
-    expect(list.textContent).not.toMatch(/设备实测|设备表现|运行验证|not_run|不代表|结论限于/);
-    if (types.some(type => type === '分析成果')) expect(list.textContent).toContain('分析成果 · 阶段分析');
-    if (types.some(type => type === '流程与规范')) expect(list.textContent).toContain('流程与规范 · 草稿');
+    expect(vi.mocked(fetch).mock.calls.map(([path]) => path)).toEqual(['/api/v1/sdk-admin/access']);
+    expect(box.querySelector('.sdk-actions a[href="/sdk/"]')).not.toBeNull();
+    expect(box.querySelector('.sdk-actions a[href="/sdk-admin/knowledge"]')).not.toBeNull();
+    expect(box.querySelector('.sdk-document-list, .sdk-stage-tabs')).toBeNull();
+    if (section === 'diagnostics') {
+      expect(box.querySelector('a[href="/sdk-admin/knowledge/DOC-ANALYSIS-STATUS"]')).not.toBeNull();
+      expect(box.querySelector('a[href="/sdk-admin/knowledge/DOC-ANALYSIS-GIT"]')).not.toBeNull();
+    }
   });
 
   it('exposes real layered entry points and reads a real article with its evidence labels', async () => {
@@ -91,7 +90,7 @@ suite('SDK real content HTTP response to frontend contract', () => {
       departments: [], gender: null, observation_agent_ids: [], workspace_scopes: [],
       directory_freshness: 'fresh', hard_stale_read_only: false, csrf_token: 'fixture' };
     box = document.createElement('div'); document.body.append(box); root = createRoot(box);
-    await act(async () => root!.render(<SdkAdminPage section="overview" account={account} />));
+    await act(async () => root!.render(<SdkAdminPage section="knowledge" account={account} />));
     expect(box.querySelector('a[href="/sdk-admin/knowledge/KB-INDEX-ROOT"]')).not.toBeNull();
     expect(box.querySelector('a[href="/sdk-admin/knowledge/KB-NAV-004"]')).not.toBeNull();
     expect(box.querySelector('nav[aria-label="SDK 工作区"]')).toBeNull();

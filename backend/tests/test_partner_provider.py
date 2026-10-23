@@ -152,7 +152,7 @@ class FakePartnerLaunchService:
         self.calls.append(subject_id)
         return SimpleNamespace(
             launch_url=(
-                "https://fae.orbbec.com.cn/app/"
+                "https://fae.orbbec.com.cn/"
                 "#partner_launch=opaque-partner-launch-code-123456"
             )
         )
@@ -496,7 +496,7 @@ def test_linked_active_callback_issues_code_and_redirects_only_to_fixed_fae_app(
 
     assert response.status_code == 302
     assert response.headers["location"] == (
-        "https://fae.orbbec.com.cn/app/"
+        "https://fae.orbbec.com.cn/"
         "#partner_launch=opaque-partner-launch-code-123456"
     )
     assert response.headers["cache-control"] == "no-store"

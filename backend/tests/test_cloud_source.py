@@ -25,6 +25,9 @@ from app.review.scope_sql import (
 def test_source_queries_are_explicit_bounded_and_never_touch_restricted_fields():
     statements = (SESSION_SQL, TURN_SQL, ATTACHMENT_SQL, TRACE_SQL, TRACE_STEP_SQL)
     combined = "\n".join(statements).lower()
+    # The only session metadata crossing this boundary is the typed reference.
+    assert "details->'verified_subject' as verified_subject" in SESSION_SQL
+    combined = combined.replace("details->'verified_subject' as verified_subject", "")
 
     assert "select *" not in combined
     for forbidden in (

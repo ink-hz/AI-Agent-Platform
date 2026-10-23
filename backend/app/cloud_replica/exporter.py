@@ -197,9 +197,21 @@ def build_session_record(
     raw: RawSession,
     sanitized: SanitizedSessionRecord,
     identity_key: bytes,
+    *,
+    include_verified_subject: bool = False,
 ) -> dict[str, Any]:
+    if type(include_verified_subject) is not bool:
+        raise ValueError("include_verified_subject must be a boolean")
     safe_session_id = stable_id("session", raw.session_key, identity_key)
     raw_user = raw.user_identity or f"anonymous:{raw.session_key}"
+    verified_subject = sanitized.verified_subject
+    if verified_subject is not None:
+        verified_subject.require_fae_scope(sanitized.agent_id, sanitized.source_kind)
+        if include_verified_subject:
+            raw_user = (
+                f"verified-subject:{verified_subject.subject_type}:"
+                f"{verified_subject.subject_id}"
+            )
     user_id = stable_id(f"user:{raw.source_kind}", raw_user, identity_key)
     safe_turns = []
     raw_turns = sorted(raw.turns, key=lambda item: item.turn_index)
@@ -207,7 +219,7 @@ def build_session_record(
         turn_value = _json_safe(asdict(safe_turn))
         turn_value["key"] = stable_id("turn", raw_turn.turn_key, identity_key)
         safe_turns.append(turn_value)
-    return {
+    record = {
         "kind": "session",
         "key": safe_session_id,
         "user_id": user_id,
@@ -222,6 +234,9 @@ def build_session_record(
         "turns": safe_turns,
         "sanitizer_policy_version": sanitized.sanitizer_policy_version,
     }
+    if include_verified_subject and verified_subject is not None:
+        record["verified_subject"] = asdict(verified_subject)
+    return record
 
 
 class ReplicaExporter:
@@ -236,7 +251,10 @@ class ReplicaExporter:
         state_path: str | Path,
         queue_dir: str | Path,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        include_verified_subject: bool = False,
     ):
+        if type(include_verified_subject) is not bool:
+            raise ValueError("include_verified_subject must be a boolean")
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", source_instance_id):
             raise ValueError("invalid source instance")
         if len(identity_key) != 32:
@@ -249,6 +267,7 @@ class ReplicaExporter:
         self.state_path = Path(state_path)
         self.queue_dir = Path(queue_dir)
         self.clock = clock
+        self.include_verified_subject = include_verified_subject
 
     def _load_state(self, after: datetime) -> ExportState:
         if not self.state_path.exists():
@@ -287,7 +306,12 @@ class ReplicaExporter:
     def _record(
         self, raw: RawSession, sanitized: SanitizedSessionRecord
     ) -> dict[str, Any]:
-        return build_session_record(raw, sanitized, self.identity_key)
+        return build_session_record(
+            raw,
+            sanitized,
+            self.identity_key,
+            include_verified_subject=self.include_verified_subject,
+        )
 
     def export_batch(
         self, *, after: datetime, through: datetime, limit: int

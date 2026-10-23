@@ -1,7 +1,8 @@
 """Fail-closed release gate for the FAE Partner Provider.
 
-Partner operator login stays disabled in production until a *real* Partner
-Provider is selected and its dev real-account probe evidence is released. The
+Partner operator login requires a real Provider and a pinned release document:
+v1 records completed real-account acceptance; v2 records explicit project-owner
+authorization with real-account acceptance still pending. The
 gate reads one operator-provided evidence file plus a digest pin and answers a
 single explicit question: may partner login be enabled at all?
 
@@ -35,6 +36,11 @@ from .partner_provider import (
 )
 
 CONTRACT_VERSION = "orbbec-fae-partner-provider/v1"
+OWNER_AUTHORIZED_CONTRACT_VERSION = "orbbec-fae-partner-provider/v2"
+OWNER_RELEASE_FIELDS = frozenset({
+    "contract_version", "provider_kind", "release_basis", "authorized_at",
+    "evidence_sha256", "real_account_acceptance",
+})
 REFERENCE_PROVIDER_KIND = "reference"
 THRESHOLD_FIELDS = (
     "stable_subject_verified",
@@ -106,7 +112,10 @@ class ValidatedPartnerRelease:
     provider_kind: str
     release_sha256: str
     evidence_sha256: str
-    dev_real_account_tested_at: datetime
+    dev_real_account_tested_at: datetime | None
+    release_basis: str = "real_account_verified"
+    real_account_acceptance: str = "verified"
+    authorized_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -203,9 +212,14 @@ def _parse_release_document(body: bytes) -> dict[str, object]:
         raise ValueError("partner_provider_release_malformed") from error
     if not isinstance(document, dict):
         raise ValueError("partner_provider_release_malformed")  # noqa: TRY004
-    if set(document) != set(RELEASE_FIELDS):
-        raise ValueError("partner_provider_release_malformed")
-    return document
+    if set(document) == set(RELEASE_FIELDS):
+        if document.get("contract_version") == OWNER_AUTHORIZED_CONTRACT_VERSION:
+            raise ValueError("partner_provider_release_contract_mismatch")
+        return document
+    if (document.get("contract_version") == OWNER_AUTHORIZED_CONTRACT_VERSION
+            and set(document) == set(OWNER_RELEASE_FIELDS)):
+        return document
+    raise ValueError("partner_provider_release_malformed")
 
 
 def _release_provider_kind(document: dict[str, object]) -> str:
@@ -224,8 +238,10 @@ def _release_evidence_digest(document: dict[str, object]) -> str:
     return digest
 
 
-def _release_tested_at(document: dict[str, object], now: datetime) -> datetime:
-    raw = document["dev_real_account_tested_at"]
+def _release_tested_at(
+    document: dict[str, object], now: datetime, field: str = "dev_real_account_tested_at"
+) -> datetime:
+    raw = document[field]
     if not isinstance(raw, str) or _RFC3339.fullmatch(raw) is None:
         raise ValueError("partner_provider_release_malformed")
     try:
@@ -289,12 +305,24 @@ def validate_partner_release(
         raise ValueError("partner_provider_release_digest_mismatch")
 
     document = _parse_release_document(body)
-    if document["contract_version"] != CONTRACT_VERSION:
+    version = document["contract_version"]
+    if version not in (CONTRACT_VERSION, OWNER_AUTHORIZED_CONTRACT_VERSION):
         raise ValueError("partner_provider_release_contract_mismatch")
     released_kind = _release_provider_kind(document)
-    _require_thresholds(document)
+    owner_authorized = version == OWNER_AUTHORIZED_CONTRACT_VERSION
+    authorized_at = None
+    tested_at = None
+    if owner_authorized:
+        if released_kind != "dingtalk_external":
+            raise ValueError("partner_provider_kind_mismatch")
+        if (document["release_basis"] != "project_owner_authorized"
+                or document["real_account_acceptance"] != "pending"):
+            raise ValueError("partner_provider_release_malformed")
+        authorized_at = _release_tested_at(document, moment, "authorized_at")
+    else:
+        _require_thresholds(document)
+        tested_at = _release_tested_at(document, moment)
     evidence_sha256 = _release_evidence_digest(document)
-    tested_at = _release_tested_at(document, moment)
 
     if not partner_provider_registered(released_kind):
         raise ValueError("partner_provider_not_registered")
@@ -308,6 +336,9 @@ def validate_partner_release(
         release_sha256=sha256(body).hexdigest(),
         evidence_sha256=evidence_sha256,
         dev_real_account_tested_at=tested_at,
+        release_basis="project_owner_authorized" if owner_authorized else "real_account_verified",
+        real_account_acceptance="pending" if owner_authorized else "verified",
+        authorized_at=authorized_at,
     )
 
 
@@ -322,7 +353,9 @@ def evaluate_partner_release(
     return PartnerReleaseStatus(
         partner_login_available=True,
         config_valid=True,
-        reason="partner_release_validated",
+        reason=("partner_release_owner_authorized"
+                if validated.release_basis == "project_owner_authorized"
+                else "partner_release_validated"),
         provider_kind=validated.provider_kind,
     )
 

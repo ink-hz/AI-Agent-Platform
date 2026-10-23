@@ -2,6 +2,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import textwrap
 import time
 from pathlib import Path
@@ -1218,13 +1219,45 @@ def test_acceptance_requires_the_canonical_internal_fae_launch_fragment():
     script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
     acceptance = _bash_function(script, "accept_v2_real", "enable_with_rollback")
 
-    assert "('https','agent.orbbec.com.cn','/fae/')" in acceptance
+    assert "('https','fae.orbbec.com.cn','/')" in acceptance
     assert "parsed.query or parsed.fragment.count('=') != 1" in acceptance
     assert "fragment_key,fragment_code=parsed.fragment.split('=',1)" in acceptance
     assert "fragment_key != 'platform_launch'" in acceptance
     assert "urllib.parse.unquote(fragment_code) != fragment_code" in acceptance
     assert "re.fullmatch(r'[A-Za-z0-9_-]{32,256}', fragment_code)" in acceptance
     assert "fae.orbbec.com.cn','/enterprise/launch" not in acceptance
+
+
+@pytest.mark.parametrize("function,next_function", (
+    ("accept_v2_real", "enable_with_rollback"),
+    ("verify_fae_internal_history", "verify_markdown_rendering"),
+))
+@pytest.mark.parametrize("url,accepted", (
+    ("https://fae.orbbec.com.cn/#platform_launch=" + "a" * 43, True),
+    ("https://agent.orbbec.com.cn/fae/#platform_launch=" + "a" * 43, False),
+    ("https://fae.orbbec.com.cn/app/#platform_launch=" + "a" * 43, False),
+    ("https://fae.orbbec.com.cn/#partner_launch=" + "a" * 43, False),
+    ("https://fae.orbbec.com.cn/?next=evil#platform_launch=" + "a" * 43, False),
+    ("https://fae.orbbec.com.cn/#platform_launch=" + "%61" * 43, False),
+    ("https://fae.orbbec.com.cn/#platform_launch=short", False),
+))
+def test_fae_acceptance_launch_validators_require_canonical_url(
+    tmp_path, function, next_function, url, accepted
+):
+    script = (CLOUD / "accept.sh").read_text(encoding="utf-8")
+    body = _bash_function(script, function, next_function)
+    validator = next(
+        part.split("\nPY", 1)[0]
+        for part in body.split("<<'PY' || fail\n")[1:]
+        if 'urlsplit(url)' in part.split("\nPY", 1)[0]
+    )
+    launch = tmp_path / "launch.json"
+    launch.write_text(json.dumps({"launch_url": url}), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-c", validator, str(launch)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == (0 if accepted else 1), result.stderr
 
 
 def test_acceptance_exchanges_two_platform_launches_and_proves_fae_subject_history():
@@ -1287,7 +1320,7 @@ def _write_fae_history_curl_stub(path: Path) -> None:
             owner_session = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
             if url.endswith("/api/v1/agents/ai-fae-agent/launch"):
                 body = {
-                    "launch_url": "https://agent.orbbec.com.cn/fae/"
+                    "launch_url": "https://fae.orbbec.com.cn/"
                     + "#platform_launch=" + "o" * 43,
                 }
             elif url.endswith("/fae/api/enterprise/session"):
@@ -1387,7 +1420,7 @@ def _run_fae_history_contract(
         json.dumps(
             {
                 "launch_url": (
-                    "https://agent.orbbec.com.cn/fae/"
+                    "https://fae.orbbec.com.cn/"
                     f"#platform_launch={'m' * 43}"
                 )
             }

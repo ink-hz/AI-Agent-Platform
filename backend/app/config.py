@@ -113,6 +113,8 @@ class Config:
     partner_callback_method: Literal["GET", "POST"]
     partner_callback_path: str
     control_plane: ControlPlaneConfig
+    partner_encryption_keyring_file: str = ""
+    partner_hmac_keyring_file: str = ""
     sdk_sso_enabled: bool = False
     sdk_sso_public_origin: str = ""
     sdk_sso_entry_code: str = ""
@@ -285,6 +287,8 @@ _INLINE_CONTROL_SECRET_ENV = (
     "PLATFORM_CONTROL_DATABASE_URL",
     "PLATFORM_CONTROL_AUDIT_DATABASE_URL",
     "PLATFORM_DINGTALK_APP_SECRET",
+    "PLATFORM_PARTNER_ENCRYPTION_KEYRING",
+    "PLATFORM_PARTNER_HMAC_KEYRING",
     "PLATFORM_IDENTITY_ENCRYPTION_KEYRING",
     "PLATFORM_IDENTITY_HMAC_KEYRING",
     "PLATFORM_RATE_LIMIT_HMAC_KEYRING",
@@ -677,7 +681,7 @@ def _validate_cloud_config(config: Config) -> None:
 def _execution_relay_settings() -> tuple[bool, str, int, int]:
     enabled = _enabled("PLATFORM_EXECUTION_RELAY_ENABLED")
     if not enabled:
-        return False, "", 45, 1_048_576
+        return False, os.getenv("PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", "").strip(), 45, 1_048_576
     keyring_file = os.getenv(
         "PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE", ""
     ).strip()
@@ -1129,6 +1133,8 @@ def load_config() -> Config:
         partner_provider_release_sha256=partner_provider_release_sha256,
         partner_callback_method=partner_callback_method,
         partner_callback_path=partner_callback_path,
+        partner_encryption_keyring_file=os.getenv("PLATFORM_PARTNER_ENCRYPTION_KEYRING_FILE", "").strip(),
+        partner_hmac_keyring_file=os.getenv("PLATFORM_PARTNER_HMAC_KEYRING_FILE", "").strip(),
         control_plane=_load_control_plane_config(),
         hr_agent_settings=load_hr_agent_settings(os.environ),
         hr_role_package_root=os.getenv("PLATFORM_HR_ROLE_PACKAGE_ROOT", "").strip(),

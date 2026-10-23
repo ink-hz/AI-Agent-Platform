@@ -32,6 +32,7 @@ from app.observability.repository import ObservabilityReadError
 from app.operations.models import UsageLeader
 
 from .crypto import FieldCipher, ReplicaCryptoError
+from .store import validate_session_shape
 
 
 _SESSION_COLUMNS = """
@@ -185,6 +186,7 @@ class ReplicaObservabilityRepository:
         ):
             raise ValueError
         record = json.loads(plaintext)
+        validate_session_shape(record)
         if (
             not isinstance(record, dict)
             or record.get("kind") != "session"
@@ -398,6 +400,7 @@ class ReplicaObservabilityRepository:
             participant_count=1,
             primary_sender_name=record.get("primary_sender_name"),
             primary_sender_department=record.get("primary_sender_department"),
+            verified_subject=record.get("verified_subject"),
             sender_identity_status=(
                 "resolved" if record.get("primary_sender_name") else "unavailable"
             ),
@@ -611,6 +614,7 @@ class ReplicaObservabilityRepository:
             output_attachments=[item for item in attachments if item.direction == "agent_output"],
             sender_name=record.get("primary_sender_name"),
             sender_department=record.get("primary_sender_department"),
+            verified_subject=record.get("verified_subject"),
             sender_identity_status=(
                 "resolved" if record.get("primary_sender_name") else "unavailable"
             ),
