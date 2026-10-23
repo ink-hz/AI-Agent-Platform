@@ -47,3 +47,17 @@ Real DingTalk accounts: **not executed by this coding task**. Deployed Developme
 process/edge routing: **not executed by this coding task**. Independent composition
 review and production acceptance: **pending**. Current AppKey external eligibility,
 two real accounts, and FAE chat end to end are not claimed as verified.
+
+## Independent review correction
+
+Review found the combined public-secret/shared-key test used a DSN without an
+explicit port, so it failed at DSN validation before either intended check. Split
+it into two tests with explicit `:5432`, each proving `_build_service()` accepts
+the unchanged baseline first. The public-secret test additionally proves the
+private reader accepts the original secret before changing its mode; factory
+AppSecret reading precedes the database connectivity check. The key-overlap test
+calls `_build_service()` directly after injecting overlapping material, excluding
+database connectivity errors from its assertion. No runtime change was needed.
+The corrected complete focused suite passed **13 tests, 0 failed, 0 skipped in
+2.48s**. The earlier 12-test result included that false positive and is superseded
+by this corrected verification.

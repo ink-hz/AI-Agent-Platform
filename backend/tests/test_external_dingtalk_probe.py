@@ -48,18 +48,30 @@ def test_factory_rejects_production_dsn_before_connect(monkeypatch, tmp_path):
         probe.create_app()
 
 
-def test_factory_rejects_public_secret_and_shared_key_material(monkeypatch, tmp_path):
-    settings(monkeypatch, tmp_path, 'postgresql://platform_control_app_preview:secret@127.0.0.1/agent_platform_control_preview')
+def test_factory_rejects_public_secret_after_valid_service_configuration(monkeypatch, tmp_path):
+    settings(monkeypatch, tmp_path, 'postgresql://platform_control_app_preview:secret@127.0.0.1:5432/agent_platform_control_preview')
+    service, _ = probe._build_service()
+    assert service.repository.environment == 'preview'
+    assert probe._private_text('FAE_PROBE_APP_SECRET_FILE') == 'private-secret'
     (tmp_path / 'APP_SECRET').chmod(0o644)
-    with pytest.raises(ValueError, match='fae_probe_configuration_invalid'):
+    # create_app reads AppSecret before its database connectivity check; the
+    # configuration error must therefore come from the private-file boundary.
+    with pytest.raises(ValueError, match='^fae_probe_configuration_invalid$'):
         probe.create_app()
-    (tmp_path / 'APP_SECRET').chmod(0o600)
+
+
+def test_service_rejects_shared_key_material_after_valid_baseline(monkeypatch, tmp_path):
+    settings(monkeypatch, tmp_path, 'postgresql://platform_control_app_preview:secret@127.0.0.1:5432/agent_platform_control_preview')
+    service, _ = probe._build_service()
+    assert service.repository.environment == 'preview'
     auth = json.loads((tmp_path / 'AUTH').read_text())
     content = json.loads((tmp_path / 'CONTENT').read_text())
     content['keys'] = auth['keys']
     (tmp_path / 'CONTENT').write_text(json.dumps(content))
-    with pytest.raises(ValueError, match='fae_probe_configuration_invalid'):
-        probe.create_app()
+    # Exercise configuration directly, so a failed database connection cannot
+    # masquerade as overlap rejection.
+    with pytest.raises(ValueError, match='^fae_probe_configuration_invalid$'):
+        probe._build_service()
 
 
 @pytest.fixture
