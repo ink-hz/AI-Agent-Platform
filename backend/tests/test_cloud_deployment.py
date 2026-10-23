@@ -346,31 +346,16 @@ def test_cloud_registry_and_contract_have_no_source_coordinates():
     assert "47.106.112.69" not in contract
 
 
-def test_formal_edge_routes_each_fae_family_to_exactly_one_owner():
+def test_formal_edge_retires_old_fae_workspace_and_keeps_management_owner():
     value = (CLOUD / "agent-domain.nginx.conf").read_text(encoding="utf-8")
-    route_owners = {
-        "location ^~ /fae/manage/ {": "proxy_pass http://127.0.0.1:8080;",
-        "location = /fae/api/chat {": "proxy_pass http://127.0.0.1:8000;",
-        "location = /fae/api/attachments {": "proxy_pass http://127.0.0.1:8000;",
-        "location ^~ /fae/api/ {": "proxy_pass http://127.0.0.1:8000;",
-        "location ^~ /fae/assets/ {": "proxy_pass http://127.0.0.1:8000;",
-        "location ^~ /fae/ {": "proxy_pass http://127.0.0.1:8000;",
-    }
-
-    for selector, owner in route_owners.items():
-        assert value.count(selector) == 1
-        start = value.index(selector)
-        end = value.find("\n    location ", start + len(selector))
-        block = value[start:] if end < 0 else value[start:end]
-        assert block.count("proxy_pass ") == 1
-        assert owner in block
-
-    assert value.index("location ^~ /fae/manage/ {") < value.index(
-        "location ^~ /fae/ {"
-    )
-    assert value.index("location ^~ /fae/ {") < value.index(
-        "location / {", value.index("location ^~ /fae/ {")
-    )
+    assert "proxy_pass http://127.0.0.1:8000;" not in value
+    assert value.count("location ^~ /fae/manage/ {") == 1
+    start = value.index("location ^~ /fae/manage/ {")
+    end = value.index("\n    }", start)
+    management = value[start:end]
+    assert "proxy_pass http://127.0.0.1:8080;" in management
+    assert 'fae_entry_retired' in value
+    assert 'return 308 https://fae.orbbec.com.cn/;' in value
 
 
 def test_daq_edge_routes_keep_browser_and_api_on_one_independent_backend():
@@ -1272,9 +1257,9 @@ def test_acceptance_exchanges_two_platform_launches_and_proves_fae_subject_histo
     assert '"${curl_owner[@]}"' in history
     assert '"$base/api/v1/agents/ai-fae-agent/launch"' in history
     assert "for role in member owner" in history
-    assert history.count('"$base/fae/api/enterprise/session"') == 1
-    assert history.count('"$base/fae/api/authenticated/conversations?limit=30"') == 1
-    assert '"$base/fae/api/authenticated/conversations/$member_session_id"' in history
+    assert history.count('"https://fae.orbbec.com.cn/enterprise/session"') == 1
+    assert history.count('"https://fae.orbbec.com.cn/authenticated/conversations?limit=30"') == 1
+    assert '"https://fae.orbbec.com.cn/authenticated/conversations/$member_session_id"' in history
     assert "__Host-fae_enterprise_session" in history
     assert '[[ "$status_code" == "201" ]]' in history
     assert '[[ "$status_code" == "200" ]]' in history
@@ -1285,7 +1270,7 @@ def test_acceptance_exchanges_two_platform_launches_and_proves_fae_subject_histo
     assert "not member_session_ids or not owner_session_ids" in history
     assert "set(member_session_ids).isdisjoint(owner_session_ids)" in history
     assert "for role in member owner" in history
-    assert '"$base/fae/api/authenticated/conversations/$owner_session_id"' in history
+    assert '"https://fae.orbbec.com.cn/authenticated/conversations/$owner_session_id"' in history
     assert "/usr/bin/cmp -s" in history
     assert 'verify_fae_internal_history "$temporary/fae-launch.json"' in acceptance
 
@@ -1323,7 +1308,7 @@ def _write_fae_history_curl_stub(path: Path) -> None:
                     "launch_url": "https://fae.orbbec.com.cn/"
                     + "#platform_launch=" + "o" * 43,
                 }
-            elif url.endswith("/fae/api/enterprise/session"):
+            elif url.endswith("/enterprise/session"):
                 status = 201
                 body = {
                     "authenticated": True,
@@ -1334,11 +1319,11 @@ def _write_fae_history_curl_stub(path: Path) -> None:
                 }
                 jar.write_text(
                     "# Netscape HTTP Cookie File\\n"
-                    "#HttpOnly_agent.orbbec.com.cn\\tFALSE\\t/\\tTRUE\\t0\\t"
+                    "#HttpOnly_fae.orbbec.com.cn\\tFALSE\\t/\\tTRUE\\t0\\t"
                     "__Host-fae_enterprise_session\\t" + role + "-token\\n",
                     encoding="utf-8",
                 )
-            elif url.endswith("/fae/api/authenticated/conversations?limit=30"):
+            elif url.endswith("/authenticated/conversations?limit=30"):
                 selected = member_session if role == "member" else owner_session
                 items = [{
                     "session_id": selected,
@@ -1353,7 +1338,7 @@ def _write_fae_history_curl_stub(path: Path) -> None:
                 if role == "member" and leak == "owner_into_member":
                     items.append({**items[0], "session_id": owner_session})
                 body = {"items": items, "next_cursor": None}
-            elif url.endswith("/fae/api/authenticated/conversations/" + member_session):
+            elif url.endswith("/authenticated/conversations/" + member_session):
                 if role == "owner":
                     status = 404
                     body = {"detail": "conversation not found"}
@@ -1365,7 +1350,7 @@ def _write_fae_history_curl_stub(path: Path) -> None:
                         "current_schema": None,
                         "attachments": [],
                     }
-            elif url.endswith("/fae/api/authenticated/conversations/" + owner_session):
+            elif url.endswith("/authenticated/conversations/" + owner_session):
                 if role == "member":
                     status = 404
                     body = {"detail": "conversation not found"}
@@ -1462,10 +1447,10 @@ def test_fae_history_contract_executes_two_exchanges_and_cross_subject_probe(tmp
 
     assert result.returncode == 0, result.stderr
     assert len(requests) == 9
-    assert sum("/fae/api/enterprise/session" in item for item in requests) == 2
-    assert sum("/fae/api/authenticated/conversations?limit=30" in item for item in requests) == 2
-    assert sum("/fae/api/authenticated/conversations/aaaaaaaa" in item for item in requests) == 2
-    assert sum("/fae/api/authenticated/conversations/bbbbbbbb" in item for item in requests) == 2
+    assert sum("/enterprise/session" in item for item in requests) == 2
+    assert sum("/authenticated/conversations?limit=30" in item for item in requests) == 2
+    assert sum("/authenticated/conversations/aaaaaaaa" in item for item in requests) == 2
+    assert sum("/authenticated/conversations/bbbbbbbb" in item for item in requests) == 2
 
 
 @pytest.mark.parametrize("leak_direction", ("member_into_owner", "owner_into_member"))

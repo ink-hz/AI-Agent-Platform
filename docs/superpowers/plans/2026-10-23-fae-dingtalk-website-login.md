@@ -54,7 +54,22 @@ signature = base64.b64encode(hmac.new(secret.encode(), timestamp.encode(), hashl
 ## Controller integration/release
 
 - [x] Independent task/final security review before master integration and rollout.
-- [ ] Prepare explicit external credential settings from owner-controlled config only; preserve original private file, all other settings and role/mount/keyring boundaries. Record chosen registration and unresolved real eligibility. No new registration is silently invented.
-- [ ] Merge reviewed branch into clean master; build exact mergedmasterSHA. Publish API with current resolved Compose overlays preserved, shared locks, image/config parity guards, health and rollback. Do not use bare deploy.sh that drops overlays. No schema migration or FAE release.
-- [ ] Check internal auth composition, public FAE still accessible and English/vision unchanged, external startSNS/new namespace/fixed callback/secure nonce, invalid/legacy callbacks rejected, signed exchange diagnostics and other container/Nginx state preserved. No production model call.
-- [ ] Provide canonical external login entry for one real external-user scan; pending until user completes browser/client step. Retain truthful pending status and failed historical modern flow. No claim complete before real callback and FAE-only mapping is observed.
+- [x] Prepare explicit external credential settings from owner-controlled config only; preserve original private file, all other settings and role/mount/keyring boundaries. Record chosen registration and unresolved real eligibility. No new registration is silently invented.
+- [x] Merge reviewed branch into clean master; build exact mergedmasterSHA. Publish API with current resolved Compose overlays preserved, shared locks, image/config parity guards, health and rollback. Do not use bare deploy.sh that drops overlays. No schema migration or FAE release.
+- [x] Check internal auth composition, public FAE still accessible and English/vision unchanged, external startSNS/new namespace/fixed callback/secure nonce, invalid/legacy callbacks rejected, signed exchange diagnostics and other container/Nginx state preserved. No production model call.
+- [x] Provide canonical external login entry for one real external-user scan; pending until user completes browser/client step. Retain truthful pending status and failed historical modern flow. No claim complete before real callback and FAE-only mapping is observed.
+
+
+## Real-user acceptance remains pending
+
+The engineering changes, master integration and optional API-only trial rollout are done:
+exactd0dea5d3, healthy/restart0, no rollback. Source/API/config/static checks passed;
+FAEpublic2636f73 and existing enterprise login preserved. The completed “provide entry”
+step means the user received https://fae.orbbec.com.cn/partner/login . It does not mean
+an external account has authenticated successfully.
+
+- [ ] A genuinely external user completes SNS scan/callback.
+- [ ] Observe verified stable siteUUID and FAE-only session for that real user.
+
+No first-user success, current registration eligibility or normal rollout acceptance is
+claimed without that evidence. Historical modern-OAuth external failure remains failed.
