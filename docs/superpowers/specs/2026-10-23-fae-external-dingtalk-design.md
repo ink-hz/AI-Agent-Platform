@@ -114,3 +114,57 @@ Provider 授权边界，属于 channel/identity 注册配置，不涉及 FAE pla
 HTTP route 在消费 state 前拒绝重复键和冲突，Provider 保留自身校验；不得放松
 nonce、一次性 state、租约、隔离或企业回调分派。此修正只适配明确文档化的现代
 协议回调形状，不能当作旧 SNS 协议回退或跨组织应用资格证明。
+
+
+## 最新方向：钉钉网站个人扫码 + 自有账号（2026-10-23）
+
+用户最终明确“直接用钉钉机制，反正外部登录是我们实现的”。不建设手机号、邮件
+或密码认证。外部采用钉钉网站个人扫码，回调后由Platform验证个人标识、创建/复用
+站内UUID、仅授FAE权限；内部员工继续原企业OAuth。FAE现已按所有者另一条最新
+指令临时公开，保持该策略，不能在本批未经新指令自动恢复强制登录。
+
+### 已核实的接口与证据边界
+
+官方“扫码登录第三方网站”文档明确将个人网站登录与企业应用免登分开，外部用户
+由网站自行处理。其历史SNS流程提供qrconnect/snsapi_login和一次性code，再通过
+签名请求sns/getuserinfo_bycode取得unionid/nick，不需要查询企业userid或通讯录。
+官方将该流程标记为历史能力；API权限表与旧教程的应用类型描述存在不一致。因此
+不能推断任意内部AppKey都有外部授权资格，当前应用是否允许真实外部账号要实际
+验证。现有内部应用值可以作为显式配置的候选用于验证，不能自动回退企业凭据。
+
+主文档：
+- https://open.dingtalk.com/document/orgapp/scan-qr-code-to-log-on-to-third-party-websites
+- https://open.dingtalk.com/document/orgapp/obtain-the-user-information-based-on-the-sns-temporary-authorization
+- https://open.dingtalk.com/document/personalapp/signature-calculation-for-logon-free-scenarios-1
+
+已做一次有意无效code的兼容性诊断：当前应用签名请求HTTP200/errcode40078，未返回
+user_info、未创建身份。官方全局错误码40078表示不存在的临时授权码。这只证明接口
+可达并拒绝无效code，不证明签名、注册资格或真实外部登录通过；禁止据此写真人通过。
+
+### 当前外部适配契约
+
+选择单一、显式SNS网站协议，替换已确认不适合当前外部用途的现代企业OAuth外部
+适配。内部现代OAuth实现保留。不存在运行时自动切换协议、重试code或匿名兜底。
+
+- 授权：https://oapi.dingtalk.com/connect/qrconnect，appid、response_type=code、
+  scope=snsapi_login、固定redirect_uri和state。无corpId/企业组织选择或成员查询。
+- 兑换：POST https://oapi.dingtalk.com/sns/getuserinfo_bycode，query accessKey、
+  timestamp（毫秒）、signature；body tmp_auth_code。签名是以appSecret为key、
+  timestamp字符串为data的HMAC-SHA256，再Base64及HTTP参数编码一次。
+- 只有HTTP200且严格整数errcode=0、有效user_info.unionid/nick才能签发个人证明；
+  无accessToken/profile二跳，无企业成员API，无用户令牌持久化。失败不重试，并以
+  安全枚举/数字码记录原因，不能记录原始供应方body、签名、code或个人信息。
+- 新state前缀fae-dt-sns-v1.；旧fae-dt-v1.仍是保留外部前缀，必须进入外部分派后
+  明确拒绝，不能掉进企业分支或被已有企业Cookie短路。callback只接受code，不接
+  authCode或其组合。浏览器nonce、五分钟一次性state、旧证明租约、FAE-only授权、
+  撤销和owner审计保持。旧状态自然过期，不迁移或关联旧主体。
+- factory只读独立外部Client ID/secret-file设置，无默认企业凭据。本批SNS不根据
+  外部Client ID是否与内部AppKey相同来推断资格；撤销原现代OAuth候选中强制不同ID
+  的预检，真实资格由相应协议+注册配置及真实外部授权验证。显式同值也不创建员工
+  身份，两种账号仍属不同权限域。
+- 主体仍为sha256(注册ID)+':'+unionid，账户仍为partner_operator并生成随机站内UUID。
+  数据库、FAE消费契约和加密/密钥用途不变，不需要修改既有迁移或做身份重分配。
+
+生产发布依据仍是已获授权的v2 owner rollout，真实SNS外部验收单列未完成。当前
+公开FAE继续可用，只有真正完成一次外部扫码/回调/受限FAE会话后才能宣称外部登录
+成功；页面200、302和模拟HTTP工程测试均不能代替。浏览器验收由用户完成。
