@@ -41,15 +41,25 @@ def main(argv=None):
     parser = Parser(description=__doc__)
     parser.add_argument('--input', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
-    args = parser.parse_args(argv)
+    args, unknown = parser.parse_known_args(argv)
     temporary = None
     try:
         source, output = args.input, args.output
-        if source.resolve() == output.resolve() or (
+        if os.path.abspath(source) == os.path.abspath(output):
+            raise ValueError('same input and output')
+        try:
+            resolved_source = source.resolve()
+        except RuntimeError:
+            # A looping input cannot identify a regular input file. Still invalidate
+            # a distinct explicit output before reporting the input error.
+            resolved_source = None
+        if resolved_source == output.resolve() or (
                 source.exists() and output.exists() and os.path.samefile(source, output)):
             raise ValueError('same input and output')
         # Invalidate the prior receipt before reading or validating this run.
         output.unlink(missing_ok=True)
+        if unknown or resolved_source is None:
+            raise ValueError('invalid arguments or input path')
         if not output.parent.is_dir():
             raise ValueError('missing output directory')
         receipt = load_run(source)
@@ -60,7 +70,7 @@ def main(argv=None):
             stream.write('\n')
         os.replace(temporary, output)
         return 2 if receipt['state'] == 'blocked' else 0
-    except (OSError, ValueError, TypeError, UnicodeError):
+    except (OSError, ValueError, TypeError, UnicodeError, RuntimeError):
         print('CI evidence input or output error', file=sys.stderr)
         return 3
     finally:

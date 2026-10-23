@@ -105,3 +105,39 @@ def test_output_parent_must_exist(run_files):
     result, output = invoke(root, data, root / 'missing' / 'receipt.json')
     assert result.returncode == 3
     assert not output.parent.exists()
+
+
+@pytest.mark.parametrize('case', ['symlink_loop', 'unknown_option'])
+def test_early_error_removes_prior_receipt_without_path_leak(run_files, case):
+    root, data = run_files
+    result, output = invoke(root, data)
+    assert result.returncode == 0
+    source = root / 'run.json'
+    extra = []
+    if case == 'symlink_loop':
+        source.unlink()
+        source.symlink_to(source.name)
+    else:
+        extra = ['--typo']
+    result = subprocess.run([sys.executable, str(CLI), '--input', str(source),
+                             '--output', str(output), *extra], cwd=REPO,
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 3
+    assert not output.exists()
+    assert str(root) not in result.stderr
+    assert 'Traceback' not in result.stderr
+
+
+@pytest.mark.parametrize('unknown', [False, True])
+def test_hardlink_input_output_preserved(run_files, unknown):
+    root, data = run_files
+    source = root / 'run.json'
+    source.write_text(json.dumps(data))
+    output = root / 'alias.json'
+    output.hardlink_to(source)
+    result = subprocess.run([sys.executable, str(CLI), '--input', str(source),
+                             '--output', str(output), *(['--typo'] if unknown else [])],
+                            cwd=REPO, capture_output=True, text=True, check=False)
+    assert result.returncode == 3
+    assert json.loads(source.read_text()) == data
+    assert output.exists()
