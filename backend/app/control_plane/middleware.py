@@ -264,6 +264,8 @@ def is_public_request(
     exact = {
         ("GET", "/"),
         ("GET", "/login"),
+        ("GET", "/agents/ai-fae-agent"),
+        ("GET", "/api/v1/auth/fae-launch.js"),
         ("GET", "/favicon.ico"),
         ("GET", "/api/health"),
         ("GET", "/api/v1/extensions/voc/health"),
@@ -453,6 +455,8 @@ class IdentitySecurityMiddleware:
             partner_callback_method=self.partner_callback_method,
             partner_callback_path=self.partner_callback_path,
         )
+        if local_path in {"/agents/ai-fae-agent", "/api/v1/auth/fae-launch.js"}:
+            public = public and _has_canonical_ascii_raw_path(scope, path)
         headers = Headers(scope=scope)
         edge_source = None
         if getattr(self.auth, "trusted_proxy_networks", ()):
