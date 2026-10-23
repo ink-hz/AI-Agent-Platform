@@ -125,6 +125,7 @@ def test_every_git_command_disables_lazy_fetch_and_all_transport(source, monkeyp
 @pytest.mark.parametrize('pollution', ['worktree_attributes', 'info_attributes', 'configured_attributes', 'color', 'driver'])
 def test_text_hunks_and_direct_claims_ignore_local_rendering(source, tmp_path, pollution):
     from types import SimpleNamespace
+
     from app.sdk_knowledge.analysis import model_context
     from app.sdk_knowledge.service import KnowledgeService
 
