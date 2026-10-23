@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "orbbec-fae-partner-provider-owner-release-v2",
+  "title": "Explicit owner-authorized external DingTalk rollout; real-account acceptance pending",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "provider_kind",
+    "release_basis",
+    "authorized_at",
+    "evidence_sha256",
+    "real_account_acceptance"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "orbbec-fae-partner-provider/v2"
+    },
+    "provider_kind": {
+      "const": "dingtalk_external"
+    },
+    "release_basis": {
+      "const": "project_owner_authorized"
+    },
+    "authorized_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "real_account_acceptance": {
+      "const": "pending"
+    }
+  }
+}
