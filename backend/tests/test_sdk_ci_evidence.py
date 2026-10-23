@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 
 import pytest
 
@@ -133,5 +134,13 @@ def test_unsupported_xml_encoding_is_junit_invalid(workspace, encoding):
 def test_suites_cannot_reuse_report_path(workspace):
     with pytest.raises(CiEvidenceError) as error:
         run(workspace, suites={'unit': ('unit.xml', 1), 'integration': ('./unit.xml', 1)})
+    assert error.value.code == 'input_invalid'
+    assert error.value.field == 'suites.integration.path'
+
+
+def test_suites_cannot_reuse_hardlinked_report(workspace):
+    os.link(workspace / 'unit.xml', workspace / 'integration.xml')
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace, suites={'unit': ('unit.xml', 1), 'integration': ('integration.xml', 1)})
     assert error.value.code == 'input_invalid'
     assert error.value.field == 'suites.integration.path'

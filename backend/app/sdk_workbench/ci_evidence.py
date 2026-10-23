@@ -80,6 +80,7 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
         artifact_records.append({'path': relative, 'size': size, 'sha256': _sha(path)})
     suite_records = []
     report_paths = set()
+    report_files = set()
     if not suites:
         reasons.add('suite_missing')
     for name, config in suites.items():
@@ -99,6 +100,11 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
         if not path.exists():
             reasons.add('suite_missing')
             continue
+        stat = path.stat()
+        file_identity = (stat.st_dev, stat.st_ino)
+        if file_identity in report_files:
+            _invalid(field)
+        report_files.add(file_identity)
         with path.open('rb') as stream:
             data = stream.read(MAX_XML_BYTES + 1)
         if len(data) > MAX_XML_BYTES or b'<!DOCTYPE' in data.upper() or b'<!ENTITY' in data.upper() or b'\x00' in data:
