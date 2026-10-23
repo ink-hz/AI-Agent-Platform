@@ -19,12 +19,15 @@ source_verified 说明知识基线的静态核查；content_matches 仅说明被
 保留设备、平台、固件、配置与状态条件；未提供的条件列成问题。区分变更观察、推断与建议，不声称执行过测试或批准发布。
 只调用一次 submit_sdk_analysis 交付结构化建议。impacts/regressions 的 claim_ids 必须来自本次材料；没有依据则留空相应列表并写问题。
 回归项须写具体操作与预期可观察行为，且仍是建议。所有未知与范围限制必须保留。使用中文。'''
-SYSTEM_PROMPT += '''交付最多3项主要影响、最多3项优先回归，每项说明控制在150字内、操作步骤最多3条；
+SYSTEM_PROMPT += '''交付最多3项主要影响、最多4项优先回归，每项说明控制在100字内、操作步骤最多3条；
 不重复路径/摘要和逐页复述，引用只用claim_ids。完整来源、未知和其余候选保留在source_packet中，本次建议应注明直接范围限制。'''
-SYSTEM_PROMPT += '每个明确事实必须引用直接支持该事实的claim；不能用同页的其他claim替代。共享证据的supporting_claim是关联约束，不代表其代码被本次修改。'
+SYSTEM_PROMPT += '每个明确事实必须引用直接支持该事实的claim；不能用同页的其他claim替代。supporting_claim与companion_claim是共享证据约束和同权威页背景，不代表其代码被本次修改。'
 SYSTEM_PROMPT += '''不要把生成/安装/复制事实扩写成携带特定版本值或运行行为，除非引用明确支持。发现变量、接口、命令或平台开关的矛盾/缺证时，
 必须把静态确认及未确认时停止写入对应回归preconditions，确认后才执行，不把有歧义的名称直接作为已核参数。
 区分runtime_validation字段与unknowns实际记录；不能从not_run推出每页都有开放unknown记录。'''
+SYSTEM_PROMPT += '''先逐项核对objective要求的结果，在objective_coverage中每项都给回归索引或明确补证路径；
+资料不足时，先定位/核对契约，再给有条件的执行与验收步骤，不静默省略所要求的接口、制品等结果，不用可选支线替代任务要求。
+优先完整覆盖请求，避免重复限制声明：summary简短；每个回归写关键前置、操作和预期，各句尽量80字以内。'''
 
 
 class AnalysisFailure(ValueError):
@@ -58,7 +61,7 @@ def proposal_schema() -> dict:
 
 
 def model_context(packet: dict) -> dict:
-    """Keep direct claims and one hop of shared-evidence supporting constraints."""
+    """Keep coherent, bounded authority-page context and distinguish direct hits."""
     pages = []
     evidence_fields = {'evidence_id', 'repository', 'commit', 'path', 'line_start', 'line_end',
                        'symbol', 'sha256', 'source_root'}
@@ -70,14 +73,17 @@ def model_context(packet: dict) -> dict:
         direct_sources = {eid for claim in direct for eid in claim['evidence_ids']}
         supporting = [claim for claim in page['claims'] if claim['claim_id'] not in direct_ids
                       and direct_sources.intersection(claim['evidence_ids'])]
-        claims = (direct + supporting)[:8]
+        shared_ids = {claim['claim_id'] for claim in supporting}
+        companion = [claim for claim in page['claims'] if claim['claim_id'] not in direct_ids | shared_ids] if direct else []
+        claims = (direct + supporting + companion)[:8]
         identifiers = {claim['claim_id'] for claim in claims}
         linked = {eid for claim in claims for eid in claim['evidence_ids']}
         value = {key: page[key] for key in ('page_id', 'title', 'conditions', 'body_sha256', 'semantic_sha256',
                  'review_status', 'runtime_validation', 'knowledge_state', 'changed_references', 'unknowns') if key in page}
         value.update(claims=claims,
                      direct_claim_ids=[claim['claim_id'] for claim in claims if claim['claim_id'] in direct_ids],
-                     supporting_claim_ids=[claim['claim_id'] for claim in claims if claim['claim_id'] not in direct_ids],
+                     supporting_claim_ids=[claim['claim_id'] for claim in claims if claim['claim_id'] in shared_ids],
+                     companion_claim_ids=[claim['claim_id'] for claim in claims if claim['claim_id'] not in direct_ids | shared_ids],
                      evidence=[{k: v for k, v in e.items() if k in evidence_fields}
                                for e in page['evidence'] if e['evidence_id'] in linked],
                      source_checks=[row for row in page.get('source_checks', []) if row['evidence_id'] in linked],
@@ -85,7 +91,7 @@ def model_context(packet: dict) -> dict:
         pages.append(value)
     return {'baseline_id': packet['baseline_id'], 'observation': packet['observation'], 'affected_pages': pages,
             'runtime_validation': 'not_run', 'coverage': packet.get('coverage', {}),
-            'context_scope': 'direct_changed_range_claims_and_one_hop_shared_evidence_constraints; indirect impact remains a model proposal'}
+            'context_scope': 'bounded_companion_claims_of_directly_affected_authority_pages; indirect impact remains a model proposal'}
 
 
 class ChangeAnalyzer:
@@ -126,6 +132,10 @@ class ChangeAnalyzer:
         used = {identifier for row in proposal['impacts'] + proposal['regressions'] for identifier in row['claim_ids']}
         if not used.issubset(claims):
             raise AnalysisFailure('analysis_citation_invalid', response)
+        for row in proposal['objective_coverage']:
+            if (any(i >= len(proposal['regressions']) for i in row['regression_indices']) or
+                    (row['status'] == 'regression_proposed' and not row['regression_indices'])):
+                raise AnalysisFailure('analysis_coverage_invalid', response)
         citations = []
         for identifier in sorted(used):
             page, claim = claims[identifier]

@@ -27,6 +27,8 @@ def proposal():
             'impacts': [{'area': '版本', 'rationale': '版本号变化', 'claim_ids': ['KB-VERSION-C1']}],
             'regressions': [{'scenario': '检查运行版本', 'preconditions': ['确认版本接口与受测平台'], 'steps': ['构建隔离候选', '读取版本接口'],
                              'expected_behavior': '版本与目标匹配', 'claim_ids': ['KB-VERSION-C1']}],
+            'objective_coverage': [{'requested_outcome': '版本影响', 'status': 'regression_proposed',
+                                    'regression_indices': [0], 'next_action': '确认环境后执行回归'}],
             'questions': ['设备固件组合待确认'], 'limitations': ['未执行构建或设备测试']}
 
 
@@ -105,8 +107,8 @@ def test_sdk_analysis_refuses_a_provider_that_would_retry():
 def test_model_context_keeps_changed_claim_conditions_and_explicit_omissions():
     model = Model()
     data = packet()
-    data['affected_pages'][0]['claims'].append({'claim_id': 'KB-VERSION-C2', 'text': '无关结论' * 500,
-                                               'evidence_ids': ['E2']})
+    data['affected_pages'].append({**data['affected_pages'][0], 'page_id': 'KB-UNRELATED', 'changed_references': [],
+                                  'claims': [{'claim_id': 'KB-VERSION-C2', 'text': '无关结论' * 500, 'evidence_ids': ['E2']}]})
     ChangeAnalyzer(model, model_id='configured-model').analyze(data, '检查')
     context = model.requests[0].messages[0]['content']
     assert '无关结论' not in context
@@ -151,6 +153,13 @@ def test_provider_tool_schema_is_self_contained_and_preserves_nested_constraints
     ChangeAnalyzer(model, model_id='configured-model').analyze(packet(), '检查')
     schema = model.requests[0].tools[0]['input_schema']
     assert '$ref' not in json.dumps(schema) and '$defs' not in schema
-    assert schema['properties']['regressions']['maxItems'] == 3
+    assert schema['properties']['regressions']['maxItems'] == 4
     item = schema['properties']['regressions']['items']
     assert 'preconditions' in item['required'] and item['additionalProperties'] is False
+
+
+def test_objective_coverage_cannot_point_to_an_absent_regression():
+    value = proposal()
+    value['objective_coverage'][0]['regression_indices'] = [1]
+    with pytest.raises(AnalysisFailure, match='analysis_coverage_invalid'):
+        ChangeAnalyzer(Model(value), model_id='configured-model').analyze(packet(), '检查')

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -49,9 +49,17 @@ class ProposedRegression(StrictModel):
     claim_ids: Annotated[list[Identifier], Field(min_length=1, max_length=8)]
 
 
+class ObjectiveCoverage(StrictModel):
+    requested_outcome: Text
+    status: Literal['regression_proposed', 'needs_evidence']
+    regression_indices: Annotated[list[Annotated[int, Field(ge=0, le=3)]], Field(max_length=4)]
+    next_action: Text
+
+
 class AnalysisProposal(StrictModel):
     summary: Text
     impacts: Annotated[list[ProposedImpact], Field(max_length=3)]
-    regressions: Annotated[list[ProposedRegression], Field(max_length=3)]
-    questions: Annotated[list[Text], Field(max_length=6)]
-    limitations: Annotated[list[Text], Field(min_length=1, max_length=6)]
+    regressions: Annotated[list[ProposedRegression], Field(max_length=4)]
+    objective_coverage: Annotated[list[ObjectiveCoverage], Field(min_length=1, max_length=6)]
+    questions: Annotated[list[Text], Field(max_length=4)]
+    limitations: Annotated[list[Text], Field(min_length=1, max_length=4)]
