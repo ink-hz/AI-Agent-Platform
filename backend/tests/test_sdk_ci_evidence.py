@@ -1,0 +1,108 @@
+import hashlib
+import json
+
+import pytest
+
+from app.sdk_workbench.ci_evidence import CiEvidenceError, verify_ci_run
+
+
+def run(tmp_path, **changes):
+    args = {'candidate_digest': 'a' * 64, 'run_id': 'job-1', 'attempt': 1,
+                'exit_code': 0, 'artifacts': ['sdk.tgz'], 'suites': {'unit': ('unit.xml', 1)}}
+    args.update(changes)
+    return verify_ci_run(tmp_path, **args)
+
+
+@pytest.fixture
+def workspace(tmp_path):
+    (tmp_path / 'sdk.tgz').write_bytes(b'real artifact')
+    (tmp_path / 'unit.xml').write_text('<testsuite><testcase name="a"/></testsuite>')
+    return tmp_path
+
+
+def test_local_verified_receipt(workspace):
+    (workspace / 'integration.xml').write_text('<testsuites><testsuite tests="999"><testcase name="b"/></testsuite></testsuites>')
+    report = run(workspace, suites={'unit': ('unit.xml', 1), 'integration': ('integration.xml', 1)})
+    assert report['state'] == 'local_verified'
+    assert report['promotion_eligible'] is False
+    assert report['trust_state'] == 'runner_local_unattested'
+    assert [s['total'] for s in report['suites']] == [1, 1]
+    assert report['artifacts'][0]['sha256'] == hashlib.sha256(b'real artifact').hexdigest()
+    digest = report.pop('receipt_sha256')
+    assert digest == hashlib.sha256(json.dumps(report, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+
+
+@pytest.mark.parametrize(('change', 'reason'), [
+    ({'exit_code': 1}, 'process_failed'),
+    ({'suites': {}}, 'suite_missing'),
+    ({'artifacts': ['absent']}, 'artifact_missing'),
+    ({'suites': {'unit': ('absent', 1)}}, 'suite_missing'),
+    ({'suites': {'unit': ('unit.xml', 2)}}, 'cases_below_minimum'),
+])
+def test_blocked_inputs(workspace, change, reason):
+    report = run(workspace, **change)
+    assert report['state'] == 'blocked'
+    assert reason in report['reasons']
+
+
+@pytest.mark.parametrize(('xml', 'reason'), [
+    ('<testsuite/>', 'suite_empty'),
+    ('<testsuite><testcase><failure/></testcase></testsuite>', 'tests_failed'),
+    ('<testsuite><testcase><error/></testcase></testsuite>', 'tests_failed'),
+    ('<testsuite><testcase><skipped/></testcase></testsuite>', 'tests_skipped'),
+])
+def test_actual_cases_determine_result(workspace, xml, reason):
+    (workspace / 'unit.xml').write_text(xml)
+    assert reason in run(workspace)['reasons']
+
+
+def test_empty_artifact(workspace):
+    (workspace / 'sdk.tgz').write_bytes(b'')
+    assert 'artifact_empty' in run(workspace)['reasons']
+
+
+@pytest.mark.parametrize('path', ['../escape', '/tmp/escape'])
+def test_outside_path(workspace, path):
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace, artifacts=[path])
+    assert error.value.code == 'path_outside_workspace'
+
+
+def test_symlink_rejected(workspace):
+    (workspace / 'link').symlink_to(workspace / 'sdk.tgz')
+    with pytest.raises(CiEvidenceError):
+        run(workspace, artifacts=['link'])
+
+
+@pytest.mark.parametrize('xml', ['broken', '<!DOCTYPE testsuite><testsuite/>', '<other/>'])
+def test_invalid_xml(workspace, xml):
+    (workspace / 'unit.xml').write_text(xml)
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace)
+    assert error.value.code == 'junit_invalid'
+
+
+@pytest.mark.parametrize('change', [{'attempt': True}, {'attempt': 0}, {'candidate_digest': 'bad'}, {'run_id': '../bad'}, {'exit_code': False}, {'suites': {'unit': ('unit.xml', -1)}}])
+def test_invalid_input(workspace, change):
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace, **change)
+    assert error.value.code == 'input_invalid'
+
+
+def test_oversized_xml(workspace):
+    (workspace / 'unit.xml').write_bytes(b' ' * (10 * 1024 * 1024 + 1))
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace)
+    assert error.value.code == 'junit_invalid'
+
+
+def test_nonregular_file(workspace):
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace, artifacts=['.'])
+    assert error.value.code == 'input_invalid'
+
+
+def test_parent_symlink_rejected(workspace):
+    (workspace / 'linkdir').symlink_to(workspace, target_is_directory=True)
+    with pytest.raises(CiEvidenceError):
+        run(workspace, artifacts=['linkdir/sdk.tgz'])
