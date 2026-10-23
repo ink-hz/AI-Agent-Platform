@@ -84,6 +84,9 @@ def test_review_projection_proves_nested_scope_and_inbox_issue_ownership():
 def test_cloud_issue_scope_binds_move_direction_link_identity_and_referenced_issues():
     source = " ".join(REVIEW_ISSUE_SQL.lower().split())
     predicate = " ".join(HISTORICAL_LINK_EVENT_INVALID_SQL.lower().split())
+    predicate = predicate.replace("platform_read.turns", "scope_turns").replace(
+        "platform_read.feedback", "scope_feedback"
+    )
 
     assert predicate in source
     assert "event.before->>'id' is distinct from event.after->>'id'" in source
