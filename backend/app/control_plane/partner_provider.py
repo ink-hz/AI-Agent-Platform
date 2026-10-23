@@ -18,7 +18,13 @@ from .partner_models import (
 _PROVIDER_KIND = re.compile(r"[a-z][a-z0-9_-]{0,127}\Z")
 _CALLBACK_PATH = re.compile(r"/partner-auth/[A-Za-z0-9][A-Za-z0-9/_-]{0,127}\Z")
 _FIXED_FAE_RETURN_PATH = "/app/"
-EXTERNAL_DINGTALK_STATE_PREFIX = "fae-dt-v1."
+EXTERNAL_DINGTALK_STATE_PREFIX = "fae-dt-sns-v1."
+# Legacy external states must remain reserved so no enterprise cookie can
+# short-circuit them. Only the current namespace is accepted by the broker.
+EXTERNAL_DINGTALK_RESERVED_STATE_PREFIXES = (
+    EXTERNAL_DINGTALK_STATE_PREFIX,
+    "fae-dt-v1.",
+)
 EXTERNAL_DINGTALK_NONCE_COOKIE = "__Host-fae-dt-nonce"
 
 

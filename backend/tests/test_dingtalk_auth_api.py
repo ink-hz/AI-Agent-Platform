@@ -1821,3 +1821,18 @@ agents:
     }
     assert client.get("/api/health").json() == {"status": "ok"}
     assert audited == [auth.context.session_id]
+
+
+@pytest.mark.parametrize("state", ["fae-dt-v1." + "a" * 43, "fae-dt-sns-v1." + "a" * 43])
+@pytest.mark.parametrize("cookie", [False, True])
+def test_reserved_external_state_never_uses_enterprise_callback_even_with_cookie(state, cookie):
+    auth = FakeAuth()
+    app = FastAPI()
+    app.include_router(build_auth_router(auth, static_dir="static", public_assets=frozenset(), detailed_health=lambda _: {}))
+    client = TestClient(app)
+    if cookie:
+        client.cookies.set(auth.cookie_name, "valid-cookie")
+    response = client.get("/api/v1/auth/dingtalk/callback", params={"state": state, "code": "code"}, follow_redirects=False)
+    assert response.status_code == 503
+    assert response.json() == {"detail": {"code": "partner_identity_unavailable"}}
+    assert auth.provider_calls == 0

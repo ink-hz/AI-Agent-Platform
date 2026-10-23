@@ -1148,3 +1148,20 @@ def test_partner_login_state_functions_are_app_only(control_database) -> None:
                 "'platform_control.partner_login_attempts','INSERT,UPDATE,DELETE')",
                 (selected_app,),
             ).fetchone()[0]
+
+
+@pytest.mark.asyncio
+async def test_external_broker_reserves_new_sns_namespace_and_rejects_legacy_before_storage():
+    provider = FakeProvider()
+    provider.kind = "dingtalk_external"
+    service = SimpleNamespace(
+        create_external_login_attempt=lambda **_: None,
+        consume_external_login_attempt=lambda **_: pytest.fail("legacy state reached storage"),
+    )
+    broker, _, _ = _broker(provider=provider, service=service)
+    started = broker.begin_auth()
+    assert provider.state.startswith("fae-dt-sns-v1.")
+    assert started.browser_nonce
+    with pytest.raises(PartnerIdentityError, match="^partner_auth_state_invalid$"):
+        await broker.finish_auth({"state": "fae-dt-v1." + "a" * 43, "code": "ok"}, browser_nonce=started.browser_nonce)
+    assert provider.events == ["provider.begin"]

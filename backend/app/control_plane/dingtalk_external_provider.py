@@ -1,21 +1,25 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
+import logging
 import re
 import unicodedata
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, NoReturn
 from urllib.parse import urlencode
 
 import httpx
 
+from .dingtalk import _LOG_SECRETS, _install_provider_log_filter
 from .partner_models import PartnerIdentityError, VerifiedProviderSubject
 
-_AUTHORIZATION_URL = "https://login.dingtalk.com/oauth2/auth"
-_TOKEN_URL = "https://api.dingtalk.com/v1.0/oauth2/userAccessToken"
-_PROFILE_URL = "https://api.dingtalk.com/v1.0/contact/users/me"
+_LOG = logging.getLogger(__name__)
+_AUTHORIZATION_URL = "https://oapi.dingtalk.com/connect/qrconnect"
+_SNS_URL = "https://oapi.dingtalk.com/sns/getuserinfo_bycode"
 _REDIRECT_URIS = frozenset(
     {
         "https://agent.orbbec.com.cn/api/v1/auth/dingtalk/callback",
@@ -65,7 +69,7 @@ def _recent_proof(proof: object, *, now: datetime, ttl: timedelta) -> bool:
 
 
 class DingTalkExternalIdentityProvider:
-    """Personal OAuth identity with a bounded local verification lease.
+    """Explicit website SNS identity with a bounded local verification lease.
 
     ``check_subject`` proves recent OAuth authentication, not live DingTalk
     revocation status. Local subject and grant revocation belongs to the broker
@@ -102,6 +106,7 @@ class DingTalkExternalIdentityProvider:
             hashlib.sha256(client_id.encode("utf-8")).hexdigest() + ":"
         )
         self._callback_proofs: OrderedDict[str, datetime] = OrderedDict()
+        _install_provider_log_filter()
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(10.0),
             transport=transport,
@@ -131,12 +136,11 @@ class DingTalkExternalIdentityProvider:
             + "?"
             + urlencode(
                 {
-                    "client_id": self._client_id,
+                    "appid": self._client_id,
                     "redirect_uri": self._redirect_uri,
                     "response_type": "code",
-                    "scope": "openid",
+                    "scope": "snsapi_login",
                     "state": state,
-                    "prompt": "consent",
                 }
             )
         )
@@ -151,30 +155,82 @@ class DingTalkExternalIdentityProvider:
             getlist = getattr(callback, "getlist", None)
             if callable(getlist) and any(len(getlist(key)) != 1 for key in callback):
                 raise ValueError
-            if "error" in callback:
+            if set(callback) != {"state", "code"}:
                 raise ValueError
             _required_ascii(callback.get("state"), maximum=1024)
-            code = _required_ascii(callback.get("authCode"), maximum=4096)
-            if "code" in callback and callback["code"] != code:
-                raise ValueError
+            code = _required_ascii(callback.get("code"), maximum=4096)
             return code
         except Exception:  # noqa: BLE001 - callback identity material must not escape
             raise PartnerIdentityError("partner_auth_invalid", 401) from None
 
-    async def _request(self, method: str, url: str, **kwargs: object) -> dict:
+    @staticmethod
+    def _exchange_failure(
+        reason: str, *, http_status: int = -1, provider_errcode: int = -1
+    ) -> NoReturn:
+        # Call sites supply only fixed enums and bounded integers, never provider text.
+        _LOG.warning(
+            "dingtalk_external_exchange_failed reason=%s http_status=%d provider_errcode=%d",
+            reason,
+            http_status,
+            provider_errcode,
+        )
+        raise PartnerIdentityError("partner_identity_unavailable") from None
+
+    async def _exchange(self, code: str) -> dict:
+        now = self._current_time()
+        timestamp = str(
+            (now - datetime(1970, 1, 1, tzinfo=UTC)) // timedelta(milliseconds=1)
+        )
+        if int(timestamp) <= 0:
+            self._exchange_failure("invalid_clock")
+        # Official personal-login signature contract: HMAC-SHA256(secret, timestamp),
+        # then Base64. httpx params performs the single required URL encoding.
+        signature = base64.b64encode(
+            hmac.new(
+                self._client_secret.encode("utf-8"),
+                timestamp.encode("utf-8"),
+                hashlib.sha256,
+            ).digest()
+        ).decode("ascii")
+        context = _LOG_SECRETS.set((self._client_secret, code, signature))
         try:
-            # Authorization codes are single use; neither operation is retried.
-            response = await self._client.request(method, url, **kwargs)
+            try:
+                # Temporary authorization codes are single use; never retry.
+                response = await self._client.post(
+                    _SNS_URL,
+                    params={
+                        "accessKey": self._client_id,
+                        "timestamp": timestamp,
+                        "signature": signature,
+                    },
+                    json={"tmp_auth_code": code},
+                )
+            except Exception:  # noqa: BLE001 - exception URLs may contain signatures
+                self._exchange_failure("request_failed")
             if response.status_code != 200:
-                raise ValueError
-            payload = response.json()
+                self._exchange_failure("http_error", http_status=response.status_code)
+            try:
+                payload = response.json()
+            except Exception:  # noqa: BLE001 - no provider body escapes
+                self._exchange_failure("invalid_json", http_status=200)
             if not isinstance(payload, dict):
-                raise TypeError
-            if any(key in payload for key in ("code", "errcode", "error")):
-                raise ValueError
-            return payload
-        except Exception:  # noqa: BLE001 - do not expose requests, tokens or provider bodies
-            raise PartnerIdentityError("partner_identity_unavailable") from None
+                self._exchange_failure("invalid_payload", http_status=200)
+            errcode = payload.get("errcode")
+            if type(errcode) is not int or not -(2**31) <= errcode < 2**31:
+                self._exchange_failure("invalid_errcode", http_status=200)
+            if errcode != 0:
+                self._exchange_failure(
+                    "provider_error", http_status=200, provider_errcode=errcode
+                )
+            if (
+                "code" in payload
+                or "error" in payload
+                or not isinstance(payload.get("user_info"), dict)
+            ):
+                self._exchange_failure("invalid_payload", http_status=200, provider_errcode=0)
+            return payload["user_info"]
+        finally:
+            _LOG_SECRETS.reset(context)
 
     def _evict_callback_proofs(self, now: datetime) -> None:
         for subject, proof in tuple(self._callback_proofs.items()):
@@ -183,32 +239,12 @@ class DingTalkExternalIdentityProvider:
 
     async def finish_auth(self, callback: Mapping[str, str]) -> VerifiedProviderSubject:
         code = self._callback_code(callback)
-        token_response = await self._request(
-            "POST",
-            _TOKEN_URL,
-            json={
-                "clientId": self._client_id,
-                "clientSecret": self._client_secret,
-                "code": code,
-                "grantType": "authorization_code",
-            },
-        )
+        profile = await self._exchange(code)
         try:
-            token = _required_ascii(token_response.get("accessToken"), maximum=4096)
-        except ValueError:
-            raise PartnerIdentityError("partner_identity_unavailable") from None
-        profile = await self._request(
-            "GET",
-            _PROFILE_URL,
-            headers={
-                "x-acs-dingtalk-access-token": token,
-            },
-        )
-        try:
-            union_id = _required_ascii(profile.get("unionId"), maximum=512)
+            union_id = _required_ascii(profile.get("unionid"), maximum=512)
             nickname = _required_nickname(profile.get("nick"))
         except ValueError:
-            raise PartnerIdentityError("partner_identity_unavailable") from None
+            self._exchange_failure("invalid_identity", http_status=200, provider_errcode=0)
         verified_at = self._current_time()
         subject = self._subject_prefix + union_id
         self._evict_callback_proofs(verified_at)

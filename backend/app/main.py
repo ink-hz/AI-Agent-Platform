@@ -681,8 +681,6 @@ def build_external_dingtalk_provider(config: Config, service: PartnerService):
 
     if not config.partner_dingtalk_client_id or not config.partner_dingtalk_client_secret_file:
         raise RuntimeError("external_dingtalk_credentials_required")
-    if config.partner_dingtalk_client_id == config.control_plane.dingtalk_app_key:
-        raise RuntimeError("external_dingtalk_registration_must_differ_from_enterprise")
     return DingTalkExternalIdentityProvider(
         client_id=config.partner_dingtalk_client_id,
         client_secret=read_secret_file(config.partner_dingtalk_client_secret_file),

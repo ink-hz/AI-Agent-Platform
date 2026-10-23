@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
 from urllib.parse import parse_qs, urlsplit
 
@@ -81,11 +83,13 @@ def configured_app(monkeypatch, tmp_path, control_database):
     calls = []
     def provider(request):
         calls.append(request)
-        if request.url.path.endswith('userAccessToken'):
-            code = json.loads(request.content)['code']
-            return httpx.Response(200, json={'accessToken': 'token-' + code})
-        account = request.headers['x-acs-dingtalk-access-token'].removeprefix('token-')
-        return httpx.Response(200, json={'unionId': 'raw-provider-' + account, 'nick': 'Private nickname'})
+        assert request.method == 'POST' and request.url.path == '/sns/getuserinfo_bycode'
+        params = dict(request.url.params)
+        assert set(params) == {'accessKey', 'timestamp', 'signature'}
+        assert params['accessKey'] == 'probe-app'
+        assert params['signature'] == base64.b64encode(hmac.new(b'private-secret', params['timestamp'].encode(), hashlib.sha256).digest()).decode()
+        account = json.loads(request.content)['tmp_auth_code']
+        return httpx.Response(200, json={'errcode': 0, 'user_info': {'unionid': 'raw-provider-' + account, 'nick': 'Private nickname'}})
     app = probe.create_app(transport=httpx.MockTransport(provider))
     return app, calls
 
@@ -97,11 +101,13 @@ def start(client):
     assert all(part in cookie for part in ['__Host-fae-dt-nonce=', 'HttpOnly', 'Secure', 'SameSite=lax', 'Path=/', 'Max-Age=300'])
     query = parse_qs(urlsplit(response.headers['location']).query)
     assert query['redirect_uri'] == ['https://agent.orbbec.com.cn/api/v1/auth/dingtalk/callback']
+    assert query['scope'] == ['snsapi_login'] and query['appid'] == ['probe-app']
+    assert query['state'][0].startswith('fae-dt-sns-v1.')
     return query['state'][0]
 
 
 def callback(client, state, account='one'):
-    return client.get('/api/v1/auth/dingtalk/callback', params={'state': state, 'authCode': account})
+    return client.get('/api/v1/auth/dingtalk/callback', params={'state': state, 'code': account})
 
 
 def secure(response):
@@ -132,7 +138,7 @@ def test_real_preview_provision_repeated_identity_isolation_and_report(configure
         assert sorted(item['login_count'] for item in report['subjects']) == [1, 2]
         assert all(item['state'] == 'active' for item in report['subjects'])
         assert all(set(item) == {'subject_id', 'login_count', 'state'} for item in report['subjects'])
-        assert len(calls) == 6
+        assert len(calls) == 3
     assert app.state.provider._client.is_closed
 
 
@@ -142,7 +148,7 @@ def test_malformed_callback_nonce_and_replay_precede_provider_exchange(configure
     with TestClient(app, base_url='https://probe.test', client=('127.0.0.2', 1234)) as client:
         state = start(client)
         nonce = client.cookies.get('__Host-fae-dt-nonce')
-        for suffix in ['&authCode=x&authCode=y', '&authCode=x&code=y', '&authCode=x&error=denied', '&authCode=', '&authCode=x&unknown=y']:
+        for suffix in ['&code=x&code=y', '&code=x&authCode=x', '&code=x&authCode=y', '&code=x&error=denied', '&code=', '&code=x&unknown=y', '&code=x&error_description=raw']:
             response = client.get('/api/v1/auth/dingtalk/callback?state=' + state + suffix)
             assert response.status_code == 401
             secure(response)
@@ -156,7 +162,7 @@ def test_malformed_callback_nonce_and_replay_precede_provider_exchange(configure
         response = callback(client, state)
         assert response.status_code == 401
         assert response.json() == {'code': 'partner_auth_state_replay'}
-        assert len(calls) == 2
+        assert len(calls) == 1
 
 
 @pytest.mark.postgres
@@ -203,3 +209,16 @@ def test_factory_rejects_libpq_configuration_fallthrough(monkeypatch, tmp_path, 
         monkeypatch.setenv('PGSERVICE', 'production')
     with pytest.raises(ValueError, match='fae_probe_configuration_invalid'):
         probe.create_app()
+
+
+@pytest.mark.parametrize('query', [
+    'state=fae-dt-v1.' + 'a' * 43 + '&code=x',
+    'state=fae-dt-sns-v1.' + 'a' * 43 + '&authCode=x',
+    'state=fae-dt-sns-v1.' + 'a' * 43 + '&code=x&authCode=x',
+    'state=fae-dt-sns-v1.' + 'a' * 43 + '&code=x&error=denied',
+])
+def test_probe_callback_parser_rejects_legacy_and_modern_aliases(query):
+    from starlette.requests import Request
+    request = Request({'type': 'http', 'query_string': query.encode()})
+    with pytest.raises(ValueError):
+        probe._callback_values(request)

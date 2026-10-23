@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
@@ -129,14 +133,19 @@ def test_login_never_restores_revoked_access(service, control_database, revocati
 
 
 @pytest.mark.postgres
-@pytest.mark.parametrize('code_alias', [False, True], ids=['authcode-only', 'equal-code-alias'])
-def test_http_external_authcode_nonce_and_no_platform_session(service, code_alias):
+def test_http_external_sns_code_nonce_and_no_platform_session(service, control_database):
     calls = []
     def transport(request):
-        calls.append(request.url.path)
-        if request.url.path.endswith('userAccessToken'):
-            return httpx.Response(200, json={'accessToken': 'private-token'})
-        return httpx.Response(200, json={'unionId': 'union-' + str(stable), 'nick': '外部昵称'})
+        calls.append(request)
+        assert request.method == 'POST' and request.url.path == '/sns/getuserinfo_bycode'
+        params = dict(request.url.params)
+        assert set(params) == {'accessKey', 'timestamp', 'signature'}
+        assert params['accessKey'] == 'test-app'
+        assert params['signature'] == base64.b64encode(hmac.new(b'secret', params['timestamp'].encode(), hashlib.sha256).digest()).decode()
+        account = json.loads(request.content)['tmp_auth_code']
+        assert account in {'code', 'code-other'}
+        suffix = '' if account == 'code' else '-other'
+        return httpx.Response(200, json={'errcode': 0, 'user_info': {'unionid': 'union-' + str(stable) + suffix, 'nick': '外部昵称'}})
     stable = uuid4()
     provider = DingTalkExternalIdentityProvider(client_id='test-app', client_secret='secret', redirect_uri='https://agent.orbbec.com.cn/api/v1/auth/dingtalk/callback', verified_at_for_subject=lambda _: None, transport=httpx.MockTransport(transport))
     broker = PartnerAuthenticationBroker(provider, service, state_secrets=AuthSecrets(b's' * 32, key_version=1))
@@ -160,21 +169,23 @@ def test_http_external_authcode_nonce_and_no_platform_session(service, code_alia
     with TestClient(app, base_url='https://agent.orbbec.com.cn') as client:
         started = client.get('/partner-auth/start', follow_redirects=False)
         state = parse_qs(urlsplit(started.headers['location']).query)['state'][0]
-        assert state.startswith('fae-dt-v1.'), 'external state must use reserved namespace'
+        assert state.startswith('fae-dt-sns-v1.'), 'external state must use reserved namespace'
         cookie = started.headers['set-cookie']
         assert 'HttpOnly' in cookie and 'Secure' in cookie and 'SameSite=lax' in cookie
         callback = '/api/v1/auth/dingtalk/callback'
         with TestClient(app, base_url='https://agent.orbbec.com.cn') as stranger:
-            assert stranger.get(callback, params={'state': state, 'authCode': 'code'}, follow_redirects=False).status_code == 401
+            assert stranger.get(callback, params={'state': state, 'code': 'code'}, follow_redirects=False).status_code == 401
         assert calls == []
-        duplicate = client.get(callback + '?state=' + state + '&authCode=x&authCode=y', follow_redirects=False)
+        duplicate = client.get(callback + '?state=' + state + '&code=x&code=y', follow_redirects=False)
         assert duplicate.status_code == 401 and not calls
-        conflict = client.get(callback, params={'state': state, 'authCode': 'code', 'code': 'conflict'}, follow_redirects=False)
-        assert conflict.status_code == 401 and not calls
+        for extra in ({'authCode': 'code'}, {'authCode': 'conflict'}, {'error': 'denied'}, {'error_description': 'ambiguous'}):
+            conflict = client.get(callback, params={'state': state, 'code': 'code', **extra}, follow_redirects=False)
+            assert conflict.status_code == 401 and not calls
         client.cookies.set(auth.cookie_name, 'valid-cookie')
-        params = {'state': state, 'authCode': 'code'}
-        if code_alias:
-            params['code'] = params['authCode']
+        legacy = client.get(callback, params={'state': 'fae-dt-v1.' + 'a' * 43, 'code': 'code'}, follow_redirects=False)
+        assert legacy.status_code == 401 and not calls and not launches
+        assert auth.provider_calls == 0
+        params = {'state': state, 'code': 'code'}
         completed = client.get(callback, params=params, follow_redirects=False)
         assert completed.status_code == 302, completed.text
         assert completed.headers['location'].startswith('https://fae.orbbec.com.cn/')
@@ -188,7 +199,39 @@ def test_http_external_authcode_nonce_and_no_platform_session(service, code_alia
         assert auth.cookie_name + '=' not in completed.headers.get('set-cookie', '')
         assert 'union-' not in completed.text
         assert client.get(callback, params=params, follow_redirects=False).status_code == 401
+        assert len(calls) == 1
+        # A new one-use attempt with the same verified identity reuses the site UUID.
+        restarted = client.get('/partner-auth/start', follow_redirects=False)
+        next_state = parse_qs(urlsplit(restarted.headers['location']).query)['state'][0]
+        relogin = client.get(callback, params={'state': next_state, 'code': 'code'}, follow_redirects=False)
+        assert relogin.status_code == 302
+        assert launches == [binding.subject_id, binding.subject_id]
         assert len(calls) == 2
+        other_start = client.get('/partner-auth/start', follow_redirects=False)
+        other_state = parse_qs(urlsplit(other_start.headers['location']).query)['state'][0]
+        other = client.get(callback, params={'state': other_state, 'code': 'code-other'}, follow_redirects=False)
+        assert other.status_code == 302
+        other_launch = parse_qs(urlsplit(other.headers['location']).fragment)['partner_launch'][0]
+        other_binding = asyncio.run(real_launch.exchange(other_launch))
+        assert other_binding.subject_type == 'partner_operator'
+        assert other_binding.subject_id != binding.subject_id
+        assert len(calls) == 3
+        # A fresh, valid provider code must not recreate a locally revoked grant.
+        env = control_database['environments']['production']
+        from test_partner_operator_migration import _seed_owner
+        with psycopg.connect(env['admin']) as admin:
+            owner = _seed_owner(admin)
+            assert admin.execute("select distinct agent_id from platform_control.partner_agent_grants where subject_id=any(%s)", ([binding.subject_id, other_binding.subject_id],)).fetchall() == [('ai-fae-agent',)]
+            admin.execute("update platform_control.partner_agent_grants set revoked_at=now(),revoked_by_internal_user_id=%s where subject_id=%s", (owner, binding.subject_id))
+        revoked_start = client.get('/partner-auth/start', follow_redirects=False)
+        revoked_state = parse_qs(urlsplit(revoked_start.headers['location']).query)['state'][0]
+        revoked = client.get(callback, params={'state': revoked_state, 'code': 'code'}, follow_redirects=False)
+        assert revoked.status_code == 403
+        assert launches == [binding.subject_id, binding.subject_id, other_binding.subject_id]
+        assert len(calls) == 4 and auth.provider_calls == 0
+        assert auth.cookie_name + '=' not in revoked.headers.get('set-cookie', '')
+        assert not service.decide_fae_access(binding.subject_id).allowed
+        assert service.decide_fae_access(other_binding.subject_id).allowed
     asyncio.run(provider.aclose())
 
 
@@ -236,7 +279,7 @@ def test_factory_builds_partner_service_without_brain_or_relay(monkeypatch, tmp_
     assert isinstance(app.state.partner_provider, DingTalkExternalIdentityProvider)
     assert app.state.partner_auth_broker.service is app.state.partner_service
     query = parse_qs(urlsplit(app.state.partner_provider.begin_auth("factory-state")).query)
-    assert query["client_id"] == ["external-test-app"]
+    assert query["appid"] == ["external-test-app"]
     with TestClient(app, base_url="https://agent.example.test") as client:
         assert client.get("/partner-auth/start?return_path=/", follow_redirects=False).status_code == 400
 
@@ -403,7 +446,7 @@ def test_callback_rate_limit_precedes_provider_exchange(service):
     app.state.partner_auth_broker = PartnerAuthenticationBroker(provider, service, state_secrets=AuthSecrets(b's' * 32, key_version=1))
     app.state.agent_launch_service = object()
     app.state.identity_auth = SimpleNamespace(rate_limiter=Limiter())
-    request = Request({'type': 'http', 'method': 'GET', 'path': '/api/v1/auth/dingtalk/callback', 'query_string': b'state=fae-dt-v1.test&authCode=code', 'headers': [], 'app': app, 'state': {'edge_source': SimpleNamespace(ip=ip_address('192.0.2.1'))}})
+    request = Request({'type': 'http', 'method': 'GET', 'path': '/api/v1/auth/dingtalk/callback', 'query_string': b'state=fae-dt-sns-v1.test&code=code', 'headers': [], 'app': app, 'state': {'edge_source': SimpleNamespace(ip=ip_address('192.0.2.1'))}})
     response = asyncio.run(finish_external_dingtalk_authentication(request))
     assert response.status_code == 429 and response.headers['retry-after'] == '30'
     assert calls == [ip_address('192.0.2.1')]

@@ -625,13 +625,21 @@ async def finish_external_dingtalk_authentication(request: Request):
     launch = getattr(request.app.state, "agent_launch_service", None)
     if not isinstance(broker, PartnerAuthenticationBroker) or broker.provider.kind != "dingtalk_external" or launch is None:
         raise HTTPException(503, detail={"code": "partner_identity_unavailable"}, headers=_NO_STORE)
+    from .dingtalk_external_provider import DingTalkExternalIdentityProvider
+
+    if len(request.scope.get("query_string", b"")) > 8192:
+        raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
     callback = {}
     for key, value in request.query_params.multi_items():
         if key in callback:
             raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
         callback[key] = value
-    if ("code" in callback and callback["code"] != callback.get("authCode")) or (not callback.get("authCode") and not callback.get("error")):
-        raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
+    # Validate the selected SNS contract before consuming one-use state. Equal
+    # modern aliases, provider error fields and unknown keys are not SNS codes.
+    try:
+        DingTalkExternalIdentityProvider._callback_code(callback)
+    except PartnerIdentityError as error:
+        raise _partner_auth_error(error) from None
     limiter = getattr(getattr(request.app.state, "identity_auth", None), "rate_limiter", None)
     try:
         if limiter is None:

@@ -1,130 +1,132 @@
 # FAE external DingTalk integration
 
-The external adapter uses the existing modern `openid` OAuth protocol with a dedicated
-external registration. Its factory requires `PLATFORM_PARTNER_DINGTALK_CLIENT_ID` and
-`PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET_FILE`; it rejects the enterprise Client ID
-and never falls back to enterprise credentials. The only launch destination is
-`https://fae.orbbec.com.cn/`; external users receive no Platform web session.
+## Current selected protocol and acceptance boundary (2026-10-23)
 
-## Current failure and candidate boundary (2026-10-23, after rollout)
+The external `dingtalk_external` adapter now deliberately selects the official historical
+website SNS protocol: personal DingTalk scan → verified provider identity → stable site
+UUID (`partner_operator`) → FAE-only grant and launch. Internal enterprise authentication
+keeps its existing modern OAuth client and configuration. There is no SMS, email,
+password login or runtime protocol fallback. The currently public FAE policy remains
+as authorized by the owner (anonymous-enabled FAE change `2636f73`); this batch neither
+deploys FAE nor restores mandatory FAE login.
 
-A real external user received DingTalk's “自建应用不支持跨组织授权”. The released
-factory reused the enterprise internal AppKey/AppSecret for external OAuth. The failure
-is at the channel/identity registration boundary, before a successful external callback;
-mock OAuth and public redirect checks did not establish cross-organization eligibility.
-The real external login result is **failed**, not pending acceptance or passed.
+The previous real external modern-OAuth attempt **failed** with
+“自建应用不支持跨组织授权”, before a verified external callback. That result remains
+failed. The newly selected SNS registration's eligibility and real external login are
+**unproven/pending a real external-user scan and callback**. Local mocked HTTP tests,
+302 redirects and application-secret availability do not establish this acceptance.
 
-The [official web-login tutorial](https://open.dingtalk.com/document/orgapp/tutorial-obtaining-user-personal-information)
-explicitly states that enterprise internal applications do not support cross-organization
-authorization. Its [official document body](https://icms-document.oss-cn-beijing.aliyuncs.com/zh-CN/dingtalk/orgapp/topics/tutorial-obtaining-user-personal-information.html)
-was checked on 2026-10-23. The [application-type guide](https://open.dingtalk.com/document/orgapp/introduction-to-application-types)
-is the reference for confirming which registration is available. A distinct Client ID
-alone does not prove external eligibility. The available registration and its matching
-protocol remain unconfirmed; historical SNS AppId/AppSecret credentials must not be
-assumed compatible with this modern OAuth adapter. There is no protocol fallback.
+Official primary references, checked by the controller on 2026-10-23:
 
-This candidate separates credential configuration and accepts the documented matching
-callback alias described below. It must remain on its isolated branch, without
-integration into shared `master` or deployment, until eligible external
-credentials and their matching protocol are confirmed. Current production has the
-external provider enabled without these new settings; deploying this fail-startup
-candidate would stop the shared API and disrupt internal login. The owner's direct
-rollout authorization remains valid; this is an unresolved configuration/protocol
-dependency, not a renewed approval requirement.
+- [Website QR login](https://open.dingtalk.com/document/orgapp/scan-qr-code-to-log-on-to-third-party-websites)
+  describes website login and leaves handling external users to the website.
+- [SNS temporary authorization exchange](https://open.dingtalk.com/document/orgapp/obtain-the-user-information-based-on-the-sns-temporary-authorization)
+  defines `sns/getuserinfo_bycode` and `user_info.unionid` / `nick`.
+- [Personal-login signature](https://open.dingtalk.com/document/personalapp/signature-calculation-for-logon-free-scenarios-1)
+  defines HMAC-SHA256 of the millisecond timestamp with AppSecret, Base64 and one URL encoding.
 
-The later read-only production check observed API commit
-`81d553b17752940d60be5c06b682093eb4088f85` healthy, five external login attempts that
-day and zero verified external identities. No subject migration is needed or attempted.
-Registration-specific subject namespaces must be preserved. Earlier deployment and
-smoke evidence below is historical and does not establish real external login success.
+These historical docs and the current API application-type table conflict about eligible
+registrations. Do not infer that any internal AppKey supports external users. The
+controller's one deliberately invalid-code diagnostic returned HTTP 200 / integer
+`errcode=40078` (nonexistent temporary code), with no user info or provisioning. This
+proves neither valid signature/credentials nor external registration eligibility or a
+successful login. No real provider call is part of this implementation batch.
 
-## Prepared configuration
+## Explicit credential configuration
 
-Migration `123_fae_external_dingtalk.sql` is additive to the existing control schema.
-It adds browser-bound five-minute login attempts and app-only provisioning/detail
-functions. Automatic grants have `grant_origin=external_oauth` and no fabricated owner.
-The existing owner mutation and audit dispatcher contracts remain unchanged.
+The external factory requires both settings, independently of enterprise configuration:
 
-Run the helper as the secret-file owner, against the private directory already mounted
-at `/run/secrets`:
+```text
+PLATFORM_PARTNER_DINGTALK_CLIENT_ID=<explicit SNS registration candidate>
+PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET_FILE=/run/secrets/partner-dingtalk-client-secret
+```
+
+There is no copying or fallback from `PLATFORM_DINGTALK_APP_KEY` or its secret. An
+explicit external Client ID may equal the internal value; equality is neither a startup
+rejection nor a qualification claim. The secret uses the existing private-file reader:
+absolute regular service-owned mode-0600 file, no symlinks or group-readable files.
+Inline `PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET` is rejected. Preserve the original
+owner-controlled secret file when preparing an external mounted copy.
+
+Partner encryption and lookup keyrings remain purpose-separated from each other,
+authentication and content keys. The existing content keyring and control app DSN remain
+required, independently of Brain or execution-relay flags. The secret preparation helper
+creates/validates separate partner keys without rotating or overwriting existing files:
 
 ```sh
 python3 deploy/cloud/prepare-fae-partner-secrets.py /absolute/private/secret-directory
 ```
 
-The helper creates separate 256-bit partner encryption and lookup keys, writes mode
-0600 files, validates existing files, and never rotates or overwrites them. It prints
-only a status marker. The existing content encryption keyring and control app DSN are
-also required. No Brain or execution-relay flag is required for partner identity.
-
-The prepared Compose file references:
-
-- `PLATFORM_PARTNER_ENCRYPTION_KEYRING_FILE=/run/secrets/partner-encryption-keyring`
-- `PLATFORM_PARTNER_HMAC_KEYRING_FILE=/run/secrets/partner-hmac-keyring`
-- Existing `PLATFORM_CONTENT_ENCRYPTION_KEYRING_FILE` and control DSN.
-
-Before this candidate can be integrated or deployed, supply the independent external
-settings through deployment configuration (the existing Compose inputs do not yet
-provide them):
-
-```text
-PLATFORM_PARTNER_DINGTALK_CLIENT_ID=<confirmed eligible external Client ID>
-PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET_FILE=/run/secrets/partner-dingtalk-client-secret
-```
-
-Both are required by the external factory. The Client ID must differ from
-`PLATFORM_DINGTALK_APP_KEY`. The secret must be an absolute, regular, service-owned
-private file (prepare it with mode 0600), never a symlink or group-readable file.
-`PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET` is forbidden as an inline secret. Existing
-enterprise authentication continues to use `PLATFORM_DINGTALK_APP_KEY` and
-`PLATFORM_DINGTALK_APP_SECRET_FILE` independently.
-
-Provider kind `dingtalk_external`, `PLATFORM_PARTNER_IDENTITY_ENABLED=1`, and the
-digest-pinned release authorization remain required. Production was initially disabled
-in the committed configuration and was subsequently enabled by the owner-authorized
-rollout recorded below. Generating partner keys or passing local tests establishes no
-real-account release evidence.
+Provider kind, identity enablement and the digest-pinned owner rollout authorization
+remain required. The v2 owner authorization permits rollout while real-account acceptance
+is pending; the old two-account activation prerequisite is historical. The controller
+must first review this branch, prepare explicit external settings, integrate the exact
+reviewed commit and use the transactional API release with all current Compose overlays.
+No bare deployment that drops overlays, schema migration, or FAE release is needed.
 
 ## Authentication and verification
 
-`GET /partner-auth/start` creates state prefixed `fae-dt-v1.` plus a random
+`GET /partner-auth/start` creates a `fae-dt-sns-v1.` state and a random
 `__Host-fae-dt-nonce` cookie (Secure, HttpOnly, SameSite=Lax, five-minute TTL). Only keyed
-digests are stored. The existing shared callback
-`/api/v1/auth/dingtalk/callback` dispatches this namespace before the Platform cookie
-branch. It requires `authCode`; duplicate parameters or `code` ambiguity fail closed.
-A nonce mismatch cannot exchange the provider code. Callback failures never enter the
-enterprise login path.
+digests are persisted. The authorization redirect is exactly
+`https://oapi.dingtalk.com/connect/qrconnect` with `appid`, `response_type=code`,
+`scope=snsapi_login`, state, and fixed
+`https://agent.orbbec.com.cn/api/v1/auth/dingtalk/callback` redirect URI.
 
-The official modern web-login tutorial linked above returns both `authCode` and `code`
-with the same value. The external callback accepts an optional `code` only when it is
-strictly equal to the mandatory validated `authCode`. Code-only input, conflicting
-aliases, duplicate parameters, malformed values and provider errors remain rejected.
-This is the existing modern OAuth contract, with no SNS adapter or protocol fallback.
+The shared callback reserves both `fae-dt-sns-v1.` and legacy `fae-dt-v1.` before checking
+an enterprise cookie. The broker only accepts the new prefix. Legacy callbacks fail
+closed without provider exchange or enterprise/directory fallback, even with a valid
+enterprise session. The SNS callback requires exactly `state` and `code`; `authCode`
+(including equal dual aliases), duplicates, unknown/error fields, malformed values and
+ambiguous payloads are rejected before state consumption/provider HTTP. Missing/wrong
+nonce, expired state or replay cannot exchange a provider code.
 
-The previous unconditional rejection of `code` was a distinct confirmed callback
-contract mismatch. It occurs after authorization and does not explain the real
-“自建应用不支持跨组织授权” error on DingTalk's authorization page. Repairing this
-callback mismatch does not establish external application eligibility or a successful
-real external login.
+The adapter performs one POST to `https://oapi.dingtalk.com/sns/getuserinfo_bycode`:
+query `accessKey`, millisecond `timestamp`, `signature`; JSON `tmp_auth_code`. Signature
+is `Base64(HMAC-SHA256(key=AppSecret, data=timestamp))`, passed unescaped to HTTPX params
+for exactly one URL encoding. Independent OpenSSL test vector:
+`testappSecret` / `1546084445901` → `HCbG3xNE3vzhO+u7qCUL1jS5hsu2n5r2cFhnTrtyDAE=`.
+There is no token/profile second hop, enterprise member lookup, retry or token storage.
 
-Local matching-contract regression: provider, disposable PostgreSQL integration and
-enterprise authentication API suites passed 308 tests, including both callback variants
-with and without the alias; the 15 registration/configuration tests also passed.
-The full HTTP flow first rejects a conflicting pair with 401 and no provider HTTP,
-then uses the same state successfully, exchanges the FAE launch code without issuing a
-Platform session, and rejects callback replay with 401. DingTalk HTTP is mocked in these
-tests; no real authorization, production call or deployment was performed.
+Only HTTP 200, strict integer `errcode=0`, object `user_info`, and valid `unionid` / `nick`
+produce a verified subject. Failures expose only `partner_identity_unavailable` to the
+caller. Server telemetry is a fixed failure reason enum with integer `http_status` and
+bounded integer `provider_errcode` (`-1` when unavailable/invalid), never provider body,
+exception URL, code, signature, secret or PII. Shared HTTPX/HTTPCore INFO/DEBUG filters
+redact the signature query, and request context also redacts secret/code/signature.
+Do not enable ingress/access logging of callback query strings for a real trial.
 
-Successful OAuth creates or reuses a stable partner subject inside one transaction,
-including encrypted unionId and nickname, FAE grant and `fae_external_authenticated`
-system audit. Concurrent logins reuse the subject. A revoked identity or grant,
-suspended subject/operator/realm, or identity assigned to another realm is rejected.
-No login restores permissions. The provider stores no access or refresh token.
+The stable provider subject remains `sha256(registration ID) + ':' + unionid`.
+Successful verification creates/reuses one random site UUID, encrypted provider identity
+and nickname, FAE-only grant and strict `fae_external_authenticated` audit transaction.
+Concurrent logins reuse the subject. Revoked identity/grant or suspended
+subject/operator/realm fail closed; login never restores permissions or moves identities
+between realms. Registration changes do not automatically merge historical subjects.
+External login never issues a Platform web session or internal employee identity.
 
-Fresh callbacks have a 60-second proof; `verified_at` in the control database provides
-an eight-hour verification lease across process restarts. Expired leases require a
-new login. Local suspension/revocation checks remain independent of that lease and
-FAE validation caching remains bounded by the existing 60-second cap.
+The callback memory proof remains 60 seconds and durable verified-at lease eight hours.
+Expired leases require login; local revocation is still checked and FAE validation cache
+remains capped at 60 seconds. Database schema, migrations and FAE consumer kind remain
+unchanged. The existing additive migration 123 is already part of the earlier deployment;
+this protocol selection needs no new migration.
+
+## Local verification and next real trial
+
+Focused tests use only mocked DingTalk transport and disposable PostgreSQL. They cover
+the exact signature/encoding, strict malformed/error payloads and log redaction; callback
+nonce/one-use state/legacy dispatch with valid enterprise cookie; identity provisioning,
+FAE launch, stable UUID, account isolation, revocation, audit, durable lease and release
+gates. They do not validate real external registration eligibility.
+
+The Development-only standalone probe has the same SNS code/new-prefix contract,
+retains preview-only DSN/private-key checks and stays stopped. No probe was started,
+production called, browser opened or deployment performed by this implementation batch.
+
+After reviewed API-only rollout, the controller will provide the canonical external
+login entry for the user to complete a real scan. Acceptance requires an actual SNS
+callback and verified stable partner UUID with restricted FAE launch; inspect sanitized
+exchange diagnostics on failure. Record this new trial separately from the failed
+modern-OAuth attempt. Page HTTP 200 or authorization HTTP 302 alone is insufficient.
 
 ## Owner trace lookup
 
@@ -176,7 +178,7 @@ Verification: independent gate review passed163 Platform and87 FAE cases. FAE st
 Real external-account first login, repeated identity, two-account isolation and real revocation/replay acceptance remain pending; engineering/public auth smoke is not represented as real-user acceptance. Canonical workspace remains https://fae.orbbec.com.cn/ .
 
 
-## Staged repair review and final engineering check (2026-10-23)
+## Staged modern-OAuth repair review (historical; superseded by SNS selection)
 
 Credential isolation043040d3 and modern callback compatibility0bc0f1e1 passed separate
 task spec/quality gates and an independent final composition review. No Critical or

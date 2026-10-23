@@ -1,4 +1,7 @@
 import asyncio
+import base64
+import hashlib
+import hmac
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -77,39 +80,51 @@ def test_external_factory_requires_both_settings(external_config, missing):
         build_external_dingtalk_provider(replace(external_config, **changes), VerificationService())
 
 
-def test_external_factory_rejects_enterprise_client_id(external_config):
+def test_external_factory_accepts_explicit_same_id_sns_profile_without_inference(external_config):
     config = replace(external_config, partner_dingtalk_client_id="enterprise-client")
-    with pytest.raises(RuntimeError, match="external_dingtalk_registration_must_differ_from_enterprise"):
-        build_external_dingtalk_provider(config, VerificationService())
+    provider = build_external_dingtalk_provider(config, VerificationService())
+    try:
+        query = parse_qs(urlsplit(provider.begin_auth("test-state")).query)
+        assert query["appid"] == ["enterprise-client"]
+        assert query["scope"] == ["snsapi_login"]
+    finally:
+        asyncio.run(provider.aclose())
 
 
-def test_external_factory_uses_external_registration_for_oauth(external_config):
+@pytest.mark.parametrize("external_id", ["external-client", "enterprise-client"])
+def test_external_factory_uses_explicit_external_registration_for_sns(external_config, external_id):
+    external_config = replace(external_config, partner_dingtalk_client_id=external_id)
     provider = build_external_dingtalk_provider(external_config, VerificationService())
     requests = []
 
     def transport(request):
         requests.append(request)
-        if request.url.path.endswith("userAccessToken"):
-            return httpx.Response(200, json={"accessToken": "test-access-token"})
-        return httpx.Response(200, json={"unionId": "external-union", "nick": "Partner"})
+        return httpx.Response(200, json={"errcode": 0, "user_info": {"unionid": "external-union", "nick": "Partner"}})
 
     async def authenticate():
         await provider._client.aclose()
         provider._client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
         try:
-            return await provider.finish_auth({"state": "test-state", "authCode": "test-code"})
+            return await provider.finish_auth({"state": "test-state", "code": "test-code"})
         finally:
             await provider.aclose()
 
     query = parse_qs(urlsplit(provider.begin_auth("test-state")).query)
-    assert query["client_id"] == ["external-client"]
-    assert query["scope"] == ["openid"]
+    assert query["appid"] == [external_id]
+    assert query["scope"] == ["snsapi_login"]
     assert query["redirect_uri"] == ["https://agent.orbbec.com.cn/api/v1/auth/dingtalk/callback"]
     asyncio.run(authenticate())
-    token_body = json.loads(requests[0].content)
-    assert token_body["clientId"] == "external-client"
-    assert token_body["clientSecret"] == "external-secret-value"
-    assert "enterprise-secret-value" not in str(token_body)
+    assert len(requests) == 1
+    assert requests[0].url.path == "/sns/getuserinfo_bycode"
+    assert requests[0].url.params["accessKey"] == external_id
+    params = requests[0].url.params
+    assert params["signature"] == base64.b64encode(hmac.new(
+        b"external-secret-value", params["timestamp"].encode(), hashlib.sha256,
+    ).digest()).decode()
+    assert json.loads(requests[0].content) == {"tmp_auth_code": "test-code"}
+    assert "enterprise-secret-value" not in str(requests[0].url)
+    assert "external-secret-value" not in str(requests[0].url)
+
 
 
 @pytest.mark.parametrize("invalid", ["missing", "unreadable", "group_readable", "symlink", "relative"])

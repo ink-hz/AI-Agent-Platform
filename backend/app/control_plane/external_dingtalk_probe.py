@@ -160,14 +160,13 @@ def _callback_values(request: Request) -> dict[str, str]:
     if len(request.scope.get('query_string', b'')) > 8192:
         raise ValueError
     for key, value in request.query_params.multi_items():
-        if key in callback or key not in {'state', 'authCode', 'error', 'error_description'}:
+        if key in callback or key not in {'state', 'code'}:
             raise ValueError
         if not value or len(value) > 4096 or re.fullmatch(r'[\x21-\x7e]+', value) is None:
             raise ValueError
         callback[key] = value
-    if (re.fullmatch(r'fae-dt-v1\.[A-Za-z0-9_-]{32,128}', callback.get('state', '')) is None
-            or bool(callback.get('authCode')) == bool(callback.get('error'))
-            or ('error_description' in callback and 'error' not in callback)):
+    if (re.fullmatch(r'fae-dt-sns-v1\.[A-Za-z0-9_-]{32,128}', callback.get('state', '')) is None
+            or not callback.get('code')):
         raise ValueError
     return callback
 

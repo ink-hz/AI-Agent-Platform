@@ -43,7 +43,7 @@ GenderAttributeStatus = Literal["valid", "missing", "invalid"]
 def _redact_log_value(value: object) -> str:
     rendered = str(value)
     rendered = re.sub(
-        r"(?i)(access_token=)[^&\s'\"<>]+", r"\1<redacted>", rendered
+        r"(?i)((?:access_token|signature)=)[^&\s'\"<>]+", r"\1<redacted>", rendered
     )
     for secret in _LOG_SECRETS.get():
         if secret:
