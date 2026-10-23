@@ -30,7 +30,7 @@
 - Consumes: `Config`, `read_secret_file`, `build_external_dingtalk_provider(config, service)`.
 - Produces: optional Config fields `partner_dingtalk_client_id` and `partner_dingtalk_client_secret_file`, loaded from the two matching `PLATFORM_PARTNER_DINGTALK_*` variables; external factory requires both and rejects enterprise Client ID reuse.
 
-- [ ] Write a RED regression proving existing enterprise-only configuration is rejected rather than used by the external factory. Use actual Config via `replace(load_config(), control_plane=...)`, a private test file and a minimal service exposing `external_verified_at`.
+- [x] Write a RED regression proving existing enterprise-only configuration is rejected rather than used by the external factory. Use actual Config via `replace(load_config(), control_plane=...)`, a private test file and a minimal service exposing `external_verified_at`.
 
 ```python
 with pytest.raises(RuntimeError, match="external_dingtalk_credentials_required"):
@@ -39,7 +39,7 @@ with pytest.raises(RuntimeError, match="external_dingtalk_credentials_required")
 
 Run the new targeted test and record the expected DID NOT RAISE failure before implementation.
 
-- [ ] Add Config defaults and environment loading:
+- [x] Add Config defaults and environment loading:
 
 ```python
 partner_dingtalk_client_id: str = ""
@@ -53,7 +53,7 @@ partner_dingtalk_client_secret_file=os.getenv("PLATFORM_PARTNER_DINGTALK_CLIENT_
 
 Add `PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET` to `_INLINE_CONTROL_SECRET_ENV`.
 
-- [ ] Change the external factory only:
+- [x] Change the external factory only:
 
 ```python
 if not config.partner_dingtalk_client_id or not config.partner_dingtalk_client_secret_file:
@@ -68,10 +68,10 @@ return DingTalkExternalIdentityProvider(
 )
 ```
 
-- [ ] Cover positive external Client ID selection in the real authorization URL; missing one/both settings; matching enterprise ID; unreadable, group-readable, symlink and relative secret files; inline secret rejection; unrelated enterprise settings unchanged. Test config environment loading/defaults as well. Update the existing full app factory integration to supply distinct external settings through the environment.
-- [ ] Update runbook opening/prepared config to remove credential reuse guidance. Record confirmed production failure, official references, separate credential names, matching-protocol dependency and why this candidate is not deployed without eligible credentials. Keep historical release evidence intact and clearly dated.
-- [ ] Run covering tests with `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest backend/tests/test_external_dingtalk_registration_config.py backend/tests/test_external_dingtalk_integration.py backend/tests/test_dingtalk_external_provider.py backend/tests/test_config.py backend/tests/test_dingtalk_auth_api.py -q` (adjust exact provider-test filename from `rg --files`). Run real disposable PostgreSQL tests in that group when available; no production calls.
-- [ ] Self-review, commit the scoped code/test/runbook changes and report RED/GREEN evidence plus real-login/deployment limitation. Controller requests independent task and final review and preserves the candidate on its work-in-progress branch, without production deployment or master integration, until matching eligible credentials exist. Integrating a new startup requirement while production has external Provider enabled but lacks those settings could break another worker’s unrelated release.
+- [x] Cover positive external Client ID selection in the real authorization URL; missing one/both settings; matching enterprise ID; unreadable, group-readable, symlink and relative secret files; inline secret rejection; unrelated enterprise settings unchanged. Test config environment loading/defaults as well. Update the existing full app factory integration to supply distinct external settings through the environment.
+- [x] Update runbook opening/prepared config to remove credential reuse guidance. Record confirmed production failure, official references, separate credential names, matching-protocol dependency and why this candidate is not deployed without eligible credentials. Keep historical release evidence intact and clearly dated.
+- [x] Run covering tests with `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest backend/tests/test_external_dingtalk_registration_config.py backend/tests/test_external_dingtalk_integration.py backend/tests/test_dingtalk_external_provider.py backend/tests/test_config.py backend/tests/test_dingtalk_auth_api.py -q` (adjust exact provider-test filename from `rg --files`). Run real disposable PostgreSQL tests in that group when available; no production calls.
+- [x] Self-review, commit the scoped code/test/runbook changes and report RED/GREEN evidence plus real-login/deployment limitation. Controller requests independent task and final review and preserves the candidate on its work-in-progress branch, without production deployment or master integration, until matching eligible credentials exist. Integrating a new startup requirement while production has external Provider enabled but lacks those settings could break another worker’s unrelated release.
 
 
 ## Task 2: Accept documented equal callback aliases in modern OAuth
@@ -81,6 +81,7 @@ return DingTalkExternalIdentityProvider(
 - Modify: `backend/app/control_plane/routes_partner.py`
 - Modify: `backend/tests/test_dingtalk_external_provider.py`
 - Modify: `backend/tests/test_external_dingtalk_integration.py`
+- Modify: `backend/tests/test_external_dingtalk_registration_config.py` (Task 1 review portability correction)
 - Modify: `docs/runbooks/2026-10-23-fae-external-dingtalk.md`
 
 **Interfaces:**
@@ -110,3 +111,5 @@ Do not change the requirement for authCode or the existing error handling / stat
 - [ ] Remove equal alias from invalid-provider parametrization; keep/add mismatched alias, code-only, duplicate-code, duplicate-authCode, duplicate-state, malformed authCode, and error cases. In the PG integration test send a conflicting pair before the valid callback, assert401/no provider HTTP, then use the same state successfully to prove invalid input did not consume it. Repeat the successful callback and assert replay401.
 - [ ] Update runbook with the documented equal-alias behavior and matching-contract test evidence. Record this as a distinct confirmed modern callback mismatch, not the cause of the authorization-page error, and not proof of external app eligibility.
 - [ ] Run `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest backend/tests/test_dingtalk_external_provider.py backend/tests/test_external_dingtalk_integration.py backend/tests/test_dingtalk_auth_api.py -q`; these include disposable PG and mocked provider HTTP, not real DingTalk authorization. Commit scoped changes, write report and request task review. Candidate remains on the work-in-progress branch until the external application registration/protocol dependency is resolved.
+
+- [ ] Resolve Task1 review Minor portability finding: the unreadable-secret test currently relies on chmod000, which uid0 can still read. For that case only, keep a real private file and monkeypatch `app.local_secrets.os.open` to raise `PermissionError` when opening that exact file; delegate other paths to the original open. Run the15 registration tests once. This changes only test portability, not secret reader behavior.
