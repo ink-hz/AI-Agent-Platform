@@ -1,5 +1,14 @@
 # FAE external DingTalk integration
 
+## Current deployed optional trial (2026-10-23)
+
+API runtime `d0dea5d3a048158e112b04ee731d3e2f4af881ad` is deployed and healthy,
+restart0. Canonical trial entry: https://fae.orbbec.com.cn/partner/login . External start
+now redirects to official oapi QR/SNS website login with new state namespace, fixed
+callback and secure browser nonce. This is an **optional trial**, not completed real
+external-user acceptance. One genuinely external DingTalk user must still scan and
+complete callback → verified UUID → FAE-only session. FAE remains public2636f73.
+
 ## Current selected protocol and acceptance boundary (2026-10-23)
 
 The external `dingtalk_external` adapter now deliberately selects the official historical
@@ -193,3 +202,44 @@ login remains failed/unresolved pending an eligible application registration, ma
 protocol and credentials, then real authorization verification. No production code or
 configuration changed in this repair batch; working enterprise login configuration is
 preserved. User console application-type evidence is still outstanding.
+
+
+## Website SNS trial release evidence
+
+- Implementer focused666 passed (139 inherited cookie warnings); controller provider/
+  integration/config/broker191 passed in4.73s with no warnings. Runs overlap. Independent
+  task/quality gates passed; final security verdict permits optional engineering trial,
+  while normal external-login acceptance remains pending.
+- Code integrated into master and released exactd0dea5d3. Concurrent uncommitted VOC
+  observability work in the original checkout was preserved and excluded from the image.
+- Backend-only image inherits the verified production81d553 image and copies exactly8
+  changed Python files from Gitd0dea5d3; each file hash and all66 unchanged frontend
+  file hashes verified. Requirements,frontend,tools,migrations/runtimeconfig paths had
+  no Git differences from81d553. ImageIDsha256:7e7dcb84698a22780f96809d652192b70a2fcbc4ac0debaf40e6782f4279c77e,
+  parentIDsha256:9cf4afa1fa6a1ebd5728979f2ba89f94ac47b64b234436631fdda22d8d6c8adc;
+  parent layer prefix verified. Build uses tags; transaction explicitly checks IDs before/
+  after cutover and on rollback rather than claiming tag immutability.
+- Controlled transaction preserved32 existing Compose inputs and appended one API overlay.
+  Allowed only APIimage/releaseSHA/two explicit SNS credential settings. Command/mounts/
+  other environment/service configuration unchanged; APIhealthy/restart0/no rollback.
+  Existing ClientIDdinggtdockkfve0jstjl and existing private secret file were explicitly
+  selected as a registration candidate; no secret value copied, no eligibility inferred.
+- Production non-model checks passed: newSNS start302; missing nonce, old state namespace
+  and modern authCode callback401 before provider exchange; internal login shell200 and
+  existing modern enterprise login-start200; publicFAEhealth200/unchanged2636f73 and
+  authentication_requiredfalse, guest invalid-chat422, Review/authenticated histories401,
+  partner handoff302. English/vision settings and shared Nginx files unchanged.
+- Initial end-of-check comparison to the early container snapshot detected a separate
+  ai-daq-fae-backend release at10:07:48UTC, before this API cutover. Confirmed it was
+  independent and already present at the transaction baseline; all other containers were
+  unchanged DURING our transaction. The corrected checker records that distinction; no
+  application patch or model retry was used to make the checker pass.
+- Private snapshot/source manifest/image checks/373806110-byte control backup and final
+  acceptance reside under `/opt/orbbec-agent-platform/private/fae-website-login-20261023T094611Z-1eb679d4/`.
+  Transaction receipt is under `fae-website-d0dea5d3a048-d916629b/` in the same private root.
+- No schema migration, FAE rollout, real provider code exchange or production model/eval
+  occurred during deployment acceptance. The earlier one deliberately invalid-code
+  diagnosis is retained separately and is not a successful credential/identity test.
+
+Real external SNS scan and completed FAE session remain pending user confirmation. The
+owner was given the canonical entry to perform this required physical-account check.

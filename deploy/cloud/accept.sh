@@ -427,7 +427,6 @@ if len(agent_servers) != 1:
 agent = agent_servers[0]
 expected = {
     "location ^~ /fae/manage/ {": "http://127.0.0.1:8080",
-    "location ^~ /fae/ {": "http://127.0.0.1:8000",
     "location ^~ /voc/ {": "http://172.29.0.3:18130",
     "location ^~ /office/ {": "http://127.0.0.1:8011",
     "location ^~ /admin/ {": "http://127.0.0.1:8080",
@@ -436,6 +435,13 @@ for selector, owner in expected.items():
     selected = block(agent, selector)
     proxies = re.findall(r"(?m)^\s*proxy_pass\s+([^;]+);", selected)
     if proxies != [owner]:
+        raise SystemExit(1)
+for selector in ("location = /fae {", "location ^~ /fae/ {",
+                 "location ^~ /fae/api/ {", "location ^~ /fae/assets/ {"):
+    retired = block(agent, selector)
+    if "proxy_pass" in retired or "fae_entry_retired" not in retired:
+        raise SystemExit(1)
+    if "$args" in retired or "$request_uri" in retired:
         raise SystemExit(1)
 catch_all = block(agent, "location / {")
 catch_all_proxies = re.findall(
@@ -450,7 +456,7 @@ for namespace in ("/hr", "/marketing"):
     if any(namespace in selector for selector in location_selectors):
         raise SystemExit(1)
 PY
-  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae)" == "308" ]] || return 1
+  [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 15 'https://agent.orbbec.com.cn/fae?retired_probe=1')" == "308 https://fae.orbbec.com.cn/" ]] || return 1
   [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae/health)" == "404" ]] || return 1
   [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/fae/manage)" == "308" ]] || return 1
   [[ "$(/usr/bin/curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 https://agent.orbbec.com.cn/voc)" == "308" ]] || return 1
@@ -1719,9 +1725,9 @@ PY
     status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
       --max-time 15 --cookie-jar "$temporary/fae-$role.jar" \
       -o "$temporary/fae-$role-session.json" -w '%{http_code}' -X POST \
-      -H 'Origin: https://agent.orbbec.com.cn' -H 'Content-Type: application/json' \
+      -H 'Origin: https://fae.orbbec.com.cn' -H 'Content-Type: application/json' \
       --data-binary "@$temporary/fae-$role-exchange.json" \
-      "$base/fae/api/enterprise/session")" || fail
+      "https://fae.orbbec.com.cn/enterprise/session")" || fail
     [[ "$status_code" == "201" ]] || fail
     "$python" - "$temporary/fae-$role-session.json" \
       "$temporary/fae-$role.jar" "$temporary/fae-$role-account.json" <<'PY' || fail
@@ -1761,7 +1767,7 @@ PY
     status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
       --max-time 15 --cookie "$temporary/fae-$role.jar" \
       -o "$temporary/fae-$role-history.json" -w '%{http_code}' \
-      "$base/fae/api/authenticated/conversations?limit=30")" || fail
+      "https://fae.orbbec.com.cn/authenticated/conversations?limit=30")" || fail
     [[ "$status_code" == "200" ]] || fail
   done
 
@@ -1807,7 +1813,7 @@ PY
     status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
       --max-time 15 --cookie "$temporary/fae-$role.jar" \
       -o "$temporary/fae-$role-history-detail.json" -w '%{http_code}' \
-      "$base/fae/api/authenticated/conversations/$selected_session_id")" || fail
+      "https://fae.orbbec.com.cn/authenticated/conversations/$selected_session_id")" || fail
     [[ "$status_code" == "200" ]] || fail
     "$python" - "$temporary/fae-$role-history-detail.json" \
       "$selected_session_id" <<'PY' || fail
@@ -1829,12 +1835,12 @@ PY
   status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
     --max-time 15 --cookie "$temporary/fae-owner.jar" \
     -o "$temporary/fae-owner-cross-history.json" -w '%{http_code}' \
-    "$base/fae/api/authenticated/conversations/$member_session_id")" || fail
+    "https://fae.orbbec.com.cn/authenticated/conversations/$member_session_id")" || fail
   [[ "$status_code" == "404" ]] || fail
   status_code="$(/usr/bin/curl --noproxy '*' --silent --show-error \
     --max-time 15 --cookie "$temporary/fae-member.jar" \
     -o "$temporary/fae-member-cross-history.json" -w '%{http_code}' \
-    "$base/fae/api/authenticated/conversations/$owner_session_id")" || fail
+    "https://fae.orbbec.com.cn/authenticated/conversations/$owner_session_id")" || fail
   [[ "$status_code" == "404" ]] || fail
   /usr/bin/cmp -s "$temporary/fae-owner-cross-history.json" \
     "$temporary/fae-member-cross-history.json" || fail
@@ -2693,7 +2699,7 @@ PY
       "$python" -c 'import json,sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$temporary/owner-api.json" || fail
     done
     [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 15 https://fae.orbbec.com.cn/)" == "200" ]] || fail
-    [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 15 http://47.106.112.69/)" == "200" ]] || fail
+    [[ "$(/usr/bin/curl --noproxy '*' -sS -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 15 http://47.106.112.69/)" == "308 https://fae.orbbec.com.cn/" ]] || fail
     preserved_shape="$(remote /bin/bash -s -- "$preserved_conversation" "$preserved_turn" <<'REMOTE'
 set -euo pipefail
 conversation="$1"; turn="$2"; root=/opt/orbbec-agent-platform; release="$(readlink -f "$root/current")"; env="$root/private/platform.env"; compose="$release/deploy/cloud/compose.yaml"; postgres="$(docker compose --env-file "$env" -f "$compose" ps -q platform-postgres)"
