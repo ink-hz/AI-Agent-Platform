@@ -49,6 +49,8 @@ _OFFICE_RECIPIENT_ROUTES = frozenset(
         ("POST", "/api/v1/internal/office/recipient-directory/search"),
         ("POST", "/api/v1/internal/office/recipient-directory/resolve"),
         ("GET", "/api/v1/internal/office/recipient-directory/departments"),
+        ("GET", "/api/v1/internal/office/operations"),
+        ("GET", "/api/v1/internal/office/operations/export"),
     }
 )
 

@@ -196,6 +196,7 @@ def office_topology_proxy(tmp_path, monkeypatch):
         "async def app(scope, receive, send):\n"
         "    request = Request(scope, receive)\n"
         "    await JSONResponse({\n"
+        "        'query': str(request.url.query),\n"
         "        'authorization': request.headers.get('authorization'),\n"
         "        'x_real_ip': request.headers.get('x-real-ip'),\n"
         "        'x_forwarded_for': request.headers.get('x-forwarded-for'),\n"
@@ -285,6 +286,7 @@ def test_office_proxy_canonicalizes_only_configured_bridge_peer(
 
     assert allowed.status_code == 200
     assert allowed.json() == {
+        "query": "",
         "authorization": f"Bearer {'s' * 32}",
         "x_real_ip": "127.0.0.1",
         "x_forwarded_for": "127.0.0.1",
@@ -292,3 +294,20 @@ def test_office_proxy_canonicalizes_only_configured_bridge_peer(
     }
     assert spoofed.status_code == 404
     assert untrusted.status_code == 404
+
+
+@pytest.mark.parametrize("path", ["/api/v1/internal/office/operations", "/api/v1/internal/office/operations/export"])
+def test_office_operations_proxy_preserves_only_authorized_local_requests(office_topology_proxy,path):
+    headers={"Authorization":"Bearer "+"s"*32}
+    query="date_from=2026-09-14&grain=month&department=%E7%A0%94%E5%8F%91"
+    with TestClient(office_topology_proxy,client=("172.31.0.1",51000)) as client:
+        result=client.get(path+"?"+query,headers=headers)
+        assert result.status_code==200
+        assert result.json()['query']==query
+        assert result.json()['authorization']==headers['Authorization']
+        assert result.json()['x_real_ip']=='127.0.0.1'
+        assert client.get(path).status_code==404
+        assert client.get(path,headers={'Authorization':'Bearer wrong'}).status_code==404
+        assert client.get(path,headers=headers|{'X-Real-IP':'127.0.0.1'}).status_code==404
+    with TestClient(office_topology_proxy,client=("172.31.0.9",51000)) as client:
+        assert client.get(path,headers=headers).status_code==404
