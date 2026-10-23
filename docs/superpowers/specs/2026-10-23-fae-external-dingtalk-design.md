@@ -1,10 +1,14 @@
 # FAE 外部钉钉身份自动接入
 
+当前选择见文末“最新方向”：显式网站SNS个人扫码与站内UUID映射。前文现代OAuth
+实施及注册隔离要求保留为历史故障记录，不能覆盖最新SNS契约；线上FAE临时公开
+策略继续有效，真实SNS外部资格仍待真人验证。
+
 用户于 2026-10-23 确认：内部使用企业通讯录；外部任何通过个人钉钉授权、可记录
 稳定身份和昵称的用户即可使用 FAE，无人工审批。匿名使用关闭。此前 2026-08-29
 设计中保留匿名和仅邀请绑定的条款在这个范围内被本需求取代，其余隔离约束继续有效。
 
-## 架构
+## 初始架构（历史：现代OAuth，已由文末SNS方案替代）
 
 沿用 Platform partner_operator 身份底座和 FAE-only launch/binding。企业登录逻辑
 及 corpId/通讯录校验原样保留。外部用户不取得 Platform web session。
@@ -87,7 +91,7 @@ Provider 授权边界，属于 channel/identity 注册配置，不涉及 FAE pla
 独立明确的 Provider 适配和验证，不能在现代 OAuth 失败时静默切换。第三方企业
 应用需要组织开通，不默认满足本项目的个人授权要求。
 
-当前可独立完成的修复：
+当时现代OAuth候选的独立修复（历史）：
 - external factory 只读取 `PLATFORM_PARTNER_DINGTALK_CLIENT_ID` 和
   `PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET_FILE`；绝不回退企业凭据。
 - 两项缺失、凭据文件不可读或不私密、Client ID 与企业内部注册相同，均明确失败。
@@ -103,7 +107,7 @@ Provider 授权边界，属于 channel/identity 注册配置，不涉及 FAE pla
 不重新强加两账户前置审批；本次真实业务失败不能写为 pending 或通过。
 
 
-### 同次官方契约复核：现代 OAuth 回调的等值别名
+### 历史现代OAuth契约复核：等值回调别名
 
 官方现代教程步骤六给出 `?code=...&authCode=...`，明确两者一致，可取任一。
 修复前的 Provider 和 HTTP route 均因存在 `code` 而拒绝请求，包括与 `authCode`
