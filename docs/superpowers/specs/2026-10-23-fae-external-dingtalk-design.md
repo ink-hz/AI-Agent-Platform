@@ -60,3 +60,44 @@ https://opensource.dingtalk.com/developerpedia/docs/develop/permission/token/bro
 授权时间、授权证据摘要和real_account_acceptance=pending；v1真实账号验收契约继续
 保持。该变更只影响发布依据，不跳过钉钉验证、权限、加密、隔离、state/nonce、撤销或
 审计。具体生产版本、验证结果和未完成真人验收见外部钉钉runbook最新发布记录。
+
+
+## 2026-10-23 真实外部登录失败复核：注册边界
+
+用户真实外部账号在钉钉页收到“自建应用不支持跨组织授权”。当前生产 factory
+将企业内部 `dingtalk_app_key` / AppSecret 直接传给 external Provider。最新边缘
+记录只有 `/partner-auth/start` 302，没有对应外部 callback；该失败发生在身份
+Provider 授权边界，属于 channel/identity 注册配置，不涉及 FAE planner 或回答质量。
+此前 `openid` 和 mock HTTP 测试没有验证应用注册是否允许外部个人授权，不能当作
+供应方能力或真人验收证明。
+
+钉钉当前官方教程明确：因内部应用安全考虑，不支持跨组织授权，只有组织内用户
+可以通过网页登录内部应用。第三方企业应用面向购买/开通该应用的组织成员；第三方
+个人应用支持个人用户，但当前应用类型表列的是小程序。不能仅改 scope、增加通讯录
+权限或创建另一个内部应用来满足“任意个人钉钉身份”需求。
+
+参考（2026-10-23 通过官方站点实际文档正文核验）：
+- https://open.dingtalk.com/document/orgapp/tutorial-obtaining-user-personal-information
+- https://open.dingtalk.com/document/orgapp/introduction-to-application-types
+- https://help.aliyun.com/zh/wuying-workspace/use-idaas-for-dingtalk-logon
+
+选择：先隔离 external 注册凭据，再根据用户后台可创建的应用类型确认外部协议。
+移动应用接入的“登录/扫码登录应用授权”是官方记录的独立 AppId/AppSecret 入口，
+但不能把历史 SNS 登录凭据未经验证直接用于现代 OAuth。若只支持历史协议，需要
+独立明确的 Provider 适配和验证，不能在现代 OAuth 失败时静默切换。第三方企业
+应用需要组织开通，不默认满足本项目的个人授权要求。
+
+当前可独立完成的修复：
+- external factory 只读取 `PLATFORM_PARTNER_DINGTALK_CLIENT_ID` 和
+  `PLATFORM_PARTNER_DINGTALK_CLIENT_SECRET_FILE`；绝不回退企业凭据。
+- 两项缺失、凭据文件不可读或不私密、Client ID 与企业内部注册相同，均明确失败。
+- AppSecret 只使用现有安全文件读取器；禁止 inline secret 环境变量。
+- 内部 `build_identity_auth` 的凭据来源和行为不变；现有 external Provider 的
+  OAuth 协议保持原样，配置隔离不被宣称为跨组织能力已验证。
+- 尚无适用注册凭据时，该候选不可部署到当前已启用 external Provider 的生产 API，
+  否则启动检查会影响内部登录。保持线上内部可用，记录外部真实验收失败及待配置。
+- 新注册导致 subject 的 client_id 摘要变化；禁止自动合并历史主体或跨注册关联。
+
+验收分两层：本地工厂/配置和内部认证回归；适用外部注册的真实授权、回调、稳定
+主体和仅 FAE 权限验收。第一层通过不能代替第二层，所有者直接上线授权仍有效，
+不重新强加两账户前置审批；本次真实业务失败不能写为 pending 或通过。
