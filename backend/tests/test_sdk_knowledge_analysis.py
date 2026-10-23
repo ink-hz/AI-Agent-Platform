@@ -59,6 +59,7 @@ def test_model_receives_actual_packet_and_result_is_only_a_cited_proposal():
     assert result['provider_request_id'] == 'request-fixture'
     assert result['citations'][0]['claim_id'] == 'KB-VERSION-C1'
     assert len(result['input_sha256']) == len(result['output_sha256']) == 64
+    assert len(result['request_sha256']) == len(result['system_prompt_sha256']) == len(result['tool_schema_sha256']) == 64
 
 
 def test_invented_citations_invalid_schema_and_missing_tool_are_not_repaired():

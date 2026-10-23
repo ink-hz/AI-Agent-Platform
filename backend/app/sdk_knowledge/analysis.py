@@ -28,6 +28,8 @@ SYSTEM_PROMPT += '''不要把生成/安装/复制事实扩写成携带特定版�
 SYSTEM_PROMPT += '''先逐项核对objective要求的结果，在objective_coverage中每项都给回归索引或明确补证路径；
 资料不足时，先定位/核对契约，再给有条件的执行与验收步骤，不静默省略所要求的接口、制品等结果，不用可选支线替代任务要求。
 优先完整覆盖请求，避免重复限制声明：summary简短；每个回归写关键前置、操作和预期，各句尽量80字以内。'''
+SYSTEM_PROMPT += '''版本兼容性不能仅凭策略名称或主号相同推出：必须核对实际包版本与请求的最低版本关系及策略实现。
+没有提供比较逻辑时，先静态确认实际生成的版本脚本，再给高/低版本请求各自的预期，不把未确认比较判定写成已知事实。'''
 
 
 class AnalysisFailure(ValueError):
@@ -145,6 +147,9 @@ class ChangeAnalyzer:
                               'evidence': [e for e in page['evidence'] if e['evidence_id'] in claim['evidence_ids']]})
         return {'kind': 'model_proposal', 'runtime_validation': 'not_run', 'proposal': proposal,
                 'citations': citations, 'input_sha256': hashlib.sha256(raw).hexdigest(),
+                'request_sha256': hashlib.sha256(canonical(request.provider_body())).hexdigest(),
+                'system_prompt_sha256': hashlib.sha256(SYSTEM_PROMPT.encode('utf-8')).hexdigest(),
+                'tool_schema_sha256': hashlib.sha256(canonical(tool['input_schema'])).hexdigest(),
                 'source_packet_sha256': hashlib.sha256(canonical(packet)).hexdigest(),
                 'model_context_bytes': len(raw), 'context_scope': context['context_scope'],
                 'output_sha256': hashlib.sha256(canonical(proposal)).hexdigest(),

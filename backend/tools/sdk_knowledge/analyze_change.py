@@ -42,6 +42,8 @@ class ObservedStream(httpx.SyncByteStream):
                     message = event.get('message', {})
                     if kind == 'message_start':
                         self.metrics['provider_request_id'] = message.get('id')
+                        if isinstance(message.get('model'), str):
+                            self.metrics['provider_model_id'] = message['model']
                     if kind == 'message_delta':
                         self.metrics['stop_reason'] = event.get('delta', {}).get('stop_reason')
                     if kind == 'content_block_start' and event.get('content_block', {}).get('type') == 'tool_use':
@@ -107,6 +109,7 @@ def main(argv=None) -> int:
 
                 def count_request(_request):
                     receipt['provider_http_requests'] = receipt.get('provider_http_requests', 0) + 1
+                    receipt['wire_request_sha256'] = hashlib.sha256(_request.content).hexdigest()
 
                 def observe_response(response):
                     metrics = receipt.setdefault('provider_metrics', {})
