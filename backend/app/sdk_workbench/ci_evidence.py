@@ -1,4 +1,9 @@
-"""Local runner evidence validation; this receipt grants no release authority."""
+"""Local runner evidence validation; this receipt grants no release authority.
+
+V1 receipts include the additive requested_configuration_sha256 audit field.
+It binds normalized artifact paths and suite names, paths and minimums even
+when files are absent; evidence records retain their original field contract.
+"""
 
 import hashlib
 import json
@@ -45,6 +50,33 @@ def _sha(path):
     return digest.hexdigest()
 
 
+
+def _validate_junit(xml, field, reasons):
+    allowed_parents = {
+        'testsuites': {'testsuites'},
+        'testsuite': {'testsuites', 'testsuite'},
+        'testcase': {'testsuite'},
+        'failure': {'testcase'}, 'error': {'testcase'}, 'skipped': {'testcase'},
+        'properties': {'testsuites', 'testsuite', 'testcase'},
+        'property': {'properties'},
+        'system-out': {'testsuites', 'testsuite', 'testcase'},
+        'system-err': {'testsuites', 'testsuite', 'testcase'},
+    }
+    for parent in xml.iter():
+        for child in parent:
+            if parent.tag not in allowed_parents.get(child.tag, set()):
+                raise CiEvidenceError('junit_invalid', field)
+        if parent.tag in ('testsuite', 'testsuites'):
+            for attribute, reason in (('errors', 'tests_failed'),
+                                      ('failures', 'tests_failed'),
+                                      ('skipped', 'tests_skipped')):
+                value = parent.get(attribute, '0')
+                if not re.fullmatch(r'[0-9]+', value):
+                    raise CiEvidenceError('junit_invalid', field)
+                if value.strip('0'):
+                    reasons.add(reason)
+
+
 def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: int,
                   exit_code: int, artifacts: list[str],
                   suites: dict[str, tuple[str, int]]) -> dict:
@@ -67,10 +99,13 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
     if exit_code:
         reasons.add('process_failed')
     artifact_records = []
+    requested_artifacts = []
+    requested_suites = []
     if not artifacts:
         reasons.add('artifact_missing')
     for index, value in enumerate(artifacts):
         path, relative = _file(root, value, f'artifacts[{index}]')
+        requested_artifacts.append(relative)
         if not path.exists():
             reasons.add('artifact_missing')
             continue
@@ -93,6 +128,8 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
             _invalid(f'suites.{name}.minimum_executed_cases')
         field = f'suites.{name}.path'
         path, relative = _file(root, value, field)
+        requested_suites.append({'name': name, 'path': relative,
+                                 'minimum_executed_cases': minimum})
         report_path = path.resolve()
         if report_path in report_paths:
             _invalid(field)
@@ -115,6 +152,7 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
             raise CiEvidenceError('junit_invalid', field) from exc
         if xml.tag not in ('testsuite', 'testsuites'):
             raise CiEvidenceError('junit_invalid', field)
+        _validate_junit(xml, field, reasons)
         cases = list(xml.iter('testcase'))
         failed = sum(any(child.tag in ('failure', 'error') for child in case) for case in cases)
         skipped = sum(not any(child.tag in ('failure', 'error') for child in case)
@@ -137,6 +175,10 @@ def verify_ci_run(root: Path, *, candidate_digest: str, run_id: str, attempt: in
                   'suites': sorted(suite_records, key=lambda item: item['name']),
                   'state': 'blocked' if reasons else 'local_verified',
                   'trust_state': 'runner_local_unattested', 'reasons': sorted(reasons), 'promotion_eligible': False}
+    requested = {'artifacts': sorted(requested_artifacts),
+                 'suites': sorted(requested_suites, key=lambda item: item['name'])}
+    report['requested_configuration_sha256'] = hashlib.sha256(json.dumps(
+        requested, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
     report['receipt_sha256'] = hashlib.sha256(json.dumps(
         report, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
     return report

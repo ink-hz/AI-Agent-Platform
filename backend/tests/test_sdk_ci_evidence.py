@@ -144,3 +144,55 @@ def test_suites_cannot_reuse_hardlinked_report(workspace):
         run(workspace, suites={'unit': ('unit.xml', 1), 'integration': ('integration.xml', 1)})
     assert error.value.code == 'input_invalid'
     assert error.value.field == 'suites.integration.path'
+
+
+@pytest.mark.parametrize('extra', [
+    '<error message="setup failed"/>', '<failure/>', '<skipped/>',
+    '<properties><error/></properties>',
+    '<system-out><failure/></system-out>',
+    '<testcase><testcase/></testcase>',
+])
+def test_result_nodes_in_invalid_structure_are_rejected(workspace, extra):
+    (workspace / 'unit.xml').write_text(
+        f'<testsuite><testcase name="ok"/>{extra}</testsuite>'
+    )
+    with pytest.raises(CiEvidenceError) as error:
+        run(workspace)
+    assert error.value.code == 'junit_invalid'
+    assert error.value.field == 'suites.unit.path'
+
+
+@pytest.mark.parametrize(('attribute', 'reason'), [
+    ('errors', 'tests_failed'), ('failures', 'tests_failed'), ('skipped', 'tests_skipped'),
+])
+def test_aggregate_failure_attributes_block(workspace, attribute, reason):
+    (workspace / 'unit.xml').write_text(
+        f'<testsuites {attribute}="1"><testsuite><testcase name="ok"/></testsuite></testsuites>'
+    )
+    report = run(workspace)
+    assert report['state'] == 'blocked'
+    assert reason in report['reasons']
+
+
+def test_benign_junit_metadata_is_accepted(workspace):
+    (workspace / 'unit.xml').write_text(
+        '<testsuites errors="0"><testsuite failures="0" skipped="0">'
+        '<properties><property name="platform" value="local"/></properties>'
+        '<testcase name="ok"><system-out>hello</system-out></testcase>'
+        '<system-out>hello</system-out><system-err>diagnostic</system-err>'
+        '</testsuite></testsuites>'
+    )
+    assert run(workspace)['state'] == 'local_verified'
+
+
+@pytest.mark.parametrize('change', [
+    {'artifacts': ['missing-other']},
+    {'suites': {'unit': ('missing-other.xml', 1)}},
+    {'suites': {'unit': ('missing.xml', 2)}},
+])
+def test_missing_configuration_changes_receipt(workspace, change):
+    base = {'artifacts': ['missing'], 'suites': {'unit': ('missing.xml', 1)}}
+    first = run(workspace, **base)
+    second = run(workspace, **(base | change))
+    assert first['receipt_sha256'] != second['receipt_sha256']
+    assert first['requested_configuration_sha256'] != second['requested_configuration_sha256']
