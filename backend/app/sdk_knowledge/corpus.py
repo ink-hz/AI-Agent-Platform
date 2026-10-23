@@ -8,9 +8,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
-from pathlib import Path, PurePosixPath
 import re
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -252,14 +253,16 @@ class KnowledgeCorpus:
         """Exact path/condition filters; casefold lexical query candidates only.
 
         Generic conditions remain explicit; they do not become device support
-        assertions. Limits bound pages and per-page claim/evidence fan-out.
+        assertions. Latin identifiers are mandatory literal tokens, while CJK
+        pairs allow partial recall weighted by frequency, headings and coverage.
+        Limits bound pages and per-page claim/evidence fan-out.
         """
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError('limit must be between 1 and 100')
         if not isinstance(q, str) or len(q) > 2000:
             raise ValueError('Invalid knowledge query')
-        tokens = re.findall(r'[\w:.+\-]+', q.casefold())
-        found = []
+        latin_terms, cjk_terms, phrases = _query_terms(q)
+        documents = []
         for page in self._pages.values():
             conditions = page['conditions']
             if device is not None and not _condition_matches(conditions.get('devices'), device):
@@ -272,18 +275,29 @@ class KnowledgeCorpus:
                           and (symbol is None or symbol.casefold() in str(e.get('symbol', '')).casefold())]
             if any(value is not None for value in (repository, path, symbol)) and not candidates:
                 continue
+            heading = ' '.join(str(page[k]) for k in ('page_id', 'title', 'path')).casefold()
             evidence = {e['evidence_id']: e for e in candidates}
-            matching = []
+            claim_texts = []
             for claim in page['claims']:
                 linked = [evidence[eid] for eid in claim['evidence_ids'] if eid in evidence]
                 if any(value is not None for value in (repository, path, symbol)) and not linked:
                     continue
                 text = json.dumps([claim, linked], ensure_ascii=False).casefold()
-                if all(token in text for token in tokens):
-                    matching.append(claim)
-            heading = ' '.join(str(page[k]) for k in ('page_id', 'title', 'path')).casefold()
-            if tokens and not matching and not all(token in heading for token in tokens):
+                claim_texts.append((claim, text))
+            text = heading + ' ' + ' '.join(t for _, t in claim_texts)
+            latin_hits = [term for term in latin_terms if _identifier_matches(term, text)]
+            cjk_hits = [term for term in cjk_terms if term in text]
+            if len(latin_hits) != len(latin_terms) or (cjk_terms and not cjk_hits):
                 continue
+            documents.append((page, heading, text, claim_texts, latin_hits, cjk_hits))
+        # Query-local document frequency downweights ubiquitous character pairs;
+        # no business vocabulary or inferred applicability enters recall.
+        frequencies = {term: sum(term in doc[2] for doc in documents) for term in cjk_terms}
+        found = []
+        for page, heading, text, claim_texts, latin_hits, cjk_hits in documents:
+            matching = [claim for claim, claim_text in claim_texts
+                        if (any(term in claim_text for term in cjk_terms) if cjk_terms
+                            else all(_identifier_matches(term, claim_text) for term in latin_terms))]
             selected = []
             linked_ids = set()
             for claim in matching:
@@ -298,11 +312,38 @@ class KnowledgeCorpus:
             item.update(claims=selected, evidence=linked_evidence,
                         matching_claims_total=len(matching), matching_evidence_total=len(all_matching_ids),
                         truncated=len(selected) < len(matching), retrieval_kind='lexical_candidate')
-            score = sum(heading.count(token) * 2 for token in tokens) + len(matching)
+            phrase_hits = [phrase for phrase in phrases if phrase in text]
+            coverage = (len(latin_hits) + len(cjk_hits)) / max(1, len(latin_terms) + len(cjk_terms))
+            score = sum(5 * bool(_identifier_matches(term, heading))
+                        + min(3, len(re.findall(r'(?<![a-z0-9_])' + re.escape(term)
+                                               + r'(?![a-z0-9_])', text))) for term in latin_terms)
+            score += sum((1 + math.log((1 + len(documents)) / (1 + frequencies[term])))
+                         * (1 + min(2, text.count(term)) * 0.1 + 3 * (term in heading))
+                         for term in cjk_hits)
+            score += sum(len(phrase) * (1 + 2 * (phrase in heading)) for phrase in phrase_hits)
+            score += 4 * coverage
+            if q.strip().casefold() == str(page['title']).casefold():
+                score += 20
+            item['match'] = {'latin_terms': latin_hits, 'cjk_terms': cjk_hits,
+                             'cjk_phrases': phrase_hits, 'coverage': round(coverage, 6),
+                             'score': round(score, 6)}
             found.append((score, page['page_id'], item))
         found.sort(key=lambda row: (-row[0], row[1]))
         return {'baseline_id': self.baseline_id, 'total': len(found),
                 'items': copy.deepcopy([row[2] for row in found[:limit]])}
+
+
+def _query_terms(q: str) -> tuple[list[str], list[str], list[str]]:
+    text = q.casefold()
+    latin = re.findall(r'[a-z0-9_]+(?:(?:::|[.:/\-])[a-z0-9_]+)*(?:\+\+|\+|#)?', text)
+    segments = re.findall(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+', text)
+    pairs = [segment[i:i + 2] for segment in segments for i in range(max(1, len(segment) - 1))]
+    return (list(dict.fromkeys(latin)), list(dict.fromkeys(pairs)),
+            list(dict.fromkeys(segment for segment in segments if len(segment) > 2)))
+
+
+def _identifier_matches(term: str, text: str) -> bool:
+    return bool(re.search(r'(?<![a-z0-9_])' + re.escape(term) + r'(?![a-z0-9_])', text))
 
 
 def _condition_matches(values: Any, value: str) -> bool:

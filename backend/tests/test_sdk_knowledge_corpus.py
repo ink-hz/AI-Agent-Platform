@@ -299,3 +299,49 @@ def test_cli_builds_only_explicit_output_without_app_startup(api, package):
          "import sys; import app.sdk_knowledge.corpus; import tools.sdk_knowledge.build_index; assert 'app.main' not in sys.modules"],
         env=env, text=True, capture_output=True, check=False)
     assert isolated_import.returncode == 0, isolated_import.stderr
+
+
+@pytest.mark.parametrize('query,expected', [
+    ('如何停止Pipeline并等待回调退出', 'KB-TEST-0'),
+    ('设备自动曝光的固件条件', 'KB-TEST-1'),
+])
+def test_natural_chinese_and_mixed_queries_recall_candidates(api, package, query, expected):
+    bundle = build(api, package)
+    bundle['pages'][0]['claims'][0]['text'] = 'Pipeline::stop 停止流水线，等待回调退出'
+    bundle['pages'][1]['claims'][0]['text'] = '设备自动曝光受固件版本限制，具体条件仍须核对'
+    corpus = api.KnowledgeCorpus(bundle)
+    result = corpus.search(query)
+    assert result['total'] > 0
+    assert result['items'][0]['page_id'] == expected
+    assert result['items'][0]['retrieval_kind'] == 'lexical_candidate'
+    assert result['items'][0]['match']['cjk_terms']
+    assert 0 < result['items'][0]['match']['coverage'] <= 1
+
+
+def test_identifier_constraints_and_exact_title_rank_above_incidental_mentions(api, package):
+    bundle = build(api, package)
+    bundle['pages'][0]['title'] = 'Pipeline control'
+    bundle['pages'][0]['claims'][0]['text'] = 'ob_pipeline_stop stops. ob_pipeline_stop ends. ob_pipeline_stop returns.'
+    bundle['pages'][1]['title'] = 'ob_pipeline_stop'
+    bundle['pages'][1]['claims'][0]['text'] = 'ob_pipeline_stop 停止'
+    bundle['pages'][2]['claims'][0]['text'] = 'ob_pipeline_stop_extended 停止'
+    corpus = api.KnowledgeCorpus(bundle)
+    assert corpus.search('ob_pipeline_stop')['items'][0]['page_id'] == 'KB-TEST-1'
+    assert corpus.search('ob_pipeline_stop')['total'] == 2
+    assert corpus.search('停止ob_pipeline_StopWrong')['total'] == 0
+    assert corpus.search('停止MissingPipeline')['total'] == 0
+    result = corpus.search('如何停止Pipeline并等待回调退出')
+    for item in result['items']:
+        assert item['conditions'] == corpus.page(item['page_id'])['conditions']
+        assert item['runtime_validation'] == 'not_run'
+    if result['items']:
+        result['items'][0]['match']['cjk_terms'].clear()
+        assert corpus.search('如何停止Pipeline并等待回调退出')['items'][0]['match']['cjk_terms']
+
+
+def test_cpp_query_preserves_literal_language_identifier(api, package):
+    bundle = build(api, package)
+    bundle['pages'][0]['claims'][0]['text'] = 'C++ wrapper lifecycle'
+    bundle['pages'][1]['claims'][0]['text'] = 'C wrapper lifecycle'
+    corpus = api.KnowledgeCorpus(bundle)
+    assert [i['page_id'] for i in corpus.search('C++')['items']] == ['KB-TEST-0']
