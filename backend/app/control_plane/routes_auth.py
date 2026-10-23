@@ -237,10 +237,13 @@ def build_auth_router(
             try:
                 if len(values) > 1:
                     raise ValueError
-                target = validate_return_path(
-                    values[0] if values else _local_path(auth, "/account"),
-                    route_prefix=auth.route_prefix,
-                )
+                selected = values[0] if values else "/account"
+                prefix = auth.route_prefix.rstrip("/")
+                if prefix and selected != prefix and not selected.startswith(prefix + "/"):
+                    selected = _local_path(
+                        auth, validate_return_path(selected, route_prefix="/")
+                    )
+                target = validate_return_path(selected, route_prefix=auth.route_prefix)
             except ValueError:
                 raise HTTPException(400, "login return path invalid", headers=_NO_STORE) from None
             response = RedirectResponse(target, status_code=302, headers=_NO_STORE)
