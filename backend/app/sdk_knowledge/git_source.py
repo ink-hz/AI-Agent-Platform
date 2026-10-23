@@ -12,6 +12,9 @@ _HUNK = re.compile(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', re.MULTILINE)
 _MAX_BLOB = 256 * 1024
 _MAX_DIFF = 128 * 1024
 _MAX_FILES = 50
+_DIFF_OPTIONS = ('--no-ext-diff', '--no-textconv', '--no-renames', '--no-color',
+                 '--diff-algorithm=myers', '--no-indent-heuristic', '--inter-hunk-context=0',
+                 '--ignore-submodules=none', '--no-relative')
 
 
 class SourceObservationError(ValueError):
@@ -70,10 +73,12 @@ class GitSourceReader:
         # Environment overrides must not redirect the approved object database.
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
         env.update({'GIT_OPTIONAL_LOCKS': '0', 'GIT_TERMINAL_PROMPT': '0', 'LC_ALL': 'C',
-                    'GIT_LITERAL_PATHSPECS': '1', 'GIT_NO_REPLACE_OBJECTS': '1'})
+                    'GIT_LITERAL_PATHSPECS': '1', 'GIT_NO_REPLACE_OBJECTS': '1',
+                    'GIT_NO_LAZY_FETCH': '1', 'GIT_ALLOW_PROTOCOL': ''})
         try:
             result = subprocess.run(
-                ['git', '--no-pager', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',
+                # The explicit option also fails closed on Git versions that do not support it.
+                ['git', '--no-pager', '--no-lazy-fetch', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',
                  '-c', 'core.quotePath=false', '-C', str(root), *args],
                 env=env, capture_output=True, timeout=10, check=False,
             )
@@ -128,7 +133,7 @@ class GitSourceReader:
         _, prefix = self._repo(repository)
         self._require_commit(repository, base_commit)
         self._require_commit(repository, target_commit)
-        raw = self._git(repository, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames',
+        raw = self._git(repository, 'diff', *_DIFF_OPTIONS,
                         '--name-status', '-z', base_commit, target_commit, '--')
         if len(raw) > 256 * 1024:
             raise SourceObservationError('source_change_too_large')
@@ -147,7 +152,9 @@ class GitSourceReader:
                 raise SourceObservationError('source_path_type_unsupported')
             old, new = self._blob(repository, base_commit, path), self._blob(repository, target_commit, path)
             binary = any(b'\0' in data for data in (old, new) if data is not None)
-            diff = self._git(repository, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames',
+            # Blob bytes determine binary status; local attributes cannot hide text hunks.
+            text_options = () if binary else ('--text',)
+            diff = self._git(repository, 'diff', *_DIFF_OPTIONS, *text_options,
                              '--unified=0', base_commit, target_commit, '--', path)
             total += len(diff)
             if total > _MAX_DIFF:

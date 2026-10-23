@@ -98,3 +98,127 @@ def test_limits_and_checkout_symlinks_do_not_silently_reduce_scope(source, tmp_p
     linked.symlink_to(repo, target_is_directory=True)
     with pytest.raises(ValueError):
         GitSourceReader(tmp_path, [{'repository': 'SDK', 'relative_path': 'linked', 'commit': target}])
+
+
+def test_every_git_command_disables_lazy_fetch_and_all_transport(source, monkeypatch):
+    _, reader, base, target = source
+    run = subprocess.run
+    commands = []
+    monkeypatch.setenv('GIT_NO_LAZY_FETCH', '0')
+    monkeypatch.setenv('GIT_ALLOW_PROTOCOL', 'file:https')
+    monkeypatch.setenv('GIT_DIR', '/unapproved/object/database')
+
+    def guarded_run(command, **kwargs):
+        commands.append(command)
+        assert '--no-lazy-fetch' in command
+        assert kwargs['env']['GIT_NO_LAZY_FETCH'] == '1'
+        assert kwargs['env']['GIT_ALLOW_PROTOCOL'] == ''
+        assert 'GIT_DIR' not in kwargs['env']
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', guarded_run)
+    assert reader.compare('SDK', base, target)['files'][0]['hunks']
+    assert reader.blob_sha256('SDK', target, 'SDK/same.txt')
+    assert commands
+
+
+@pytest.mark.parametrize('pollution', ['worktree_attributes', 'info_attributes', 'configured_attributes', 'color', 'driver'])
+def test_text_hunks_and_direct_claims_ignore_local_rendering(source, tmp_path, pollution):
+    from types import SimpleNamespace
+    from app.sdk_knowledge.analysis import model_context
+    from app.sdk_knowledge.service import KnowledgeService
+
+    repo, reader, base, target = source
+    page = {'page_id': 'KB-FIXTURE', 'claims': [{'claim_id': 'C1', 'evidence_ids': ['E1']}],
+            'evidence': [{'evidence_id': 'E1', 'repository': 'SDK', 'commit': target,
+                          'path': 'SDK/CMakeLists.txt', 'line_start': 1, 'line_end': 1,
+                          'sha256': hashlib.sha256(b'project(SDK VERSION 1.0.1)\n').hexdigest()}]}
+    corpus = SimpleNamespace(baseline_id='fixture', source_pages=lambda *_: [page])
+    service = KnowledgeService(corpus, reader)
+    expected = service.inspect_change('SDK', base, target)
+    assert expected['affected_pages'][0]['changed_references'][0]['line_overlap'] is True
+    assert model_context(expected)['affected_pages'][0]['direct_claim_ids'] == ['C1']
+    if pollution == 'color':
+        git(repo, 'config', 'color.ui', 'always')
+    elif pollution == 'driver':
+        (repo / '.gitattributes').write_text('CMakeLists.txt diff=fixture\n')
+        git(repo, 'config', 'diff.fixture.binary', 'true')
+        # Executable attributes/config remain disabled even while forcing text output.
+        git(repo, 'config', 'diff.fixture.command', 'touch driver-started')
+        git(repo, 'config', 'diff.fixture.textconv', 'touch textconv-started')
+    else:
+        attributes = {'worktree_attributes': repo / '.gitattributes',
+                      'info_attributes': repo / '.git/info/attributes',
+                      'configured_attributes': tmp_path / 'attributes'}[pollution]
+        attributes.write_text('CMakeLists.txt -diff\n')
+        if pollution == 'configured_attributes':
+            git(repo, 'config', 'core.attributesFile', str(attributes))
+    actual = service.inspect_change('SDK', base, target)
+    assert actual['observation']['files'][0]['binary'] is False
+    assert actual['observation']['files'][0]['hunks'] == expected['observation']['files'][0]['hunks']
+    assert actual == expected
+    assert model_context(actual)['affected_pages'][0]['direct_claim_ids'] == ['C1']
+    assert not (repo / 'driver-started').exists()
+    assert not (repo / 'textconv-started').exists()
+
+
+@pytest.mark.parametrize('missing', ['commit', 'tree', 'blob'])
+def test_missing_promisor_objects_do_not_fetch_or_change_repository(source, tmp_path, monkeypatch, missing):
+    import os
+
+    repo, reader, base, target = source
+    # This helper only writes a local sentinel; it cannot make a network request.
+    marker = tmp_path / 'transport-started'
+    helper = tmp_path / 'git-remote-sdkfixture'
+    helper.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n')
+    helper.chmod(0o755)
+    git(repo, 'config', 'extensions.partialClone', 'origin')
+    git(repo, 'config', 'remote.origin.promisor', 'true')
+    git(repo, 'config', 'remote.origin.partialCloneFilter', 'blob:none')
+    git(repo, 'config', 'remote.origin.url', 'sdkfixture::local-sentinel')
+    oid = {'commit': target,
+           'tree': git(repo, 'rev-parse', target + '^{tree}').decode().strip(),
+           'blob': git(repo, 'rev-parse', target + ':CMakeLists.txt').decode().strip()}[missing]
+    (repo / '.git/objects' / oid[:2] / oid[2:]).unlink()
+
+    def snapshot():
+        return {str(p.relative_to(repo)): p.read_bytes() for p in (repo / '.git').rglob('*') if p.is_file()}
+
+    before = snapshot()
+    run = subprocess.run
+    trace = tmp_path / 'git-trace'
+    monkeypatch.setenv('PATH', str(tmp_path) + os.pathsep + os.environ['PATH'])
+
+    def traced_run(command, **kwargs):
+        # Keep an unsafe regression from ever starting transport, even in this local fixture.
+        assert '--no-lazy-fetch' in command
+        assert kwargs['env']['GIT_NO_LAZY_FETCH'] == '1'
+        assert kwargs['env']['GIT_ALLOW_PROTOCOL'] == ''
+        kwargs['env']['GIT_TRACE'] = str(trace)
+        return run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, 'run', traced_run)
+    error = 'source_commit_unavailable' if missing == 'commit' else 'source_object_unavailable'
+    with pytest.raises(SourceObservationError, match=error):
+        reader.compare('SDK', base, target)
+    with pytest.raises(SourceObservationError, match=error):
+        reader.blob_sha256('SDK', target, 'SDK/CMakeLists.txt')
+    assert not marker.exists()
+    assert ' fetch ' not in trace.read_text()
+    assert 'remote-sdkfixture' not in trace.read_text()
+    assert snapshot() == before
+
+
+def test_git_without_no_lazy_fetch_support_fails_without_retry(source, monkeypatch):
+    _, reader, _, target = source
+    commands = []
+
+    def unsupported(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 129, b'', b'unknown option: --no-lazy-fetch')
+
+    monkeypatch.setattr(subprocess, 'run', unsupported)
+    with pytest.raises(SourceObservationError, match='source_commit_unavailable'):
+        reader.blob_sha256('SDK', target, 'SDK/CMakeLists.txt')
+    assert len(commands) == 1
+    assert '--no-lazy-fetch' in commands[0]
