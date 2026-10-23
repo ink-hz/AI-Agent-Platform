@@ -73,3 +73,21 @@ remain explicit and require restarting in the same browser, never a nonce bypass
 Source integration: merged into current master4607e5780e4193a756c81a75cb6e42f83052d413,
 preserving pre-existing SDK work. Controller post-merge browser suite33 passed, one inherited
 warning; production still uses only the reviewed3-file patch over31f7de2f, not an SDK rollout.
+
+
+## Fresh real-user acceptance — confirmed 2026-10-23 20:06 CST
+
+Read-only production records now confirm two real post-release external SNS logins:
+
+| Browser start (CST) | Provider verified / site mapping | FAE launch exchanged | FAE session HTTP | Authenticated history HTTP |
+|---|---|---|---|---|
+|20:00:01.920|20:00:10.753|20:00:10.919|201 at20:00:10.960|200 at20:00:11.036|
+|20:01:21.533|20:01:26.399|20:01:26.544|201 at20:01:26.586|200 at20:01:26.652|
+
+Each partner_login_attempt was consumed and provisioned; its same-subject launch for
+ai-fae-agent was exchanged within the same second, with an active binding. FAE logs
+confirm authenticated session issuance and successful authenticated history requests.
+These are live user flows after the patched API started19:41:53CST; controller tests did
+not exchange real provider codes. No raw state/code/nonce/account identifiers were read
+or disclosed. This supersedes the pending fresh-scan status above and closes the
+server-side external-login acceptance. No model/chat evaluation was needed or sent.
