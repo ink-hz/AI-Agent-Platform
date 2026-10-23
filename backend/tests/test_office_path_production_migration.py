@@ -259,16 +259,16 @@ def _run_publish_harness(
           *agent.orbbec.com.cn/admin/) code=302 ;;
           *agent.orbbec.com.cn/) code=302 ;;
           *fae.orbbec.com.cn/*) code=200 ;;
-          *47.106.112.69/*) code=200 ;;
+          *47.106.112.69/*) code=308 ;;
         esac
         if [[ "$url" == *47.106.112.69/* && -n "$write" ]]; then
-          printf '%s ' "$code"
+          printf '%s https://fae.orbbec.com.cn/' "$code"
         elif [[ -n "$write" ]]; then
           printf '%s' "$code"
         elif [[ -z "$output" ]]; then
           printf '%s' "$body"
         fi
-        [[ "$code" =~ ^2 || "$code" == 302 || "$code" == 404 ]]
+        [[ "$code" =~ ^2 || "$code" == 302 || "$code" == 308 || "$code" == 404 ]]
         """,
     )
     replacements = {

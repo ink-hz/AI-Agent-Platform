@@ -126,8 +126,7 @@ fingerprint_fae() {
     && "$fae_config_hash" =~ ^[0-9a-f]{64}$ \
     && "$fae_mounts_hash" =~ ^[0-9a-f]{64}$ \
     && "$fae_domain_http" =~ ^2[0-9]{2}$ \
-    && "$fae_ip_http" =~ ^2[0-9]{2}[[:space:]]$ ]] || return 1
-  fae_ip_http="${fae_ip_http% }"
+    && "$fae_ip_http" == "308 https://fae.orbbec.com.cn/" ]] || return 1
   /usr/bin/printf '%s\n' \
     "container_id=$fae_id" \
     "image_id=$fae_image_id" \

@@ -130,9 +130,6 @@ def _render_isolated_nginx(
         "proxy_pass http://127.0.0.1:8011;": (
             f"proxy_pass http://127.0.0.1:{upstream_ports['office']};"
         ),
-        "proxy_pass http://127.0.0.1:8000;": (
-            f"proxy_pass http://127.0.0.1:{upstream_ports['fae']};"
-        ),
         "proxy_pass http://172.29.0.3:18130;": (
             f"proxy_pass http://127.0.0.1:{upstream_ports['voc']};"
         ),
@@ -393,95 +390,29 @@ def test_sdk_workspace_allows_form_post_only_to_its_zentao_origin():
     assert "form-action 'self'\" always;" in default_policy
 
 
-def test_formal_nginx_assigns_hardened_non_overlapping_fae_route_owners():
+def test_formal_nginx_retires_browser_api_and_asset_routes_but_keeps_manage():
     value = _text(FORMAL_NGINX)
-    selectors = (
-        "location = /fae {",
-        "location = /fae/manage {",
-        "location ^~ /fae/manage/ {",
-        "location = /fae/health {",
-        "location = /fae/api/chat {",
-        "location = /fae/api/attachments {",
-        "location ^~ /fae/api/ {",
-        "location ^~ /fae/assets/ {",
-        "location ^~ /fae/ {",
-    )
-    positions = [value.index(selector) for selector in selectors]
-
-    assert positions == sorted(positions)
-    assert value.index("location ^~ /fae/manage/ {") < value.index(
-        "location ^~ /fae/ {"
-    )
-    assert value.index("location ^~ /fae/ {") < value.index(
-        "location / {", positions[-1]
-    )
-    root_redirect = _location_block(value, "location = /fae {")
-    management_redirect = _location_block(value, "location = /fae/manage {")
-    health = _location_block(value, "location = /fae/health {")
-    assert "return 308 /fae/$is_args$args;" in root_redirect
-    assert "return 308 /fae/manage/$is_args$args;" in management_redirect
-    assert "return 404;" in health
-
-    management = _location_block(value, "location ^~ /fae/manage/ {")
-    chat = _location_block(value, "location = /fae/api/chat {")
-    attachments = _location_block(value, "location = /fae/api/attachments {")
-    api = _location_block(value, "location ^~ /fae/api/ {")
-    assets = _location_block(value, "location ^~ /fae/assets/ {")
+    root = _location_block(value, "location = /fae {")
     application = _location_block(value, "location ^~ /fae/ {")
-
-    assert "proxy_pass http://127.0.0.1:8080;" in management
-    assert "rewrite " not in management
-    for block in (chat, attachments, api, assets, application):
-        assert "proxy_pass http://127.0.0.1:8000;" in block
-    assert "rewrite ^/fae/api/chat$ /chat break;" in chat
-    assert "rewrite ^/fae/api/attachments$ /attachments break;" in attachments
-    assert "rewrite ^/fae/api(/.*)$ $1 break;" in api
-    assert "rewrite " not in assets
-    assert "rewrite " not in application
-    assert "proxy_buffering off;" in chat
-    assert "proxy_request_buffering off;" in chat
-    assert "proxy_read_timeout 330s;" in chat
-    assert "proxy_send_timeout 330s;" in chat
-    assert "client_max_body_size 50m;" in attachments
-    assert (
-        'add_header Cache-Control "public, max-age=31536000, immutable" always;'
-        in assets
-    )
-
-    proxy_blocks = (management, chat, attachments, api, assets, application)
-    for block in proxy_blocks:
-        for directive in (
-            "proxy_set_header Host $host;",
-            "proxy_set_header X-Real-IP $remote_addr;",
-            "proxy_set_header X-Forwarded-For $remote_addr;",
-            "proxy_set_header X-Forwarded-Proto $scheme;",
-            'proxy_set_header Forwarded "";',
-            'proxy_set_header Authorization "";',
-            'proxy_set_header Connection "";',
-            'add_header Strict-Transport-Security "max-age=31536000" always;',
-            'add_header X-Content-Type-Options "nosniff" always;',
-            'add_header X-Frame-Options "DENY" always;',
-            'add_header Referrer-Policy "no-referrer" always;',
-            "add_header Content-Security-Policy",
-            'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
-        ):
-            assert directive in block
-        assert "$proxy_add_x_forwarded_for" not in block
-
-    for block in (management, chat, attachments, api, application):
-        assert 'add_header Cache-Control "private, no-store" always;' in block
-
-    for block in (root_redirect, management_redirect, health):
-        for directive in (
-            'add_header Cache-Control "private, no-store" always;',
-            'add_header Strict-Transport-Security "max-age=31536000" always;',
-            'add_header X-Content-Type-Options "nosniff" always;',
-            'add_header X-Frame-Options "DENY" always;',
-            'add_header Referrer-Policy "no-referrer" always;',
-            "add_header Content-Security-Policy",
-            'add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;',
-        ):
-            assert directive in block
+    for retired in (root, application):
+        assert 'if ($request_method ~ ^(GET|HEAD)$)' in retired
+        assert 'return 308 https://fae.orbbec.com.cn/;' in retired
+        assert 'fae_entry_retired' in retired
+        assert 'proxy_pass' not in retired
+        assert '$args' not in retired and '$request_uri' not in retired
+    assert 'app/conversations/$fae_retired_conversation;' in application
+    for selector in ('location = /fae/api {', 'location ^~ /fae/api/ {',
+                     'location = /fae/assets {', 'location ^~ /fae/assets/ {'):
+        retired = _location_block(value, selector)
+        assert 'return 410 ' in retired
+        assert 'return 308 ' not in retired
+        assert 'proxy_pass' not in retired
+    assert 'return 308 /fae/manage/$is_args$args;' in _location_block(value, 'location = /fae/manage {')
+    assert 'return 404;' in _location_block(value, 'location = /fae/health {')
+    management = _location_block(value, 'location ^~ /fae/manage/ {')
+    assert 'proxy_pass http://127.0.0.1:8080;' in management
+    assert 'proxy_set_header Authorization "";' in management
+    assert 'add_header Cache-Control "private, no-store" always;' in management
 
 
 def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
@@ -498,7 +429,6 @@ def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
             value, "location ^~ /fae/manage/ {"
         ),
         "office": _location_block(value, "location ^~ /office/ {"),
-        "fae": _location_block(value, "location ^~ /fae/ {"),
         "voc": _location_block(value, "location ^~ /voc/ {"),
     }
     expected_upstreams = {
@@ -506,7 +436,6 @@ def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
         "platform-admin": platform_upstream,
         "platform-fae-management": platform_upstream,
         "office": office_upstream,
-        "fae": fae_upstream,
         "voc": voc_upstream,
     }
     all_upstreams = {
@@ -545,13 +474,6 @@ def test_formal_nginx_has_exact_workspace_ownership_and_failure_isolation():
             "location ^~ /office/assets/ {",
             "location ^~ /office/knowledge-assets/ {",
             "location ^~ /office/ {",
-        ),
-        fae_upstream: (
-            "location = /fae/api/chat {",
-            "location = /fae/api/attachments {",
-            "location ^~ /fae/api/ {",
-            "location ^~ /fae/assets/ {",
-            "location ^~ /fae/ {",
         ),
         voc_upstream: (
             "location ^~ /voc/assets/ {",
@@ -601,7 +523,6 @@ def test_each_stubbed_workspace_upstream_failure_is_isolated_by_rendered_nginx(
     )
     expected_failure_routes = {
         "office": {"/office/", "/office/?view=services"},
-        "fae": {"/fae/", "/fae/conversations/fae%3Aone"},
         "voc": {"/voc/", "/voc/records/VOC-20260903-001"},
     }
     owners = {"platform", "office", "fae", "voc"}
@@ -635,7 +556,8 @@ def test_each_stubbed_workspace_upstream_failure_is_isolated_by_rendered_nginx(
             baseline = {
                 route: _http_response(listen_port, route) for route in routes
             }
-            assert all(response[0] == 200 for response in baseline.values())
+            assert all(response[0] == (308 if route.startswith('/fae/') and not route.startswith('/fae/manage/') else 200)
+                       for route, response in baseline.items())
             server, thread = upstreams[failed_owner]
             _stop_http_server(server, thread)
             stopped.add(failed_owner)
@@ -705,3 +627,50 @@ def test_failure_isolation_uses_an_nginx_process_not_a_python_proxy():
     assert "_start_nginx" in function_names
     assert calls_popen
     assert b"unavailable" not in runtime_constants
+
+
+def test_retired_fae_http_methods_and_cookie_cannot_reach_legacy_upstream(tmp_path):
+    nginx = _nginx_binary()
+    ports = {owner: _unused_loopback_port() for owner in ('platform', 'office', 'fae', 'voc')}
+    port, redirect_port = _unused_loopback_port(), _unused_loopback_port()
+    config = _render_isolated_nginx(tmp_path, listen_port=port,
+                                    redirect_port=redirect_port, upstream_ports=ports)
+    process = _start_nginx(nginx, config, tmp_path, port)
+    try:
+        cases = [
+            ('GET', '/fae?code=drop', 308, 'https://fae.orbbec.com.cn/'),
+            ('HEAD', '/fae/', 308, 'https://fae.orbbec.com.cn/'),
+            ('GET', '/fae/conversations/abc_123?code=drop', 308,
+             'https://fae.orbbec.com.cn/app/conversations/abc_123'),
+            ('HEAD', '/fae/app/conversations/abc_123', 308,
+             'https://fae.orbbec.com.cn/app/conversations/abc_123'),
+            ('GET', '/fae/conversations/unsafe:segment', 308, 'https://fae.orbbec.com.cn/'),
+            ('GET', '/fae/api/history?limit=1', 410, ''),
+            ('GET', '/fae/assets/old.js', 410, ''),
+            ('POST', '/fae', 410, ''),
+            ('POST', '/fae/conversations/abc_123', 410, ''),
+            ('POST', '/fae/api/chat', 410, ''),
+            ('DELETE', '/fae/api/attachments/old-id', 410, ''),
+            ('GET', '/fae/health', 404, ''),
+        ]
+        import json
+        for method, route, status, location in cases:
+            connection = HTTPConnection('127.0.0.1', port, timeout=2)
+            try:
+                connection.request(method, route, headers={'Cookie': '__Host-fae_enterprise_session=old-session'})
+                response = connection.getresponse()
+                body = response.read()
+                assert response.status == status, (method, route, body)
+                assert response.getheader('Location', '') == location
+                if method == 'HEAD':
+                    assert body == b''
+                elif status == 410:
+                    assert response.getheader('Content-Type') == 'application/json'
+                    assert json.loads(body) == {
+                        'error': {'code': 'fae_entry_retired'},
+                        'canonical_url': 'https://fae.orbbec.com.cn/',
+                    }
+            finally:
+                connection.close()
+    finally:
+        _stop_nginx(process)
