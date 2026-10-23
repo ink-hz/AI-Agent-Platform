@@ -69,3 +69,7 @@ https://fae.orbbec.com.cn/partner/login and use a newly generated QR. Do not reu
 expired/old pre-release QR or claim a user's successful final FAE session from mock
 provider/process/negative production checks. Missing-cookie browser handoff failures
 remain explicit and require restarting in the same browser, never a nonce bypass.
+
+Source integration: merged into current master4607e5780e4193a756c81a75cb6e42f83052d413,
+preserving pre-existing SDK work. Controller post-merge browser suite33 passed, one inherited
+warning; production still uses only the reviewed3-file patch over31f7de2f, not an SDK rollout.
