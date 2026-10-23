@@ -26,6 +26,12 @@ class PageViewBody(BaseModel):
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
+class OfficeClickBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    access_event_id: UUID
+    service_id: str = Field(min_length=1, max_length=96)
+
+
 class AccessHistoryEventResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
@@ -88,7 +94,7 @@ def _owner_context(request: Request) -> AuthContext:
     return context
 
 
-def build_access_history_router(repository) -> APIRouter:
+def build_access_history_router(repository, office_operations_repository=None) -> APIRouter:
     router = APIRouter(tags=["access-history"])
 
     @router.post(
@@ -135,6 +141,32 @@ def build_access_history_router(repository) -> APIRouter:
                 detail="page access rate exceeded",
                 headers={"Retry-After": "60"},
             )
+        return Response(status_code=204)
+
+    @router.post('/api/v1/access-events/office-service-click', status_code=204)
+    async def record_office_click(request: Request) -> Response:
+        context = _context(request)
+        if request.headers.get('content-type', '').split(';', 1)[0].strip().lower() != 'application/json':
+            raise HTTPException(415, 'JSON body required')
+        raw = await request.body()
+        if len(raw) > 2048:
+            raise HTTPException(413, 'request body too large')
+        try:
+            body = OfficeClickBody.model_validate_json(raw)
+        except (ValueError, ValidationError):
+            raise HTTPException(400, 'service click invalid') from None
+        if office_operations_repository is None:
+            raise HTTPException(503, 'service click unavailable')
+        try:
+            outcome = office_operations_repository.record_click(body.access_event_id, context, body.service_id)
+        except AccessHistoryInvalid:
+            raise HTTPException(400, 'service click invalid') from None
+        except AccessHistoryForbidden:
+            raise HTTPException(403, 'service click rejected') from None
+        except AccessHistoryUnavailable:
+            raise HTTPException(503, 'service click unavailable') from None
+        if outcome == 'rate_limited':
+            raise HTTPException(429, 'service click rate exceeded', headers={'Retry-After':'60'})
         return Response(status_code=204)
 
     @router.get(

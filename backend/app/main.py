@@ -129,6 +129,8 @@ from .control_plane.partner_provider import (
 from .control_plane.partner_release import validate_partner_release
 from .control_plane.partner_service import PartnerService
 from .control_plane.rate_limit import ControlRateLimiter
+from .control_plane.office_operations import OfficeOperationsRepository
+from .control_plane.routes_office_operations import build_office_operations_router
 from .control_plane.routes_access_history import build_access_history_router
 from .control_plane.routes_auth import build_auth_router
 from .control_plane.routes_manage import ManagementRepository, ManagementService
@@ -911,6 +913,8 @@ def create_app(
     conversation_command_service = None
     action_command_service = None
     office_recipient_router = None
+    office_operations_repository = None
+    office_operations_router = None
     voc_internal_router = None
     voc_service_authorizer = None
     control_database_url = None
@@ -923,6 +927,12 @@ def create_app(
         office_recipient_router = build_office_recipient_router(
             office_recipient_service,
             bearer_secret=office_recipient_bearer,
+        )
+        office_operations_repository = OfficeOperationsRepository(
+            read_secret_file(config.control_plane.control_database_url_file)
+        )
+        office_operations_router = build_office_operations_router(
+            office_operations_repository, bearer_secret=office_recipient_bearer
         )
     if config.execution_relay_enabled:
         control_database_url = read_secret_file(
@@ -1607,8 +1617,10 @@ def create_app(
         )
         if access_history_repository is None:
             access_history_repository = AccessHistoryRepository(
-                control_database_url
+                control_database_url, department_resolver=identity_auth.account_snapshot
             )
+        if office_operations_repository is not None:
+            office_operations_repository.department_resolver = identity_auth.account_snapshot
         if agent_use_authorization is None:
             agent_use_authorization = AgentUseAuthorization(control_database_url)
             app.state.agent_use_authorization = agent_use_authorization
@@ -1669,6 +1681,8 @@ def create_app(
         app.include_router(voc_internal_router)
     if office_recipient_router is not None:
         app.include_router(office_recipient_router)
+    if office_operations_router is not None:
+        app.include_router(office_operations_router)
     if agent_launch_service is not None:
         app.include_router(build_agent_launch_router(agent_launch_service))
     if identity_enabled and agent_use_authorization is not None:
@@ -1851,7 +1865,7 @@ def create_app(
     if identity_enabled:
         if access_history_repository is None:
             access_history_repository = UnavailableAccessHistoryRepository()
-        app.include_router(build_access_history_router(access_history_repository))
+        app.include_router(build_access_history_router(access_history_repository, office_operations_repository))
         app.include_router(routes_manage.router)
         app.include_router(routes_partner.router)
         if partner_auth_broker is not None:

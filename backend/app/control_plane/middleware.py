@@ -31,6 +31,7 @@ _IDENTITY_RESPONSE_PATHS = frozenset(
         "/api/v1/auth/dingtalk/in-client/exchange",
         "/api/v1/account",
         "/api/v1/access-events/page-view",
+        "/api/v1/access-events/office-service-click",
         "/api/v1/manage/access-events",
         "/api/v1/manage/access-subjects",
         "/api/v1/internal/session/subject",
@@ -98,6 +99,8 @@ def is_office_recipient_directory_request(method: str, path: str) -> bool:
         ("POST", f"{base}/search"),
         ("POST", f"{base}/resolve"),
         ("GET", f"{base}/departments"),
+        ("GET", "/api/v1/internal/office/operations"),
+        ("GET", "/api/v1/internal/office/operations/export"),
     }
 
 
@@ -114,7 +117,7 @@ def is_voc_internal_request(method: str, path: str) -> bool:
 def is_page_access_event_request(method: str, path: str | None) -> bool:
     return (
         method == "POST"
-        and path == "/api/v1/access-events/page-view"
+        and path in {"/api/v1/access-events/page-view", "/api/v1/access-events/office-service-click"}
     )
 
 

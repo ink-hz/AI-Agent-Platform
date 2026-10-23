@@ -76,12 +76,13 @@ class AccessHistorySubject:
 
 class AccessHistoryRepository:
     def __init__(
-        self, control_database_url: str, *, connect=psycopg.connect
+        self, control_database_url: str, *, connect=psycopg.connect, department_resolver=None
     ) -> None:
         parsed = validate_control_dsn(control_database_url, purpose="app")
         self.environment = parsed.environment
         self._database_url = control_database_url
         self._connect = connect
+        self._department_resolver = department_resolver
 
     def _connection(self):
         return self._connect(
@@ -99,18 +100,21 @@ class AccessHistoryRepository:
     ) -> Literal["inserted", "duplicate", "rate_limited"]:
         try:
             with self._connection() as connection:
-                row = connection.execute(
-                    "select * from platform_control.append_page_view_v65("
-                    "%s,%s,%s,%s,%s,%s)",
-                    (
-                        event_id,
-                        context.internal_user_id,
-                        context.session_id,
-                        page.workspace_key,
-                        page.page_key,
-                        page.agent_id,
-                    ),
-                ).fetchone()
+                if page.workspace_key == 'office' and self._department_resolver is not None:
+                    from .office_operations import trusted_department
+                    if page.agent_id is not None:
+                        raise AccessHistoryInvalid('office agent invalid')
+                    department = trusted_department(context, self._department_resolver)
+                    row = connection.execute(
+                        'select * from platform_control.append_office_page_view_v123(%s,%s,%s,%s,%s)',
+                        (event_id, context.internal_user_id, context.session_id, page.page_key, department),
+                    ).fetchone()
+                else:
+                    row = connection.execute(
+                        'select * from platform_control.append_page_view_v65(%s,%s,%s,%s,%s,%s)',
+                        (event_id, context.internal_user_id, context.session_id,
+                         page.workspace_key, page.page_key, page.agent_id),
+                    ).fetchone()
             if row is None or row["outcome"] not in {
                 "inserted",
                 "duplicate",

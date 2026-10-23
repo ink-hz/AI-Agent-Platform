@@ -117,6 +117,7 @@ _AUTHENTICATED_SELF_ROUTES = frozenset({
     ("GET", "/api/v1/internal/voc/browser-subject"),
     ("GET", "/api/v1/workspaces/fae/navigation"),
     ("POST", "/api/v1/access-events/page-view"),
+    ("POST", "/api/v1/access-events/office-service-click"),
     ("POST", "/api/v1/auth/logout"),
     ("GET", "/api/v1/catalog/agents"),
     ("POST", "/api/v1/agents/{agent_id}/launch"),

@@ -1111,11 +1111,12 @@ def test_account_logout_csrf_origin_and_server_revocation(tmp_path, monkeypatch)
     assert client.get("/api/v1/account", cookies=cookies).status_code == 401
 
 
-def test_page_access_event_csrf_exception_is_exact_and_keeps_origin_and_session() -> None:
+@pytest.mark.parametrize("event_path", ["/api/v1/access-events/page-view", "/api/v1/access-events/office-service-click"])
+def test_page_access_event_csrf_exception_is_exact_and_keeps_origin_and_session(event_path) -> None:
     from app.control_plane.middleware import is_page_access_event_request
 
     assert is_page_access_event_request(
-        "POST", "/api/v1/access-events/page-view"
+        "POST", event_path
     ) is True
     for method, path in (
         ("GET", "/api/v1/access-events/page-view"),
@@ -1137,7 +1138,7 @@ def test_page_access_event_csrf_exception_is_exact_and_keeps_origin_and_session(
     auth.rate_limiter = limiter
     app = FastAPI()
 
-    @app.post("/api/v1/access-events/page-view", status_code=204)
+    @app.post(event_path, status_code=204)
     async def page_view_event():
         return None
 
@@ -1152,23 +1153,23 @@ def test_page_access_event_csrf_exception_is_exact_and_keeps_origin_and_session(
     cookies = {auth.cookie_name: "valid-cookie"}
 
     accepted = client.post(
-        "/api/v1/access-events/page-view",
+        event_path,
         headers={"Origin": auth.public_base_url},
         cookies=cookies,
     )
     assert accepted.status_code == 204
     assert limiter.calls == []
     assert client.post(
-        "/api/v1/access-events/page-view",
+        event_path,
         headers={"Origin": "https://fae.orbbec.com.cn"},
         cookies=cookies,
     ).status_code == 403
     assert client.post(
-        "/api/v1/access-events/page-view",
+        event_path,
         cookies=cookies,
     ).status_code == 403
     assert client.post(
-        "/api/v1/access-events/page-view",
+        event_path,
         headers={"Origin": auth.public_base_url},
     ).status_code == 401
 
