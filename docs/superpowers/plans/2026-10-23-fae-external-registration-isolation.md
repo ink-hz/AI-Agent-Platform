@@ -71,4 +71,42 @@ return DingTalkExternalIdentityProvider(
 - [ ] Cover positive external Client ID selection in the real authorization URL; missing one/both settings; matching enterprise ID; unreadable, group-readable, symlink and relative secret files; inline secret rejection; unrelated enterprise settings unchanged. Test config environment loading/defaults as well. Update the existing full app factory integration to supply distinct external settings through the environment.
 - [ ] Update runbook opening/prepared config to remove credential reuse guidance. Record confirmed production failure, official references, separate credential names, matching-protocol dependency and why this candidate is not deployed without eligible credentials. Keep historical release evidence intact and clearly dated.
 - [ ] Run covering tests with `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest backend/tests/test_external_dingtalk_registration_config.py backend/tests/test_external_dingtalk_integration.py backend/tests/test_dingtalk_external_provider.py backend/tests/test_config.py backend/tests/test_dingtalk_auth_api.py -q` (adjust exact provider-test filename from `rg --files`). Run real disposable PostgreSQL tests in that group when available; no production calls.
-- [ ] Self-review, commit the scoped code/test/runbook changes and report RED/GREEN evidence plus real-login/deployment limitation. Controller requests independent task and final review, merges clean master, and preserves the candidate as undeployed until matching eligible credentials exist.
+- [ ] Self-review, commit the scoped code/test/runbook changes and report RED/GREEN evidence plus real-login/deployment limitation. Controller requests independent task and final review and preserves the candidate on its work-in-progress branch, without production deployment or master integration, until matching eligible credentials exist. Integrating a new startup requirement while production has external Provider enabled but lacks those settings could break another worker’s unrelated release.
+
+
+## Task 2: Accept documented equal callback aliases in modern OAuth
+
+**Files:**
+- Modify: `backend/app/control_plane/dingtalk_external_provider.py`
+- Modify: `backend/app/control_plane/routes_partner.py`
+- Modify: `backend/tests/test_dingtalk_external_provider.py`
+- Modify: `backend/tests/test_external_dingtalk_integration.py`
+- Modify: `docs/runbooks/2026-10-23-fae-external-dingtalk.md`
+
+**Interfaces:**
+- Consumes: existing modern OAuth callback mapping with mandatory `authCode`.
+- Produces: optional `code` alias accepted only if equal to the validated `authCode`; no code-only or SNS adapter behavior.
+
+- [ ] RED: add one modern provider test based on its existing successful MockTransport fixture, passing the same valid value under both `authCode` and `code`. Expect normal token/profile flow and one verified subject. The current provider must fail with `partner_auth_invalid` before HTTP.
+- [ ] RED: parameterize the existing real disposable PG HTTP callback/launch test for an optional matching `code`. The alias-present case currently returns401 instead of302. Preserve the existing original test variant.
+- [ ] GREEN: change only the `code` guards, validating `authCode` as before:
+
+```python
+# Provider _callback_code: after state and authCode are validated.
+code = _required_ascii(callback.get("authCode"), maximum=4096)
+if "code" in callback and callback["code"] != code:
+    raise ValueError
+return code
+```
+
+The existing `error` guard remains unconditional; duplicate keys and all `_required_ascii` validation remain. The HTTP route keeps rejecting duplicates before state consumption and uses this pair condition rather than rejecting any `code`:
+
+```python
+("code" in callback and callback["code"] != callback.get("authCode"))
+```
+
+Do not change the requirement for authCode or the existing error handling / state dispatch.
+
+- [ ] Remove equal alias from invalid-provider parametrization; keep/add mismatched alias, code-only, duplicate-code, duplicate-authCode, duplicate-state, malformed authCode, and error cases. In the PG integration test send a conflicting pair before the valid callback, assert401/no provider HTTP, then use the same state successfully to prove invalid input did not consume it. Repeat the successful callback and assert replay401.
+- [ ] Update runbook with the documented equal-alias behavior and matching-contract test evidence. Record this as a distinct confirmed modern callback mismatch, not the cause of the authorization-page error, and not proof of external app eligibility.
+- [ ] Run `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest backend/tests/test_dingtalk_external_provider.py backend/tests/test_external_dingtalk_integration.py backend/tests/test_dingtalk_auth_api.py -q`; these include disposable PG and mocked provider HTTP, not real DingTalk authorization. Commit scoped changes, write report and request task review. Candidate remains on the work-in-progress branch until the external application registration/protocol dependency is resolved.
