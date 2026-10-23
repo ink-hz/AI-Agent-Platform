@@ -620,6 +620,31 @@ deploy/cloud/push-replica.sh "$private_root/sync.env"
 It deletes a queued batch only after receiving the exact authenticated import
 acknowledgement. Failure leaves the queue intact for retry.
 
+### Export scope-query timeout
+
+`export_failed` can stop the whole batch before transport. Trace the underlying
+exception using a private temporary copy of the export state and queue; never
+advance the production watermark or omit management projections to get past it.
+Keep exception details out of public logs because source rows contain private
+material. Check the actual imported generation and running image, not only the
+release symlink or the scheduler's loaded state.
+
+Review scope proofs use statement-local materialized identity projections:
+`scope_turns` contains only `turn_key`, `agent_id`, `source_kind`, and
+`scope_feedback` contains only `feedback_key`, `agent_id`, `turn_key`. Each
+normalized view is evaluated once, within the existing repeatable-read,
+read-only transaction. The shared historical-event proof reads the same
+projections; origin, link, feedback, replay, merge and cycle checks retain their
+original semantics. Do not add retention/time filters here: historical evidence
+still needs its referenced identities. This is an ephemeral query result, not
+a separately refreshed database cache or a new source of authorization facts.
+
+On the 2026-10-23 source, the previous issue query exceeded its existing
+30-second limit; the identity-projection query returned 113 issues in 0.632
+seconds, and a complete isolated-state export took 3.89 seconds. Keep the
+30-second resource boundary. Verify the full signed export/import path and
+subsequent scheduled runs before reporting restored freshness.
+
 ## Synthetic canary, cleanup, and one-year backfill
 
 Generate a signed, already-sanitized batch whose raw fixture covers phone,

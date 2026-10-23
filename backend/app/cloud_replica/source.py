@@ -103,6 +103,17 @@ where trace_key = any(%(trace_keys)s)
 order by trace_key, seq, step_key
 """.strip()
 
+# Scope checks need identity keys only. Materialize these projections once in
+# the same statement/snapshot: repeated correlated references otherwise expand
+# the full normalized views (including window/identity joins) for every issue.
+# Bind the shared historical proof to the same key snapshots without changing
+# its ownership, feedback lineage, or immutable-event rules.
+_REPLICA_HISTORICAL_LINK_EVENT_INVALID_SQL = (
+    HISTORICAL_LINK_EVENT_INVALID_SQL
+    .replace("platform_read.turns", "scope_turns")
+    .replace("platform_read.feedback", "scope_feedback")
+)
+
 REVIEW_ISSUE_SQL = f"""
 with recursive canonical_walk as (
   select issue.id as root_id,issue.id as current_id,
@@ -114,6 +125,10 @@ with recursive canonical_walk as (
   from canonical_walk walk
   join platform_review.feedback_issues target on target.id=walk.next_id
   where walk.next_id is not null and not walk.cycle
+), scope_turns as materialized (
+  select turn_key,agent_id,source_kind from platform_read.turns
+), scope_feedback as materialized (
+  select feedback_key,agent_id,turn_key from platform_read.feedback
 )
 select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
   issue.title,issue.failure_layer,issue.owner,issue.created_at,issue.updated_at,
@@ -127,9 +142,9 @@ select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
     where link.issue_id=issue.id and link.active), '{{}}') as linked_turn_keys,
   not (
     (issue.origin_turn_key is not null and (
-      not exists (select 1 from platform_read.turns origin
+      not exists (select 1 from scope_turns origin
         where origin.turn_key=issue.origin_turn_key)
-      or exists (select 1 from platform_read.turns origin
+      or exists (select 1 from scope_turns origin
         where origin.turn_key=issue.origin_turn_key and (
           origin.agent_id is distinct from issue.agent_id
           or (issue.agent_id='ai-fae-agent'
@@ -142,7 +157,7 @@ select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
     ))
     or exists (
       select 1 from platform_review.feedback_issue_links link
-      left join platform_read.turns linked_turn
+      left join scope_turns linked_turn
         on linked_turn.turn_key=link.source_turn_key
       where link.issue_id=issue.id and (
         link.agent_id is distinct from issue.agent_id
@@ -153,7 +168,7 @@ select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
         or exists (
           select 1 from unnest(link.source_feedback_keys)
             as stored_feedback(feedback_key)
-          left join platform_read.feedback linked_feedback
+          left join scope_feedback linked_feedback
             on linked_feedback.feedback_key=stored_feedback.feedback_key
            and linked_feedback.agent_id=link.agent_id
            and linked_feedback.turn_key=link.source_turn_key
@@ -175,7 +190,7 @@ select issue.id,issue.agent_id,issue.disposition as status,issue.priority,
         or replay_link.issue_id is distinct from issue.id
       )
     )
-    or {HISTORICAL_LINK_EVENT_INVALID_SQL}
+    or {_REPLICA_HISTORICAL_LINK_EVENT_INVALID_SQL}
     or {CANONICAL_EVENT_PAIR_INVALID_SQL}
     or exists (select 1 from canonical_walk walk
       where walk.root_id=issue.id and walk.cycle)
