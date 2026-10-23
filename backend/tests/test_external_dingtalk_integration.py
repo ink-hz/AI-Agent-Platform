@@ -446,7 +446,10 @@ def test_callback_rate_limit_precedes_provider_exchange(service):
     app.state.partner_auth_broker = PartnerAuthenticationBroker(provider, service, state_secrets=AuthSecrets(b's' * 32, key_version=1))
     app.state.agent_launch_service = object()
     app.state.identity_auth = SimpleNamespace(rate_limiter=Limiter())
-    request = Request({'type': 'http', 'method': 'GET', 'path': '/api/v1/auth/dingtalk/callback', 'query_string': b'state=fae-dt-sns-v1.test&code=code', 'headers': [], 'app': app, 'state': {'edge_source': SimpleNamespace(ip=ip_address('192.0.2.1'))}})
+    from app.control_plane.external_browser_state import nonce_cookie_name
+    started = app.state.partner_auth_broker.begin_auth()
+    cookie = nonce_cookie_name(started.state) + '=' + started.browser_nonce
+    request = Request({'type': 'http', 'method': 'GET', 'path': '/api/v1/auth/dingtalk/callback', 'query_string': ('state=' + started.state + '&code=code').encode(), 'headers': [(b'cookie', cookie.encode())], 'app': app, 'state': {'edge_source': SimpleNamespace(ip=ip_address('192.0.2.1'))}})
     response = asyncio.run(finish_external_dingtalk_authentication(request))
     assert response.status_code == 429 and response.headers['retry-after'] == '30'
     assert calls == [ip_address('192.0.2.1')]
