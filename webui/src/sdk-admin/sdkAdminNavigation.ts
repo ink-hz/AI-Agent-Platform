@@ -3,10 +3,10 @@ import type { SdkAdminSection } from './sdkAdminPaths';
 
 // The platform sidebar and SDK page heading describe the same workspace sections.
 export const SDK_ADMIN_SECTIONS = [
-  { id: 'overview', path: '/sdk-admin', title: '总览', subtitle: '工作入口与推荐阅读', icon: Compass },
-  { id: 'products', path: '/sdk-admin/products', title: '产品与版本', subtitle: '范围、来源与业务对象', icon: Boxes },
-  { id: 'delivery', path: '/sdk-admin/delivery', title: '研发与交付', subtitle: '阶段标准与交接依据', icon: GitBranch },
-  { id: 'diagnostics', path: '/sdk-admin/diagnostics', title: '诊断与改进', subtitle: '技术与过程中的问题', icon: CircleHelp },
+  { id: 'overview', path: '/sdk-admin', title: '总览', subtitle: '需求、任务与技术支持', icon: Compass },
+  { id: 'products', path: '/sdk-admin/products', title: '产品与版本', subtitle: '需求范围与责任协作', icon: Boxes },
+  { id: 'delivery', path: '/sdk-admin/delivery', title: '研发与交付', subtitle: '需求跟进与研发协作', icon: GitBranch },
+  { id: 'diagnostics', path: '/sdk-admin/diagnostics', title: '诊断与改进', subtitle: '问题处理、排障与现状分析', icon: CircleHelp },
   { id: 'knowledge', path: '/sdk-admin/knowledge', title: '知识与成果', subtitle: '深入阅读与证据检索', icon: BookOpen },
 ] as const satisfies readonly { id: SdkAdminSection; path: string; title: string; subtitle: string; icon: typeof BookOpen }[];
 
