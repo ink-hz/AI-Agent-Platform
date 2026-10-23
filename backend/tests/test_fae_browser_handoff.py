@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import subprocess
 from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -93,7 +94,33 @@ const input = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
   await settle();
   const initial = {requests: requests.length, hidden: retry.hidden, message: status.textContent};
   if (input.retry) { assert.equal(retry.hidden, false); await retry.click(); await settle(); }
-  process.stdout.write(JSON.stringify({requests, navigations, logs, message: status.textContent, hidden: retry.hidden, initial}));
+  let loginConsumer;
+  if (input.consumeLogin) {
+    // Bundle the actual consumer in memory: no duplicated return-path allowlist.
+    const esbuild = require(require.resolve('esbuild', {paths: [input.webui]}));
+    const source = esbuild.buildSync({entryPoints: [input.webui + '/src/auth.ts'],
+      bundle: true, format: 'cjs', platform: 'node', write: false}).outputFiles[0].text;
+    const loginUrl = new URL(navigations[0], 'https://agent.example.test');
+    const qrRequests = [];
+    const consumerModule = {exports: {}};
+    const consumerContext = {
+      module: consumerModule, URL, URLSearchParams,
+      window: {location: {pathname: loginUrl.pathname}},
+      fetch: async (url, options) => {
+        qrRequests.push({url, options});
+        if (url.endsWith('/api/v1/account')) return {status: 401, ok: false};
+        return {status: 200, ok: true,
+          json: async () => ({authorization_url: 'https://login.dingtalk.com/test'})};
+      },
+    };
+    vm.runInNewContext(source, consumerContext, {timeout: 1000});
+    const consumer = consumerModule.exports;
+    const selected = consumer.loginReturnPath(loginUrl.search);
+    const successTarget = consumer.platformPath(selected, consumer.routePrefix(loginUrl.pathname));
+    await consumer.startQrLogin(selected);
+    loginConsumer = {selected, successTarget, qrRequests};
+  }
+  process.stdout.write(JSON.stringify({requests, navigations, logs, message: status.textContent, hidden: retry.hidden, initial, loginConsumer}));
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
 
@@ -108,8 +135,8 @@ def handoff(tmp_path, monkeypatch):
     return client, auth, service, response.text
 
 
-def browser(script, responses, *, prefix="", retry=False, pathname=None):
-    result = subprocess.run(["node", "-e", NODE_BROWSER], input=json.dumps({"script": script, "responses": responses, "pathname": pathname or prefix + SHELL, "retry": retry}), text=True, capture_output=True, check=True)
+def browser(script, responses, *, prefix="", retry=False, pathname=None, consume_login=False):
+    result = subprocess.run(["node", "-e", NODE_BROWSER], input=json.dumps({"script": script, "responses": responses, "pathname": pathname or prefix + SHELL, "retry": retry, "consumeLogin": consume_login, "webui": str(Path(__file__).resolve().parents[2] / "webui")}), text=True, capture_output=True, check=True)
     return json.loads(result.stdout)
 
 
@@ -138,9 +165,14 @@ def test_script_consumes_real_account_csrf_and_launch_response(handoff):
 @pytest.mark.parametrize("prefix", ["", "/_preview/dingtalk-r1"])
 def test_script_401_replaces_document_with_fixed_prefixed_login(handoff, prefix):
     *_, script = handoff
-    result = browser(script, [{"status": 401}], prefix=prefix)
+    result = browser(script, [{"status": 401}], prefix=prefix, consume_login=True)
+    assert result["loginConsumer"]["selected"] == SHELL
+    assert result["loginConsumer"]["successTarget"] == prefix + SHELL
+    qr_requests = result["loginConsumer"]["qrRequests"]
+    assert [request["url"] for request in qr_requests] == [prefix + "/login", prefix + "/api/v1/account", prefix + "/api/v1/auth/dingtalk/start"]
+    assert json.loads(qr_requests[-1]["options"]["body"]) == {"return_path": prefix + SHELL}
     from urllib.parse import quote
-    assert result["navigations"] == [prefix + "/login?return_path=" + quote(prefix + SHELL, safe="")]
+    assert result["navigations"] == [prefix + "/login?return_path=" + quote(SHELL, safe="")]
     assert [r["url"] for r in result["requests"]] == [prefix + "/api/v1/account"]
 
 

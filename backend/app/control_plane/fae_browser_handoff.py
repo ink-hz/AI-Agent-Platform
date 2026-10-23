@@ -51,7 +51,7 @@ FAE_LAUNCH_SCRIPT = r"""(() => {
         method: 'GET', credentials: 'same-origin', cache: 'no-store', redirect: 'error'
       });
       if (account.status === 401) {
-        window.location.replace(prefix + '/login?return_path=' + encodeURIComponent(prefix + suffix));
+        window.location.replace(prefix + '/login?return_path=' + encodeURIComponent(suffix));
         return;
       }
       if (!account.ok) { failed(account.status === 403); return; }
