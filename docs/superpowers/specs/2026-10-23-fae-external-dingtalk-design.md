@@ -32,10 +32,15 @@
 
 ## 可追溯性
 
-FAE 将已验证 PlatformSubject 的 subject_id/type、昵称与认证模式作为服务器生成的
-身份快照持久化，校验与 owner 列一致。Platform 同步和管理员会话投影使用稳定主体，
-昵称只作展示。所有者的受审计身份详情查询可由 subject_id 解析到钉钉 unionId；原始
-provider ID 不进入普通浏览器账户响应、答案或 SSE，不给外部用户读取同事会话权限。
+FAE 已将服务器验证的 subject_id/type 写入 owner 列；继续使用这些权威列，不增加
+FAE 昵称缓存或每轮身份网络查询。同步导入器校验 owner 与认证模式/内部用户一致，
+从列推导 typed verified_subject 关联引用，忽略客户端 metadata 自称的身份。引用只含
+随机 Platform UUID/type，不含钉钉 ID；它经加密副本到达受保护的管理员会话详情，
+配合所有者的受审计身份详情查询解析到 Provider 昵称及 unionId。普通 FAE 账户、
+答案与 SSE 不暴露原始 Provider ID。现有 HMAC 用户键继续负责副本分组。
+
+新副本 reader 兼容旧形状和带 typed 引用的新形状；writer 通过明确 opt-in 开关才
+发送新引用，以便先部署 reader 再切换同步写入。不默认为旧 reader 发未知字段。
 
 ## 验证和上线
 

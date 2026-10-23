@@ -77,3 +77,13 @@ prove the current AppKey permits external accounts. Before production enablement
 complete the existing release evidence gate with two distinct real external accounts,
 stable repeated identity, account isolation, revocation and replay checks. Production
 migration/deployment and real account verification are separate release work.
+
+## 2026-10-23 engineering review status
+
+Provider, canonical launch, provisioning, and encrypted subject reference tasks have
+passed their independent code reviews. Final composition review found no Critical
+or Important issues. Reported focused test runs: provider234, canonical402,
+provisioning904, subject reference167 (overlapping runs, not a combined count).
+Two real external accounts and current AppKey eligibility remain untested; no
+production evidence file or activation was created. Required lookup reason currently
+selects a fixed protected audit purpose; arbitrary reason text is not retained.
