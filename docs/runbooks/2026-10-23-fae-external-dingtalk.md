@@ -174,3 +174,20 @@ The temporary Development callback maps/start route were removed only after veri
 Verification: independent gate review passed163 Platform and87 FAE cases. FAE standard release passed3609 Python tests,3 existing exclusions,278 frontend tests and TypeScript/Vite; release verification hashes/containers/ingress/logs passed. Public capabilities nowexactly {"partner_login_available":true}; /partner/login302 to production /partner-auth/start; production start302 to DingTalk personalopenid only, fixed callback and secure browser nonce. Missing-nonce callback401 before Provider exchange, enterprise invalid-state callback unchanged, anonymous FAE history/review/chat401, production health200. Nginx and both MetaBot services active. No production model/eval request was sent.
 
 Real external-account first login, repeated identity, two-account isolation and real revocation/replay acceptance remain pending; engineering/public auth smoke is not represented as real-user acceptance. Canonical workspace remains https://fae.orbbec.com.cn/ .
+
+
+## Staged repair review and final engineering check (2026-10-23)
+
+Credential isolation043040d3 and modern callback compatibility0bc0f1e1 passed separate
+task spec/quality gates and an independent final composition review. No Critical or
+Important implementation defect was found. Controller verification on exact code
+`0bc0f1e14d9b3e6d291c84543b7f97188f8ca47d` ran registration config, Provider and disposable
+PostgreSQL integration:120 passed in3.15s, zero warnings/failures/skips. Earlier reported
+runs overlap and must not be summed. Vendor HTTP remains mocked.
+
+This candidate is suitable to retain/push as an isolated work-in-progress branch, not
+to merge into shared master or deploy with the current missing settings. Real external
+login remains failed/unresolved pending an eligible application registration, matching
+protocol and credentials, then real authorization verification. No production code or
+configuration changed in this repair batch; working enterprise login configuration is
+preserved. User console application-type evidence is still outstanding.

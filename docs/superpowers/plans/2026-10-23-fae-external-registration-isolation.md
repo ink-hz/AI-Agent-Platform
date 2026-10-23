@@ -88,9 +88,9 @@ return DingTalkExternalIdentityProvider(
 - Consumes: existing modern OAuth callback mapping with mandatory `authCode`.
 - Produces: optional `code` alias accepted only if equal to the validated `authCode`; no code-only or SNS adapter behavior.
 
-- [ ] RED: add one modern provider test based on its existing successful MockTransport fixture, passing the same valid value under both `authCode` and `code`. Expect normal token/profile flow and one verified subject. The current provider must fail with `partner_auth_invalid` before HTTP.
-- [ ] RED: parameterize the existing real disposable PG HTTP callback/launch test for an optional matching `code`. The alias-present case currently returns401 instead of302. Preserve the existing original test variant.
-- [ ] GREEN: change only the `code` guards, validating `authCode` as before:
+- [x] RED: add one modern provider test based on its existing successful MockTransport fixture, passing the same valid value under both `authCode` and `code`. Expect normal token/profile flow and one verified subject. The current provider must fail with `partner_auth_invalid` before HTTP.
+- [x] RED: parameterize the existing real disposable PG HTTP callback/launch test for an optional matching `code`. The alias-present case currently returns401 instead of302. Preserve the existing original test variant.
+- [x] GREEN: change only the `code` guards, validating `authCode` as before:
 
 ```python
 # Provider _callback_code: after state and authCode are validated.
@@ -108,8 +108,24 @@ The existing `error` guard remains unconditional; duplicate keys and all `_requi
 
 Do not change the requirement for authCode or the existing error handling / state dispatch.
 
-- [ ] Remove equal alias from invalid-provider parametrization; keep/add mismatched alias, code-only, duplicate-code, duplicate-authCode, duplicate-state, malformed authCode, and error cases. In the PG integration test send a conflicting pair before the valid callback, assert401/no provider HTTP, then use the same state successfully to prove invalid input did not consume it. Repeat the successful callback and assert replay401.
-- [ ] Update runbook with the documented equal-alias behavior and matching-contract test evidence. Record this as a distinct confirmed modern callback mismatch, not the cause of the authorization-page error, and not proof of external app eligibility.
-- [ ] Run `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest backend/tests/test_dingtalk_external_provider.py backend/tests/test_external_dingtalk_integration.py backend/tests/test_dingtalk_auth_api.py -q`; these include disposable PG and mocked provider HTTP, not real DingTalk authorization. Commit scoped changes, write report and request task review. Candidate remains on the work-in-progress branch until the external application registration/protocol dependency is resolved.
+- [x] Remove equal alias from invalid-provider parametrization; keep/add mismatched alias, code-only, duplicate-code, duplicate-authCode, duplicate-state, malformed authCode, and error cases. In the PG integration test send a conflicting pair before the valid callback, assert401/no provider HTTP, then use the same state successfully to prove invalid input did not consume it. Repeat the successful callback and assert replay401.
+- [x] Update runbook with the documented equal-alias behavior and matching-contract test evidence. Record this as a distinct confirmed modern callback mismatch, not the cause of the authorization-page error, and not proof of external app eligibility.
+- [x] Run `PYTHONPATH=backend /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest backend/tests/test_dingtalk_external_provider.py backend/tests/test_external_dingtalk_integration.py backend/tests/test_dingtalk_auth_api.py -q`; these include disposable PG and mocked provider HTTP, not real DingTalk authorization. Commit scoped changes, write report and request task review. Candidate remains on the work-in-progress branch until the external application registration/protocol dependency is resolved.
 
-- [ ] Resolve Task1 review Minor portability finding: the unreadable-secret test currently relies on chmod000, which uid0 can still read. For that case only, keep a real private file and monkeypatch `app.local_secrets.os.open` to raise `PermissionError` when opening that exact file; delegate other paths to the original open. Run the15 registration tests once. This changes only test portability, not secret reader behavior.
+- [x] Resolve Task1 review Minor portability finding: the unreadable-secret test currently relies on chmod000, which uid0 can still read. For that case only, keep a real private file and monkeypatch `app.local_secrets.os.open` to raise `PermissionError` when opening that exact file; delegate other paths to the original open. Run the15 registration tests once. This changes only test portability, not secret reader behavior.
+
+
+## Engineering verification and unresolved business dependency
+
+Task1 implementation043040d3 and Task2 implementation0bc0f1e1 passed independent
+spec/quality reviews and final whole-branch review, with no Critical/Important code
+findings. The unreadable-test portability Minor was corrected; inherited Starlette
+cookie deprecations remain separate test debt. Controller verified exact code0bc0f1e1:
+registration/provider/disposablePG integration120 passed in3.15s, zero warnings,
+failures or skips. Other reported runs overlap and are not summed.
+
+These completed checkboxes describe engineering preparation only. External real-user
+login remains failed/unresolved; eligible application registration, its matching
+protocol, and dedicated credentials are missing. The candidate stays on its isolated
+work-in-progress branch, off shared master and production. No production changes or
+new approval prerequisite have been introduced by this repair batch.

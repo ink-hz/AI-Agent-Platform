@@ -106,8 +106,8 @@ Provider 授权边界，属于 channel/identity 注册配置，不涉及 FAE pla
 ### 同次官方契约复核：现代 OAuth 回调的等值别名
 
 官方现代教程步骤六给出 `?code=...&authCode=...`，明确两者一致，可取任一。
-当前 Provider 和 HTTP route 均因存在 `code` 而拒绝请求，包括与 `authCode` 完全
-一致的别名。这是已确认的适配契约错误，不是此次钉钉授权页跨组织错误的直接原因。
+修复前的 Provider 和 HTTP route 均因存在 `code` 而拒绝请求，包括与 `authCode`
+完全一致的别名（本次候选尚未部署）。这是已确认的适配契约错误，不是此次钉钉授权页跨组织错误的直接原因。
 
 现代 Provider 继续要求 `authCode`；允许可选 `code` 仅当它与已验证的 `authCode`
 严格相等。重复键、不一致别名、空/非法值、只有 `code` 或供应方 error 继续拒绝。
