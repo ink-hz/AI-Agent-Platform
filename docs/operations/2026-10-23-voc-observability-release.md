@@ -83,3 +83,9 @@ Local operational logs: `/tmp/platform-voc-publish-31f7de2f-r4.log`,
 `/tmp/platform-voc-production-candidate-tests.log`,
 `/tmp/platform-voc-preflight-role-green.log` and
 `/tmp/platform-voc-release-web-build.log`.
+
+Durable local backup and status evidence:
+`~/Library/Application Support/OrbbecAI-Agent-Platform/cloud-replica/voc-observability-20261023-31f7de2f/`.
+The code/artifact archive is retained at
+`/data/archive/ai-agent-platform/voc-observability/31f7de2f5bc66b1c15050104209f66b029f89477.tar`;
+only this task's staging directory and detached build worktree were removed.
