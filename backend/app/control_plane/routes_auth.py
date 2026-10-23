@@ -31,6 +31,7 @@ from .auth import (
     validate_return_path,
 )
 from .fae_access import FaeWorkbenchAccessUnavailable
+from .fae_browser_handoff import fae_handoff_page, fae_handoff_script
 from .models import AuthContext, IssuedWebSession, Role
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable
 
@@ -282,6 +283,14 @@ def build_auth_router(
             return _home_access_denied()
         # A missing/expired identity still boots the existing login flow.
         return application_shell()
+
+    @router.get("/agents/ai-fae-agent", include_in_schema=False)
+    async def fae_launch_shell():
+        return fae_handoff_page(auth.route_prefix)
+
+    @router.get("/api/v1/auth/fae-launch.js", include_in_schema=False)
+    async def fae_launch_javascript():
+        return fae_handoff_script()
 
     @router.get("/brain", include_in_schema=False)
     @router.get("/account", include_in_schema=False)
