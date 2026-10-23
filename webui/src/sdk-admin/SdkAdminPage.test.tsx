@@ -18,7 +18,7 @@ afterEach(async () => { await act(async () => root.unmount()); box.remove(); vi.
 async function render(section: 'overview' | 'products' | 'delivery' | 'diagnostics' | 'knowledge' = 'knowledge', client = makeClient(), id?: string) { await act(async () => root.render(<SdkAdminPage account={account} section={section} client={client} documentId={id}/>)); return client; }
 function click(text: string) { const element = Array.from(box.querySelectorAll('button')).find(x => x.textContent === text); expect(element).toBeTruthy(); element!.click(); }
 it('does not fetch or expose catalog content without SDK permission', async () => { const client = makeClient(); vi.mocked(client.access).mockResolvedValue({ allowed: false }); await render('overview', client); expect(box.textContent).toContain('无 SDK 阅读权限'); expect(client.catalog).not.toHaveBeenCalled(); expect(box.textContent).not.toContain('865'); });
-it.each([403, 503])('shows status %s without sample content', async (status) => { const client = makeClient(); vi.mocked(client.catalog).mockRejectedValue(new SdkAdminApiError(status)); await render('overview', client); expect(box.querySelector('[role="alert"]')).toBeTruthy(); expect(box.textContent).not.toContain('阅读协议'); expect(box.textContent).not.toContain('865'); });
+it.each([403, 503])('shows reading status %s without sample content', async (status) => { const client = makeClient(); vi.mocked(client.catalog).mockRejectedValue(new SdkAdminApiError(status)); await render('knowledge', client); expect(box.querySelector('[role="alert"]')).toBeTruthy(); expect(box.textContent).not.toContain('阅读协议'); expect(box.textContent).not.toContain('865'); });
 it('searches and groups on the server and resets pagination', async () => {
     const client = await render();
     await act(async () => click('下一页'));
@@ -71,15 +71,17 @@ it('revokes displayed content immediately when the account changes', async () =>
     await act(async () => root.render(<SdkAdminPage account={{ ...account, internal_user_id: 'another-reader' }} section="knowledge" client={client}/>));
     expect(box.textContent).not.toContain('阅读协议');
 });
-it('reads section-specific real documents through secondary views', async () => {
+it('offers problem handling, technical knowledge and the two existing analyses without loading articles', async () => {
     const client = makeClient();
-    vi.mocked(client.documents).mockImplementation(async (query) => { const items = [{ ...detail, id: 'DOC-ANALYSIS-GIT', title: '真实 Git 分析', kind: 'analysis' as const }, { ...detail, id: 'DOC-KB-ACCEPTANCE', title: '真实静态验收', kind: 'acceptance' as const }].filter(x => x.kind === query.kind); return { ...list, items, total: items.length }; });
-    await act(async () => root.render(<SdkAdminPage account={account} section="diagnostics" client={client}/>));
-    expect(box.textContent).toContain('真实静态验收');
-    expect(box.textContent).not.toContain('真实 Git 分析');
-    await act(async () => click('过程诊断'));
-    expect(box.textContent).toContain('真实 Git 分析');
-    expect(box.textContent).not.toContain('真实静态验收');
+    await render('diagnostics', client);
+    expect(box.querySelector('a[href="/sdk/"]')).toBeTruthy();
+    expect(box.querySelector('a[href="/sdk-admin/knowledge"]')).toBeTruthy();
+    expect(Array.from(box.querySelectorAll('a[href*="/knowledge/DOC-"]')).map(link => link.getAttribute('href'))).toEqual([
+        '/sdk-admin/knowledge/DOC-ANALYSIS-STATUS', '/sdk-admin/knowledge/DOC-ANALYSIS-GIT'
+    ]);
+    expect(box.querySelector('.sdk-document-list, .sdk-stage-tabs')).toBeNull();
+    expect(client.documents).not.toHaveBeenCalled();
+    expect(client.document).not.toHaveBeenCalled();
 });
 it('creates fragment targets from headings containing inline code', async () => { await act(async () => root.render(<SdkDocumentReader document={{ ...detail, markdown: '## API `ob_start`\n\n## API `ob_start`' }}/>)); expect(box.querySelector('h2[id="api-ob_start"]')).toBeTruthy(); expect(box.querySelector('h2[id="api-ob_start-1"]')).toBeTruthy(); });
 it('resolves Markdown-normalized Unicode paths through the package link map', async () => { await act(async () => root.render(<SdkDocumentReader document={{ ...detail, markdown: '[下一篇](下一篇.md#章节)', links: { '下一篇.md#章节': { document_id: 'KB-NEXT', fragment: '章节' } } }}/>)); expect(box.querySelector('a')?.getAttribute('href')).toBe('/sdk-admin/knowledge/KB-NEXT#%E7%AB%A0%E8%8A%82'); });
@@ -99,18 +101,43 @@ it('leaves workspace navigation to the platform sidebar without a repeated bread
     expect(box.querySelector('.sdk-sidebar, nav[aria-label="SDK 工作区"]')).toBeNull();
     expect(box.querySelector('.sdk-breadcrumb')).toBeNull();
 });
-it('shows catalog knowledge recommendations in order without duplicate requests or rows', async () => {
+it.each(['overview', 'products', 'delivery', 'diagnostics'] as const)('keeps %s business entries available when the knowledge service is unavailable', async section => {
     const client = makeClient();
-    const featured = ['KB-INDEX-ROOT', 'KB-NAV-004', 'KB-SYS-001', 'KB-NAV-004', 'DOC-KB-ACCEPTANCE'];
-    vi.mocked(client.catalog).mockResolvedValue({ ...catalog, featured_ids: featured });
-    vi.mocked(client.documents).mockImplementation(async query => ({ ...list, items: query.kind === 'acceptance' ? [{ ...detail, id: 'DOC-KB-ACCEPTANCE', title: '真实接收记录', kind: 'acceptance' }] : [], total: query.kind === 'acceptance' ? 1 : 0 }));
-    vi.mocked(client.document).mockImplementation(async id => ({ ...detail, id, title: `推荐 ${id}` }));
-    await render('overview', client);
-    expect(Array.from(box.querySelectorAll('.sdk-document-list a')).map(a => a.getAttribute('href'))).toEqual([
-        '/sdk-admin/knowledge/KB-INDEX-ROOT', '/sdk-admin/knowledge/KB-NAV-004', '/sdk-admin/knowledge/KB-SYS-001', '/sdk-admin/knowledge/DOC-KB-ACCEPTANCE'
-    ]);
-    expect(vi.mocked(client.document).mock.calls.map(([id]) => id)).toEqual(['KB-INDEX-ROOT', 'KB-NAV-004', 'KB-SYS-001']);
-    expect(vi.mocked(client.document).mock.calls.every(([, signal]) => signal instanceof AbortSignal)).toBe(true);
+    vi.mocked(client.catalog).mockRejectedValue(new SdkAdminApiError(503));
+    await render(section, client);
+    expect(client.access).toHaveBeenCalledWith(expect.any(AbortSignal));
+    expect(client.catalog).not.toHaveBeenCalled();
+    expect(client.documents).not.toHaveBeenCalled();
+    expect(client.document).not.toHaveBeenCalled();
+    expect(box.querySelector('.sdk-actions a[href="/sdk/"]')).toBeTruthy();
+    expect(box.querySelector('.sdk-actions a[href="/sdk-admin/knowledge"]')).toBeTruthy();
+    expect(box.querySelector('[role="alert"], .sdk-document-list')).toBeNull();
+    expect(box.textContent).not.toContain('推荐阅读');
+});
+it('requires SDK permission before exposing business actions', async () => {
+    const client = makeClient();
+    vi.mocked(client.access).mockResolvedValue({ allowed: false });
+    await render('delivery', client);
+    expect(box.textContent).toContain('无 SDK 阅读权限');
+    expect(box.querySelector('.sdk-actions')).toBeNull();
+    expect(client.catalog).not.toHaveBeenCalled();
+    expect(client.documents).not.toHaveBeenCalled();
+});
+it('uses native navigation for ZenTao and platform navigation for technical knowledge', async () => {
+    await render('overview');
+    const { navigate } = await import('../router');
+    const zentao = box.querySelector<HTMLAnchorElement>('.sdk-actions a[href="/sdk/"]')!;
+    expect(zentao).not.toBeNull();
+    const nativeEvent = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    // Observe default navigation before suppressing jsdom navigation.
+    let wasPrevented = true;
+    document.addEventListener('click', event => { wasPrevented = event.defaultPrevented; event.preventDefault(); }, { once: true });
+    zentao.dispatchEvent(nativeEvent);
+    expect(wasPrevented).toBe(false);
+    expect(navigate).not.toHaveBeenCalled();
+    const knowledge = box.querySelector<HTMLAnchorElement>('.sdk-actions a[href="/sdk-admin/knowledge"]')!;
+    await act(async () => knowledge.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })));
+    expect(navigate).toHaveBeenCalledWith('/sdk-admin/knowledge');
 });
 it('keeps explicit reading starts on empty results and article pages, and locates root and metadata groups', async () => {
     const client = makeClient();
@@ -178,9 +205,10 @@ it('keeps raw HTML disabled for scripts, event attributes, unsafe IDs and nonemp
 });
 it('offers only groups belonging to the selected kind and clears group when the kind changes', async () => {
     const client = makeClient();
-    const kinds = [['process', '流程与规范'], ['analysis', '分析成果'], ['design', '设计方案'], ['acceptance', '接收记录'], ['execution', '执行记录']] as const;
+    const kinds = [['analysis', '分析成果']] as const;
     vi.mocked(client.catalog).mockResolvedValue({ ...catalog, groups: [...catalog.groups, { id: 'root', title: '根目录', count: 1 }, { id: '_meta', title: '元数据', count: 1 }, ...kinds.map(([id, title]) => ({ id, title, count: 1 }))] });
     await render('knowledge', client);
+    expect(Array.from(box.querySelectorAll('.sdk-tabs button')).map(button => button.textContent)).toEqual(['代码知识', '分析成果']);
     const select = box.querySelector<HTMLSelectElement>('select[aria-label="知识分组"]')!;
     expect(Array.from(select.options).map(option => option.value)).toEqual(['', '01-system', 'root', '_meta']);
     await act(async () => { select.value = 'root'; select.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -197,20 +225,17 @@ async function toggleDetails(open: boolean) {
     const details = box.querySelector<HTMLDetailsElement>('.sdk-provenance')!;
     await act(async () => { details.open = open; details.dispatchEvent(new Event('toggle')); });
 }
-it.each(['overview', 'products', 'delivery', 'diagnostics', 'knowledge'] as const)('keeps %s focused on readable material and available actions', async section => {
+it.each(['overview', 'products', 'delivery', 'diagnostics', 'knowledge'] as const)('keeps %s free of platform development information', async section => {
     const client = makeClient();
     vi.mocked(client.catalog).mockResolvedValue({ ...catalog, release_id: 'sdk-admin-private-release', baseline_id: 'PRIVATE-BASELINE', sources: [{ id: 'private-source', label: '内部接入验收', state: 'not_registered', description: '维护接入说明' }] });
-    const ids = ['DOC-OBJECT-STATES', 'DOC-PLATFORM-PROCESS', 'DOC-RELATION-RULES', 'DOC-KB-ACCEPTANCE'];
-    vi.mocked(client.documents).mockResolvedValue({ ...list, items: ids.map(id => ({ ...detail, id, title: `真实资料 ${id.slice(4)}`, group: 'raw-internal-group', kind: 'process' as const, content_state: 'design_proposal' })) });
     await render(section, client);
     expect(box.querySelector('a[href="/sdk/"]')?.textContent).toContain('禅道');
-    expect(box.querySelector('.sdk-document-list a')).toBeTruthy();
+    if (section === 'knowledge') expect(box.querySelector('.sdk-document-list a')).toBeTruthy();
+    else expect(box.querySelector('.sdk-document-list')).toBeNull();
     expect(box.querySelector('.sdk-scope-line, .sdk-doc-meta, .sdk-ai-note, .sdk-focus-facts, .sdk-sources')).toBeNull();
     for (const text of ['sdk-admin-private-release', 'PRIVATE-BASELINE', 'raw-internal-group', 'SDK 工具尚未接入', '内部接入验收', '接收验证', '资料快照', 'NEXT STEPS', 'DELIVERY WORKFLOW']) expect(box.textContent).not.toContain(text);
-    expect(box.querySelector('.sdk-document-list')?.textContent).toContain('流程与规范 · 草稿');
-    expect(box.querySelector('.sdk-document-list')?.textContent).not.toMatch(/不代表|结论限于/);
     expect(box.querySelector('.sdk-document-list code')).toBeNull();
-    expect(box.querySelector('.sdk-document-list')?.textContent).toContain('流程与规范');
+    expect(box.textContent).not.toMatch(/推荐阅读|平台设计|接收记录|执行记录|流程与规范/);
     expect(box.querySelector('.sdk-breadcrumb')).toBeNull();
     expect(box.textContent?.split('需求与进度在禅道查看')).toHaveLength(2);
 });
@@ -265,7 +290,7 @@ it('keeps the generic not_run meaning only in requested details', async () => {
 });
 it.each([503, 500])('offers an actionable reading error for %s without maintenance details', async status => {
     const client = makeClient(); vi.mocked(client.catalog).mockRejectedValue(new SdkAdminApiError(status));
-    await render('overview', client);
+    await render('knowledge', client);
     expect(box.querySelector('[role="alert"]')?.textContent).toContain('资料暂时不可用，请稍后重试');
     expect(box.querySelector('[role="alert"]')?.textContent).not.toMatch(/发布包|完整性|发布负责人|校验/);
 });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { BookOpen, ChevronRight, Search, ShieldCheck } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { DocumentLink, portalClick, SdkDocumentReader } from './SdkDocumentReader';
-import { isDocumentId, sdkAdminClient, SdkAdminApiError, type Catalog, type DocumentDetail, type DocumentKind, type DocumentList, type DocumentSummary, type SdkAdminClient } from './sdkAdminApi';
+import { isDocumentId, sdkAdminClient, SdkAdminApiError, type Catalog, type DocumentDetail, type DocumentList, type DocumentSummary, type SdkAdminClient } from './sdkAdminApi';
 import { sdkAdminSection } from './sdkAdminNavigation';
 import { documentListDescription, kindNames } from './sdkDocumentPresentation';
 import './sdkAdmin.css';
@@ -25,7 +25,9 @@ function Problem({ error }: {
 }) { const status = error instanceof SdkAdminApiError ? error.status : 0; return <div className="sdk-state sdk-error" role="alert"><ShieldCheck size={26}/><h2>{status === 401 ? '请先登录' : status === 403 ? '无 SDK 阅读权限' : status === 404 ? '未找到此文档' : '暂时无法读取资料'}</h2><p>{status === 403 ? '当前企业身份未获得 SDK 内容阅读授权，请联系 SDK 权限负责人。' : status === 401 ? '登录后重新打开资料。' : status === 404 ? '请返回目录查找其他资料。' : '资料暂时不可用，请稍后重试。'}</p></div>; }
 function Loading() { return <div className="sdk-state" role="status"><span className="sdk-loader"/><p>正在读取授权内容…</p></div>; }
 export function SdkAdminPage({ section, documentId, account, client = sdkAdminClient }: SdkAdminPageProps) {
+    const needsCatalog = section === 'knowledge' || documentId !== undefined;
     const [state, setState] = useState<{
+        allowed?: boolean;
         catalog?: Catalog;
         error?: unknown;
         denied?: boolean;
@@ -38,29 +40,29 @@ export function SdkAdminPage({ section, documentId, account, client = sdkAdminCl
             setState({ denied: true });
             return;
         }
-        const catalog = await client.catalog(controller.signal);
+        const catalog = needsCatalog ? await client.catalog(controller.signal) : undefined;
         if (active)
-            setState({ catalog });
+            setState({ allowed: true, catalog });
     }
     catch (error) {
         if (active)
             setState({ error });
-    } })(); return () => { active = false; controller.abort(); }; }, [client, account.internal_user_id]);
+    } })(); return () => { active = false; controller.abort(); }; }, [client, account.internal_user_id, needsCatalog]);
     const meta = sdkAdminSection(section);
     return <div className="sdk-admin">
  <div className="sdk-main"><header className="sdk-page-header"><div><h1>{documentId ? '知识与成果阅读' : meta.title}</h1><p>{meta.subtitle}</p></div><div><a className="sdk-primary-link" href={platformPath('/sdk/')}>进入禅道 <ChevronRight size={15}/></a><p>需求与进度在禅道查看</p></div></header>
- {state.denied ? <Problem error={new SdkAdminApiError(403)}/> : state.error ? <Problem error={state.error}/> : !state.catalog ? <Loading /> : <AuthorizedBody key={`${section}:${account.internal_user_id}`} section={section} documentId={documentId} catalog={state.catalog} client={client}/>}
+ {state.denied ? <Problem error={new SdkAdminApiError(403)}/> : state.error ? <Problem error={state.error}/> : !state.allowed || (needsCatalog && !state.catalog) ? <Loading /> : <AuthorizedBody key={`${section}:${account.internal_user_id}`} section={section} documentId={documentId} catalog={state.catalog} client={client}/>}
  </div></div>;
 }
 function AuthorizedBody({ section, documentId, catalog, client }: {
     section: SdkAdminSection;
     documentId?: string;
-    catalog: Catalog;
+    catalog?: Catalog;
     client: SdkAdminClient;
 }) {
     if (documentId !== undefined)
         return <><KnowledgeStart /><Article key={documentId} id={documentId} client={client}/></>;
-    return section === 'knowledge' ? <Knowledge catalog={catalog} client={client}/> : <Management section={section} catalog={catalog} client={client}/>;
+    return section === 'knowledge' ? catalog ? <Knowledge catalog={catalog} client={client}/> : <Loading /> : <Workspace section={section}/>;
 }
 function KnowledgeStart() {
     return <nav className="sdk-reading-start" aria-label="知识阅读起点"><strong>按既有层级阅读</strong><DocumentLink id="KB-INDEX-ROOT">分层目录（L0–L5）</DocumentLink><span>→</span><DocumentLink id="KB-NAV-004">阅读协议</DocumentLink><span>→ 系统架构 → 运行对象 → 对应流程</span></nav>;
@@ -95,7 +97,7 @@ function Knowledge({ catalog, client }: {
     client: SdkAdminClient;
 }) {
     const [query, setQuery] = useState('');
-    const [kind, setKind] = useState<DocumentKind>('knowledge');
+    const [kind, setKind] = useState<'knowledge' | 'analysis'>('knowledge');
     const [group, setGroup] = useState('');
     const [offset, setOffset] = useState(0);
     const [data, setData] = useState<DocumentList>();
@@ -105,53 +107,43 @@ function Knowledge({ catalog, client }: {
     useEffect(() => { let active = true; const controller = new AbortController(); setData(undefined); setError(undefined); client.documents({ q: query, kind, group: group || undefined, offset, limit }, controller.signal).then(value => { if (active)
         setData(value); }, err => { if (active)
         setError(err); }); return () => { active = false; controller.abort(); }; }, [query, kind, group, offset, client]);
-    return <><KnowledgeStart /><div className="sdk-tabs" aria-label="成果类型">{(Object.keys(kindNames) as DocumentKind[]).map(value => <button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setGroup(''); setOffset(0); }}>{kindNames[value]}</button>)}</div>
+    return <><KnowledgeStart /><div className="sdk-tabs" aria-label="成果类型">{(['knowledge', 'analysis'] as const).map(value => <button key={value} aria-pressed={kind === value} onClick={() => { setKind(value); setGroup(''); setOffset(0); }}>{kindNames[value]}</button>)}</div>
  <section className="sdk-panel"><form className="sdk-search" onSubmit={e => { e.preventDefault(); setQuery(input.current?.value.trim() ?? ''); setOffset(0); }}><label className="sdk-search-field"><Search size={18}/><span className="sdk-visually-hidden">搜索资料</span><input ref={input} type="search" name="q" maxLength={200} placeholder="搜索资料" defaultValue={query}/></label><select aria-label="知识分组" value={group} onChange={e => { setGroup(e.target.value); setOffset(0); }}><option value="">全部分组</option>{catalog.groups.filter(g => kind === 'knowledge' ? /^\d\d-/.test(g.id) || g.id === 'root' || g.id === '_meta' : g.id === kind).map(g => <option key={g.id} value={g.id}>{g.title} ({g.count})</option>)}</select><button type="submit" className="sdk-search-submit">搜索</button></form><div className="sdk-results-heading"><h3>{kindNames[kind]}</h3><span>{data ? `${data.total} 项${query ? ` · “${query}”` : ''}` : '读取目录中'}</span></div>{error ? <Problem error={error}/> : data ? <DocumentRows items={data.items} empty="没有匹配的内容，请调整关键词或分组。"/> : <Loading />}<div className="sdk-pagination"><span>{data && data.total ? `${offset + 1}–${Math.min(offset + data.items.length, data.total)} / ${data.total}` : '—'}</span><button disabled={!data || offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>上一页</button><button disabled={!data || offset + limit >= data.total} onClick={() => setOffset(offset + limit)}>下一页</button></div></section></>;
 }
-const productViews = [{ title: '产品 / 项目', description: '查看产品、项目与需求的关系说明。', ids: ['DOC-OBJECT-STATES', 'DOC-RELATION-RULES'] }, { title: '版本计划与范围', description: '查看版本范围与执行记录。', ids: ['DOC-PLATFORM-PROCESS', 'DOC-EXECUTION-LEDGER'] }, { title: '需求基线与来源核定', description: '查看需求来源、关联规则与阶段分析。', ids: ['DOC-RELATION-RULES', 'DOC-OBJECT-STATES', 'DOC-ANALYSIS-STATUS'] }];
-const deliveryViews = [{ title: '开发与集成', description: '查看开发流程、变更关系与源码分析。', ids: ['DOC-PLATFORM-PROCESS', 'DOC-RELATION-RULES', 'DOC-ANALYSIS-GIT'] }, { title: '构建与制品', description: '查看构建条件、制品要求与发布记录。', ids: ['DOC-OBJECT-STATES', 'DOC-PLATFORM-PROCESS', 'DOC-SDK-R0-RELEASE'] }, { title: '验证与质量', description: '查看验证流程与静态资料接收记录。', ids: ['DOC-KB-ACCEPTANCE', 'DOC-PLATFORM-PROCESS'] }, { title: '准出与交付', description: '查看准出要求与交付记录。', ids: ['DOC-SDK-R0-RELEASE', 'DOC-OBJECT-STATES', 'DOC-EXECUTION-LEDGER'] }, { title: '公开发布与反馈', description: '查看公开发布关联与反馈处理资料。', ids: ['DOC-ANALYSIS-GIT', 'DOC-RELATION-RULES', 'DOC-PLATFORM-PROCESS'] }];
-const diagnosticViews = [{ title: '技术诊断', description: '查阅静态代码知识与资料接收范围。', ids: ['DOC-KB-ACCEPTANCE'] }, { title: '过程诊断', description: '查看阶段现状与 Git 分析。', ids: ['DOC-ANALYSIS-STATUS', 'DOC-ANALYSIS-GIT'] }, { title: '改进行动', description: '查看改进相关的执行记录与设计草案。', ids: ['DOC-EXECUTION-LEDGER', 'DOC-PORTAL-DESIGN'] }];
-function Management({ section, catalog, client }: {
-    section: Exclude<SdkAdminSection, 'knowledge'>;
-    catalog: Catalog;
-    client: SdkAdminClient;
-}) {
-    const [items, setItems] = useState<DocumentSummary[]>();
-    const [error, setError] = useState<unknown>();
-    const [view, setView] = useState(0);
-    useEffect(() => { const controller = new AbortController(); let active = true; (async () => { try {
-        const lists = await Promise.all((['process', 'analysis', 'design', 'acceptance', 'execution'] as DocumentKind[]).map(kind => client.documents({ kind, offset: 0, limit: 100 }, controller.signal)));
-        const documents = new Map(lists.flatMap(l => l.items).map(doc => [doc.id, doc]));
-        if (section === 'overview') {
-            const missing = [...new Set(catalog.featured_ids)].filter(id => !documents.has(id));
-            // Fetch only the named recommendations, at most four details concurrently.
-            for (let start = 0; start < missing.length; start += 4) {
-                if (!active) return;
-                const details = await Promise.all(missing.slice(start, start + 4).map(id => client.document(id, controller.signal)));
-                details.forEach(doc => documents.set(doc.id, doc));
-            }
-        }
-        if (active)
-            setItems([...documents.values()]);
-    }
-    catch (err) {
-        if (active)
-            setError(err);
-    } })(); return () => { active = false; controller.abort(); }; }, [client, catalog, section]);
-    if (error)
-        return <Problem error={error}/>;
-    if (!items)
-        return <Loading />;
-    if (section === 'overview')
-        return <Overview catalog={catalog} items={items}/>;
-    const views = section === 'products' ? productViews : section === 'delivery' ? deliveryViews : diagnosticViews;
-    const selected = views[view];
-    return <><div className={`sdk-tabs${section === 'delivery' ? ' sdk-stage-tabs' : ''}`} aria-label="二级视图">{views.map((v, i) => <button key={v.title} aria-pressed={view === i} onClick={() => setView(i)}>{section === 'delivery' && <span>{String(i + 1).padStart(2, '0')}</span>}{v.title}</button>)}</div><section className="sdk-panel"><div className="sdk-panel-heading"><h2>{selected.title}</h2><p>{selected.description}</p></div><DocumentRows items={selected.ids.flatMap(id => items.filter(doc => doc.id === id))}/></section>{section === 'diagnostics' && <PortalLink className="sdk-back sdk-spaced" path="/sdk-admin/knowledge">查阅代码知识 →</PortalLink>}</>;
-}
-function Overview({ catalog, items }: {
-    catalog: Catalog;
-    items: DocumentSummary[];
-}) {
-    const featured = [...new Set(catalog.featured_ids)].flatMap(id => items.filter(item => item.id === id));
-    return <><section className="sdk-panel"><div className="sdk-panel-heading"><h2>工作入口</h2></div><ol className="sdk-actions"><li><span>01</span><div><PortalLink path="/sdk-admin/products">产品与版本</PortalLink><p>查阅产品、版本与需求范围资料。</p></div></li><li><span>02</span><div><PortalLink path="/sdk-admin/delivery">研发与交付</PortalLink><p>按开发、构建、验证和交付阶段查阅资料。</p></div></li><li><span>03</span><div><PortalLink path="/sdk-admin/diagnostics">诊断与改进</PortalLink><p>查阅技术知识与阶段分析。</p></div></li></ol></section><section className="sdk-panel sdk-spaced"><div className="sdk-panel-heading"><h2>推荐阅读</h2></div><DocumentRows items={featured.length ? featured : items.slice(0, 5)}/><PortalLink className="sdk-panel-footer" path="/sdk-admin/knowledge">浏览全部知识与成果 →</PortalLink></section></>;
+const workspaces = {
+    overview: {
+        title: '常用工作',
+        entries: [
+            { title: '禅道工作区', path: '/sdk/', description: '处理需求、任务与问题。' },
+            { title: 'SDK 技术知识', path: '/sdk-admin/knowledge', description: '查找 API、设备适配与排障方法。' },
+            { title: '诊断与改进', path: '/sdk-admin/diagnostics', description: '定位技术问题，查看已有分析结论。' },
+        ],
+    },
+    products: {
+        title: '需求与范围',
+        entries: [
+            { title: '禅道产品与需求', path: '/sdk/', description: '整理需求范围、负责人和评审事项。' },
+            { title: 'SDK 技术知识', path: '/sdk-admin/knowledge', description: '确认接口能力、设备支持与实现约束。' },
+        ],
+    },
+    delivery: {
+        title: '研发协作',
+        entries: [
+            { title: '禅道研发工作区', path: '/sdk/', description: '跟进需求与任务，处理研发协作事项。' },
+            { title: 'SDK 技术知识', path: '/sdk-admin/knowledge', description: '核对接口契约、集成方式与排障方法。' },
+        ],
+    },
+    diagnostics: {
+        title: '问题处理与分析',
+        entries: [
+            { title: '禅道问题处理', path: '/sdk/', description: '登记问题、分派责任并跟进处理。' },
+            { title: 'SDK 排障知识', path: '/sdk-admin/knowledge', description: '按故障症状、设备和平台定位技术知识。' },
+            { title: 'SDK阶段性现状盘点（2026-10-22）', path: '/sdk-admin/knowledge/DOC-ANALYSIS-STATUS', description: '需求与内部实现、验证和交付的阶段性分析。' },
+            { title: 'Git变更覆盖与需求节奏复核（2026-10-22）', path: '/sdk-admin/knowledge/DOC-ANALYSIS-GIT', description: '源码变更覆盖、需求活动轨迹与待核实问题。' },
+        ],
+    },
+};
+function Workspace({ section }: { section: Exclude<SdkAdminSection, 'knowledge'> }) {
+    const workspace = workspaces[section];
+    return <section className="sdk-panel"><div className="sdk-panel-heading"><h2>{workspace.title}</h2></div><ol className="sdk-actions">{workspace.entries.map((entry, index) => <li key={entry.path}><span>{String(index + 1).padStart(2, '0')}</span><div>{entry.path === '/sdk/' ? <a href={platformPath(entry.path)}>{entry.title}</a> : <PortalLink path={entry.path}>{entry.title}</PortalLink>}<p>{entry.description}</p></div></li>)}</ol></section>;
 }
