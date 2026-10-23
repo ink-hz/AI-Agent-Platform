@@ -29,6 +29,8 @@ _PAGE_FIELDS = ('page_id', 'title', 'path', 'body_sha256', 'semantic_sha256',
                 'source_files_reviewed', 'runtime_validation')
 _MAX_CLAIMS = 8
 _MAX_EVIDENCE = 32
+_MAX_QUERY_LENGTH = 200
+_MAX_QUERY_TERMS = 64
 
 
 def _sha(raw: bytes) -> str:
@@ -255,13 +257,17 @@ class KnowledgeCorpus:
         Generic conditions remain explicit; they do not become device support
         assertions. Latin identifiers are mandatory literal tokens, while CJK
         pairs allow partial recall weighted by frequency, headings and coverage.
-        Limits bound pages and per-page claim/evidence fan-out.
+        Queries exceeding 200 characters or 64 distinct Latin/CJK terms are
+        rejected before corpus scanning; no query terms are silently discarded.
+        Limits also bound pages and per-page claim/evidence fan-out.
         """
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError('limit must be between 1 and 100')
-        if not isinstance(q, str) or len(q) > 2000:
-            raise ValueError('Invalid knowledge query')
+        if not isinstance(q, str) or len(q) > _MAX_QUERY_LENGTH:
+            raise ValueError('knowledge_query_too_complex')
         latin_terms, cjk_terms, phrases = _query_terms(q)
+        if len(latin_terms) + len(cjk_terms) > _MAX_QUERY_TERMS:
+            raise ValueError('knowledge_query_too_complex')
         documents = []
         for page in self._pages.values():
             conditions = page['conditions']

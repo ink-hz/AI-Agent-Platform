@@ -345,3 +345,26 @@ def test_cpp_query_preserves_literal_language_identifier(api, package):
     bundle['pages'][1]['claims'][0]['text'] = 'C wrapper lifecycle'
     corpus = api.KnowledgeCorpus(bundle)
     assert [i['page_id'] for i in corpus.search('C++')['items']] == ['KB-TEST-0']
+
+
+@pytest.mark.parametrize('query', [
+    '停' * 2001,
+    '停' * 201,
+    ''.join(chr(0x4E00 + i) for i in range(200)),
+    ''.join(chr(0x4E00 + i) for i in range(66)),
+    ' '.join(f'x{i}' for i in range(33)) + ''.join(chr(0x4E00 + i) for i in range(33)),
+], ids=['length_2001', 'length_201', 'length_200_unique_cjk', '65_unique_cjk_terms', '65_mixed_terms'])
+def test_query_length_and_term_complexity_rejected_explicitly(api, package, query):
+    corpus = api.KnowledgeCorpus(build(api, package))
+    with pytest.raises(ValueError, match='^knowledge_query_too_complex$'):
+        corpus.search(query)
+
+
+def test_queries_at_length_and_term_boundaries_are_not_silently_clipped(api, package):
+    corpus = api.KnowledgeCorpus(build(api, package))
+    assert corpus.search('停' * 200)['total'] == 0
+    # 32 distinct Latin identifiers plus 32 distinct CJK pairs, all retained.
+    query = ' '.join(f'x{i}' for i in range(32)) + ''.join(chr(0x4E00 + i) for i in range(33))
+    assert len(query) <= 200
+    assert corpus.search(query)['total'] == 0
+    assert corpus.search('pipeline::start')['total'] == 3
