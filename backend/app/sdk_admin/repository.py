@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 DOCUMENT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _KINDS = {"knowledge", "process", "analysis", "design", "acceptance", "execution"}
+_PRODUCT_KINDS = frozenset({"knowledge", "analysis"})
 _SUMMARY_FIELDS = ("id", "title", "kind", "group", "level", "baseline_id", "content_state",
                    "runtime_validation", "source_path", "source_sha256", "review_status")
 _GROUP_TITLES = {
@@ -165,16 +166,23 @@ class SdkAdminRepository:
             _require(isinstance(href, str) and isinstance(link, dict) and isinstance(link.get("document_id"), str)
                      and bool(DOCUMENT_ID.fullmatch(link["document_id"])) and isinstance(link.get("fragment"), str))
 
-    def catalog(self) -> dict:
+    def _published(self):
+        # Validate the whole immutable release before selecting product content.
+        # Platform plans, development logs and acceptance records remain archived.
         manifest, digest, documents, _ = self._load()
+        return manifest, digest, {key: row for key, row in documents.items() if row["kind"] in _PRODUCT_KINDS}
+
+    def catalog(self) -> dict:
+        manifest, digest, documents = self._published()
         groups = {}
         for row in documents.values():
             groups[row["group"]] = groups.get(row["group"], 0) + 1
         navigation = sum(row["kind"] == "knowledge" and row["content_state"] == "navigation" for row in documents.values())
         knowledge = sum(row["kind"] == "knowledge" for row in documents.values())
         sources = [{key: row[key] for key in ("id", "label", "state", "description", "href") if key in row}
-                   for row in manifest["sources"]]
+                   for row in manifest["sources"] if row["id"] in _PRODUCT_KINDS]
         return copy.deepcopy({key: manifest[key] for key in ("release_id", "baseline_id", "generated_at", "featured_ids")} | {
+            "featured_ids": [key for key in manifest["featured_ids"] if key in documents],
             "manifest_sha256": digest, "counts": {"knowledge_pages": knowledge - navigation,
             "knowledge_navigation": navigation, "documents": len(documents)},
             "groups": [{"id": group, "title": _GROUP_TITLES.get(group, f"知识专题（{group}）"), "count": groups[group]} for group in sorted(groups)],
@@ -182,7 +190,8 @@ class SdkAdminRepository:
 
     def documents(self, *, q: str = "", kind: str | None = None, group: str | None = None,
                   offset: int = 0, limit: int = 30) -> dict:
-        manifest, _, documents, searchable = self._load()
+        manifest, _, documents = self._published()
+        _, _, _, searchable = self._load()
         query = _normalized(q.strip())
         matched = [row for document_id, row in sorted(documents.items())
                    if (not kind or row["kind"] == kind) and (not group or row["group"] == group)
@@ -192,5 +201,10 @@ class SdkAdminRepository:
             "total": len(matched), "offset": offset, "limit": limit})
 
     def document(self, document_id: str) -> dict | None:
-        _, _, documents, _ = self._load()
-        return copy.deepcopy(documents.get(document_id))
+        _, _, documents = self._published()
+        row = documents.get(document_id)
+        if row is None:
+            return None
+        return copy.deepcopy({**row, "links": {
+            href: link for href, link in row["links"].items() if link["document_id"] in documents
+        }})
