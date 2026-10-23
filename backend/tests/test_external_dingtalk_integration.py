@@ -129,7 +129,8 @@ def test_login_never_restores_revoked_access(service, control_database, revocati
 
 
 @pytest.mark.postgres
-def test_http_external_authcode_nonce_and_no_platform_session(service):
+@pytest.mark.parametrize('code_alias', [False, True], ids=['authcode-only', 'equal-code-alias'])
+def test_http_external_authcode_nonce_and_no_platform_session(service, code_alias):
     calls = []
     def transport(request):
         calls.append(request.url.path)
@@ -168,8 +169,13 @@ def test_http_external_authcode_nonce_and_no_platform_session(service):
         assert calls == []
         duplicate = client.get(callback + '?state=' + state + '&authCode=x&authCode=y', follow_redirects=False)
         assert duplicate.status_code == 401 and not calls
+        conflict = client.get(callback, params={'state': state, 'authCode': 'code', 'code': 'conflict'}, follow_redirects=False)
+        assert conflict.status_code == 401 and not calls
         client.cookies.set(auth.cookie_name, 'valid-cookie')
-        completed = client.get(callback, params={'state': state, 'authCode': 'code'}, follow_redirects=False)
+        params = {'state': state, 'authCode': 'code'}
+        if code_alias:
+            params['code'] = params['authCode']
+        completed = client.get(callback, params=params, follow_redirects=False)
         assert completed.status_code == 302, completed.text
         assert completed.headers['location'].startswith('https://fae.orbbec.com.cn/')
         assert len(launches) == 1
@@ -181,7 +187,7 @@ def test_http_external_authcode_nonce_and_no_platform_session(service):
         assert auth.provider_calls == 0
         assert auth.cookie_name + '=' not in completed.headers.get('set-cookie', '')
         assert 'union-' not in completed.text
-        assert client.get(callback, params={'state': state, 'authCode': 'code'}, follow_redirects=False).status_code == 401
+        assert client.get(callback, params=params, follow_redirects=False).status_code == 401
         assert len(calls) == 2
     asyncio.run(provider.aclose())
 

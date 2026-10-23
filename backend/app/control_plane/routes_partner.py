@@ -630,7 +630,7 @@ async def finish_external_dingtalk_authentication(request: Request):
         if key in callback:
             raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
         callback[key] = value
-    if "code" in callback or (not callback.get("authCode") and not callback.get("error")):
+    if ("code" in callback and callback["code"] != callback.get("authCode")) or (not callback.get("authCode") and not callback.get("error")):
         raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
     limiter = getattr(getattr(request.app.state, "identity_auth", None), "rate_limiter", None)
     try:

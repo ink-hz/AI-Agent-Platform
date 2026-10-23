@@ -115,6 +115,34 @@ async def test_callback_uses_exactly_token_and_profile_without_enterprise_identi
         await instance.aclose()
 
 
+@pytest.mark.asyncio
+async def test_callback_accepts_documented_equal_code_alias():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return success(request)
+
+    instance = provider(handler=handler)
+    try:
+        verified = await instance.finish_auth({**CALLBACK, "code": CALLBACK["authCode"]})
+        assert verified == VerifiedProviderSubject(
+            provider_kind="dingtalk_external",
+            provider_subject=SUBJECT,
+            verified_at=NOW,
+            display_name=NICK,
+        )
+        assert [(r.method, str(r.url)) for r in requests] == [
+            ("POST", TOKEN_URL),
+            ("GET", PROFILE_URL),
+        ]
+        assert json.loads(requests[0].content)["code"] == CALLBACK["authCode"]
+        assert requests[1].headers["x-acs-dingtalk-access-token"] == TOKEN
+        assert await instance.check_subject(SUBJECT) == "active"
+    finally:
+        await instance.aclose()
+
+
 @pytest.mark.parametrize(
     "redirect",
     [
@@ -156,11 +184,12 @@ def test_invalid_configuration_is_redacted(field, value):
         {"authCode": "ok", "state": ""},
         {"authCode": "ok", "state": ["bad"]},
         {"authCode": "ok", "state": "ok", "code": "other"},
-        {"authCode": "ok", "state": "ok", "code": "ok"},
+        {"authCode": " padded ", "state": "ok", "code": " padded "},
         {"code": "ok", "state": "ok"},
         {"authCode": "ok", "state": "ok", "error": "provider raw error"},
         QueryParams("authCode=one&authCode=two&state=ok"),
         QueryParams("authCode=one&state=ok&state=other"),
+        QueryParams("authCode=one&state=ok&code=one&code=one"),
     ],
 )
 async def test_invalid_or_conflicting_callback_fails_before_http(callback):

@@ -118,7 +118,16 @@ def test_external_factory_uses_private_secret_reader(external_config, tmp_path, 
     if invalid == "missing":
         secret.unlink()
     elif invalid == "unreadable":
-        secret.chmod(0o000)
+        import app.local_secrets as local_secrets
+
+        original_open = local_secrets.os.open
+
+        def deny_secret_open(path, *args, **kwargs):
+            if path == secret:
+                raise PermissionError("test secret is unreadable")
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(local_secrets.os, "open", deny_secret_open)
     elif invalid == "group_readable":
         secret.chmod(0o640)
     elif invalid == "symlink":

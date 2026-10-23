@@ -23,8 +23,9 @@ alone does not prove external eligibility. The available registration and its ma
 protocol remain unconfirmed; historical SNS AppId/AppSecret credentials must not be
 assumed compatible with this modern OAuth adapter. There is no protocol fallback.
 
-This candidate separates credential configuration only. It must remain on its isolated
-branch, without integration into shared `master` or deployment, until eligible external
+This candidate separates credential configuration and accepts the documented matching
+callback alias described below. It must remain on its isolated branch, without
+integration into shared `master` or deployment, until eligible external
 credentials and their matching protocol are confirmed. Current production has the
 external provider enabled without these new settings; deploying this fail-startup
 candidate would stop the shared API and disrupt internal login. The owner's direct
@@ -93,6 +94,26 @@ digests are stored. The existing shared callback
 branch. It requires `authCode`; duplicate parameters or `code` ambiguity fail closed.
 A nonce mismatch cannot exchange the provider code. Callback failures never enter the
 enterprise login path.
+
+The official modern web-login tutorial linked above returns both `authCode` and `code`
+with the same value. The external callback accepts an optional `code` only when it is
+strictly equal to the mandatory validated `authCode`. Code-only input, conflicting
+aliases, duplicate parameters, malformed values and provider errors remain rejected.
+This is the existing modern OAuth contract, with no SNS adapter or protocol fallback.
+
+The previous unconditional rejection of `code` was a distinct confirmed callback
+contract mismatch. It occurs after authorization and does not explain the real
+“自建应用不支持跨组织授权” error on DingTalk's authorization page. Repairing this
+callback mismatch does not establish external application eligibility or a successful
+real external login.
+
+Local matching-contract regression: provider, disposable PostgreSQL integration and
+enterprise authentication API suites passed 308 tests, including both callback variants
+with and without the alias; the 15 registration/configuration tests also passed.
+The full HTTP flow first rejects a conflicting pair with 401 and no provider HTTP,
+then uses the same state successfully, exchanges the FAE launch code without issuing a
+Platform session, and rejects callback replay with 401. DingTalk HTTP is mocked in these
+tests; no real authorization, production call or deployment was performed.
 
 Successful OAuth creates or reuses a stable partner subject inside one transaction,
 including encrypted unionId and nickname, FAE grant and `fae_external_authenticated`

@@ -151,10 +151,13 @@ class DingTalkExternalIdentityProvider:
             getlist = getattr(callback, "getlist", None)
             if callable(getlist) and any(len(getlist(key)) != 1 for key in callback):
                 raise ValueError
-            if "code" in callback or "error" in callback:
+            if "error" in callback:
                 raise ValueError
             _required_ascii(callback.get("state"), maximum=1024)
-            return _required_ascii(callback.get("authCode"), maximum=4096)
+            code = _required_ascii(callback.get("authCode"), maximum=4096)
+            if "code" in callback and callback["code"] != code:
+                raise ValueError
+            return code
         except Exception:  # noqa: BLE001 - callback identity material must not escape
             raise PartnerIdentityError("partner_auth_invalid", 401) from None
 
