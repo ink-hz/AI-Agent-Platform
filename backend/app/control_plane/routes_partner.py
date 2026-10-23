@@ -13,7 +13,11 @@ from .agent_launch import AgentLaunchError
 from .models import AuthContext, Role
 from .partner_models import PartnerIdentityError, PartnerStatus
 from .partner_provider import (
-    EXTERNAL_DINGTALK_NONCE_COOKIE, PartnerAuthenticationBroker, validate_partner_callback,
+    PartnerAuthenticationBroker, validate_partner_callback,
+)
+from .external_browser_state import (
+    AUTH_HEADERS, COOKIE_TTL_SECONDS, PENDING_LIMIT, browser_nonce,
+    nonce_cookie_name, pending_cookie_count, rejected_response,
 )
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limit_response
 from .partner_service import PartnerService
@@ -523,6 +527,8 @@ def build_partner_auth_router(
             )
         try:
             if external:
+                if pending_cookie_count(request) >= PENDING_LIMIT:
+                    return rejected_response(request, code="partner_auth_pending_limit", status_code=429, reason="pending_limit")
                 limiter = getattr(getattr(request.app.state, "identity_auth", None), "rate_limiter", None)
                 if limiter is not None:
                     limiter.check_login_start(request.state.edge_source.ip)
@@ -533,10 +539,13 @@ def build_partner_auth_router(
             raise HTTPException(503, "rate limit unavailable", headers=_NO_STORE) from None
         except PartnerIdentityError as error:
             raise _partner_auth_error(error) from None
-        response = RedirectResponse(started.authorization_url, status_code=302, headers=_NO_STORE)
-        if getattr(started, "browser_nonce", None) is not None:
-            response.set_cookie(EXTERNAL_DINGTALK_NONCE_COOKIE, started.browser_nonce,
-                                max_age=300, path="/", secure=True, httponly=True, samesite="lax")
+        response = RedirectResponse(started.authorization_url, status_code=302, headers=AUTH_HEADERS if external else _NO_STORE)
+        if external:
+            cookie_name = nonce_cookie_name(started.state)
+            if cookie_name is None or started.browser_nonce is None:
+                raise _partner_auth_error(PartnerIdentityError("partner_identity_unavailable"))
+            response.set_cookie(cookie_name, started.browser_nonce,
+                                max_age=COOKIE_TTL_SECONDS, path="/", secure=True, httponly=True, samesite="lax")
         return response
 
     async def finish_partner_authentication(request: Request):
@@ -628,28 +637,36 @@ async def finish_external_dingtalk_authentication(request: Request):
     from .dingtalk_external_provider import DingTalkExternalIdentityProvider
 
     if len(request.scope.get("query_string", b"")) > 8192:
-        raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
+        return rejected_response(request, code="partner_auth_invalid", status_code=401, reason="invalid_callback_shape")
     callback = {}
     for key, value in request.query_params.multi_items():
         if key in callback:
-            raise HTTPException(401, detail={"code": "partner_auth_invalid"}, headers=_NO_STORE)
+            return rejected_response(request, code="partner_auth_invalid", status_code=401, reason="invalid_callback_shape")
         callback[key] = value
+    cookie_name = nonce_cookie_name(callback.get("state", ""))
+    if cookie_name is None:
+        return rejected_response(request, code="partner_auth_state_invalid", status_code=401, reason="invalid_state_shape")
     # Validate the selected SNS contract before consuming one-use state. Equal
     # modern aliases, provider error fields and unknown keys are not SNS codes.
     try:
         DingTalkExternalIdentityProvider._callback_code(callback)
     except PartnerIdentityError as error:
-        raise _partner_auth_error(error) from None
+        return rejected_response(request, code=error.code, status_code=error.status_code, reason="invalid_callback_shape")
+    nonce, rejection = browser_nonce(request, cookie_name)
+    if rejection is not None:
+        return rejected_response(request, code="partner_auth_state_invalid", status_code=401, reason=rejection)
     limiter = getattr(getattr(request.app.state, "identity_auth", None), "rate_limiter", None)
     try:
         if limiter is None:
-            completed = await broker.finish_auth(callback, browser_nonce=request.cookies.get(EXTERNAL_DINGTALK_NONCE_COOKIE))
+            completed = await broker.finish_auth(callback, browser_nonce=nonce)
         else:
             limiter.check_callback(request.state.edge_source.ip)
             async with limiter.provider_exchange():
-                completed = await broker.finish_auth(callback, browser_nonce=request.cookies.get(EXTERNAL_DINGTALK_NONCE_COOKIE))
+                completed = await broker.finish_auth(callback, browser_nonce=nonce)
         issued = await launch.issue_partner(completed.subject_id)
     except PartnerIdentityError as error:
+        if error.code in {"partner_auth_state_invalid", "partner_auth_state_expired", "partner_auth_state_replay"}:
+            return rejected_response(request, code=error.code, status_code=error.status_code, reason="storage_rejected")
         raise _partner_auth_error(error) from None
     except AgentLaunchError as error:
         raise HTTPException(error.status_code, detail={"code": error.code}, headers=_NO_STORE) from None
@@ -657,8 +674,8 @@ async def finish_external_dingtalk_authentication(request: Request):
         return rate_limit_response(error)
     except RateLimitUnavailable:
         raise HTTPException(503, "rate limit unavailable", headers=_NO_STORE) from None
-    response = RedirectResponse(issued.launch_url, status_code=302, headers=_NO_STORE)
-    response.delete_cookie(EXTERNAL_DINGTALK_NONCE_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    response = RedirectResponse(issued.launch_url, status_code=302, headers=AUTH_HEADERS)
+    response.delete_cookie(cookie_name, path="/", secure=True, httponly=True, samesite="lax")
     return response
 
 

@@ -164,6 +164,7 @@ class StartedPartnerAuthentication:
     authorization_url: str = field(repr=False)
     return_path: str = _FIXED_FAE_RETURN_PATH
     browser_nonce: str | None = field(default=None, repr=False)
+    state: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -228,7 +229,7 @@ class PartnerAuthenticationBroker:
             raise _provider_boundary_error(error) from None
         if not isinstance(authorization_url, str) or not authorization_url:
             raise PartnerIdentityError("partner_identity_unavailable")
-        return StartedPartnerAuthentication(authorization_url=authorization_url, browser_nonce=nonce)
+        return StartedPartnerAuthentication(authorization_url=authorization_url, browser_nonce=nonce, state=state)
 
     async def finish_auth(
         self, callback: Mapping[str, str], *, browser_nonce: str | None = None
@@ -241,7 +242,7 @@ class PartnerAuthenticationBroker:
         nonce_digest = None
         if external:
             if (
-                not state.startswith(EXTERNAL_DINGTALK_STATE_PREFIX)
+                not re.fullmatch(re.escape(EXTERNAL_DINGTALK_STATE_PREFIX) + r"[A-Za-z0-9_-]{32,128}", state)
                 or not isinstance(browser_nonce, str)
                 or not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", browser_nonce)
             ):
