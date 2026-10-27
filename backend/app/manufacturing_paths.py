@@ -13,6 +13,18 @@ MANUFACTURING_ROUTES = frozenset({
     ('POST', '/projects/{project_id}/tasks'),
     ('PATCH', '/projects/{project_id}/tasks/{task_id}'),
     ('GET', '/project-tasks'), ('GET', '/handbook'),
+    ('GET', '/collaboration'), ('POST', '/systems'),
+    ('PATCH', '/systems/{system_id}'),
+    ('POST', '/authorities'), ('PATCH', '/authorities/{authority_id}'),
+    ('GET', '/projects/{project_id}/controls'),
+    ('POST', '/projects/{project_id}/packages'),
+    ('PUT', '/projects/{project_id}/packages/{package_id}'),
+    ('POST', '/projects/{project_id}/packages/{package_id}/actions'),
+    ('POST', '/projects/{project_id}/handoffs'),
+    ('PATCH', '/projects/{project_id}/handoffs/{handoff_id}'),
+    ('POST', '/projects/{project_id}/readiness'),
+    ('PUT', '/projects/{project_id}/readiness/{readiness_id}'),
+    ('POST', '/projects/{project_id}/readiness/{readiness_id}/issues'),
 })
 MANUFACTURING_AUTH_ROUTES = frozenset(
     (method, MANUFACTURING_PREFIX + path) for method, path in MANUFACTURING_ROUTES

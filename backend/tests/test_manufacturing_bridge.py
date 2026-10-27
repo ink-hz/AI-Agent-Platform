@@ -162,6 +162,14 @@ def test_preview_shell_csp_allows_private_workbench_assets_for_spa_entry(tmp_pat
  ('POST','/projects/{project_id}/tasks'),
  ('PATCH','/projects/{project_id}/tasks/{task_id}'),
  ('GET','/project-tasks'), ('GET','/handbook'),
+ ('GET','/collaboration'), ('POST','/systems'), ('PATCH','/systems/{system_id}'),
+ ('POST','/authorities'), ('PATCH','/authorities/{authority_id}'),
+ ('GET','/projects/{project_id}/controls'), ('POST','/projects/{project_id}/packages'),
+ ('PUT','/projects/{project_id}/packages/{package_id}'),
+ ('POST','/projects/{project_id}/packages/{package_id}/actions'),
+ ('POST','/projects/{project_id}/handoffs'), ('PATCH','/projects/{project_id}/handoffs/{handoff_id}'),
+ ('POST','/projects/{project_id}/readiness'), ('PUT','/projects/{project_id}/readiness/{readiness_id}'),
+ ('POST','/projects/{project_id}/readiness/{readiness_id}/issues'),
 ])
 def test_central_exact_route_contract(role,method,path):
     service=AuthorizationService(_NoObservationGrants())
@@ -349,3 +357,94 @@ def test_all_exact_routes_remain_private_and_unavailable_when_disabled(tmp_path,
         response = c.request(method, BASE + concrete, headers=headers)
         assert response.status_code == (200 if path == '/access' else 503)
         assert response.headers['cache-control'] == 'private, no-store'
+
+
+@pytest.mark.parametrize('role', [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
+def test_real_collaboration_lifecycle_and_security(real_release, tmp_path, monkeypatch, role):
+    """Actual app/auth/router/database, including version replacement after invalidation."""
+    from copy import deepcopy
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), role, uuid4(), False)
+    _, c = real_app_client(tmp_path, monkeypatch, auth)
+    assert c.get(BASE + '/collaboration').status_code == 401
+    c.cookies.set(auth.cookie_name, 'valid-cookie')
+    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf, 'X-User-ID': 'forged'}
+
+    def write(method, path, body):
+        r = c.request(method, BASE + path, json={'operation_id': str(uuid4()), **body}, headers=headers)
+        assert r.status_code == 200, r.text
+        assert r.headers['cache-control'] == 'private, no-store'
+        return r.json()
+
+    system_body = {'name': 'Disposable ERP carrier', 'kind': 'ERP', 'line_ids': ['cameras'],
+                   'business_owner': 'Operations', 'it_owner': 'IT', 'method': 'manual'}
+    for bad in [{}, {'Origin': auth.public_base_url}, {'Origin': 'https://evil.invalid', 'X-CSRF-Token': auth.csrf}]:
+        assert c.post(BASE + '/systems', json={'operation_id': str(uuid4()), **system_body}, headers=bad).status_code == 403
+    system = write('POST', '/systems', system_body)
+    assert system['recording_mode'] == 'manual'
+    write('POST', '/authorities', {'line_id': 'cameras', 'object_type': 'mbom', 'system_id': system['id'],
+                                 'entry_point': 'Registered BOM editor', 'owner': 'Engineering'})
+    created = write('POST', '/projects', {'name': 'Disposable integration pilot', 'line_id': 'cameras', 'owner': 'PM'})
+    pid = created['project']['id']; project = '/projects/' + pid
+    item = {'id': 'bom', 'kind': 'mbom', 'title': 'Manufacturing BOM', 'source_system_id': system['id'],
+            'source_name': system['name'], 'source_ref': 'BOM-1', 'revision': 'A', 'evidence': 'DOC-1',
+            'owner': 'Engineering', 'status': 'verified'}
+    body = {'title': 'Pilot basis', 'product_ref': 'CAM-1', 'scope': 'WO-1', 'provider': 'Engineering',
+            'owner': 'PM', 'internal_version': 'A', 'items': [item]}
+    p = write('POST', project + '/packages', body)
+
+    def action(package, name, **extra):
+        return write('POST', project + '/packages/' + package['id'] + '/actions',
+                     {'expected_version': package['version'], 'action': name, **extra})
+
+    p = action(action(p, 'submit'), 'verify')
+    h = write('POST', project + '/handoffs', {'package_id': p['id'], 'from_party': 'Engineering',
+              'to_party': 'Manufacturing', 'owner': 'PM', 'method': 'file'})
+    handoff = project + '/handoffs/' + h['id']
+    h = write('PATCH', handoff, {'expected_version': h['version'], 'action': 'send', 'evidence': 'SENT-1',
+                               'occurred_at': '2026-10-27T05:00:00Z'})
+    bad_receipt = {'operation_id': str(uuid4()), 'expected_version': h['version'], 'action': 'receive',
+                   'received_revision': 999, 'evidence': 'REC-1', 'occurred_at': '2026-10-27T06:00:00Z'}
+    assert c.patch(BASE + handoff, json=bad_receipt, headers=headers).status_code == 422
+    h = write('PATCH', handoff, {**bad_receipt, 'operation_id': str(uuid4()), 'received_revision': p['revision']})
+    assert h['status'] == 'received'
+    checks = [{'id': 'version', 'kind': 'version', 'label': 'Version evidence', 'required': True,
+               'owner': 'Engineering', 'status': 'pending', 'package_item_id': 'bom'}]
+    ready_body = {'title': 'Start check', 'package_id': p['id'], 'work_order_ref': 'WO-1', 'scope': 'Pilot batch',
+                  'planned_use_date': '2026-10-27', 'owner': 'PM', 'required': True, 'items': checks}
+    ready = write('POST', project + '/readiness', ready_body)
+    issue = write('POST', project + '/readiness/' + ready['id'] + '/issues',
+                  {'item_id': 'version', 'title': 'Confirm basis', 'owner': 'Engineering'})
+    assert issue['source'] == {'type': 'readiness', 'id': ready['id'], 'item_id': 'version'}
+    for stage in created['stages']:
+        value = {key: stage[key] for key in ['status', 'owner', 'due_date', 'blocker', 'practice', 'participants', 'handoffs', 'systems']}
+        value.update(status='done', expected_version=stage['version'])
+        assert c.put(BASE + project + '/stages/' + stage['id'], json=value, headers=headers).status_code == 200
+    assert c.patch(BASE + project + '/tasks/' + issue['id'], json={'expected_version': 1, 'status': 'done'}, headers=headers).status_code == 200
+    assert c.get(BASE + project).json()['project']['status'] == 'active'
+    verified = [{**checks[0], 'status': 'verified', 'source_ref': 'BOM-1', 'evidence': 'CHECK-1'}]
+    ready = write('PUT', project + '/readiness/' + ready['id'], {'expected_version': ready['version'], 'items': verified})
+    assert ready['status'] == 'complete' and c.get(BASE + project).json()['project']['status'] == 'completed'
+    p = action(p, 'invalidate', reason='Source approval withdrawn')
+    old = next(r for r in c.get(BASE + project + '/controls').json()['readiness'] if r['id'] == ready['id'])
+    assert old['status'] == 'pending' and c.get(BASE + project).json()['project']['status'] == 'active'
+    newer = action(p, 'revise')
+    newer_body = deepcopy(body); newer_body['internal_version'] = 'B'; newer_body['items'][0].update(revision='B', source_ref='BOM-2', evidence='DOC-2')
+    newer = write('PUT', project + '/packages/' + newer['id'], {'expected_version': newer['version'], **newer_body})
+    newer = action(action(newer, 'submit'), 'verify')
+    replacement = write('POST', project + '/readiness', {**ready_body, 'package_id': newer['id'],
+                          'supersedes_id': old['id'], 'supersedes_version': old['version']})
+    assert replacement['status'] == 'pending'
+    replacement = write('PUT', project + '/readiness/' + replacement['id'], {'expected_version': replacement['version'],
+                         'items': [{**checks[0], 'status': 'verified', 'source_ref': 'BOM-2', 'evidence': 'CHECK-2'}]})
+    controls = c.get(BASE + project + '/controls').json()
+    historical = next(r for r in controls['readiness'] if r['id'] == old['id'])
+    assert historical['superseded_by'] == replacement['id']
+    assert c.get(BASE + project).json()['project']['status'] == 'completed'
+    assert c.get(BASE + '/projects').json()['items'][0]['status'] == 'completed'
+    assert c.get(BASE + '/dashboard').json()['projects'][0]['status'] == 'completed'
+    assert all(event['actor_id'] == str(auth.context.internal_user_id) for event in controls['events'])
+    auth.context = AuthContext(auth.context.internal_user_id, role, auth.context.session_id, True)
+    assert c.get(BASE + project + '/controls').status_code == 200
+    assert c.post(BASE + '/systems', json={'operation_id': str(uuid4()), **system_body}, headers=headers).status_code == 503
+    c.close()
