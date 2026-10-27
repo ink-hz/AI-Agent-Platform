@@ -59,6 +59,13 @@ cd backend
 
 frontmatter、发布日期、草稿规则和旧文章清洗流程见 `backend/app/ai_notes/README.md`。
 
+## 大制造信息化知识库
+
+制造信息化与智能化资料已迁入同级项目
+[AI-Manufacturing-Platform](../AI-Manufacturing-Platform/README.md)。
+从[知识库目录](../AI-Manufacturing-Platform/knowledge/README.md)或
+[知识地图](../AI-Manufacturing-Platform/knowledge/00-learning-map.md)开始阅读。
+
 ## 本地开发
 
 后端要求 Python 3.11+：
