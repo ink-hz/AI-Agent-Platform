@@ -1,5 +1,7 @@
 # 大制造工作台项目管理版上线
 
+后续已部署[手册连续阅读修正](../../../AI-Manufacturing-Platform/docs/release-handbook-continuous-2026-10-27.md)：手册整篇展示，目录仅作页内定位。当前运行平台源码 `59f97fee18dd04155810890a7fe930124979e78d`、制造源码 `161292be7c01038cc7c25b5f36aea04577c19823`，镜像 `sha256:4d98690675b1e8623a04be44f1e950735d05ef69c598bd8f68c02133f20fb381`；维护入口已更新为 `/opt/orbbec-agent-platform/staging/manufacturing-handbook-continuous-20261027/future-maintenance.json`，完整 Compose 链为 40 项。77 项制造前端测试、构建、隔离候选及生产边界检查通过，浏览器验收仍由用户完成。以下保留原项目管理版的历史发布事实。
+
 2026-10-27，[大制造工作台](https://agent.orbbec.com.cn/manufacturing)已按项目和事项重构上线。刷新页面后，以平台 owner/admin 登录。浏览器页面验收由用户完成。
 
 首页为实际项目、待确认与阻塞事项和动态；支持项目列表/看板、交付目标与负责人、阶段开始/受阻/完成/重开、任务/问题/确认、资料协作及归档恢复。旧流程记录保留为参考。制造手册复用平台现有 ArticleMarkdown/MermaidDiagram，包含最新配色和16个图块；正文与更新时间由制造仓库准确提交生成。
