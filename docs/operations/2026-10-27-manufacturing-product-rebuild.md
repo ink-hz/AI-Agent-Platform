@@ -1,5 +1,7 @@
 # 大制造工作台项目管理版上线
 
+后续已发布[架构产品化 v0.4](2026-10-27-manufacturing-architecture-product.md)，当前运行版本和完整 41 项维护链以新记录为准。下文为历史发布事实。
+
 后续已部署[手册连续阅读修正](../../../AI-Manufacturing-Platform/docs/release-handbook-continuous-2026-10-27.md)：手册整篇展示，目录仅作页内定位。当前运行平台源码 `59f97fee18dd04155810890a7fe930124979e78d`、制造源码 `161292be7c01038cc7c25b5f36aea04577c19823`，镜像 `sha256:4d98690675b1e8623a04be44f1e950735d05ef69c598bd8f68c02133f20fb381`；维护入口已更新为 `/opt/orbbec-agent-platform/staging/manufacturing-handbook-continuous-20261027/future-maintenance.json`，完整 Compose 链为 40 项。77 项制造前端测试、构建、隔离候选及生产边界检查通过，浏览器验收仍由用户完成。以下保留原项目管理版的历史发布事实。
 
 2026-10-27，[大制造工作台](https://agent.orbbec.com.cn/manufacturing)已按项目和事项重构上线。刷新页面后，以平台 owner/admin 登录。浏览器页面验收由用户完成。
