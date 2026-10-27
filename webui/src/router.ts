@@ -16,6 +16,7 @@ export type Route =
   | { name: "account" }
   | { name: "home" }
   | { name: "organization" }
+  | { name: "manufacturing" }
   | { name: "brain" }
   | { name: "ai-engineering"; documentSlug?: import("./aiEngineeringApi").AiEngineeringDocumentSlug }
   | { name: "conversations" }
@@ -220,6 +221,8 @@ export function parseRoute(pathname: string, search = ""): Route {
     const sdkAdmin = parseSdkAdminPath(local);
     return sdkAdmin ? { name: "sdk-admin", ...sdkAdmin } : { name: "not-found" };
   }
+  if (local === "/manufacturing" || local === "/manufacturing/") return search ? { name: "not-found" } : { name: "manufacturing" };
+  if (local.startsWith("/manufacturing")) return { name: "not-found" };
   const clean = local === "/" ? "/" : local.replace(/\/+$/, "");
   if (clean === "/login") return { name: "login" };
   if (clean === "/account") return { name: "account" };

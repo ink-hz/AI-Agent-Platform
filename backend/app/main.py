@@ -240,6 +240,7 @@ from .sdk_workbench.native_service import NativeSdkService
 from .sdk_workbench.sso_repository import SdkSsoRepository
 from .sdk_workbench.service import SdkService
 from .sdk_workbench.zentao import ZenTaoClient
+from .manufacturing import build_manufacturing_router
 from .spa import SpaStaticFiles, load_public_asset_manifest
 from .voc_extension.client import VocExtensionClient
 from .voc_extension.directory import VocSubmitterDirectory
@@ -1725,6 +1726,7 @@ def create_app(
         include_in_schema=False,
     )
     app.include_router(build_voc_extension_router())
+    app.include_router(build_manufacturing_router(), prefix=identity_auth.route_prefix.rstrip("/") if identity_enabled else "")
     app.include_router(build_sdk_router())
     app.include_router(build_sdk_native_router())
     app.include_router(build_sdk_admin_router())

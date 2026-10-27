@@ -3,6 +3,7 @@ import { Activity, ChevronDown, ChevronRight, BookOpen, Bot, Boxes, ClipboardLis
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
 import { SDK_ADMIN_SECTIONS } from '../sdk-admin/sdkAdminNavigation';
+import { manufacturingAccess } from "../manufacturingApi";
 import { sdkAdminClient } from '../sdk-admin/sdkAdminApi';
 
 interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; newTab?: boolean; routes: readonly string[] }
@@ -19,7 +20,7 @@ const runtime: Item[] = [
   { label:'运行事件', path:'/admin/activity', icon:ListChecks, routes:['admin-activity'] },
   { label:'任务复审', path:'/admin/review', icon:ScanEye, routes:['admin-review'] },
 ];
-function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = false): Group[] {
+function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = false, manufacturingAvailable = false): Group[] {
   const manager = account?.role === 'platform_owner' || account?.role === 'platform_admin';
   const faeManager = account?.role === 'platform_owner' || account?.workspace_scopes.includes('fae_workbench');
   const vocManager = manager || account?.role === 'management_viewer';
@@ -30,6 +31,7 @@ function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = fa
     ] },
     { label:'AI 工作', items:manager ? [...aiWork.slice(0,2), {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}, ...aiWork.slice(2)] : aiWork },
     { label:'业务工作台', items:[
+      ...(manager && manufacturingAvailable ? [{label:'大制造',path:'/manufacturing',icon:Boxes,routes:['manufacturing']}] : []),
       ...(sdkAvailable ? [{ label:'SDK 开发管理', path:'/sdk-admin', icon:Code2, routes:['sdk-admin'] }] : []),
       { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
       { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },
@@ -56,6 +58,17 @@ function follow(event: MouseEvent<HTMLAnchorElement>, item: Item) {
   navigate(item.path);
 }
 export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route;account?:Account|null;readOnly:boolean;collapsed:boolean}) {
+  const [manufacturingAvailable, setManufacturingAvailable] = useState(false);
+  useEffect(() => {
+    setManufacturingAvailable(false);
+    if (!account || !["platform_owner", "platform_admin"].includes(account.role)) return;
+    let live = true;
+    const controller = new AbortController();
+    void manufacturingAccess(controller.signal).then(access => {
+      if (live) setManufacturingAvailable(access.allowed && access.available);
+    }).catch(() => { if (live) setManufacturingAvailable(false); });
+    return () => { live = false; controller.abort(); };
+  }, [account?.internal_user_id, account?.role]);
   const [sdkAvailable, setSdkAvailable] = useState(false);
   const [sdkExpanded, setSdkExpanded] = useState(route.name === 'sdk-admin');
   useEffect(() => {
@@ -70,7 +83,7 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
   }, [account?.internal_user_id]);
   return <aside id="platform-navigation" className="platform-sidebar" hidden={collapsed}>
     <nav aria-label="主导航">
-      {groupsFor(account,readOnly,sdkAvailable).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
+      {groupsFor(account,readOnly,sdkAvailable,manufacturingAvailable).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
         {!group.hideHeading && <h2>{group.label}</h2>}
         {group.items.map(item => {
           if (item.path === '/sdk-admin') return <div className="platform-sdk-navigation" key={item.path}>

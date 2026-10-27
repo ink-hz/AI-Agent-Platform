@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..manufacturing_paths import MANUFACTURING_AUTH_ROUTES
+
 import re
 from dataclasses import dataclass
 from typing import Literal
@@ -518,6 +520,12 @@ class AuthorizationService:
         if key in _SDK_WORKBENCH_ROUTES:
             # SDK membership and fine-grained roles are checked in its route service.
             return AuthorizationDecision(True, 200, "sdk_workbench_route", None)
+        if key in MANUFACTURING_AUTH_ROUTES:
+            if auth.role not in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:
+                return self._deny(403, "platform_management_required")
+            if auth.hard_stale_read_only and selected_method not in {"GET", "HEAD", "OPTIONS"}:
+                return self._deny(503, "hard_stale_read_only")
+            return AuthorizationDecision(True, 200, "manufacturing_route", None)
         if key in _AI_ENGINEERING_ROUTES:
             # Reuse platform management roles; sub-application routes are independent.
             if auth.role not in {Role.PLATFORM_ADMIN, Role.PLATFORM_OWNER}:

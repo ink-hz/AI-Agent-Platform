@@ -119,6 +119,8 @@ export function localPathname(pathname?: string): string {
 export type LoginReturnPath =
   | "/"
   | "/brain"
+  | "/manufacturing"
+  | "/manufacturing/"
   | "/ai-engineering"
   | "/organization"
   | `/ai-engineering?document=${string}`
@@ -169,6 +171,7 @@ function canonicalEncodedDetailPath(value: string): boolean {
 
 function safeLoginReturnPath(value: string): boolean {
   if (parseSdkAdminPath(value)) return true;
+  if (["/manufacturing", "/manufacturing/"].includes(value)) return true;
   if (value === "/ai-engineering" || value === "/organization") return true;
   if (["overview", "reading", "domains", "finance", "products", "assets"]
     .some((slug) => value === `/ai-engineering?document=${slug}`)) return true;
