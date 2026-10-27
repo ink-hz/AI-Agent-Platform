@@ -226,6 +226,10 @@ export default function App() {
     return <AccessState title="无权限" description="请联系苍渊。" />;
   }
   if (route.name === "legacy-redirect") return productPage(route, account ?? undefined);
+  if (route.name === "manufacturing") {
+    if (!routeAllowed) return <AccessState title="无权访问" description="该页面不在你的后端授权范围内。" />;
+    return <>{account && <AccessEventReporter account={account} route={route} />}{productPage(route, account ?? undefined)}</>;
+  }
   if (!routeAllowed) {
     return <AppShell route={route} account={account}><section className="permission-state" role="alert"><h1>无权访问</h1><p>该页面不在你的后端授权范围内。</p></section></AppShell>;
   }

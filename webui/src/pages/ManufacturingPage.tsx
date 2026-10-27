@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { platformPath, type Account } from '../auth';
+import { logoutAccount, platformPath, type Account } from '../auth';
 import { manufacturingAccess, ManufacturingAccessError } from '../manufacturingApi';
 import { createManufacturingMarkdownRenderer, type ManufacturingMarkdownRenderer } from '../manufacturingMarkdown';
+import { navigate } from '../router';
+import './manufacturingHost.css';
 import { registerPanoramaLeaveGuard } from '../panoramaNavigation';
 
-type MountOptions = {apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
-type MountedWorkbench = {unmount(): void; isDirty(): boolean};
+type WorkbenchUser = {displayName: string; roleLabel: string};
+type MountOptions = {user?: WorkbenchUser; onNavigatePlatform?: () => void; onLogout?: () => Promise<void>; apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
+type MountedWorkbench = {unmount(): void; isDirty(): boolean; updateUser?(user: WorkbenchUser): void};
 declare global {
   interface Window {OrbbecManufacturing?: {mount(element: HTMLElement, options: MountOptions): MountedWorkbench}}
 }
@@ -40,13 +43,21 @@ function loadAsset(url: string, script: boolean): Promise<LoadedAsset> {
   return promise;
 }
 
+const roleLabels: Record<Account['role'], string> = {
+  member: '企业成员', management_viewer: '只读观察者', platform_admin: '平台管理员', platform_owner: '平台所有者',
+};
+function workbenchUser(account: Account): WorkbenchUser {
+  return {displayName: account.display_name, roleLabel: roleLabels[account.role]};
+}
 type Status = 'loading' | 'ready' | 'denied' | 'unavailable' | 'error';
 export function ManufacturingPage({account}: {account: Account}) {
   const element = useRef<HTMLDivElement>(null);
+  const currentAccount = useRef(account); currentAccount.current = account;
+  const currentHandle = useRef<MountedWorkbench | undefined>(undefined);
   const [status, setStatus] = useState<Status>('loading');
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    let active = true, dirty = false;
+    let active = true, dirty = false, logoutPending = false;
     let mounted: MountedWorkbench | undefined;
     let stylesheet: HTMLLinkElement | undefined;
     let removeGuard: (() => void) | undefined;
@@ -59,7 +70,7 @@ export function ManufacturingPage({account}: {account: Account}) {
         stylesheet.media = 'not all'; activeStylesheet = undefined;
       }
       markdown.unmount();
-      const handle = mounted; mounted = undefined; handle?.unmount();
+      const handle = mounted; mounted = undefined; currentHandle.current = undefined; handle?.unmount();
     };
     setStatus('loading');
     void (async () => {
@@ -82,13 +93,23 @@ export function ManufacturingPage({account}: {account: Account}) {
         removeGuard = registerPanoramaLeaveGuard(() => !active || !(dirty || mounted?.isDirty()) || window.confirm('有未保存的修改，确认离开？'));
         const handle = script.library.mount(element.current, {
           apiBase, csrfToken: account.csrf_token, renderMarkdown: markdown.renderMarkdown,
+          user: workbenchUser(currentAccount.current),
+          onNavigatePlatform() { if (active && !logoutPending) navigate('/'); },
+          async onLogout() {
+            if (!active || logoutPending) return;
+            logoutPending = true;
+            try {
+              await logoutAccount(account.csrf_token);
+              if (active) window.location.replace(platformPath('/login'));
+            } finally { logoutPending = false; }
+          },
           readOnly: account.hard_stale_read_only || access.can_edit !== true,
           onDirtyChange(value) { if (active) dirty = value; },
           onAuthError() { if (active) { retire(); setStatus('denied'); } },
         });
         // A synchronous auth callback may retire the owner during mount.
         if (!active) { handle.unmount(); return; }
-        mounted = handle; setStatus('ready');
+        mounted = handle; currentHandle.current = handle; setStatus('ready');
       } catch (error) {
         if (!active) return;
         retire();
@@ -99,7 +120,11 @@ export function ManufacturingPage({account}: {account: Account}) {
     })();
     return retire;
   }, [account.internal_user_id, account.role, account.csrf_token, account.hard_stale_read_only, attempt]);
-  return <section aria-label="大制造工作台">
+  useEffect(() => {
+    currentHandle.current?.updateUser?.(workbenchUser(account));
+  }, [account.display_name, account.role]);
+  return <section className="manufacturing-standalone" aria-label="大制造工作台">
+    {account.hard_stale_read_only && <aside className="manufacturing-readonly-banner" role="status"><strong>通讯录已超过安全时限</strong><span>当前仅保留已授权管理账号的只读访问，变更功能已暂停。</span></aside>}
     {status !== 'ready' && <h1>大制造</h1>}
     {status === 'loading' && <p role="status">正在加载制造工作台…</p>}
     {status === 'denied' && <p role="alert">无权访问大制造工作台，请确认登录账号和权限。</p>}

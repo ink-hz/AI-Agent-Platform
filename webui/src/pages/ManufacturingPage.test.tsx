@@ -159,3 +159,39 @@ it('keeps the renderer stable within a mount and retires it on auth failure',asy
  await act(async()=>options.onAuthError());expect(element.childNodes).toHaveLength(0);
  await act(async()=>retired(element,{markdown:'# Stale content'}));expect(element.childNodes).toHaveLength(0);
 });
+it('uses current account metadata when assets finish and updates it without remounting',async()=>{
+ const updateUser=vi.fn(); mount.mockImplementation((_element,opts)=>{options=opts;return {unmount,isDirty:()=>true,updateUser};});
+ await render();await render({...account,display_name:'加载中的新姓名'});await assets();
+ expect(options.user).toEqual({displayName:'加载中的新姓名',roleLabel:'平台管理员'});
+ await render({...account,display_name:'现用姓名'});
+ expect(updateUser).toHaveBeenLastCalledWith({displayName:'现用姓名',roleLabel:'平台管理员'});
+ expect(mount).toHaveBeenCalledTimes(1);expect(unmount).not.toHaveBeenCalled();
+ await act(async()=>root.render(<p>Retired</p>));
+});
+it('provides a guarded live return callback that retires with its owner',async()=>{
+ await render();await assets();
+ expect(typeof options.onNavigatePlatform).toBe('function');
+ await act(async()=>options.onNavigatePlatform());expect(window.location.pathname).toBe('/');
+ await act(async()=>root.render(<p>Retired</p>));window.history.replaceState({},'','/manufacturing');
+ options.onNavigatePlatform();expect(window.location.pathname).toBe('/manufacturing');
+});
+it('keeps the directory safety read-only explanation visible in standalone mode',async()=>{
+ await render({...account,hard_stale_read_only:true});await assets();
+ expect(box.textContent).toContain('通讯录已超过安全时限');expect(options.readOnly).toBe(true);
+});
+it('logs out with the current CSRF once, redirects only on success, and retires pending redirects',async()=>{
+ await render();await assets();
+ const realWindow=window, replace=vi.fn();
+ vi.stubGlobal('window',new Proxy(realWindow,{get(target,key){return key==='location'?{...target.location,replace}:Reflect.get(target,key);}}));
+ let finish!:(response:Response)=>void;
+ vi.mocked(fetch).mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+ const first=options.onLogout();await options.onLogout();
+ expect(fetch).toHaveBeenLastCalledWith('/api/v1/auth/logout',expect.objectContaining({method:'POST',headers:expect.objectContaining({'X-CSRF-Token':'trusted-csrf'})}));
+ const count=vi.mocked(fetch).mock.calls.length;expect(replace).not.toHaveBeenCalled();
+ finish(new Response('{}',{status:500}));await expect(first).rejects.toThrow();expect(replace).not.toHaveBeenCalled();
+ const success=options.onLogout();finish(new Response('{}'));await success;
+ expect(fetch).toHaveBeenCalledTimes(count+1);expect(replace).toHaveBeenCalledWith('/login');
+ replace.mockClear();const pending=options.onLogout();await act(async()=>root.render(<p>Retired</p>));
+ finish(new Response('{}'));await pending;expect(replace).not.toHaveBeenCalled();
+ await options.onLogout();expect(fetch).toHaveBeenCalledTimes(count+2);
+});

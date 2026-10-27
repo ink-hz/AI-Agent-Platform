@@ -1,0 +1,4 @@
+.manufacturing-standalone { min-height: 100dvh; width: 100%; background: #f3f6fa; }
+.manufacturing-standalone > h1, .manufacturing-standalone > p, .manufacturing-standalone > [role="alert"] { margin: 0; padding: 24px 32px; }
+.manufacturing-standalone > h1 { font-size: 24px; }
+.manufacturing-readonly-banner { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 20px; background: #fff3d7; color: #855300; border-bottom: 1px solid #ead4a7; font-size: 12px; }
