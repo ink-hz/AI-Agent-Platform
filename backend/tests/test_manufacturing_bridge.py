@@ -130,11 +130,7 @@ def test_login_return_and_shell(tmp_path,monkeypatch,prefix):
     assert c.get(prefix.rstrip('/')+'/manufacturing/').status_code==200
 
 
-def test_real_business_package(tmp_path,monkeypatch):
-    release=os.environ.get('TEST_MANUFACTURING_RELEASE_ROOT')
-    if not release: pytest.skip('optional versioned sibling integration')
-    monkeypatch.setenv('PLATFORM_MANUFACTURING_ROOT',release)
-    monkeypatch.setenv('PLATFORM_MANUFACTURING_DATABASE_PATH',str(tmp_path/'real.sqlite3'))
+def test_real_business_package(real_release, tmp_path, monkeypatch):
     auth=FakeAuth(); c=client(auth); c.cookies.set(auth.cookie_name,'valid-cookie')
     assert c.get(BASE+'/catalog').status_code==200
     response=c.put(BASE+'/lines/cameras/stages/S1',json={'expected_version':0,'practice':'integration','participants':[],'handoffs':[],'systems':[]},headers={'Origin':auth.public_base_url,'X-CSRF-Token':auth.csrf,'X-User-ID':'forged'})
@@ -160,6 +156,12 @@ def test_preview_shell_csp_allows_private_workbench_assets_for_spa_entry(tmp_pat
  ('PUT','/lines/{line_id}/stages/{stage_id}'),
  ('POST','/lines/{line_id}/stages/{stage_id}/tasks'),
  ('PATCH','/lines/{line_id}/stages/{stage_id}/tasks/{task_id}'),
+ ('GET','/dashboard'), ('GET','/projects'), ('POST','/projects'),
+ ('GET','/projects/{project_id}'), ('PATCH','/projects/{project_id}'),
+ ('PUT','/projects/{project_id}/stages/{stage_id}'),
+ ('POST','/projects/{project_id}/tasks'),
+ ('PATCH','/projects/{project_id}/tasks/{task_id}'),
+ ('GET','/project-tasks'), ('GET','/handbook'),
 ])
 def test_central_exact_route_contract(role,method,path):
     service=AuthorizationService(_NoObservationGrants())
@@ -204,3 +206,146 @@ def test_actual_create_app_native_routes_with_real_authorization(tmp_path,monkey
     assert c.get(BASE+'/access').json()['available'] is True
     auth.context=AuthContext(auth.context.internal_user_id,Role.MEMBER,auth.context.session_id,False)
     assert c.get(BASE+'/catalog').status_code==403
+
+
+@pytest.fixture
+def real_release(tmp_path, monkeypatch):
+    """Snapshot real source/assets/docs; never generate metadata in the sibling."""
+    import hashlib
+    import json
+    import shutil
+
+    configured = os.environ.get('TEST_MANUFACTURING_RELEASE_ROOT')
+    if not configured:
+        pytest.skip('set TEST_MANUFACTURING_RELEASE_ROOT for real sibling integration')
+    source = Path(configured)
+    root = tmp_path / 'real-release'
+    for relative in ['src', 'webui/dist', 'docs']:
+        shutil.copytree(source / relative, root / relative)
+    files = {}
+    for relative in ['docs/manufacturing-system-handbook.md', 'docs/workflows/manufacturing-process-overview.md']:
+        files[relative] = {'updated_at': '2026-10-27T00:00:00+00:00',
+            'sha256': hashlib.sha256((root / relative).read_bytes()).hexdigest()}
+    (root / 'handbook-metadata.json').write_text(json.dumps({'files': files}))
+    monkeypatch.setenv('PLATFORM_MANUFACTURING_ROOT', str(root))
+    monkeypatch.setenv('PLATFORM_MANUFACTURING_DATABASE_PATH', str(tmp_path / 'real.sqlite3'))
+    monkeypatch.setenv('PLATFORM_MANUFACTURING_RELEASE', 'project-v2-test')
+    return root
+
+
+def real_app_client(tmp_path, monkeypatch, auth):
+    # _app calls actual main.create_app; only external grants/auth are doubles.
+    auth.hard_stale_audit = lambda *args: None
+    app = _app(tmp_path, monkeypatch, auth)
+    middleware = next(value for value in app.user_middleware if value.cls is IdentitySecurityMiddleware)
+    middleware.kwargs['authorization'] = AuthorizationService(_NoObservationGrants())
+    c = TestClient(app, base_url=auth.public_base_url)
+    return app, c
+
+
+@pytest.mark.parametrize('role', [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
+def test_real_project_routes_through_create_app_and_csrf(real_release, tmp_path, monkeypatch, role):
+    import hashlib
+
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), role, uuid4(), False)
+    app, c = real_app_client(tmp_path, monkeypatch, auth)
+    from app.manufacturing_paths import MANUFACTURING_ROUTES
+    registered = {(method, route.path.removeprefix(BASE))
+        for route in IdentitySecurityMiddleware._expand_included_routes(app.routes)
+        if getattr(route, 'path', '').startswith(BASE) and getattr(route, 'include_in_schema', False)
+        for method in route.methods}
+    assert registered == MANUFACTURING_ROUTES
+    assert c.get(BASE + '/dashboard').status_code == 401
+    c.cookies.set(auth.cookie_name, 'valid-cookie')
+    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf, 'X-User-ID': 'forged'}
+    for asset in ['manufacturing.js', 'manufacturing.css']:
+        response = c.get(BASE + '/assets/' + asset, params={'release': 'project-v2-test'})
+        assert response.status_code == 200
+        assert response.content == (real_release / 'webui/dist' / asset).read_bytes()
+        assert response.headers['cache-control'] == 'private, no-store'
+        assert c.get(BASE + '/assets/' + asset + '?release=old').status_code == 409
+    value = {'operation_id': str(uuid4()), 'name': 'Bridge project', 'line_id': 'cameras', 'owner': 'PM'}
+    for invalid in [{}, {'Origin': auth.public_base_url},
+            {'Origin': 'https://evil.test', 'X-CSRF-Token': auth.csrf},
+            {'Origin': auth.public_base_url, 'X-CSRF-Token': 'wrong'}]:
+        assert c.post(BASE + '/projects', json=value, headers=invalid).status_code == 403
+    created = c.post(BASE + '/projects', json=value, headers=headers)
+    assert created.status_code == 200, created.text
+    project_id = created.json()['project']['id']
+    project_url = BASE + '/projects/' + project_id
+    result = c.get(project_url)
+    assert result.json()['project']['updated_by'] == str(auth.context.internal_user_id)
+    assert c.get(BASE + '/projects').json()['items'][0]['id'] == project_id
+    assert c.get(BASE + '/dashboard').status_code == 200
+    updated = c.patch(project_url, json={'expected_version': 1, 'summary': 'Bridge update'}, headers=headers)
+    assert updated.status_code == 200
+    stage = result.json()['stages'][0]
+    stage_value = {key: stage[key] for key in ['practice', 'participants', 'handoffs', 'systems', 'status', 'owner', 'due_date', 'blocker']}
+    stage_value.update(expected_version=stage['version'], practice='Bridge stage')
+    assert c.put(project_url + '/stages/' + stage['id'], json=stage_value, headers=headers).status_code == 200
+    task = c.post(project_url + '/tasks', json={'operation_id': str(uuid4()), 'stage_id': stage['id'], 'title': 'Bridge task'}, headers=headers)
+    assert task.status_code == 200, task.text
+    task_id = task.json()['id']
+    assert c.patch(project_url + '/tasks/' + task_id, json={'expected_version': 1, 'status': 'doing'}, headers=headers).status_code == 200
+    assert c.get(BASE + '/project-tasks').json()['items'][0]['id'] == task_id
+    for document, relative in [('handbook', 'docs/manufacturing-system-handbook.md'), ('workflow', 'docs/workflows/manufacturing-process-overview.md')]:
+        response = c.get(BASE + '/handbook', params={'document': document, 'release': 'project-v2-test'})
+        assert response.status_code == 200
+        data = (real_release / relative).read_bytes()
+        assert response.json()['markdown'].encode() == data
+        assert response.json()['sha256'] == hashlib.sha256(data).hexdigest()
+        assert response.headers['cache-control'] == 'private, no-store'
+    assert c.get(BASE + '/handbook?release=old').status_code == 409
+    assert c.get(BASE + '/handbook?document=../../private').status_code == 422
+    for path in ['/projects/missing', '/unknown', '/assets/private.json']:
+        response = c.get(BASE + path)
+        assert response.status_code in {403, 404}
+        assert response.headers['cache-control'] == 'private, no-store'
+        assert str(real_release) not in response.text
+    (real_release / 'handbook-metadata.json').write_text('private invalid metadata')
+    response = c.get(BASE + '/handbook')
+    assert response.status_code == 503 and 'private invalid metadata' not in response.text
+    auth.context = AuthContext(auth.context.internal_user_id, role, auth.context.session_id, True)
+    assert c.get(BASE + '/dashboard').status_code == 200
+    for method, path in [('POST', '/projects'), ('PATCH', '/projects/' + project_id),
+            ('PUT', '/projects/' + project_id + '/stages/' + stage['id']),
+            ('POST', '/projects/' + project_id + '/tasks'),
+            ('PATCH', '/projects/' + project_id + '/tasks/' + task_id)]:
+        response = c.request(method, BASE + path, json={}, headers=headers)
+        assert response.status_code == 503
+        assert response.headers['cache-control'] == 'private, no-store'
+
+
+def test_real_project_routes_member_denied_before_validation(real_release, tmp_path, monkeypatch):
+    auth = FakeAuth()
+    auth.context = AuthContext(uuid4(), Role.MEMBER, uuid4(), False)
+    _, c = real_app_client(tmp_path, monkeypatch, auth)
+    c.cookies.set(auth.cookie_name, 'valid-cookie')
+    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf}
+    from app.manufacturing_paths import MANUFACTURING_ROUTES
+    for method, path in MANUFACTURING_ROUTES:
+        response = c.request(method, BASE + path.replace('{project_id}', 'missing').replace('{stage_id}', 'S1')
+            .replace('{task_id}', 'missing').replace('{line_id}', 'cameras').replace('{asset_name}', 'manufacturing.js'), headers=headers)
+        assert response.status_code == 403
+        assert response.headers['cache-control'] == 'private, no-store'
+    assert not (tmp_path / 'real.sqlite3').exists()
+
+
+def test_all_exact_routes_remain_private_and_unavailable_when_disabled(tmp_path, monkeypatch):
+    monkeypatch.delenv('PLATFORM_MANUFACTURING_ROOT', raising=False)
+    auth = FakeAuth()
+    c = client(auth)
+    from app.manufacturing_paths import MANUFACTURING_ROUTES
+    for method, path in MANUFACTURING_ROUTES:
+        concrete = path.replace('{project_id}', 'missing').replace('{stage_id}', 'S1').replace('{task_id}', 'missing')
+        concrete = concrete.replace('{line_id}', 'cameras').replace('{asset_name}', 'manufacturing.js')
+        assert c.request(method, BASE + concrete).status_code == 401
+    c.cookies.set(auth.cookie_name, 'valid-cookie')
+    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf}
+    for method, path in MANUFACTURING_ROUTES:
+        concrete = path.replace('{project_id}', 'missing').replace('{stage_id}', 'S1').replace('{task_id}', 'missing')
+        concrete = concrete.replace('{line_id}', 'cameras').replace('{asset_name}', 'manufacturing.js')
+        response = c.request(method, BASE + concrete, headers=headers)
+        assert response.status_code == (200 if path == '/access' else 503)
+        assert response.headers['cache-control'] == 'private, no-store'
