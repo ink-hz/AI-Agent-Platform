@@ -61,7 +61,7 @@ frontmatter、发布日期、草稿规则和旧文章清洗流程见 `backend/ap
 
 ## 大制造工作台与知识库
 
-[大制造工作台](https://agent.orbbec.com.cn/manufacturing)已上线工程资料版本、交接回执、生产准备核对和系统数据归属，联动项目及缺项待办；制造手册整篇连续阅读。当前开放平台 owner/admin；[发布记录与当前 41 项维护链](docs/operations/2026-10-27-manufacturing-architecture-product.md)。
+[大制造管理平台](https://agent.orbbec.com.cn/manufacturing)以独立页面提供左侧业务导航、位置顶栏和实际登录账户菜单，复用企业登录；包含工程资料版本、交接回执、生产准备核对和系统数据归属，联动项目及缺项待办，制造手册整篇连续阅读。当前开放平台 owner/admin；[发布记录与当前 42 项维护链](docs/operations/2026-10-27-manufacturing-console.md)。
 
 制造信息化与智能化资料已迁入同级项目
 [AI-Manufacturing-Platform](../AI-Manufacturing-Platform/README.md)。
