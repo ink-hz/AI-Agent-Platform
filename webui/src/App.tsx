@@ -35,6 +35,7 @@ import { MissionPage } from "./pages/MissionPage";
 import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AiNotesPage } from "./pages/AiNotesPage";
+import { ManufacturingPage } from "./pages/ManufacturingPage";
 import { AiEngineeringLanding } from "./pages/AiEngineeringPage";
 import { SdkAdminPage } from "./sdk-admin/SdkAdminPage";
 import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
@@ -112,6 +113,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     case "home": return account
       ? <AiEngineeringLanding account={account} direct fallback={null} />
       : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
+    case "manufacturing": return account ? <ManufacturingPage account={account} /> : <PendingPage title="大制造" description="请登录后使用。" />;
     case "organization": return account
       ? <AiEngineeringLanding account={account} direct fallback={null} view="organization" />
       : <PendingPage title="组织架构" description="请启用企业身份后使用。" />;
