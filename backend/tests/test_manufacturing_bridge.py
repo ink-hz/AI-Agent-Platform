@@ -448,3 +448,32 @@ def test_real_collaboration_lifecycle_and_security(real_release, tmp_path, monke
     assert c.get(BASE + project + '/controls').status_code == 200
     assert c.post(BASE + '/systems', json={'operation_id': str(uuid4()), **system_body}, headers=headers).status_code == 503
     c.close()
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_collaboration_method_path_matrix_cannot_reach_business_handlers(real_release, tmp_path, monkeypatch, enabled):
+    if not enabled:
+        monkeypatch.delenv('PLATFORM_MANUFACTURING_ROOT', raising=False)
+    auth = FakeAuth()
+    _, c = real_app_client(tmp_path, monkeypatch, auth)
+    paths = [
+        ('GET', '/systems'), ('PATCH', '/systems'), ('POST', '/systems/id/extra'),
+        ('GET', '/authorities'), ('PATCH', '/authorities'),
+        ('POST', '/projects/id/packages/id'), ('POST', '/projects/id/packages/id/actions/extra'),
+        ('GET', '/projects/id/controls/extra'), ('PUT', '/projects/id/readiness'),
+        ('POST', '/projects/id/readiness/id/issues/extra'),
+        ('POST', '/projects/id/handoffs/id'), ('PATCH', '/projects/id/handoffs'),
+        ('GET', '/collaboration/extra'), ('GET', '/projects//controls'),
+    ]
+    for method, path in paths:
+        response = c.request(method, BASE + path)
+        assert response.status_code == 401, (enabled, method, path, response.status_code)
+        assert 'no-store' in response.headers['cache-control']
+    c.cookies.set(auth.cookie_name, 'valid-cookie')
+    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf}
+    for method, path in paths:
+        response = c.request(method, BASE + path, json={}, headers=headers)
+        assert response.status_code in {403, 404, 405}, (enabled, method, path, response.status_code)
+        assert 'no-store' in response.headers['cache-control']
+    assert not (tmp_path / 'real.sqlite3').exists()
+    c.close()
