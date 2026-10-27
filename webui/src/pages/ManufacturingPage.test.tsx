@@ -104,3 +104,58 @@ it('ignores stale in-flight scripts and CSS while retaining the selected library
  expect(oldStyle.media).toBe('not all');
  await act(async()=>root.render(<p>Retired</p>));await select('inflight-new');expect(newMount).toHaveBeenCalledTimes(2);expect(oldMount).not.toHaveBeenCalled();
 });
+
+it('injects the shared Markdown renderer with safe GFM and owned cleanup',async()=>{
+ await render();await assets();expect(options.renderMarkdown).toEqual(expect.any(Function));
+ const element=document.createElement('div');box.querySelector('[data-manufacturing-root]')!.append(element);
+ let first:any,second:any;
+ await act(async()=>{first=options.renderMarkdown(element,{markdown:'# First\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))',headingIds:{1:'source-first'}});});
+ expect(element.querySelector('h1')?.id).toBe('source-first');expect(element.querySelector('table')).not.toBeNull();
+ expect(element.querySelector('.article-markdown')).not.toBeNull();expect(element.querySelector('script')).toBeNull();
+ expect(element.querySelector('a')?.getAttribute('href')).not.toContain('javascript:');
+ await act(async()=>{second=options.renderMarkdown(element,{markdown:'# Second'});first.unmount();});
+ expect(element.textContent).toBe('Second');
+ await act(async()=>second.unmount());expect(element.childNodes).toHaveLength(0);
+ const retired=options.renderMarkdown;
+ await act(async()=>root.render(<p>Retired</p>));
+ await act(async()=>retired(element,{markdown:'Stale'}));expect(element.childNodes).toHaveLength(0);
+});
+
+it('retires nested Markdown roots safely through StrictMode, replacement and auth lifetime',async()=>{
+ const errors=vi.spyOn(console,'error');
+ let oldRender:any,handle:any;
+ mount.mockImplementation((element,opts)=>{
+  options=opts;oldRender=opts.renderMarkdown;
+  if(opts.renderMarkdown){const child=document.createElement('div');element.append(child);handle=opts.renderMarkdown(child,{markdown:'# Owned'});}
+  return {unmount:()=>{handle?.unmount();element.replaceChildren();},isDirty:()=>false};
+ });
+ await render(account,true);await assets();expect(oldRender).toEqual(expect.any(Function));
+ const retired=oldRender;
+ await act(async()=>root.render(<p>Retired</p>));
+ expect(errors.mock.calls).toEqual([]);
+ const detached=document.createElement('div');
+ await act(async()=>retired(detached,{markdown:'# Late'}));expect(detached.childNodes).toHaveLength(0);
+ await render({...account,csrf_token:'new-lifetime'});await assets();expect(options.renderMarkdown).not.toBe(retired);
+ expect(errors.mock.calls).toEqual([]);
+});
+
+it.each([
+ {csrf_token:'rotated'}, {role:'member' as const},
+ {internal_user_id:'other-user'}, {hard_stale_read_only:true},
+])('invalidates renderer ownership on account authorization change %o',async(change)=>{
+ await render();await assets();const retired=options.renderMarkdown;
+ const element=document.createElement('div');box.querySelector('[data-manufacturing-root]')!.append(element);
+ await act(async()=>retired(element,{markdown:'# Previous account'}));expect(element.textContent).toBe('Previous account');
+ await render({...account,...change});expect(element.childNodes).toHaveLength(0);
+ await act(async()=>retired(element,{markdown:'# Stale callback'}));expect(element.childNodes).toHaveLength(0);
+ await assets();expect(options.renderMarkdown).not.toBe(retired);
+});
+
+it('keeps the renderer stable within a mount and retires it on auth failure',async()=>{
+ await render();await assets();const retired=options.renderMarkdown;
+ await render({...account,display_name:'Updated display name'});expect(options.renderMarkdown).toBe(retired);expect(mount).toHaveBeenCalledTimes(1);
+ const element=document.createElement('div');box.querySelector('[data-manufacturing-root]')!.append(element);
+ await act(async()=>retired(element,{markdown:'# Private content'}));
+ await act(async()=>options.onAuthError());expect(element.childNodes).toHaveLength(0);
+ await act(async()=>retired(element,{markdown:'# Stale content'}));expect(element.childNodes).toHaveLength(0);
+});

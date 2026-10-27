@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { platformPath, type Account } from '../auth';
 import { manufacturingAccess, ManufacturingAccessError } from '../manufacturingApi';
+import { createManufacturingMarkdownRenderer, type ManufacturingMarkdownRenderer } from '../manufacturingMarkdown';
 import { registerPanoramaLeaveGuard } from '../panoramaNavigation';
 
-type MountOptions = {apiBase: string; csrfToken: string; readOnly: boolean; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
+type MountOptions = {apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
 type MountedWorkbench = {unmount(): void; isDirty(): boolean};
 declare global {
   interface Window {OrbbecManufacturing?: {mount(element: HTMLElement, options: MountOptions): MountedWorkbench}}
@@ -50,12 +51,14 @@ export function ManufacturingPage({account}: {account: Account}) {
     let stylesheet: HTMLLinkElement | undefined;
     let removeGuard: (() => void) | undefined;
     const controller = new AbortController();
+    const markdown = createManufacturingMarkdownRenderer();
     const retire = () => {
       if (!active) return;
       active = false; controller.abort(); removeGuard?.(); removeGuard = undefined;
       if (stylesheet && activeStylesheet === stylesheet) {
         stylesheet.media = 'not all'; activeStylesheet = undefined;
       }
+      markdown.unmount();
       const handle = mounted; mounted = undefined; handle?.unmount();
     };
     setStatus('loading');
@@ -78,7 +81,7 @@ export function ManufacturingPage({account}: {account: Account}) {
         activeStylesheet = stylesheet; stylesheet.media = 'all';
         removeGuard = registerPanoramaLeaveGuard(() => !active || !(dirty || mounted?.isDirty()) || window.confirm('有未保存的修改，确认离开？'));
         const handle = script.library.mount(element.current, {
-          apiBase, csrfToken: account.csrf_token,
+          apiBase, csrfToken: account.csrf_token, renderMarkdown: markdown.renderMarkdown,
           readOnly: account.hard_stale_read_only || access.can_edit !== true,
           onDirtyChange(value) { if (active) dirty = value; },
           onAuthError() { if (active) { retire(); setStatus('denied'); } },
