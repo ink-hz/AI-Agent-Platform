@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { listManagedUsers, logoutAccount, platformPath, type Account } from '../auth';
+import { AuthenticationRequired, PermissionDenied, listManagedUsers, logoutAccount, platformPath, type Account } from '../auth';
 import { manufacturingAccess, ManufacturingAccessError, type ManufacturingAccess } from '../manufacturingApi';
 import { createManufacturingMarkdownRenderer, type ManufacturingMarkdownRenderer } from '../manufacturingMarkdown';
 import { navigate } from '../router';
@@ -73,6 +73,7 @@ export function ManufacturingPage({account}: {account: Account}) {
       markdown.unmount();
       const handle = mounted; mounted = undefined; currentHandle.current = undefined; handle?.unmount();
     };
+    const deny = () => { if (active) { retire(); setStatus('denied'); } };
     setStatus('loading');
     void (async () => {
       try {
@@ -104,6 +105,9 @@ export function ManufacturingPage({account}: {account: Account}) {
               if (!active || signal.aborted || request.signal.aborted) throw new DOMException('Manufacturing directory retired', 'AbortError');
               return users.filter(user => user.status === 'active' && user.display_name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
                 .map(user => ({id:user.internal_user_id, displayName:user.display_name}));
+            } catch (error) {
+              if (active && !signal.aborted && (error instanceof AuthenticationRequired || error instanceof PermissionDenied)) deny();
+              throw error;
             } finally { signal.removeEventListener('abort', abort); directoryRequests.delete(request); }
           } : undefined,
           user: workbenchUser(currentAccount.current),
@@ -118,7 +122,7 @@ export function ManufacturingPage({account}: {account: Account}) {
           },
           readOnly: account.hard_stale_read_only || access.can_edit !== true,
           onDirtyChange(value) { if (active) dirty = value; },
-          onAuthError() { if (active) { retire(); setStatus('denied'); } },
+          onAuthError: deny,
         });
         // A synchronous auth callback may retire the owner during mount.
         if (!active) { handle.unmount(); return; }
