@@ -51,7 +51,7 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assets = root / "webui/dist"
     assets.mkdir(parents=True)
     for name in ("manufacturing.js", "manufacturing.css"):
-        (assets / name).write_text("test")
+        shutil.copyfile(Path(configured) / "webui/dist" / name, assets / name)
     monkeypatch.setenv("PLATFORM_MANUFACTURING_ROOT", str(root))
     monkeypatch.setenv(
         "PLATFORM_MANUFACTURING_DATABASE_PATH", str(tmp_path / "legacy.db")
@@ -72,7 +72,8 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     app = FastAPI()
     app.include_router(
         build_manufacturing_router(
-            resolve_workflow_subject=lambda uid: uid in active_subjects
+            resolve_workflow_subject=lambda uid: uid in active_subjects,
+            resolve_workflow_profiles=lambda ids: [dict(user_id=str(uid),display_name="Named project member" if uid==member else "Project Owner") for uid in ids if uid in active_subjects],
         ),
         prefix=prefix.rstrip("/"),
     )
@@ -178,6 +179,11 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
     assert client.get(wf + "/access").json()["project_ids"] == [pid]
     assert client.get(f"{wf}/projects/{pid}").status_code == 200
+    scoped_members=client.get(f"{wf}/projects/{pid}/members?limit=1&offset=0")
+    assert scoped_members.status_code==200
+    assert len(scoped_members.json()["items"])==1
+    assert scoped_members.json()["items"][0]["display_name"] in {"Named project member","Project Owner"}
+    assert client.get(f"{wf}/projects/{pid}/members?limit=51").status_code==422
     assert client.get(base + "/projects").status_code == 403
     assert (
         client.get(wf + "/assets/manufacturing.js?release=development").status_code

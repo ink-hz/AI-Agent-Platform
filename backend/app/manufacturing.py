@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import inspect
 import os
 import sys
 from pathlib import Path
@@ -148,7 +149,7 @@ def _unavailable_router() -> APIRouter:
     return router
 
 
-def build_manufacturing_router(*, resolve_workflow_subject=None) -> APIRouter:
+def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflow_profiles=None) -> APIRouter:
     """Load legacy and workflow independently; reserve workflow ahead of legacy catchall."""
     namespace = None
     root_text = os.environ.get("PLATFORM_MANUFACTURING_ROOT", "")
@@ -243,6 +244,10 @@ def build_manufacturing_router(*, resolve_workflow_subject=None) -> APIRouter:
                         and paths[i].samefile(paths[j])
                     ):
                         raise ValueError("invalid workflow configuration")
+            profile_options = {}
+            profile_parameter = inspect.signature(module.build_workflow_router).parameters.get("resolve_subject_profiles")
+            if profile_parameter is not None and profile_parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}:
+                profile_options["resolve_subject_profiles"] = resolve_workflow_profiles
             workflow = module.build_workflow_router(
                 database_path=domain,
                 authority_database_path=authority,
@@ -251,6 +256,7 @@ def build_manufacturing_router(*, resolve_workflow_subject=None) -> APIRouter:
                 resolve_subject=resolve_workflow_subject,
                 release=release,
                 dataset={"id": dataset_id, "mode": mode, "label": label},
+                **profile_options,
             )
             if not isinstance(workflow, APIRouter):
                 raise TypeError("invalid workflow router")

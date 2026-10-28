@@ -1731,7 +1731,10 @@ def create_app(
         if identity_enabled else None
     )
     app.include_router(
-        build_manufacturing_router(resolve_workflow_subject=workflow_subject_resolver),
+        build_manufacturing_router(
+            resolve_workflow_subject=workflow_subject_resolver,
+            resolve_workflow_profiles=getattr(getattr(identity_auth, "repository", None), "active_internal_user_profiles", None) if identity_enabled else None,
+        ),
         prefix=identity_auth.route_prefix.rstrip("/") if identity_enabled else "",
     )
     app.include_router(build_sdk_router())

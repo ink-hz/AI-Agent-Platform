@@ -816,6 +816,23 @@ class WebSessionRepository:
             options="-c statement_timeout=10000", row_factory=dict_row,
         )
 
+    def active_internal_user_profiles(self, user_ids: list[UUID]) -> list[dict[str, str]]:
+        """Trusted bounded names for server-selected project grants, never a directory."""
+        if not isinstance(user_ids, list) or len(user_ids) > 50 or any(not isinstance(uid, UUID) for uid in user_ids) or len(set(user_ids)) != len(user_ids):
+            raise ValueError("invalid scoped member identifiers")
+        if not user_ids:
+            return []
+        try:
+            with self._connection() as connection:
+                rows = connection.execute(
+                    "select internal_user_id,display_name from platform_control.internal_users "
+                    "where internal_user_id=any(%s) and status='active' and locally_invalidated_at is null "
+                    "order by internal_user_id limit 50", (user_ids,)
+                ).fetchall()
+            return [{"user_id": str(row["internal_user_id"]), "display_name": row["display_name"]} for row in rows if row["display_name"]]
+        except Exception as exc:
+            raise OSError("Control directory unavailable") from exc
+
     def is_active_internal_user(self, user_id: UUID) -> bool:
         try:
             with self._connection() as connection:
