@@ -137,6 +137,33 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert response.status_code == 200, response.text
     pid = response.json()["id"]
     assert response.json()["version"] == 1
+    # D2: real package commands run behind actual host middleware. Spoofed
+    # caller identity headers never become domain actor; one operation stays one fact.
+    import sqlite3
+    from datetime import UTC, datetime
+    isolated = client.post(wf + "/projects", headers=headers, json={**body, "operation_id": str(uuid4()), "name": "D2 real host command"})
+    assert isolated.status_code == 200, isolated.text
+    second_pid = isolated.json()["id"]
+    now = datetime.now(UTC).isoformat()
+    demand_body = {
+        "operation_id": str(uuid4()), "expected_version": 1, "action": "demand.record",
+        "kind": "firm", "product": body["product"], "quantity": "100", "unit": "piece", "due_date": "2026-12-01",
+        "source": {"system": "D2 isolated source", "object_type": "demand", "external_id": str(uuid4()), "version": 1,
+                   "mode": "manual", "occurred_at": now, "collected_at": now, "evidence": "Signed fixture requirement"},
+    }
+    command_url = f"{wf}/projects/{second_pid}/commands"
+    denied = client.post(command_url, headers=headers, json={**demand_body, "user_id": str(member)})
+    assert denied.status_code == 422
+    accepted = client.post(command_url, headers=headers, json=demand_body)
+    assert accepted.status_code == 200, accepted.text
+    repeated = client.post(command_url, headers=headers, json=demand_body)
+    assert repeated.status_code == 200 and repeated.json()["replayed"] is True
+    assert repeated.json()["object_id"] == accepted.json()["object_id"]
+    with sqlite3.connect(f"file:{tmp_path / 'domain.db'}?mode=ro", uri=True) as facts:
+        assert facts.execute("SELECT COUNT(*) FROM demands WHERE project_id=?", (second_pid,)).fetchone()[0] == 1
+        actors = facts.execute("SELECT actor_id FROM audit_events WHERE project_id=? AND action='demand.record'", (second_pid,)).fetchall()
+        assert actors == [(str(owner),)]
+    assert client.get(prefix.rstrip("/") + "/fixture/login").status_code in (403, 404, 405)
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
     assert client.get(wf + "/access").json()["allowed"] is False
     assert client.get(f"{wf}/projects/{pid}").status_code == 404
