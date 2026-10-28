@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { manufacturingBootstrap } from '../manufacturingTestFixture';
 import { StrictMode, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -16,7 +17,7 @@ beforeEach(()=>{
  window.history.replaceState({},'', '/manufacturing');vi.stubGlobal('requestAnimationFrame',vi.fn());
  unmount=vi.fn(); mount=vi.fn((_element,opts)=>{ options=opts;return {unmount,isDirty:()=>false}; });
  (window as any).OrbbecManufacturing={mount};
- vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,status:200,json:async()=>({allowed:true,available:true,can_edit:true,release:`test-${++release}`})}));
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,status:200,json:async()=>manufacturingBootstrap({allowed:true,available:true,can_edit:true,release:`test-${++release}`})}));
  box=document.createElement('div');document.body.append(box);root=createRoot(box);
 });
 afterEach(async()=>{
@@ -45,7 +46,7 @@ it.each([401,403,503])('shows safe access failure %s without assets',async(statu
  expect(document.querySelector('[data-manufacturing-asset]')).toBeNull();expect(mount).not.toHaveBeenCalled();
 });
 it('shows unavailable without fake UI',async()=>{
- vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>({allowed:true,available:false})} as Response);
+ vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>manufacturingBootstrap({allowed:true,available:false})} as Response);
  await render();expect(box.textContent).toContain('暂不可用');expect(mount).not.toHaveBeenCalled();
 });
 it('reports asset and mount errors and can retry',async()=>{
@@ -62,7 +63,7 @@ it('protects SPA/popstate and retires dirty/auth callbacks',async()=>{
 });
 it('ignores access resolving after retirement',async()=>{
  let resolve!: (response:Response)=>void;vi.mocked(fetch).mockImplementation(()=>new Promise(value=>{resolve=value;}));
- await render();await act(async()=>root.render(<p>Retired</p>));await act(async()=>resolve({ok:true,status:200,json:async()=>({allowed:true,available:true,release:'late'})} as Response));
+ await render();await act(async()=>root.render(<p>Retired</p>));await act(async()=>resolve({ok:true,status:200,json:async()=>manufacturingBootstrap({allowed:true,available:true,release:'late'})} as Response));
  expect(mount).not.toHaveBeenCalled();expect(document.querySelector('[data-manufacturing-asset]')).toBeNull();
 });
 it('uses the library heading when mounted',async()=>{
@@ -70,7 +71,7 @@ it('uses the library heading when mounted',async()=>{
  await render();await assets();expect(box.querySelectorAll('h1')).toHaveLength(1);
 });
 it('loads each asset URL once across route re-entry',async()=>{
- vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>({allowed:true,available:true,can_edit:true,release:'shared-release'})} as Response);
+ vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>manufacturingBootstrap({allowed:true,available:true,can_edit:true,release:'shared-release'})} as Response);
  await render();await assets();await act(async()=>root.render(<p>Retired</p>));await render();
  expect(document.querySelectorAll('script[data-manufacturing-asset]')).toHaveLength(1);expect(document.querySelectorAll('link[data-manufacturing-asset]')).toHaveLength(1);
  expect(mount).toHaveBeenCalledTimes(2);
@@ -78,7 +79,7 @@ it('loads each asset URL once across route re-entry',async()=>{
 it('binds cached script and active CSS to v1→v2→v1 release transitions',async()=>{
  const first=vi.fn(()=>({unmount:vi.fn(),isDirty:()=>false})), second=vi.fn(()=>({unmount:vi.fn(),isDirty:()=>false}));
  async function select(release:string,csrf:string){
-  vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>({allowed:true,available:true,can_edit:true,release})} as Response);
+  vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>manufacturingBootstrap({allowed:true,available:true,can_edit:true,release})} as Response);
   await render({...account,csrf_token:csrf});
  }
  await select('rollback-v1','first');window.OrbbecManufacturing={mount:first};await assets();
@@ -90,7 +91,7 @@ it('binds cached script and active CSS to v1→v2→v1 release transitions',asyn
 });
 it('ignores stale in-flight scripts and CSS while retaining the selected library',async()=>{
  async function select(release:string){
-  vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>({allowed:true,available:true,can_edit:true,release})} as Response);
+  vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>manufacturingBootstrap({allowed:true,available:true,can_edit:true,release})} as Response);
   await render({...account,csrf_token:release});
  }
  const oldMount=vi.fn(()=>({unmount:vi.fn(),isDirty:()=>false})),newMount=vi.fn(()=>({unmount:vi.fn(),isDirty:()=>false}));

@@ -24,7 +24,7 @@ def test_host_exposes_explicit_workflow_subject_resolver_keyword():
 
 @pytest.mark.parametrize("prefix", ["/", "/_preview/dingtalk-r1/"])
 def test_real_middleware_scopes_members_and_preserves_legacy(
-    tmp_path, monkeypatch, prefix
+    tmp_path, monkeypatch, prefix, caplog
 ):
     import shutil
     from pathlib import Path
@@ -87,7 +87,18 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     client = TestClient(app, base_url="https://agent.example.test")
     base = prefix.rstrip("/") + "/api/v1/manufacturing"
     wf = base + "/workflow"
-    assert client.get(wf + "/access").status_code == 401
+    assert (
+        client.get(wf + "/access", headers={"Cookie": "secret-cookie"}).status_code
+        == 401
+    )
+    events = [
+        r.workflow_security for r in caplog.records if hasattr(r, "workflow_security")
+    ]
+    assert len(events) == 1
+    assert events[0]["status"] == 401
+    assert "secret" not in str(events)
+    assert not (tmp_path / "domain.db").exists()
+    caplog.clear()
     client.cookies.set(auth.cookie_name, "valid-cookie")
     headers = {
         "Origin": "https://agent.example.test",
@@ -144,6 +155,7 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     grant = {
         "operation_id": str(uuid4()),
         "expected_version": 1,
+        "scope": {"kind": "project", "project_id": pid},
         "roles": ["planner"],
         "qualifications": [],
         "active": True,
@@ -171,7 +183,21 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
         client.get(wf + "/assets/manufacturing.js?release=development").status_code
         == 200
     )
+    caplog.clear()
     assert client.get(f"{wf}/projects/{uuid4()}").status_code == 404
+    events = [
+        r.workflow_security for r in caplog.records if hasattr(r, "workflow_security")
+    ]
+    assert len(events) == 1  # the library denial is not duplicated by the host
+    assert events[0]["code"] == "NOT_FOUND"
+    caplog.clear()
+    assert client.get(wf + "/unlisted-secret?token=secret").status_code in (403, 404)
+    events = [
+        r.workflow_security for r in caplog.records if hasattr(r, "workflow_security")
+    ]
+    assert len(events) == 1
+    assert len(str(events[0])) < 1024
+    assert "secret" not in str(events[0])
     assert client.delete(wf + "/projects").status_code in (403, 404, 405)
     auth.context = AuthContext(
         member, Role.MANAGEMENT_VIEWER, auth.context.session_id, False
@@ -205,7 +231,9 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     # A path collision is rejected before the legacy database can be opened by workflow.
     legacy_file = tmp_path / "legacy.db"
     legacy_file.write_bytes(b"legacy sentinel")
-    monkeypatch.setenv("PLATFORM_MANUFACTURING_WORKFLOW_DATABASE_PATH", str(legacy_file))
+    monkeypatch.setenv(
+        "PLATFORM_MANUFACTURING_WORKFLOW_DATABASE_PATH", str(legacy_file)
+    )
     collision_app = FastAPI()
     collision_app.include_router(
         build_manufacturing_router(resolve_workflow_subject=lambda uid: True),

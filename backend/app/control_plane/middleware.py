@@ -11,8 +11,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Match
 
-from app.spa import is_public_build_asset
+from app.manufacturing_security import log_workflow_protocol_denial
 from app.sdk_admin_paths import SDK_ADMIN_SHELL
+from app.spa import is_public_build_asset
 
 from .client_address import UntrustedForwardingHeaders, resolve_edge_source
 from .rate_limit import RateLimitExceeded, RateLimitUnavailable, rate_limit_response
@@ -434,6 +435,20 @@ class IdentitySecurityMiddleware:
         )
 
         async def protected_send(message):
+            if (
+                message["type"] == "http.response.start"
+                and message["status"] >= 400
+                and isinstance(local_path, str)
+                and (
+                    local_path == "/api/v1/manufacturing/workflow"
+                    or local_path.startswith("/api/v1/manufacturing/workflow/")
+                )
+                and not scope.get("state", {}).get("workflow_denial_logged")
+            ):
+                resolved = self._resolved_route(scope)
+                log_workflow_protocol_denial(
+                    message["status"], method, resolved[0] if resolved else None
+                )
             if identity_response and message["type"] == "http.response.start":
                 response_headers = MutableHeaders(scope=message)
                 response_headers["Cache-Control"] = (
