@@ -165,3 +165,71 @@ def test_click_body_never_accepts_client_identity_or_department():
     assert client.post('/api/v1/access-events/office-service-click',json=body|{'department':'伪造'}).status_code==400
     assert client.post('/api/v1/access-events/office-service-click',json=body).status_code==204
     assert len(clicks.calls)==1 and clicks.calls[0][1]==context
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize('environment', ['production', 'preview'])
+def test_department_groups_preserve_leaf_counts_and_deduplicate_people(control_database, environment):
+    from app.control_plane.office_operations import OfficeOperationsRepository
+    env = control_database['environments'][environment]
+    generation = uuid4()
+    root, engineering, operations, testing, hardware, sdk, shared_a, shared_b = [uuid4() for _ in range(8)]
+    actors = [uuid4() for _ in range(4)]
+    a, b, c, developer = actors
+    with psycopg.connect(env['admin']) as conn:
+        conn.execute('truncate platform_control.office_operations_daily, platform_control.office_operations_exclusions')
+        conn.execute("insert into platform_control.directory_generations(generation_id,status,completed_at) values(%s,'complete',now())", (generation,))
+        for i, (key, parent, label) in enumerate([
+            (root, None, 'Organization'), (engineering, root, '研发中心'), (operations, root, '运营部'),
+            (testing, engineering, '测试组'), (hardware, testing, '硬件测试'), (sdk, engineering, '应用SDK组'),
+            (shared_a, engineering, '同名组'), (shared_b, operations, '同名组'),
+        ]):
+            conn.execute('insert into platform_control.directory_departments(generation_id,department_key,parent_department_key,lookup_hmac,lookup_key_version,encrypted_provider_id,encryption_key_version,display_name) values(%s,%s,%s,%s,1,%s,1,%s)', (generation, key, parent, bytes([i])*32, b'private', label))
+        for i, actor in enumerate(actors):
+            conn.execute("insert into platform_control.internal_users(internal_user_id,display_name,status,role) values(%s,'合成员工','active','member')", (actor,))
+            conn.execute("insert into platform_control.directory_members(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,lookup_key_version,encrypted_provider_id,encryption_key_version,display_name,status) values(%s,%s,%s,'employee',%s,1,%s,1,'合成员工','active')", (generation, actor, actor, bytes([i])*32, b'private'))
+        for actor, dept in [(a,shared_a),(c,shared_b),(b,shared_a),(b,shared_b)]:
+            conn.execute('insert into platform_control.member_departments values(%s,%s,%s)', (generation,actor,dept))
+        conn.execute('update platform_control.directory_state set active_generation_id=%s', (generation,))
+        conn.execute('update platform_control.office_operations_state set backfilled_at=now()')
+        conn.execute('insert into platform_control.office_operations_exclusions values(platform_control.office_actor_key_v124(%s))', (developer,))
+        for day, actor, dept, page, count in [
+            ('2026-09-14',a,'硬件测试','office.shuttle',2), ('2026-09-15',a,'应用SDK组','office.shuttle',3),
+            ('2026-09-15',a,'同名组','office.shuttle',4), ('2026-09-15',b,'测试组','office.shuttle',1),
+            ('2026-09-15',c,'同名组','office.shuttle',5), ('2026-09-15',a,'运营部','office.shuttle',4),
+            ('2026-09-15',b,'历史旧部门','office.shuttle',7), ('2026-09-15',b,'同名组','office.shuttle',2),
+            ('2026-09-15',developer,'硬件测试','office.shuttle',100),
+            ('2026-09-15',a,'硬件测试','office.shuttle_admin',4),
+            ('2026-09-15',a,'硬件测试','entry.meetings',2),
+        ]:
+            conn.execute("insert into platform_control.office_operations_daily values(%s,platform_control.office_actor_key_v124(%s),%s,%s,'legacy',%s)", (day, actor, dept, page, count))
+    repo = OfficeOperationsRepository(env['urls']['platform_control_app' + ('_preview' if environment == 'preview' else '')])
+    args = dict(date_from=date(2026,9,14),date_to=date(2026,9,30))
+    report = repo.report(OperationsQuery(**args))
+    groups = {group['label']: group for group in report['department_groups']}
+    assert report['summary']['events'] == 28 and report['summary']['users'] == 3
+    assert sum(group['events'] for group in groups.values()) == 28
+    assert (groups['研发中心']['events'],groups['研发中心']['users']) == (10,2)
+    assert (groups['运营部']['events'],groups['运营部']['users']) == (9,2)
+    assert (groups['未匹配上级部门']['events'],groups['未匹配上级部门']['users']) == (9,1)
+    for group in groups.values():
+        assert sum(child['events'] for child in group['children']) == group['events']
+        assert sum(cell['events'] for cell in group['cells']) == group['events']
+    children = {child['label']:child for child in groups['研发中心']['children']}
+    assert children['硬件测试']['events'] == 2
+    assert children['同名组']['events'] == 4
+    assert groups['研发中心']['cells'][0]['users'] == 2
+    assert report['department_hierarchy']['basis'] == 'current_directory'
+    assert report['department_hierarchy']['unmapped_events'] == 9
+    assert not any(str(actor) in str(report) for actor in actors)
+    filtered = repo.report(OperationsQuery(**args, department='硬件测试'))
+    assert len(filtered['department_groups']) == 1 and filtered['department_groups'][0]['events'] == 2
+    monthly = repo.report(OperationsQuery(**args,grain='month'))
+    assert monthly['department_groups'] == report['department_groups']
+    assert repo.report(OperationsQuery(**args,scope='admin'))['department_groups'][0]['events'] == 4
+    assert repo.report(OperationsQuery(**args,metric='entry_click'))['department_groups'][0]['events'] == 2
+    with psycopg.connect(env['admin']) as conn:
+        conn.execute('update platform_control.directory_state set active_generation_id=null')
+    unmapped = repo.report(OperationsQuery(**args))
+    assert len(unmapped['department_groups']) == 1
+    assert unmapped['department_groups'][0]['events'] == 28
