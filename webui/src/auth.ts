@@ -480,8 +480,9 @@ export async function logoutAccount(csrfToken: string): Promise<void> {
 }
 
 
-export async function listManagedUsers(): Promise<ManagedUser[]> {
+export async function listManagedUsers(signal?: AbortSignal): Promise<ManagedUser[]> {
   const response = await fetch(platformPath("/api/v1/manage/users"), {
+    signal,
     credentials: "include", headers: { Accept: "application/json" },
   });
   await checked(response);

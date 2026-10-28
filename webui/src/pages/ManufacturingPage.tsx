@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { logoutAccount, platformPath, type Account } from '../auth';
+import { listManagedUsers, logoutAccount, platformPath, type Account } from '../auth';
 import { manufacturingAccess, ManufacturingAccessError, type ManufacturingAccess } from '../manufacturingApi';
 import { createManufacturingMarkdownRenderer, type ManufacturingMarkdownRenderer } from '../manufacturingMarkdown';
 import { navigate } from '../router';
@@ -7,7 +7,7 @@ import './manufacturingHost.css';
 import { registerPanoramaLeaveGuard } from '../panoramaNavigation';
 
 type WorkbenchUser = {displayName: string; roleLabel: string};
-type MountOptions = {bootstrap?: ManufacturingAccess; user?: WorkbenchUser; onNavigatePlatform?: () => void; onLogout?: () => Promise<void>; apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
+type MountOptions = {findSubjects?: (query:string,signal:AbortSignal)=>Promise<{id:string;displayName:string}[]>; bootstrap?: ManufacturingAccess; user?: WorkbenchUser; onNavigatePlatform?: () => void; onLogout?: () => Promise<void>; apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
 type MountedWorkbench = {unmount(): void; isDirty(): boolean; updateUser?(user: WorkbenchUser): void};
 declare global {
   interface Window {OrbbecManufacturing?: {mount(element: HTMLElement, options: MountOptions): MountedWorkbench}}
@@ -62,10 +62,11 @@ export function ManufacturingPage({account}: {account: Account}) {
     let stylesheet: HTMLLinkElement | undefined;
     let removeGuard: (() => void) | undefined;
     const controller = new AbortController();
+    const directoryRequests = new Set<AbortController>();
     const markdown = createManufacturingMarkdownRenderer();
     const retire = () => {
       if (!active) return;
-      active = false; controller.abort(); removeGuard?.(); removeGuard = undefined;
+      active = false; controller.abort(); directoryRequests.forEach(c=>c.abort()); directoryRequests.clear(); removeGuard?.(); removeGuard = undefined;
       if (stylesheet && activeStylesheet === stylesheet) {
         stylesheet.media = 'not all'; activeStylesheet = undefined;
       }
@@ -94,6 +95,17 @@ export function ManufacturingPage({account}: {account: Account}) {
         removeGuard = registerPanoramaLeaveGuard(() => !active || !(dirty || mounted?.isDirty()) || window.confirm('有未保存的修改，确认离开？'));
         const handle = script.library.mount(element.current, {
           apiBase, bootstrap: access.protocol === 1 ? access : undefined, csrfToken: account.csrf_token, renderMarkdown: markdown.renderMarkdown,
+          findSubjects: access.protocol === 1 && access.configuration_admin ? async (query, signal) => {
+            if (!active || signal.aborted) throw new DOMException('Manufacturing directory retired', 'AbortError');
+            const request = new AbortController(); directoryRequests.add(request);
+            const abort = () => request.abort(); signal.addEventListener('abort', abort, {once:true});
+            try {
+              const users = await listManagedUsers(request.signal);
+              if (!active || signal.aborted || request.signal.aborted) throw new DOMException('Manufacturing directory retired', 'AbortError');
+              return users.filter(user => user.status === 'active' && user.display_name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+                .map(user => ({id:user.internal_user_id, displayName:user.display_name}));
+            } finally { signal.removeEventListener('abort', abort); directoryRequests.delete(request); }
+          } : undefined,
           user: workbenchUser(currentAccount.current),
           onNavigatePlatform() { if (active && !logoutPending) navigate('/'); },
           async onLogout() {

@@ -196,3 +196,26 @@ it('logs out with the current CSRF once, redirects only on success, and retires 
  finish(new Response('{}'));await pending;expect(replace).not.toHaveBeenCalled();
  await options.onLogout();expect(fetch).toHaveBeenCalledTimes(count+2);
 });
+
+it('provides an active named directory only for configuration admins and retires it with the mount',async()=>{
+ const grantAccess=manufacturingBootstrap({workflow_available:true,workflow_access:true,configuration_admin:true,dataset:{id:'demo',mode:'demo',label:'Demo'},release:'directory-one'});
+ vi.mocked(fetch).mockImplementation(async(url)=>({ok:true,status:200,json:async()=>String(url).endsWith('/manage/users')?{users:[{internal_user_id:'u1',display_name:'王工',status:'active',role:'member',scopes:[]},{internal_user_id:'u2',display_name:'离职账号',status:'inactive',role:'member',scopes:[]}]}:grantAccess}) as Response);
+ await render();await assets();expect(options.findSubjects).toEqual(expect.any(Function));
+ const finder=options.findSubjects;const controller=new AbortController();expect(await finder('王',controller.signal)).toEqual([{id:'u1',displayName:'王工'}]);
+ await act(async()=>root.render(<p>Retired</p>));await expect(finder('',controller.signal)).rejects.toMatchObject({name:'AbortError'});
+});
+it('does not supply the directory callback to ordinary workflow members',async()=>{
+ vi.mocked(fetch).mockResolvedValue({ok:true,status:200,json:async()=>manufacturingBootstrap({workflow_available:true,workflow_access:true,configuration_admin:false,legacy_access:false,dataset:{id:'demo',mode:'demo',label:'Demo'},release:'directory-member'})} as Response);
+ await render({...account,role:'member'});await assets();expect(options.findSubjects).toBeUndefined();
+});
+it('aborts directory lookup with its caller and ignores a late response after account retirement',async()=>{
+ const grantAccess=manufacturingBootstrap({workflow_available:true,workflow_access:true,configuration_admin:true,dataset:{id:'demo',mode:'demo',label:'Demo'},release:'directory-pending'});
+ let finish!: (r:Response)=>void;let requestSignal:AbortSignal|undefined;
+ vi.mocked(fetch).mockImplementation(async(url,init)=>{
+   if(String(url).endsWith('/manage/users')){requestSignal=init?.signal as AbortSignal;return new Promise<Response>(r=>finish=r);}
+   return {ok:true,status:200,json:async()=>grantAccess} as Response;
+ });
+ await render();await assets();const caller=new AbortController();const pending=options.findSubjects('',caller.signal);caller.abort();expect(requestSignal?.aborted).toBe(true);
+ await act(async()=>root.render(<p>Retired</p>));finish({ok:true,status:200,json:async()=>({users:[{internal_user_id:'u1',display_name:'王工',status:'active',role:'member',scopes:[]}]})} as Response);
+ await expect(pending).rejects.toMatchObject({name:'AbortError'});
+});
