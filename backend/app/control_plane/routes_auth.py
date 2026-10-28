@@ -68,7 +68,7 @@ def _login_csp(auth) -> str:
         connect_source = "'self'"
     else:
         base = auth.public_base_url + auth.route_prefix.rstrip("/")
-        asset_source = base + "/assets/ " + base + "/api/v1/manufacturing/assets/"
+        asset_source = base + "/assets/ " + base + "/api/v1/manufacturing/assets/ " + base + "/api/v1/manufacturing/workflow/assets/"
         image_source = base + "/"
         connect_source = base + "/api/"
     return (
@@ -276,6 +276,9 @@ def build_auth_router(
 
     @router.get("/manufacturing", include_in_schema=False)
     @router.get("/manufacturing/", include_in_schema=False)
+    async def manufacturing_shell(request: Request):
+        return application_shell()
+
     @router.get("/organization", include_in_schema=False)
     @router.get("/ai-engineering", include_in_schema=False)
     async def ai_engineering_shell(request: Request):

@@ -1726,7 +1726,14 @@ def create_app(
         include_in_schema=False,
     )
     app.include_router(build_voc_extension_router())
-    app.include_router(build_manufacturing_router(), prefix=identity_auth.route_prefix.rstrip("/") if identity_enabled else "")
+    workflow_subject_resolver = (
+        getattr(getattr(identity_auth, "repository", None), "is_active_internal_user", None)
+        if identity_enabled else None
+    )
+    app.include_router(
+        build_manufacturing_router(resolve_workflow_subject=workflow_subject_resolver),
+        prefix=identity_auth.route_prefix.rstrip("/") if identity_enabled else "",
+    )
     app.include_router(build_sdk_router())
     app.include_router(build_sdk_native_router())
     app.include_router(build_sdk_admin_router())

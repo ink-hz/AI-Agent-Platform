@@ -14,6 +14,27 @@ from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants, _app
 BASE = '/api/v1/manufacturing'
 
 
+def test_old_release_still_serves_legacy_only_workflow_probe_and_assets(bundle, monkeypatch, tmp_path):
+    for key, value in {
+        'PLATFORM_MANUFACTURING_WORKFLOW_DATABASE_PATH': str(tmp_path / 'domain.db'),
+        'PLATFORM_MANUFACTURING_AUTHORITY_DATABASE_PATH': str(tmp_path / 'authority.db'),
+        'PLATFORM_MANUFACTURING_DATASET_ID': 'test',
+        'PLATFORM_MANUFACTURING_DATASET_MODE': 'test',
+        'PLATFORM_MANUFACTURING_DATASET_LABEL': 'Test',
+    }.items():
+        monkeypatch.setenv(key, value)
+    auth = FakeAuth()
+    c = client(auth)
+    c.cookies.set(auth.cookie_name, 'valid-cookie')
+    probe = c.get(BASE + '/workflow/access')
+    assert probe.status_code == 200
+    assert probe.json()['workflow_available'] is False
+    assert probe.json()['dataset'] is None
+    assert probe.json()['legacy_access'] is True
+    assert c.get(BASE + '/assets/manufacturing.js').status_code == 200
+    assert c.get(BASE + '/workflow/projects').status_code == 503
+
+
 def bridge():
     from app.manufacturing import build_manufacturing_router
     return build_manufacturing_router()
@@ -258,12 +279,14 @@ def test_real_project_routes_through_create_app_and_csrf(real_release, tmp_path,
     auth = FakeAuth()
     auth.context = AuthContext(uuid4(), role, uuid4(), False)
     app, c = real_app_client(tmp_path, monkeypatch, auth)
-    from app.manufacturing_paths import MANUFACTURING_ROUTES
+    from app.manufacturing_paths import MANUFACTURING_ROUTES, WORKFLOW_ROUTES
     registered = {(method, route.path.removeprefix(BASE))
         for route in IdentitySecurityMiddleware._expand_included_routes(app.routes)
         if getattr(route, 'path', '').startswith(BASE) and getattr(route, 'include_in_schema', False)
         for method in route.methods}
-    assert registered == MANUFACTURING_ROUTES
+    assert registered == MANUFACTURING_ROUTES | frozenset(
+        (method, '/workflow' + path) for method, path in WORKFLOW_ROUTES
+    )
     assert c.get(BASE + '/dashboard').status_code == 401
     c.cookies.set(auth.cookie_name, 'valid-cookie')
     headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf, 'X-User-ID': 'forged'}

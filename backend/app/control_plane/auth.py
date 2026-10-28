@@ -816,6 +816,17 @@ class WebSessionRepository:
             options="-c statement_timeout=10000", row_factory=dict_row,
         )
 
+    def is_active_internal_user(self, user_id: UUID) -> bool:
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "select 1 from platform_control.internal_users where internal_user_id=%s "
+                    "and status='active' and locally_invalidated_at is null", (user_id,)
+                ).fetchone()
+                return row is not None
+        except Exception as exc:
+            raise OSError('Control directory unavailable') from exc
+
     def create_attempt(self, record: LoginAttempt) -> UUID:
         try:
             with self._connection() as connection:

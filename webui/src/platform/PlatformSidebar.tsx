@@ -31,7 +31,7 @@ function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = fa
     ] },
     { label:'AI 工作', items:manager ? [...aiWork.slice(0,2), {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}, ...aiWork.slice(2)] : aiWork },
     { label:'业务工作台', items:[
-      ...(manager && manufacturingAvailable ? [{label:'大制造',path:'/manufacturing',icon:Boxes,routes:['manufacturing']}] : []),
+      ...(manufacturingAvailable ? [{label:'大制造',path:'/manufacturing',icon:Boxes,routes:['manufacturing']}] : []),
       ...(sdkAvailable ? [{ label:'SDK 开发管理', path:'/sdk-admin', icon:Code2, routes:['sdk-admin'] }] : []),
       { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
       { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },
@@ -61,7 +61,7 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
   const [manufacturingAvailable, setManufacturingAvailable] = useState(false);
   useEffect(() => {
     setManufacturingAvailable(false);
-    if (!account || !["platform_owner", "platform_admin"].includes(account.role)) return;
+    if (!account) return;
     let live = true;
     const controller = new AbortController();
     void manufacturingAccess(controller.signal).then(access => {

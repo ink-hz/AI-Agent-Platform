@@ -24,10 +24,10 @@ it('renders the authorized manufacturing route outside all Agent chrome', async 
  expect(box.querySelector('.platform-shell')).toBeNull();expect(box.querySelector('.topbar')).toBeNull();
  expect(box.querySelector('nav')).toBeNull();
 });
-it('keeps denied manufacturing routes outside the shell and hides account data', async () => {
+it('delegates signed-in member access to the manufacturing page', async () => {
  loadAccount.mockResolvedValue({...account,role:'member'});
  await act(async () => root.render(<App/>));
- expect(box.textContent).toContain('无权访问');expect(box.textContent).not.toContain('测试制造经理');
+ expect(box.textContent).toContain('制造页面 测试制造经理');
  expect(box.querySelector('.platform-shell')).toBeNull();
 });
 it('keeps account failures outside manufacturing chrome', async () => {

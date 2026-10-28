@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { logoutAccount, platformPath, type Account } from '../auth';
-import { manufacturingAccess, ManufacturingAccessError } from '../manufacturingApi';
+import { manufacturingAccess, ManufacturingAccessError, type ManufacturingAccess } from '../manufacturingApi';
 import { createManufacturingMarkdownRenderer, type ManufacturingMarkdownRenderer } from '../manufacturingMarkdown';
 import { navigate } from '../router';
 import './manufacturingHost.css';
 import { registerPanoramaLeaveGuard } from '../panoramaNavigation';
 
 type WorkbenchUser = {displayName: string; roleLabel: string};
-type MountOptions = {user?: WorkbenchUser; onNavigatePlatform?: () => void; onLogout?: () => Promise<void>; apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
+type MountOptions = {bootstrap?: ManufacturingAccess; user?: WorkbenchUser; onNavigatePlatform?: () => void; onLogout?: () => Promise<void>; apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
 type MountedWorkbench = {unmount(): void; isDirty(): boolean; updateUser?(user: WorkbenchUser): void};
 declare global {
   interface Window {OrbbecManufacturing?: {mount(element: HTMLElement, options: MountOptions): MountedWorkbench}}
@@ -81,9 +81,10 @@ export function ManufacturingPage({account}: {account: Account}) {
         if (!access.available) { setStatus('unavailable'); return; }
         const apiBase = platformPath('/api/v1/manufacturing');
         const version = encodeURIComponent(access.release ?? 'development');
+        const assetsBase = access.workflow_available ? `${apiBase}/workflow` : apiBase;
         const [script, style] = await Promise.all([
-          loadAsset(`${apiBase}/assets/manufacturing.js?release=${version}`, true),
-          loadAsset(`${apiBase}/assets/manufacturing.css?release=${version}`, false),
+          loadAsset(`${assetsBase}/assets/manufacturing.js?release=${version}`, true),
+          loadAsset(`${assetsBase}/assets/manufacturing.css?release=${version}`, false),
         ]);
         if (!active || !element.current) return;
         if (!script.library || !style.stylesheet) throw new Error('Manufacturing mount unavailable');
@@ -92,7 +93,7 @@ export function ManufacturingPage({account}: {account: Account}) {
         activeStylesheet = stylesheet; stylesheet.media = 'all';
         removeGuard = registerPanoramaLeaveGuard(() => !active || !(dirty || mounted?.isDirty()) || window.confirm('有未保存的修改，确认离开？'));
         const handle = script.library.mount(element.current, {
-          apiBase, csrfToken: account.csrf_token, renderMarkdown: markdown.renderMarkdown,
+          apiBase, bootstrap: access.protocol === 1 ? access : undefined, csrfToken: account.csrf_token, renderMarkdown: markdown.renderMarkdown,
           user: workbenchUser(currentAccount.current),
           onNavigatePlatform() { if (active && !logoutPending) navigate('/'); },
           async onLogout() {

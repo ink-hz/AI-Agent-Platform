@@ -34,7 +34,7 @@ it('recognizes only native paths and validated login returns',async()=>{
 });
 it('mounts with exact prefix/CSRF/readOnly and cleans up under StrictMode',async()=>{
  window.history.replaceState({},'', '/_preview/dingtalk-r1/manufacturing');await render({...account,hard_stale_read_only:true},true);
- expect(fetch).toHaveBeenCalledWith('/_preview/dingtalk-r1/api/v1/manufacturing/access',expect.objectContaining({credentials:'same-origin'}));
+ expect(fetch).toHaveBeenCalledWith('/_preview/dingtalk-r1/api/v1/manufacturing/workflow/access',expect.objectContaining({credentials:'same-origin'}));
  expect(document.querySelectorAll('script[data-manufacturing-asset]')).toHaveLength(1);await assets();expect(mount).toHaveBeenCalledTimes(1);
  expect(options).toMatchObject({apiBase:'/_preview/dingtalk-r1/api/v1/manufacturing',csrfToken:'trusted-csrf',readOnly:true});
  expect(mount.mock.calls[0][0]).toBe(box.querySelector('[data-manufacturing-root]'));

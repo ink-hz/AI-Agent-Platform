@@ -179,7 +179,7 @@ export default function App() {
   const [panoramaAccessDenied, setPanoramaAccessDenied] = useState(false);
   const denyPanoramaAccess = useCallback(() => setPanoramaAccessDenied(true), []);
   const loginRoute = route.name === "login";
-  const usageRoute = ["home", "organization", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "sdk-admin", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
+  const usageRoute = ["home", "manufacturing", "organization", "brain", "ai-engineering", "conversations", "conversation", "missions", "mission", "agents", "sdk", "sdk-admin", "voc-workspace", "hr", "hr-chat", "hr-agent", "hr-positions", "hr-position", "hr-position-section", "hr-panorama", "marketing", "marketing-conversation", "ai-notes", "ai-note", "account", "legacy-redirect"].includes(route.name);
   const faeManagementRoute = route.name.startsWith("fae-manage-");
   const ownerOnlyRoute = route.name === "admin-access";
   const routeAllowed = legacyMode || !account || usageRoute || faeManagementRoute || account.role === "platform_owner" || (!ownerOnlyRoute && account.role === "platform_admin")
