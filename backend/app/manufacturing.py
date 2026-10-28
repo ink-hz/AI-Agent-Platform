@@ -6,6 +6,8 @@ import inspect
 import os
 import sys
 from pathlib import Path
+from collections.abc import Callable
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.routing import APIRoute
@@ -149,7 +151,7 @@ def _unavailable_router() -> APIRouter:
     return router
 
 
-def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflow_profiles=None) -> APIRouter:
+def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflow_profiles=None, workflow_business_clock: Callable[[], datetime] | None = None) -> APIRouter:
     """Load legacy and workflow independently; reserve workflow ahead of legacy catchall."""
     namespace = None
     root_text = os.environ.get("PLATFORM_MANUFACTURING_ROOT", "")
@@ -248,6 +250,11 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
             profile_parameter = inspect.signature(module.build_workflow_router).parameters.get("resolve_subject_profiles")
             if profile_parameter is not None and profile_parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}:
                 profile_options["resolve_subject_profiles"] = resolve_workflow_profiles
+            if workflow_business_clock is not None:
+                clock_parameter = inspect.signature(module.build_workflow_router).parameters.get("business_clock")
+                if clock_parameter is None or clock_parameter.kind not in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}:
+                    raise ValueError("workflow release does not support trusted business clock")
+                profile_options["business_clock"] = workflow_business_clock
             workflow = module.build_workflow_router(
                 database_path=domain,
                 authority_database_path=authority,

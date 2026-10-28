@@ -3,7 +3,8 @@ import ipaddress
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
+from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -875,6 +876,8 @@ def create_app(
     artifact_output_service=None,
     citation_service=None,
     identity_auth=None,
+    identity_authorization: AuthorizationService | None = None,
+    manufacturing_business_clock: Callable[[], datetime] | None = None,
     voc_extension_client=None,
     sdk_service=None,
     sdk_plan_service=None,
@@ -1638,7 +1641,7 @@ def create_app(
     app.state.fae_access = None
     app.state.voc_access = None
     app.state.fae_session_read_audit = None
-    authorization_service = None
+    authorization_service = identity_authorization
     if identity_enabled and config.control_plane.audit_database_url_file:
         control_database_url = read_secret_file(
             config.control_plane.control_database_url_file
@@ -1734,6 +1737,7 @@ def create_app(
         build_manufacturing_router(
             resolve_workflow_subject=workflow_subject_resolver,
             resolve_workflow_profiles=getattr(getattr(identity_auth, "repository", None), "active_internal_user_profiles", None) if identity_enabled else None,
+            workflow_business_clock=manufacturing_business_clock,
         ),
         prefix=identity_auth.route_prefix.rstrip("/") if identity_enabled else "",
     )

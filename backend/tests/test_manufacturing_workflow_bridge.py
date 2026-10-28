@@ -7,6 +7,32 @@ from app.manufacturing import authorize_workflow_identity
 from fastapi import HTTPException
 
 
+def test_actual_create_app_uses_injected_real_policy_and_trusted_clock(tmp_path, monkeypatch):
+    import os
+    import sys
+    from pathlib import Path
+    root = Path(os.environ["TEST_MANUFACTURING_RELEASE_ROOT"])
+    monkeypatch.syspath_prepend(str(root / "tests"))
+    monkeypatch.setenv("TEST_PLATFORM_SOURCE_ROOT", str(Path(__file__).resolve().parents[2]))
+    from workflow.scenarios.base import ScenarioContext
+    from workflow.d3.pf_client import PlatformHTTP
+    context = ScenarioContext.isolated(tmp_path, case_id="E29", seed=82)
+    api = PlatformHTTP(context)
+    try:
+        pid = api.project("1")
+        result = api.command(pid, "demand.record", kind="firm", product="Camera", quantity="1", unit="piece", due_date="2026-12-01", source=api.source("demand"))
+        with api.db() as db:
+            assert db.execute("SELECT created_at FROM demands WHERE id=?", (result["object_id"],)).fetchone()[0] == context.clock.isoformat()
+        api.request("GET", "/api/v1/manufacturing/projects", actor="planner", expected=403)
+        api.get("/unknown-policy-template", actor="planner", expected=403)
+        api.control("planner", hard_stale=True)
+        api.command(pid, "project.stage", actor="planner", stage="S1", status="active", reason="Denied", expected=503)
+        api.control("planner", revoked=True)
+        api.get("/projects/" + pid, actor="planner", expected=401)
+    finally:
+        api.close()
+
+
 def test_missing_trusted_context_is_unauthenticated():
     with pytest.raises(HTTPException) as error:
         authorize_workflow_identity(

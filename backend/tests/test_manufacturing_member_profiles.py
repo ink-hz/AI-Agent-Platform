@@ -55,3 +55,41 @@ def build_router(*,database_path,assets_dir,authorize,release):
     response=TestClient(app).get('/api/v1/manufacturing/workflow/access')
     assert response.status_code==200,response.text
     assert response.json()['profile_callback'] is supported
+
+
+@pytest.mark.parametrize("signature,supported", [("", False), (", **kwargs", False), (", business_clock=None", True)])
+def test_trusted_clock_requires_explicit_factory_support_and_default_is_compatible(tmp_path, monkeypatch, signature, supported):
+    from datetime import UTC, datetime
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    package = tmp_path / "src/manufacturing_platform"
+    package.mkdir(parents=True)
+    assets = tmp_path / "webui/dist"
+    assets.mkdir(parents=True)
+    for name in ("manufacturing.js", "manufacturing.css"):
+        (assets / name).write_text("factory protocol fixture")
+    body = "from fastapi import APIRouter\nWORKFLOW_API_VERSION=1\ndef build_router(**kwargs): return APIRouter()\n"
+    body += f"def build_workflow_router(*,database_path,authority_database_path,assets_dir,authenticate,resolve_subject,release,dataset{signature}):\n"
+    if "**kwargs" in signature:
+        body += " assert 'business_clock' not in kwargs\n"
+    body += " r=APIRouter(prefix='/api/v1/manufacturing/workflow')\n @r.get('/access')\n def access():return {'clock': " + ("business_clock().isoformat() if business_clock else None" if supported else "None") + "}\n return r\n"
+    (package / "__init__.py").write_text(body)
+    for key, value in {"ROOT": str(tmp_path), "DATABASE_PATH": str(tmp_path / "legacy.db"), "WORKFLOW_DATABASE_PATH": str(tmp_path / "domain.db"), "AUTHORITY_DATABASE_PATH": str(tmp_path / "authority.db"), "DATASET_ID": "clock", "DATASET_MODE": "test", "DATASET_LABEL": "Clock"}.items():
+        monkeypatch.setenv("PLATFORM_MANUFACTURING_" + key, value)
+    plain = FastAPI()
+    plain.include_router(build_manufacturing_router(resolve_workflow_subject=lambda uid: True))
+    assert TestClient(plain).get('/api/v1/manufacturing/workflow/access').json() == {"clock": None}
+    fixed = datetime(2026, 10, 28, tzinfo=UTC)
+    clocked = FastAPI()
+    clocked.include_router(build_manufacturing_router(resolve_workflow_subject=lambda uid: True, workflow_business_clock=lambda: fixed))
+    from app.control_plane.models import AuthContext, Role
+    @clocked.middleware("http")
+    async def trusted_fixture_identity(request, call_next):
+        request.state.auth_context = AuthContext(uuid4(), Role.PLATFORM_OWNER, uuid4(), False)
+        return await call_next(request)
+    # Unsupported releases expose the existing safe unavailable boundary; they
+    # never claim the fixed clock ran or receive unknown optional keywords.
+    if supported:
+        assert TestClient(clocked).get('/api/v1/manufacturing/workflow/access').json() == {"clock": fixed.isoformat()}
+    else:
+        assert TestClient(clocked).get('/api/v1/manufacturing/workflow/access').status_code == 503
