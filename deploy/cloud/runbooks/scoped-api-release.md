@@ -124,11 +124,24 @@ local image ID without a registry manifest reference. There is no automatic
 alternate builder or base image. A daemon without classic-builder support must
 stop for review. The derived image must inherit every base layer and every image
 configuration field, except `PLATFORM_RELEASE_SHA`; the final immutable image ID
-is recorded. No service is created or restarted by build or plan.
+is recorded. Build selects a manifest-bound application reference
+`orbbec-agent-platform:scoped-api-<release40>-<manifest64>` and refuses to
+overwrite any existing matching tag. The private build receipt records this
+reference, full manifest hash and immutable image ID. Compose uses the application
+reference so the existing runtime-bound backup accepts API `Config.Image`; all
+identity gates still use the immutable ID. Do not replace it with a raw image ID,
+retag it, or weaken the installed backup boundary. No service is created or
+restarted by build or plan.
 
 Plan revalidates the original API identity/config, every ordered input hash, the
 Admin process/unit/config hashes and shared Nginx file hashes. It renders the
-original chain twice with explicit old/candidate image and release overrides.
+original chain twice with explicit old/candidate image references and release
+overrides. Rollback preserves the exact original `Config.Image` application tag
+separately from its immutable image ID and runtime SHA. Plan/inspect-plan and
+immediately-before-apply/rollback gates verify that recorded references still
+resolve to their expected IDs; postcheck verifies the selected reference resolves
+correctly and is the recreated API's exact `Config.Image`. Missing/reassigned
+references stop the transaction; no implicit retagging or raw-ID fallback occurs.
 The old render must reproduce actual effective environment, command, entrypoint,
 user, working directory, mount sources/targets/access and attached networks. It
 also compares read-only/privilege/capability/security/port policy, zero resource/PID
@@ -173,8 +186,9 @@ receipts do not replace the cloud-sync business/API acceptance gates.
 Failure is explicit. There is no automatic retry, downgrade or rollback. Locks
 and the started receipt remain if completion is uncertain; preserve evidence and
 inspect the actual API before deciding recovery. Never remove foreign locks.
-An explicit authorized rollback uses the original immutable image and original
-runtime SHA through the same complete original chain:
+An explicit authorized rollback uses the exact original application image
+reference, verifies its immutable image ID, and restores the original runtime SHA
+through the same complete original chain:
 
 ```sh
 python3 "$ops/scoped-api-release.py" rollback --transaction "$ops/transaction"

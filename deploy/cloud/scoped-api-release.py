@@ -19,6 +19,7 @@ SERVICE = 'platform-api'
 PRIVATE = Path('/opt/orbbec-agent-platform/private')
 SHA = re.compile(r'[0-9a-f]{40}\Z')
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}\Z')
+REFERENCE = re.compile(r'orbbec-agent-platform:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z')
 
 
 class ReleaseError(Exception):
@@ -95,6 +96,25 @@ def inspect_image(image):
     result = json.loads(docker('image', 'inspect', image))
     require(len(result) == 1 and result[0]['Id'] == image, 'image_identity')
     return result[0]
+
+
+def application_reference(release, manifest_hash):
+    require(bool(SHA.fullmatch(release)) and re.fullmatch(r'[0-9a-f]{64}', manifest_hash) is not None, 'image_reference')
+    return 'orbbec-agent-platform:scoped-api-' + release + '-' + manifest_hash
+
+
+def resolve_reference(reference, image_id):
+    require(bool(REFERENCE.fullmatch(reference)) and bool(IMAGE.fullmatch(image_id)), 'image_reference')
+    result = json.loads(docker('image', 'inspect', reference))
+    require(len(result) == 1 and result[0]['Id'] == image_id
+            and reference in (result[0].get('RepoTags') or []), 'image_reference')
+    return result[0]
+
+
+def assert_reference_bindings(state):
+    require(state['new_image_reference'] == application_reference(state['release'], state['manifest_sha256']), 'image_reference')
+    resolve_reference(state['old_image_reference'], state['old_image'])
+    resolve_reference(state['new_image_reference'], state['new_image'])
 
 
 def api_from_receipt(receipt):
@@ -352,6 +372,7 @@ def assert_live_contract(config, live, image):
     """Reject stale env-file interpolation or mounted code before comparing candidates."""
     service = config['services'][SERVICE]
     require(not service.get('build'), 'compose_build')
+    require(service['image'] == live['Config']['Image'], 'live_image_reference')
     assert_runtime_policy(config, live, image, daemon_logging())
     env = dict(v.split('=', 1) for v in image['Config'].get('Env', []))
     env.update({k: str(v) for k, v in service.get('environment', {}).items()})
@@ -397,7 +418,7 @@ def render(state, override):
 
 
 def override(path, image, release):
-    require(bool(IMAGE.fullmatch(image)) and bool(SHA.fullmatch(release)), 'override')
+    require(bool(REFERENCE.fullmatch(image)) and bool(SHA.fullmatch(release)), 'override')
     save(path, {'services': {SERVICE: {'image': image, 'environment': {'PLATFORM_RELEASE_SHA': release}}}})
 
 
@@ -434,23 +455,28 @@ def build(stage_root, output):
     manifest = validate_stage(stage_root)
     base = inspect_image(manifest['base_image_id'])
     require(len(base['RootFS']['Layers']) < 128, 'image_layer_budget')
+    manifest_hash = digest(private_read(Path(stage_root)/'manifest.json'))
+    tag = application_reference(manifest['release_sha'], manifest_hash)
+    require(not docker('image', 'ls', '--quiet', '--no-trunc', '--filter', 'reference=' + tag).strip(), 'release_tag_exists')
     private_dir(output, create=True)
-    tag = 'orbbec-agent-platform:scoped-api-' + manifest['release_sha']
     # No RUN instructions, package install, network or remote base pull.
     log = docker('build', '--network=none', '--pull=false', '--no-cache', '--tag', tag,
                  '--file', str(Path(stage_root)/'Dockerfile'), str(stage_root))
     save(Path(output)/'build.stdout', log)
     derived = json.loads(docker('image', 'inspect', tag))[0]
+    resolve_reference(tag, derived['Id'])
     assert_derived_image(base, derived, manifest['release_sha'])
-    save(Path(output)/'build.json', {'image_id': derived['Id'], 'base_image_id': manifest['base_image_id'],
-                                   'release_sha': manifest['release_sha'], 'manifest_sha256': digest(private_read(Path(stage_root)/'manifest.json'))})
+    save(Path(output)/'build.json', {'image_id': derived['Id'], 'image_reference': tag, 'base_image_id': manifest['base_image_id'],
+                                   'release_sha': manifest['release_sha'], 'manifest_sha256': manifest_hash})
 
 
 def plan(stage_root, build_receipt, recipe, output):
     manifest = validate_stage(stage_root)
     built, recipe = read_json(build_receipt), read_json(recipe)
     require(built['base_image_id'] == manifest['base_image_id'] and built['release_sha'] == manifest['release_sha']
-            and built['manifest_sha256'] == digest(private_read(Path(stage_root)/'manifest.json')), 'build_receipt')
+            and built['manifest_sha256'] == digest(private_read(Path(stage_root)/'manifest.json'))
+            and built['image_reference'] == application_reference(manifest['release_sha'], built['manifest_sha256']), 'build_receipt')
+    resolve_reference(built['image_reference'], built['image_id'])
     baseline, values = snapshots(); live = live_api(values)
     readiness = read_json(Path(stage_root)/'readiness.json'); api = api_from_receipt(readiness)
     guardrails(readiness)
@@ -468,14 +494,17 @@ def plan(stage_root, build_receipt, recipe, output):
     require(recipe['runtime_release_sha'] == old_sha, 'runtime_release')
     inspect_image(built['image_id'])
     assert_derived_image(inspect_image(live['Image']), inspect_image(built['image_id']), manifest['release_sha'])
+    old_reference = live['Config']['Image']
+    resolve_reference(old_reference, live['Image'])
     root = private_dir(output, create=True)
-    override(root/'compose.rollback.json', live['Image'], old_sha)
-    override(root/'compose.candidate.json', built['image_id'], manifest['release_sha'])
+    override(root/'compose.rollback.json', old_reference, old_sha)
+    override(root/'compose.candidate.json', built['image_reference'], manifest['release_sha'])
     before = render(recipe, root/'compose.rollback.json'); after = render(recipe, root/'compose.candidate.json')
     assert_live_contract(before, live, inspect_image(live['Image']))
-    assert_parity(before, after, built['image_id'], manifest['release_sha'])
+    assert_parity(before, after, built['image_reference'], manifest['release_sha'])
     state = {**recipe, 'version': 1, 'old_image': live['Image'], 'old_release': old_sha, 'old_id': live['Id'],
              'new_image': built['image_id'], 'release': manifest['release_sha'], 'api_name': live['Name'],
+             'new_image_reference': built['image_reference'], 'old_image_reference': old_reference, 'manifest_sha256': built['manifest_sha256'],
              'old_hostconfig': digest(canonical(live['HostConfig'])),
              'inputs': input_hashes(recipe), 'before_config': digest(canonical(before)), 'after_config': digest(canonical(after)),
              'baseline_containers': baseline, 'guardrails': readiness, 'owner': str(uuid.uuid4()), 'deployment_id': uuid.uuid4().hex}
@@ -504,6 +533,7 @@ def release_locks(state):
 
 def transact(root, rollback=False):
     root = private_dir(root); state = read_json(root/'state.json')
+    assert_reference_bindings(state)
     require(input_hashes(state) == state['inputs'], 'compose_input_changed')
     guardrails(state['guardrails'])
     before, values = snapshots()
@@ -514,7 +544,7 @@ def transact(root, rollback=False):
         require(len(matches) <= 1, 'rollback_runtime')
         live = matches[0] if matches else None
         if live is not None and live['State']['Running']:
-            require(live['Image'] == state['new_image'], 'rollback_runtime')
+            require(live['Image'] == state['new_image'] and live['Config']['Image'] == state['new_image_reference'], 'rollback_runtime')
         else:
             # Explicit recovery from a failed recreate, never an automatic fallback.
             started = read_json(root/'apply.started.json')
@@ -523,12 +553,14 @@ def transact(root, rollback=False):
             locks(state, False)
     else:
         live = live_api(values)
-        require(live['Id'] == state['old_id'] and live['Image'] == state['old_image'], 'runtime_changed')
+        require(live['Id'] == state['old_id'] and live['Image'] == state['old_image']
+                and live['Config']['Image'] == state['old_image_reference'], 'runtime_changed')
         require(before == state['baseline_containers'], 'runtime_changed')
     old = render(state, root/'compose.rollback.json'); new = render(state, root/'compose.candidate.json')
     require(digest(canonical(old)) == state['before_config'] and digest(canonical(new)) == state['after_config'], 'compose_changed')
-    assert_parity(old, new, state['new_image'], state['release'])
+    assert_parity(old, new, state['new_image_reference'], state['release'])
     selected, image, release = (root/'compose.rollback.json', state['old_image'], state['old_release']) if rollback else (root/'compose.candidate.json', state['new_image'], state['release'])
+    reference = state['old_image_reference'] if rollback else state['new_image_reference']
     # Independent of config-only parity: effective image env and live data paths must still match.
     if live is not None and live['State']['Running']:
         assert_live_contract(new if rollback else old, live, inspect_image(live['Image']))
@@ -538,8 +570,9 @@ def transact(root, rollback=False):
     guardrails(state['guardrails'])
     immediate, _ = snapshots()
     require(immediate == before, 'runtime_changed')
+    assert_reference_bindings(state)
     action = 'rollback' if rollback else 'apply'
-    save(root/(action+'.started.json'), {'action': action, 'time': time.time(), 'image_id': image, 'release_sha': release})
+    save(root/(action+'.started.json'), {'action': action, 'time': time.time(), 'image_id': image, 'image_reference': reference, 'release_sha': release})
     # Failure after acquiring locks deliberately retains them; no silent rollback.
     command(recreate_command(state, selected))
     for _ in range(60):
@@ -547,12 +580,14 @@ def transact(root, rollback=False):
         unchanged_others(state['baseline_containers'], after, state['api_name'])
         guardrails(state['guardrails'])
         env = dict(v.split('=', 1) for v in current['Config']['Env'])
-        require(current['Image'] == image and env.get('PLATFORM_RELEASE_SHA') == release, 'post_runtime')
+        resolve_reference(reference, image)
+        require(current['Image'] == image and current['Config']['Image'] == reference
+                and env.get('PLATFORM_RELEASE_SHA') == release, 'post_runtime')
         assert_live_contract(old if rollback else new, current, inspect_image(image))
         require(digest(canonical(current['HostConfig'])) == state['old_hostconfig'], 'api_hostconfig_changed')
         health = current['State'].get('Health', {}).get('Status')
         if health == 'healthy':
-            save(root/(action+'.complete.json'), {'action': action, 'image_id': image, 'release_sha': release,
+            save(root/(action+'.complete.json'), {'action': action, 'image_id': image, 'image_reference': reference, 'release_sha': release,
                                                 'api_id': current['Id'], 'other_containers_unchanged': True, 'time': time.time()})
             release_locks(state)
             return
@@ -584,10 +619,11 @@ def main(argv=None):
     elif args.action == 'plan': plan(args.stage, args.build_receipt, args.recipe, args.output)
     elif args.action == 'inspect-plan':
         root = private_dir(args.transaction); state = read_json(root/'state.json')
+        assert_reference_bindings(state)
         require(input_hashes(state) == state['inputs'], 'compose_input_changed')
         old, new = render(state, root/'compose.rollback.json'), render(state, root/'compose.candidate.json')
         require(digest(canonical(old)) == state['before_config'] and digest(canonical(new)) == state['after_config'], 'compose_changed')
-        assert_parity(old, new, state['new_image'], state['release'])
+        assert_parity(old, new, state['new_image_reference'], state['release'])
     else: transact(args.transaction, rollback=args.action == 'rollback')
     print('SCOPED_API_RELEASE_OK action=' + args.action)
 

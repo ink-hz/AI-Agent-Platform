@@ -55,7 +55,7 @@ def test_parity_rejects_unrelated_changes_without_secret_in_error(mutation):
 
 def test_live_contract_checks_image_defaults_and_named_mounts():
     h = load(); config = service(); api = config['services']['platform-api']
-    inspect = {'Name':'/api','HostConfig':policy_host(), 'Config': {'Healthcheck':health_policy(),'Env': ['TOKEN=do-not-print', 'PLATFORM_RELEASE_SHA=' + 'b' * 40, 'PATH=/bin'],
+    inspect = {'Name':'/api','HostConfig':policy_host(), 'Config': {'Image':api['image'],'Healthcheck':health_policy(),'Env': ['TOKEN=do-not-print', 'PLATFORM_RELEASE_SHA=' + 'b' * 40, 'PATH=/bin'],
                           'Cmd': api['command'], 'Entrypoint': None, 'User': '10001', 'WorkingDir': '/app/backend'},
                'Mounts': [{'Type': 'bind', 'Source': '/data/hr', 'Destination': '/hr', 'RW': False}],
                'NetworkSettings': {'Networks': {'orbbec-agent-platform-internal': {'Aliases':['api','platform-api']}}}}
@@ -203,15 +203,17 @@ def test_stage_rejects_added_context_file(tmp_path):
     with pytest.raises(h.ReleaseError,match='context_extra_files'):h.validate_stage(tmp_path)
 
 
-@pytest.mark.parametrize('rollback,fail,missing,drift', [(False,False,False,None),(True,False,False,None),(False,True,False,None),(True,False,True,None),(False,False,False,'before'),(False,False,False,'after')])
+@pytest.mark.parametrize('rollback,fail,missing,drift', [(False,False,False,None),(True,False,False,None),(False,True,False,None),(True,False,True,None),(False,False,False,'before'),(False,False,False,'after'),(False,False,False,'tag_before'),(False,False,False,'tag_after')])
 def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_path,monkeypatch,rollback,fail,missing,drift):
     h=load();private=tmp_path/'private';private.mkdir(mode=0o700);monkeypatch.setattr(h,'PRIVATE',private)
     root=tmp_path/'transaction';root.mkdir(mode=0o700)
-    old=service();new=service('sha256:'+'c'*64,'d'*40)
-    oldimage=old['services']['platform-api']['image'];newimage=new['services']['platform-api']['image']
+    oldimage='sha256:'+'a'*64;newimage='sha256:'+'c'*64
+    oldref='orbbec-agent-platform:manufacturing-v2-original';mh='f'*64
+    newref=h.application_reference('d'*40,mh)
+    old=service(oldref);new=service(newref,'d'*40)
     def live(config, image, cid):
         return {'Name':'/api','Id':cid,'Image':image,'RestartCount':0,
-                'Config':{'Labels':{'com.docker.compose.project':h.PROJECT,'com.docker.compose.service':h.SERVICE},
+                'Config':{'Image':config['services']['platform-api']['image'],'Labels':{'com.docker.compose.project':h.PROJECT,'com.docker.compose.service':h.SERVICE},
                           'Env':['PATH=/bin']+[k+'='+v for k,v in config['services']['platform-api']['environment'].items()],
                           'Cmd':config['services']['platform-api']['command'],'Entrypoint':None,'User':'10001','WorkingDir':'/app/backend','Healthcheck':health_policy()},
                 'HostConfig':policy_host(),
@@ -232,6 +234,10 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
     monkeypatch.setattr(h,'render',lambda state,path:old if 'rollback' in str(path) else new)
     monkeypatch.setattr(h,'inspect_image',lambda image:{'Config':{'Env':['PATH=/bin'],'User':'10001','WorkingDir':'/app/backend'}})
     calls=[]
+    def resolve(reference,image):
+        if drift=='tag_before' or (drift=='tag_after' and calls):raise h.ReleaseError('image_reference')
+        assert {oldref:oldimage,newref:newimage}[reference]==image
+    monkeypatch.setattr(h,'resolve_reference',resolve)
     def execute(args,cwd=None):
         calls.append(args)
         if fail:raise h.ReleaseError('command_failed')
@@ -239,7 +245,7 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
     monkeypatch.setattr(h,'command',execute)
     state={'files':['/one','/two'],'working_dir':'/release','project':h.PROJECT,'env_file':'/private/platform.env',
            'inputs':{},'guardrails':{},'old_hostconfig':h.digest(h.canonical(policy_host())),'baseline_containers':baseline,'api_name':'/api','old_id':'old',
-           'old_image':oldimage,'new_image':newimage,'old_release':'b'*40,'release':'d'*40,
+           'old_image':oldimage,'new_image':newimage,'old_image_reference':oldref,'new_image_reference':newref,'manifest_sha256':mh,'old_release':'b'*40,'release':'d'*40,
            'before_config':h.digest(h.canonical(old)),'after_config':h.digest(h.canonical(new)),
            'owner':'unique-owner','deployment_id':'e'*32}
     h.save(root/'state.json',state)
@@ -247,9 +253,9 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
         h.save(root/'apply.started.json',{'action':'apply','image_id':newimage,'release_sha':'d'*40})
         h.locks(state,True)
     if drift:
-        with pytest.raises(h.ReleaseError,match='live_security' if drift=='before' else 'live_ports'):h.transact(root,rollback)
+        with pytest.raises(h.ReleaseError,match=('image_reference' if drift.startswith('tag_') else 'live_security' if drift=='before' else 'live_ports')):h.transact(root,rollback)
         assert not (root/'apply.complete.json').exists()
-        assert (private/'agent-brain-action.lock').exists() == (drift=='after')
+        assert (private/'agent-brain-action.lock').exists() == (drift in ('after','tag_after'))
     elif fail:
         with pytest.raises(h.ReleaseError,match='command_failed'):h.transact(root,rollback)
         assert (private/'agent-brain-action.lock').is_dir()
@@ -261,8 +267,9 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
         receipt=json.loads((root/('rollback.complete.json' if rollback else 'apply.complete.json')).read_text())
         assert receipt['image_id']==(oldimage if rollback else newimage)
         assert receipt['release_sha']==('b'*40 if rollback else 'd'*40)
-    assert len(calls)==(0 if drift=='before' else 1)
-    if drift=='before':return
+        assert receipt['image_reference']==(oldref if rollback else newref)
+    assert len(calls)==(0 if drift in ('before','tag_before') else 1)
+    if drift in ('before','tag_before'):return
     assert calls[0][-8:]==['up','-d','--no-deps','--no-build','--pull','never','--force-recreate','platform-api']
     assert 'do-not-print' not in repr(calls)
 
@@ -368,3 +375,54 @@ def test_derived_image_layer_budget_rejects_overlay2_overflow():
     h=load();base={'RootFS':{'Layers':['base']*128},'Config':{'Env':[]}}
     derived=copy.deepcopy(base);derived['RootFS']['Layers'].append('new');derived['Config']['Env']=['PLATFORM_RELEASE_SHA='+'a'*40]
     with pytest.raises(h.ReleaseError,match='image_layers'):h.assert_derived_image(base,derived,'a'*40)
+
+
+def test_application_reference_is_manifest_bound_and_backup_compatible():
+    h=load();reference=h.application_reference('a'*40,'b'*64)
+    assert reference=='orbbec-agent-platform:scoped-api-'+'a'*40+'-'+'b'*64
+    assert len(reference.split(':')[1])<=128
+    assert reference.startswith('orbbec-agent-platform:')
+    assert reference!=h.application_reference('a'*40,'c'*64)
+
+
+def test_reference_resolution_rejects_retagging_and_missing_repo_tag(monkeypatch):
+    h=load();reference='orbbec-agent-platform:scoped-api-test';image='sha256:'+'a'*64
+    monkeypatch.setattr(h,'docker',lambda *args:json.dumps([{'Id':image,'RepoTags':[reference]}]).encode())
+    h.resolve_reference(reference,image)
+    for actual in [{'Id':'sha256:'+'b'*64,'RepoTags':[reference]},{'Id':image,'RepoTags':[]}]:
+        monkeypatch.setattr(h,'docker',lambda *args:json.dumps([actual]).encode())
+        with pytest.raises(h.ReleaseError,match='image_reference'):h.resolve_reference(reference,image)
+
+
+def test_override_uses_exact_application_reference_for_backup_and_rollback(tmp_path):
+    h=load();reference='orbbec-agent-platform:manufacturing-v2-28272ec4-f324cca2'
+    h.override(tmp_path/'rollback.json',reference,'b'*40)
+    assert json.loads((tmp_path/'rollback.json').read_bytes())['services']['platform-api']['image']==reference
+    with pytest.raises(h.ReleaseError,match='override'):h.override(tmp_path/'bad.json','sha256:'+'a'*64,'b'*40)
+
+
+@pytest.mark.parametrize('existing',[False,True])
+def test_build_refuses_existing_manifest_tag_and_receipt_binds_reference_to_id(tmp_path,monkeypatch,existing):
+    h=load();stage=tmp_path/'stage';stage.mkdir(mode=0o700)
+    manifest={'release_sha':'a'*40,'base_image_id':'sha256:'+'b'*64}
+    h.save(stage/'manifest.json',manifest);mh=h.digest((stage/'manifest.json').read_bytes())
+    reference='orbbec-agent-platform:scoped-api-'+'a'*40+'-'+mh
+    base={'Id':manifest['base_image_id'],'Config':{'Env':[]},'RootFS':{'Layers':['base']}}
+    derived={'Id':'sha256:'+'c'*64,'Config':{'Env':['PLATFORM_RELEASE_SHA='+'a'*40]},'RootFS':{'Layers':['base','copy']},'RepoTags':[reference]}
+    monkeypatch.setattr(h,'validate_stage',lambda root:manifest);monkeypatch.setattr(h,'inspect_image',lambda image:base)
+    calls=[]
+    def docker(*args):
+        calls.append(args)
+        if args[:2]==('image','ls'):return b'existing' if existing else b''
+        if args[0]=='build':return b'built'
+        if args[:2]==('image','inspect'):return json.dumps([derived]).encode()
+        raise AssertionError(args)
+    monkeypatch.setattr(h,'docker',docker)
+    if existing:
+        with pytest.raises(h.ReleaseError,match='release_tag_exists'):h.build(stage,tmp_path/'out')
+        assert not any(c[0]=='build' for c in calls)
+    else:
+        h.build(stage,tmp_path/'out');receipt=json.loads((tmp_path/'out/build.json').read_bytes())
+        assert receipt['image_reference']==reference and receipt['image_id']==derived['Id']
+        assert receipt['manifest_sha256']==mh
+        build=next(c for c in calls if c[0]=='build');assert build[build.index('--tag')+1]==reference
