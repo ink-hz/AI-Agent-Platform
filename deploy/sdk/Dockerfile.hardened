@@ -1,10 +1,38 @@
-ARG ZENTAO_BASE_IMAGE=hub.zentao.net/app/zentao@sha256:d7266f4cd4a5da594c987bcdaaac6c74b4a6a2946384cc378dc949b69ea0b99e
-FROM ${ZENTAO_BASE_IMAGE}
+FROM hub.zentao.net/app/zentao@sha256:d7266f4cd4a5da594c987bcdaaac6c74b4a6a2946384cc378dc949b69ea0b99e
 
+# php-runtime is produced by the restricted, source-locked build documented in
+# 2026-10-29-sdk-php-security.md. Missing artifacts intentionally fail the build.
+# Verify with verify_php_artifacts.py before making this packaging context.
+COPY php-runtime/ /usr/local/share/sdk-php/
+COPY package-receipt.json /usr/local/share/sdk-php/package-receipt.json
+COPY php-source.json /usr/local/share/sdk-php/source-lock.json
+COPY php-security.ini /opt/zbox/etc/php/conf.d/99-sdk-security.ini
+COPY check-php-runtime.php /usr/local/share/sdk-php/check-php-runtime.php
+COPY probe-php-apache.sh /usr/local/share/sdk-php/probe-php-apache.sh
+ENV LD_LIBRARY_PATH=/opt/zbox/php-security-lib:/opt/zbox/lib
 COPY disable-edit-comment.php /tmp/disable-edit-comment.php
 COPY verify-and-start.sh /usr/local/bin/verify-and-start.sh
-RUN chmod 755 /usr/local/bin/verify-and-start.sh \
+RUN cd /usr/local/share/sdk-php \
+    && sha256sum -c artifact.sha256 \
+    && mkdir -p /opt/zbox/php-security-lib \
+    && cp /usr/local/share/sdk-php/lib/* /opt/zbox/php-security-lib/ \
+    && cp /usr/local/share/sdk-php/php /opt/zbox/run/php/php \
+    && cp /usr/local/share/sdk-php/libphp.so /opt/zbox/run/apache/modules/libphp.so \
+    && cp /usr/local/share/sdk-php/opcache.so /opt/zbox/run/php/extensions/opcache.so \
+    && chmod 755 /opt/zbox/run/php/php \
+    && chmod 755 /usr/local/bin/verify-and-start.sh \
+    && printf '%s\n' 'f3f46226116154e84199023e17c471718dbc886d0630267591e5dd3ae75d4c56  /etc/s6/s6-available/apache/run' | sha256sum -c - \
+    && sed -i '\|^exec /opt/zbox/bin/apachectl -D FOREGROUND$|i /usr/local/bin/verify-and-start.sh --verify-only' /etc/s6/s6-available/apache/run \
+    && grep -Fx '/usr/local/bin/verify-and-start.sh --verify-only' /etc/s6/s6-available/apache/run \
+    && sha256sum /opt/zbox/run/php/php /opt/zbox/run/apache/modules/libphp.so \
+       /opt/zbox/run/php/extensions/*.so /opt/zbox/php-security-lib/* \
+       /opt/zbox/etc/php/conf.d/99-sdk-security.ini /etc/s6/s6-available/apache/run \
+       > /usr/local/share/sdk-php/runtime.sha256 \
     && /opt/zbox/bin/php /tmp/disable-edit-comment.php \
     && /opt/zbox/bin/php -l /apps/zentao/module/action/control.php \
     && /usr/local/bin/verify-and-start.sh --verify-only \
     && rm /tmp/disable-edit-comment.php
+LABEL org.opencontainers.image.php.source="https://github.com/php/php-src" \
+      org.opencontainers.image.php.revision="1d7dec178a094e6e75b229ce22754045f8c6070a" \
+      org.opencontainers.image.php.version="8.1.34" \
+      org.opencontainers.image.php.security-scope="CVE-2026-109618,CVE-2026-109619"

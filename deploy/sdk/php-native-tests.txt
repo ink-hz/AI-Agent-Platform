@@ -1,0 +1,10 @@
+Zend/tests/bug40770.phpt
+Zend/tests/bug76846.phpt
+Zend/tests/gh12073.phpt
+Zend/tests/exception_before_fatal.phpt
+ext/session/tests/session_decode_basic_serialize.phpt
+ext/session/tests/session_encode_serialize.phpt
+ext/session/tests/session_regenerate_id_basic.phpt
+ext/opcache/tests/001_cli.phpt
+ext/opcache/tests/bug76275.phpt
+ext/opcache/tests/bug78185.phpt
