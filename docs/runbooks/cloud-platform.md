@@ -707,24 +707,172 @@ one successful import, and confirm freshness returns without losing history.
 
 ## Encrypted backup and restore drill
 
-The cloud timer runs the encrypted backup daily. Manual execution is:
+The cloud timer runs the encrypted backup daily. On 2026-10-29 the old script
+was found to require a bare Git SHA image tag and select stale `current` Compose
+inputs. The reviewed `backup.sh` + `backup_runtime.py` pair instead discovers the
+unique running `platform-api`, `platform-postgres` and `platform-minio` containers
+in project `orbbec-agent-platform`. It checks their immutable IDs, restart times,
+service labels and data mounts, hashes **every ordered input** in the API's actual
+`com.docker.compose.project.config_files` label, and uses the running API image
+ID with `--pull=never`. It never runs `compose up`, reads the stale platform.env
+image selection, or changes a service. PostgreSQL and MinIO may have older creation
+labels; those are retained as metadata rather than substituted for the API chain.
+
+Before installation, review the exact commit and check the running labels/mounts.
+The expected host binds are `/data/orbbec-agent-platform/postgres` to PostgreSQL's
+`/var/lib/postgresql/data` and `/data/orbbec-agent-platform/attachments` to MinIO's
+`/data`. The existing local bind volume `orbbec-agent-platform-backups` must point
+to `/data/orbbec-agent-platform/backups`; the helper refuses unknown resources
+instead of creating or repointing that volume. Production verification and the
+off-host restore are separate steps; local process substitutes do not prove them.
+
+Install both reviewed files together into a root-owned immutable operations
+directory and select that script with an `ExecStart=` systemd drop-in. Capture the
+previous effective service and drop-in before changing it, then daemon-reload.
+Do not rewrite old releases or move `current`. Rollback restores the previous
+service selection and reloads systemd, preserving all encrypted archives and
+receipts. This runbook does not claim a particular helper commit is installed.
+Manual execution should use the **effective installed service**, not a guessed
+path under `current`:
 
 ```bash
 ssh -i /Users/neo/.ssh/orbbec_aliyun_ed25519 -o BatchMode=yes \
-  root@47.106.112.69 /opt/orbbec-agent-platform/current/deploy/cloud/backup.sh
+  root@47.106.112.69 systemctl start orbbec-agent-platform-backup.service
 ```
 
-Copy one `.orb` backup to an approved recovery host without changing it. Run the
-restore drill with the local recovery private key:
+The fixed private `backup.lock` uses nonblocking flock; an overlapping manual or
+timer run exits nonzero at stage `lock`. One unique set contains encrypted custom
+pg_dump archives for **agent_platform** and **agent_platform_control**, and an
+encrypted tar stream of the observed MinIO data directory. Each artifact records
+its own scope, capture start/finish time, sizes and ciphertext SHA-256. These are
+independent live captures, **not a cross-database/object atomic snapshot**. Runtime,
+container/restart/image identity, public-key identity and ordered file hashes are
+checked before and after captures; any change stops this set without advancing
+the old success marker. Failed or incomplete encrypted artifacts are retained for
+diagnosis; there is no blanket cleanup or automatic retry.
+
+The 2026-10-29 independent review of `e6082080` blocked installation for a shared
+lifecycle error: killing the Docker CLI on timeout, or terminating the helper,
+does not prove that copy/encryption/retention or an exec-side pg_dump stopped.
+The revised candidate implements one attempt owner under flock: durable
+private in-flight identities, unique labels/names and validated container IDs,
+explicit create/start, and cleanup plus terminal-absence confirmation on normal
+exit, error, timeout, SIGINT and SIGTERM. Host process groups must be reaped too.
+If cleanup cannot be confirmed, the in-flight journal remains and the next job
+must fail admission; a CLI error is not evidence that DB effects ceased. SIGKILL
+cannot run Python cleanup, so its persisted journal requires explicit operator
+reconciliation. Never remove a journal simply to make the timer green.
+
+To make the PG producer ownable, its approved replacement is a dedicated client
+container from the running PostgreSQL image ID, uid 999, read-only root,
+cap-drop ALL/no-new-privileges and `--network container:<exact PG container ID>`.
+It connects to that PG's verified internal IP inside the shared namespace. The
+parent's 2026-10-29 read-only route check for `172.30.0.2` returned a local route
+via `dev lo`: this preserves the old local-socket transport responsibility
+without sending backup plaintext across a shared bridge. Current 127/::1 HBA
+rules are trust, so a loopback connection with a password file would not prove
+password authentication. The self-IP follows the existing SCRAM host rule;
+`PGREQUIREAUTH=scram-sha-256` requires the real exchange. Failures do not change
+HBA, fall back to trust, switch to a bridge, or rebuild business networking.
+Only the exact existing `postgres-owner-password` file is bound read-only; the
+host verifies volume/file metadata without reading its content. The client
+creates a 0600 libpq-escaped PGPASSFILE only in private tmpfs and sets a read-only
+transaction default. No whole secret volume, password argument or host-side
+password value is permitted. The shared PG service container is never stopped
+or used for an unowned exec. These lifecycle changes have local RED/GREEN
+timeout/signal tests and still require the same independent review and real
+Docker/PG authentication before production use. The helper validates each
+daemon-side State.ExitCode before declaring a capture successful; start/attach
+CLI return codes alone are insufficient. AutoRemove is disabled. Copy, each PG
+client, each encryptor and retention have separate attempt labels/IDs and their
+actual exit codes remain in the lifecycle receipt before removal. Helper
+containers never use the three business Compose service labels. Cleanup confirms
+absence before releasing flock; failure leaves `private/backup-inflight.json`
+and denies a second job. All host CLI/native producer process groups are also
+killed/reaped on failure or signal. Only owned helper IDs are stopped; never
+the shared PostgreSQL service.
+
+The follow-up `a83d320b` review accepted the lifecycle ownership correction but
+blocked the PG client's daemon logging path: `docker start --attach` pipes do
+not bypass the Docker log driver, and later removal cannot undo plaintext that
+was already written. Logging is therefore part of the same executor's
+confidentiality contract. Every auxiliary container is created with explicit
+`--log-driver none`, including public-copy, both PG clients, all three encryptors
+and retention. Selective inspect must confirm `HostConfig.LogConfig.Type` is
+exactly `none` before start and throughout owned-container checks; a CLI flag,
+daemon default, missing field or different driver is insufficient. The confirmed
+driver is retained in each lifecycle entry. Identity failure stops before start
+and follows the existing unresolved-journal admission rule. Local tests reproduce
+a simulated daemon writing producer stdout under default `json-file`, then prove
+no such write with the corrected policy and reject falsely claimed `none`.
+These are local substitutes; installation still requires independent review and
+the actual daemon/PG verification gates.
+
+The host recovery public key remains root-owned 0600, exactly 32 bytes. Only that
+public file is mounted read-only into a networkless, immutable-image preparation
+process, which atomically copies it into the dedicated backup-secrets volume as
+10001:10001/0600. Encryptors run as 10001 with read-only roots, no capabilities and
+no network. Database and tar plaintext streams go directly through pipes to the
+unchanged `app.cloud_replica.cli backup` X25519/AES-GCM protocol. Both producer and
+encryptor return codes must succeed. The recovery private key remains off-host.
+
+After all three artifacts pass, their files and backup directory are fsynced
+before a root-private manifest is atomically committed
+under `private/backup-manifests/<set-id>.json`, followed by the compatible
+`private/last-backup-success` marker containing the three filenames. A complete
+set produces `CLOUD_BACKUP_COMPLETE`. The existing replica data retention then
+runs separately using the same immutable API image and existing import-secrets
+volume/network; its status and counts are atomically recorded in the set's
+`.retention.json` and `private/last-backup-retention.json`. A retention failure
+returns nonzero and records the failure, while the valid backup/marker remain
+available. Retention interruption records `operation_completion=unknown` rather
+than inventing a rollback; cleanup records its actual exit and whether execution
+has stopped. Only successful backup, retention **and confirmed owned-work cleanup**
+produce `CLOUD_BACKUP_OK`.
+`private/last-backup-failure.json` records stable stages and available exit codes,
+without stderr, configuration contents, keys or database text. Retention here is
+replica data expiry; it is not an encrypted-archive deletion policy.
+
+The installed helper has a read-only integrity/freshness command:
+
+```bash
+/absolute/path/to/reviewed/backup.sh --check --max-age-seconds 93600
+```
+
+It reads the marker and complete manifest and rehashes all three ciphertext files,
+without Docker calls, retention or writes. It emits bounded safe JSON. Missing,
+corrupt, future-dated or older evidence exits nonzero. The checker opens the
+existing lock O_RDONLY and probes a nonblocking shared flock; it never creates
+or writes a lock. A journal with no active exclusive owner is `unresolved_work`
+and nonzero. With an active owner it still verifies the last complete set and
+reports `active_job=true`, without hiding stale evidence or known retention
+failure. JSON `status=fresh, backup_status=fresh, retention_status=completed` is
+healthy; `status=in_progress, backup_status=fresh, retention_status=pending`
+with an active owner is also exit zero, explicitly awaiting current retention.
+Failed retention or pending retention without an active owner remains nonzero.
+The 26-hour value
+is an operational threshold, **not an agreed business RPO**. This command performs
+a full ciphertext read and is intended for deliberate checks; an external alert
+receiver is not connected by the helper. Health timer/service configuration and
+its actual deployment are a separate operational delivery.
+
+Copy all three `.orb` files and the private manifest to an approved recovery host,
+verify ciphertext SHA-256/size, and restore with the local recovery private key.
+The existing replica-only smoke drill remains:
 
 ```bash
 deploy/cloud/restore-drill.sh /absolute/path/replica.orb \
   "$private_root/backup-recovery-x25519.key"
 ```
 
-The approved recovery host must have Docker. The drill streams decrypted bytes
-directly into a disposable PostgreSQL container and never creates a plaintext
-dump file. Record `RESTORE_DRILL_OK=1` only after this succeeds.
+The approved recovery host must have Docker. Stream decrypted database bytes
+directly into disposable PostgreSQL instances with no production mounts or
+published ports; restore and compare both databases' schema/table/row aggregates.
+Verify the attachment tar entries and content identity separately in an isolated
+directory. The replica-only drill above cannot prove control-database or object
+recovery. Record the exact backup set, reviewed/runtime versions, each restoration
+result and unexecuted scope; record `RESTORE_DRILL_OK=1` only for the scope actually
+restored. No production recovery private key or plaintext dump file is required.
 
 ## Enable five-minute sync
 

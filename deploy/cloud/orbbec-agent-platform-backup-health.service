@@ -1,0 +1,15 @@
+[Unit]
+Description=Read-only encrypted platform backup freshness and integrity check
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /opt/orbbec-agent-platform/maintenance/current-backup/backup_runtime.py --check --max-age-seconds 93600
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0077
+TimeoutStartSec=180

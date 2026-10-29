@@ -1,6 +1,6 @@
 # SDK IP 证书续期与只读核验
 
-2026-10-29。实现范围：DNS 专属续期 dispatcher、只读证书健康 JSON 核验器及对应本地测试；本文的生产安装步骤由发布负责人执行。没有自动部署、签发、重载或发送通知。
+2026-10-29。实现范围：DNS 专属续期 dispatcher、只读证书健康 JSON 核验器及对应本地测试；生产安装由主代理按既有授权执行，实际结果见文末。脚本不自动部署或发送通知。
 
 ## 已核实的责任链
 
@@ -46,7 +46,7 @@ python3 deploy/cloud/certificate_health.py \
 
 1. 保存原 unit、现有 drop-in（含不存在状态）、两个 timer 状态、公有证书指纹和到期时间；核对没有续期任务正在运行，避免 Certbot 锁冲突。保留独立 IP 自动调度。
 2. 只读确认两个 DNS renewal 的 authenticator 仍为 webroot、webroot_map 仍匹配、没有新增 pre/post 或 nginx installer；核对全局 deploy hook 内容没有变化。
-3. 运行以下**有写入的 staging 验证**，每个名称一次，不扩展到全量 renew。它会写挑战文件、staging/日志等，不属于只读检查。2.9 `hooks.py:262-265` 在 dry-run 默认跳过 deploy/renew hooks；不加 `--run-deploy-hooks`、`--force-renewal` 或 `--break-my-certs`。本次调查没有执行它们。
+3. 运行以下**有写入的 staging 验证**，每个名称一次，不扩展到全量 renew。它会写挑战文件、staging/日志等，不属于只读检查。2.9 `hooks.py:262-265` 在 dry-run 默认跳过 deploy/renew hooks；不加 `--run-deploy-hooks`、`--force-renewal` 或 `--break-my-certs`。只读调查阶段未执行，后续发布阶段结果见文末。
 
 ```sh
 /usr/bin/certbot renew --cert-name agent.orbbec.com.cn --dry-run --non-interactive --no-random-sleep-on-renew
@@ -74,3 +74,16 @@ sh -n deploy/cloud/renew-domain-certificates.sh
 ```
 
 测试以固定时钟覆盖短有效期当前健康、阈值、过期、指纹不一致、责任 service 失败、timer 停用、检查超龄、忽略无关旧 service、TLS 验证路径、安全 JSON/退出码；dispatcher 使用合成客户端验证 DNS 精确参数、两项均执行及失败聚合。动态生产 staging、安装与业务验收由发布负责人单独记录。
+
+## 生产执行收据（2026-10-29 10:40—10:47 CST）
+
+- 代码 `8a909223`，本地 23 项 RED→GREEN、0 失败；独立审查 spec/quality 均通过，无阻断项。健康调度配置 `a2f15ce8` 另行独立审查通过，均已归并主线。
+- 两个准确 DNS lineage 各运行一次 staging：平台退出 0 / 18.07 秒，FAE 退出 0 / 9.81 秒。未请求 deploy hooks、强制续期或 IP 重签；日志保存在云端 root 私有本次任务目录。
+- 原有效 unit 和三证书指纹已保存；当时没有额外 drop-in，两个续期服务均未运行。
+- 精确代码安装在 `/opt/orbbec-agent-platform/maintenance/releases/8a909223f7d4e93397bb88c6a089e4cb879ac42f/`，root 拥有且其他用户不可写。`dns-lineages.conf` 仅替换旧 service 的 ExecStart，保留 PrivateTmp、原 timer 和独立 IP 调度。
+- 常规 `certbot.service` 实际执行一次：两 DNS 均输出 ok，Result=success、ExecMainStatus=0。未到续期窗口不等于重新签发，三证书指纹均未变化。
+- `orbbec-sdk-certificate-health.service/timer` 经实际 `systemd-analyze verify` 通过后安装；root 受控 selector 指向准确已审版本。小时检查已启用，服务在 ProtectSystem=strict 等约束下实际运行退出 0，报告无 alerts。
+- 本机从外网核对平台、FAE 和公网 IP：三者均通过系统信任及域名/IP 校验，且指纹与磁盘一致。平台/FAE 到期仍为 2027-01-09；IP 到期仍为 2026-11-03 04:27:55 CST。
+- 当次 IP 健康报告剩余约 113.7 小时、最近独立检查约 8.5 小时前，专属 timer active/enabled、service success；没有因旧任务错误而重签或停用正常链路。
+
+本次没有修改 Nginx 站点、hook、IP 业务入口、安全组或 SSH；没有用户浏览器/登录态 SDK 业务验收。外部通知渠道和实际送达仍未绑定/验收，小时检查只提供本机安全 JSON、journal 与非零健康状态，不宣称告警通知闭环。下一自然续期调度的长期稳定性继续观察。

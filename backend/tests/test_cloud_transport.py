@@ -79,13 +79,15 @@ def test_forced_import_rejects_commands_and_prints_bounded_acknowledgement():
     assert "$@" not in script
 
 
-def test_import_secret_volume_contains_every_key_required_by_import_and_retention():
+def test_import_secret_volume_contains_every_key_required_by_import_and_retention(tmp_path):
+    from test_cloud_backup_runtime import fixture_runtime, container_command
+
     stage = (ROOT / "deploy" / "cloud" / "remote-stage.sh").read_text(
         encoding="utf-8"
     )
-    backup = (ROOT / "deploy" / "cloud" / "backup.sh").read_text(
-        encoding="utf-8"
-    )
+    _, runtime, runner, _ = fixture_runtime(tmp_path)
+    runtime.run()
+    retention = container_command(runner, 'retention')
 
     import_copy = next(
         line for line in stage.splitlines()
@@ -93,7 +95,9 @@ def test_import_secret_volume_contains_every_key_required_by_import_and_retentio
     )
     assert "/source/replica-encryption-key" in import_copy
     assert "/source/replica-signing-public-key" in import_copy
-    assert "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key" in backup
+    assert "PLATFORM_REPLICA_ENCRYPTION_KEY_FILE=/run/import-secrets/replica-encryption-key" in retention
+    assert "PLATFORM_REPLICA_DATABASE_URL_FILE=/run/import-secrets/replica-database-url" in retention
+    assert "orbbec-agent-platform-import-secrets:/run/import-secrets:ro" in retention
 
 
 def test_bootstrap_emits_restricted_authorized_key_and_never_rotates_keys():
