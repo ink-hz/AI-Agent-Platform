@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
+import fcntl
 import importlib.util
 import inspect
 import json
@@ -12,13 +15,16 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import secrets
+import select
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tarfile
 import threading
 import time
+import tempfile
 from urllib.parse import quote, urlencode
 import uuid
 import xml.etree.ElementTree as ET
@@ -28,7 +34,7 @@ IMAGE_ID = re.compile(r'sha256:[0-9a-f]{64}\Z')
 CONTAINER_ID = re.compile(r'[0-9a-f]{64}\Z')
 STAGES = {'manifest','recovery_key','artifact_integrity','decrypt','attachments','docker_endpoint',
           'image','docker','container_boundary','extract','authentication','startup','inventory',
-          'cleanup','interrupted','unexpected'}
+          'cleanup','interrupted','unexpected','vm_identity','vm_control','vm_timeout','vm_client','vm_cleanup'}
 
 
 class MinioRestoreError(RuntimeError):
@@ -180,6 +186,275 @@ class Docker:
             process.wait(); thread.join(timeout=5)
 
 
+def proc_identity(root,pid,container_id,expected=None):
+    """Pin a checked target netns FD; never enter its mount, PID or environment."""
+    directory=netfd=None
+    try:
+        directory=os.open(Path(root)/str(pid),os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        def read(name):
+            descriptor=os.open(name,os.O_RDONLY,dir_fd=directory)
+            with os.fdopen(descriptor,'r') as source:return source.read(65536)
+        cgroups=read('cgroup')
+        pattern=r'(?:^|/)(?:docker-)?'+re.escape(container_id)+r'(?:\.scope)?(?:/|$)'
+        if not any(re.search(pattern,line.split(':',2)[-1]) for line in cgroups.splitlines()):raise ValueError()
+        fields={line.split(':',1)[0]:line.split(':',1)[1].split() for line in read('status').splitlines() if ':' in line}
+        if fields.get('Uid')!=['10001']*4 or len(fields.get('NSpid',[]))<2 or fields['NSpid'][-1]!='1':raise ValueError()
+        process_stat=read('stat').rsplit(') ',1)[1].split()
+        if process_stat[0] in ('Z','X'):raise ValueError()
+        netfd=os.open('ns/net',os.O_RDONLY,dir_fd=directory)
+        inode=os.fstat(netfd).st_ino
+        if inode==os.stat(Path(root)/'self/ns/net').st_ino:raise ValueError()
+        value={'pid':pid,'container_id':container_id,'uid':10001,'nspid':[int(item) for item in fields['NSpid']],
+               'starttime':process_stat[19],'net_inode':inode}
+        if expected is not None and value!=expected:raise ValueError()
+        return value,netfd
+    except (OSError,ValueError,KeyError,IndexError):
+        if netfd is not None:os.close(netfd)
+        raise MinioRestoreError('vm_identity') from None
+    finally:
+        if directory is not None:os.close(directory)
+
+
+def bounded_client(command,data,register,timeout,pass_fds=(),pidfd_required=False):
+    """Register a gated client before input; reap its session on every exit."""
+    process=None;output=b'';stage=None;pidfd=None
+    try:
+        process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+                                 start_new_session=True,pass_fds=pass_fds)
+        register(process.pid)
+        if pidfd_required:pidfd=os.pidfd_open(process.pid)
+        output,_=process.communicate(data,timeout=timeout)
+        if process.returncode or len(output)>4*1024*1024:stage='vm_client'
+    except subprocess.TimeoutExpired:stage='vm_timeout'
+    except BaseException as error:
+        stage='interrupted' if isinstance(error,(KeyboardInterrupt,SystemExit)) else getattr(error,'stage','vm_control')
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                try:
+                    if pidfd_required:
+                        if pidfd is None:
+                            process.stdin.close()  # Gate EOF; no request was released.
+                            try:process.wait(timeout=2)
+                            except subprocess.TimeoutExpired:raise MinioRestoreError('vm_cleanup') from None
+                        else:signal.pidfd_send_signal(pidfd,signal.SIGKILL)
+                    else:os.killpg(process.pid,signal.SIGKILL)
+                except ProcessLookupError:pass
+            process.wait()
+        if pidfd is not None:os.close(pidfd)
+    return process.returncode if process is not None else None,output,stage
+
+
+def vm_record(path,value):
+    descriptor,name=tempfile.mkstemp(dir=path.parent,prefix='.request-')
+    try:
+        os.fchmod(descriptor,0o600)
+        with os.fdopen(descriptor,'w') as output:json.dump(value,output);output.flush();os.fsync(output.fileno())
+        os.replace(name,path)
+    finally:Path(name).unlink(missing_ok=True)
+
+
+def vm_load(path,scope):
+    descriptor=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+    with os.fdopen(descriptor,'r') as source:
+        item=os.fstat(source.fileno())
+        if not stat.S_ISREG(item.st_mode) or item.st_uid!=0 or stat.S_IMODE(item.st_mode)!=0o600:raise MinioRestoreError('vm_cleanup')
+        value=json.load(source)
+    if any(value.get(key)!=scope.get(key) for key in ('attempt','request','container_id')):raise MinioRestoreError('vm_cleanup')
+    return value
+
+
+@contextmanager
+def vm_lock(path):
+    # Stable inode survives every record replacement and cancellation forever.
+    descriptor=os.open(path.with_suffix('.lock'),os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    try:
+        item=os.fstat(descriptor)
+        if not stat.S_ISREG(item.st_mode) or item.st_uid!=os.geteuid() or stat.S_IMODE(item.st_mode)!=0o600:raise MinioRestoreError('vm_control')
+        fcntl.flock(descriptor,fcntl.LOCK_EX)
+        yield
+    finally:os.close(descriptor)
+
+
+def vm_claim(path,scope,controller):
+    with vm_lock(path):
+        record=vm_load(path,scope)
+        if record.get('state')!='armed':raise MinioRestoreError('vm_control')
+        record.update(state='starting',**controller);vm_record(path,record)
+        return record
+
+
+def vm_update(path,scope,changes,expected=None):
+    with vm_lock(path):
+        record=vm_load(path,scope)
+        if record.get('state')=='cancelled':
+            if expected is not None:raise MinioRestoreError('vm_control')
+            return record
+        if expected is not None and record.get('state') not in expected:raise MinioRestoreError('vm_control')
+        record.update(changes);vm_record(path,record)
+        return record
+
+
+def vm_alive(pid,starttime,token):
+    try:
+        directory=Path('/proc')/str(pid)
+        fields=(directory/'stat').read_text().rsplit(') ',1)[1].split()
+        if fields[19]!=starttime or fields[0] in ('Z','X'):return False
+        if token.encode() not in (directory/'cmdline').read_bytes():raise MinioRestoreError('vm_cleanup')
+        return True
+    except FileNotFoundError:return False
+
+
+def vm_stop_verified(pid,starttime,token,number):
+    """Open first, recheck identity, signal only the stable kernel handle."""
+    if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):raise MinioRestoreError('vm_cleanup')
+    try:descriptor=os.pidfd_open(pid)
+    except ProcessLookupError:return
+    try:
+        if not vm_alive(pid,starttime,token):return
+        try:signal.pidfd_send_signal(descriptor,number)
+        except ProcessLookupError:return
+        poller=select.poll();poller.register(descriptor,select.POLLIN)
+        if not any(flags & select.POLLIN for _,flags in poller.poll(2000)):raise MinioRestoreError('vm_cleanup')
+    finally:os.close(descriptor)
+
+
+def vm_cleanup(path,scope):
+    with vm_lock(path):
+        if not path.exists():
+            vm_record(path,dict(scope,state='cancelled',cancel_confirmed=False))
+            if scope.get('run_invoked'):raise MinioRestoreError('vm_cleanup')
+        record=vm_load(path,scope)
+        record.update(state='cancelled',cancel_confirmed=False);vm_record(path,record)
+    for role in ('client','controller'):
+        pid=record.get(role+'_pid');start=record.get(role+'_starttime')
+        if pid:vm_stop_verified(pid,start,scope['request'],signal.SIGKILL if role=='client' else signal.SIGTERM)
+    with vm_lock(path):
+        latest=vm_load(path,scope)
+        if latest.get('state')!='cancelled':raise MinioRestoreError('vm_cleanup')
+        latest.update(cancel_confirmed=True,client_stopped=True);vm_record(path,latest)
+
+
+VM_MAIN=r'''
+import resource
+os.umask(0o077);resource.setrlimit(resource.RLIMIT_CORE,(0,0))
+mode=sys.argv[1];payload=json.loads(sys.argv[2]);netfd=None;record=None;path=None
+def terminated(*_):raise KeyboardInterrupt()
+for number in (signal.SIGTERM,signal.SIGINT,signal.SIGHUP):signal.signal(number,terminated)
+def request_path(scope):
+    if (not re.fullmatch('[0-9a-f]{32}',scope.get('attempt','')) or not re.fullmatch('[0-9a-f]{32}',scope.get('request',''))
+        or not re.fullmatch('[0-9a-f]{64}',scope.get('container_id',''))):raise MinioRestoreError('vm_control')
+    directory=Path('/run/orbbec-minio-http')/scope['attempt']
+    for parent in (directory.parent,directory):
+        parent.mkdir(mode=0o700,exist_ok=True);item=parent.lstat()
+        if not stat.S_ISDIR(item.st_mode) or item.st_uid!=0 or stat.S_IMODE(item.st_mode)!=0o700:raise MinioRestoreError('vm_control')
+    return directory/(scope['request']+'.json')
+try:
+    if mode=='cleanup':
+        for scope in payload['requests']:vm_cleanup(request_path(scope),scope)
+        print(json.dumps({'ok':True,'client_stopped':True}));raise SystemExit(0)
+    scope=payload;path=request_path(scope)
+    if mode=='arm':
+        with vm_lock(path):
+            if path.exists():raise MinioRestoreError('vm_control')
+            vm_record(path,dict(scope,state='armed'))
+        print(json.dumps({'ok':True}));raise SystemExit(0)
+    if mode!='run':raise MinioRestoreError('vm_control')
+    if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):raise MinioRestoreError('vm_control')
+    record=vm_claim(path,scope,{'controller_pid':os.getpid(),'controller_starttime':Path('/proc/self/stat').read_text().rsplit(') ',1)[1].split()[19]})
+    process,netfd=proc_identity(Path('/proc'),scope['pid'],scope['container_id'],scope.get('expected_process'))
+    # Gated child cannot make a request before its exact PID/starttime is saved.
+    gate="import os,sys;token=os.read(0,1);sys.exit(125) if token!=bytes([0]) else os.execvpe(sys.argv[1],sys.argv[1:],{'PATH':'/usr/bin:/bin','HOME':'/nonexistent','LC_ALL':'C'})"
+    arguments=['/usr/bin/nsenter','--net=/proc/self/fd/'+str(netfd),'/usr/bin/curl','-q','--silent','--noproxy','*',
+               '--max-time','2' if scope['health'] else '5','--user-agent','orbbec-minio-http-'+scope['request']]
+    arguments+=['-o','/dev/null','-w','%{http_code}'] if scope['health'] else ['--dump-header','-']
+    arguments+=['--config','-']
+    def register(pid):
+        vm_update(path,scope,{'state':'running','client_pid':pid,'client_starttime':Path('/proc/'+str(pid)+'/stat').read_text().rsplit(') ',1)[1].split()[19]},expected={'starting'})
+    code,body,stage=bounded_client(['/usr/bin/python3','-c',gate,*arguments],bytes([0])+sys.stdin.buffer.read(65537),register,7,(netfd,),True)
+    vm_update(path,scope,{'state':'completed','client_stopped':True,'returncode':code,'stage':stage})
+    print(json.dumps({'ok':True,'client_stopped':True,'returncode':code,'stage':stage,'process':process,'response':base64.b64encode(body).decode()}))
+except SystemExit:raise
+except BaseException as error:
+    if record is not None and path is not None:
+        vm_update(path,scope,{'state':'failed'})
+    print(json.dumps({'ok':False,'stage':'interrupted' if isinstance(error,KeyboardInterrupt) else getattr(error,'stage','vm_control')}))
+finally:
+    if netfd is not None:os.close(netfd)
+'''
+
+
+def vm_program():
+    imports='import base64,fcntl,json,os,re,select,signal,stat,subprocess,sys,tempfile,time\nfrom pathlib import Path\nfrom contextlib import contextmanager\n'
+    return imports+'STAGES='+repr(STAGES)+'\n'+''.join(inspect.getsource(value)+'\n' for value in
+        (MinioRestoreError,proc_identity,bounded_client,vm_record,vm_load,vm_lock,vm_claim,vm_update,vm_alive,vm_stop_verified,vm_cleanup))+VM_MAIN
+
+
+class NativeVMBridge:
+    """One bounded native read-only HTTP client per registered request."""
+    def __init__(self,target):
+        self.target=target;self.requests=[];self.receipts=[];self.process=None;self.host=None;self.closed=False;self.confirmed=False
+
+    def _call(self,mode,payload,data=None):
+        command=[shutil.which('colima') or '/opt/homebrew/bin/colima','--profile','default','ssh','--',
+                 'sudo','-n','/usr/bin/python3','-c',vm_program(),mode,json.dumps(payload,separators=(',',':'))]
+        code,output,stage=bounded_client(command,data or b'',lambda _:None,12)
+        if stage:raise MinioRestoreError(stage)
+        try:
+            value=json.loads(output)
+            if not isinstance(value,dict):raise ValueError()
+            return value
+        except (ValueError,TypeError):raise MinioRestoreError('vm_control') from None
+
+    def _identity(self):
+        value=self.target.metadata(self.target.identity)
+        boundary(value,identity=self.target.identity,image=self.target.image,name=self.target.name,attempt=self.target.attempt)
+        identity={key:value.get(key) for key in ('id','image','pid','started_at')}
+        if (value.get('running') is not True or type(identity['pid']) is not int or identity['pid']<=0
+                or not isinstance(identity['started_at'],str) or not identity['started_at']
+                or self.host is not None and identity!=self.host):raise MinioRestoreError('vm_identity')
+        return identity
+
+    def capture(self,config,*,health=False):
+        if self.closed or not isinstance(config,bytes) or len(config)>65536:raise MinioRestoreError('vm_control')
+        self.host=self._identity()
+        scope={'attempt':self.target.attempt,'request':uuid.uuid4().hex,'container_id':self.target.identity,
+               'pid':self.host['pid'],'health':health,'expected_process':self.process,'run_invoked':False}
+        self.requests.append(scope)
+        if self._call('arm',scope).get('ok') is not True:raise MinioRestoreError('vm_control')
+        scope['run_invoked']=True
+        value=self._call('run',scope,config)
+        if value.get('ok') is not True:raise MinioRestoreError(value.get('stage','vm_control'))
+        if value.get('client_stopped') is not True:raise MinioRestoreError('vm_cleanup')
+        observed=value.get('process') or {}
+        if (observed.get('pid')!=scope['pid'] or observed.get('container_id')!=scope['container_id']
+                or observed.get('uid')!=10001 or not isinstance(observed.get('starttime'),str)
+                or type(observed.get('net_inode')) is not int or self.process is not None and observed!=self.process):raise MinioRestoreError('vm_identity')
+        self.process=observed;self._identity()
+        self.receipts.append({'request_id':scope['request'],'health':health,'returncode':value.get('returncode'),
+                              'stage':value.get('stage'),'client_stopped':True})
+        if health and value.get('returncode')==7 and value.get('stage')=='vm_client':return b'000'
+        if value.get('stage') or value.get('returncode')!=0:raise MinioRestoreError(value.get('stage') or 'vm_client')
+        try:return base64.b64decode(value['response'],validate=True)
+        except (KeyError,ValueError):raise MinioRestoreError('vm_control') from None
+
+    def close(self):
+        if self.closed:
+            if not self.confirmed:raise MinioRestoreError('vm_cleanup')
+            return
+        self.closed=True
+        try:
+            if self.requests:
+                value=self._call('cleanup',{'requests':self.requests})
+                if value.get('ok') is not True or value.get('client_stopped') is not True:raise ValueError()
+            self.confirmed=True
+        except BaseException:raise MinioRestoreError('vm_cleanup') from None
+
+    def summary(self):
+        return {'status':'confirmed' if self.confirmed else 'incomplete','process':self.process,'requests':self.receipts,
+                'armed_request_ids':[value['request'] for value in self.requests]}
+
+
 START = '''set -eu
 while [ ! -e /tmp/launch ]; do sleep 1; done
 export MINIO_ROOT_USER="$(cat /tmp/root-user)"
@@ -191,11 +466,12 @@ exec minio server /data --address 127.0.0.1:9000 --console-address 127.0.0.1:900
 class Target:
     def __init__(self, image, endpoint):
         self.docker = Docker(endpoint); self.image = image; self.attempt = uuid.uuid4().hex
-        self.name = 'orbbec-minio-restore-'+self.attempt; self.identity = None
+        self.name = 'orbbec-minio-restore-'+self.attempt; self.identity = None; self.bridge=None
 
     def metadata(self, identity):
         # Selective inspect: no Config.Env and no plaintext filesystem contents.
         fields = {'id':'.Id','image':'.Image','name':'.Name','labels':'.Config.Labels','running':'.State.Running',
+                  'pid':'.State.Pid','started_at':'.State.StartedAt',
                   'exit_code':'.State.ExitCode','status':'.State.Status','network_mode':'.HostConfig.NetworkMode',
                   'ports':'.NetworkSettings.Ports','port_bindings':'.HostConfig.PortBindings','mounts':'.Mounts',
                   'tmpfs':'.HostConfig.Tmpfs','log_driver':'.HostConfig.LogConfig.Type','read_only':'.HostConfig.ReadonlyRootfs',
@@ -220,7 +496,8 @@ class Target:
         boundary(self.metadata(self.identity),identity=self.identity,image=self.image,name=self.name,attempt=self.attempt)
         self.docker.capture(['start',self.identity])
         if self.metadata(self.identity).get('running') is not True: raise MinioRestoreError('startup')
-        self.docker.capture(['exec',self.identity,'/bin/sh','-ec','command -v curl >/dev/null; command -v sha256sum >/dev/null; command -v mkdir >/dev/null'])
+        self.docker.capture(['exec',self.identity,'/bin/sh','-ec','command -v sha256sum >/dev/null; command -v mkdir >/dev/null'])
+        self.bridge=NativeVMBridge(self)
 
     def credentials(self,user,password):
         self.docker.capture(['exec','-i',self.identity,'/bin/sh','-ec',
@@ -242,12 +519,8 @@ class Target:
     def ready(self):
         deadline = time.monotonic()+30
         while time.monotonic()<deadline:
-            if self.metadata(self.identity).get('running') is not True: raise MinioRestoreError('startup')
-            try:
-                status = self.docker.capture(['exec',self.identity,'curl','-q','--silent','--noproxy','*','--max-time','2','-o','/dev/null','-w','%{http_code}','http://127.0.0.1:9000/minio/health/ready'],timeout=5)
-                if status == b'200': return
-            except MinioRestoreError as error:
-                if error.stage == 'interrupted': raise
+            status=self.bridge.capture(b'url = "http://127.0.0.1:9000/minio/health/ready"\n',health=True)
+            if status==b'200':return
             time.sleep(0.2)
         raise MinioRestoreError('startup')
 
@@ -256,12 +529,13 @@ class Target:
         client = CurlS3(self,user,password)
         try: client.list_buckets()
         except MinioRestoreError as error:
-            if error.stage == 'interrupted': raise
+            if error.stage == 'interrupted' or error.stage.startswith('vm_'): raise
             raise MinioRestoreError('authentication') from None
         except Exception: raise MinioRestoreError('authentication') from None
         return client
 
     def close(self):
+        if self.bridge is not None:self.bridge.close()
         args = ['ps','--all','--no-trunc','--filter','label=io.orbbec.minio-restore.attempt='+self.attempt,'--format','{{.ID}}']
         for identity in self.docker.capture(args).decode().split():
             if not CONTAINER_ID.fullmatch(identity): raise MinioRestoreError('cleanup')
@@ -290,7 +564,7 @@ class CurlS3:
         request = AWSRequest(method='GET',url=url,headers={'Host':'127.0.0.1:9000','x-amz-content-sha256':hashlib.sha256(b'').hexdigest()})
         SigV4Auth(Credentials(self.user,self.password),'s3','us-east-1').add_auth(request)
         config = 'url = '+json.dumps(url)+'\n'+''.join('header = '+json.dumps(key+': '+value)+'\n' for key,value in request.headers.items())
-        raw = self.target.docker.capture(['exec','-i',self.target.identity,'curl','-q','--silent','--noproxy','*','--max-time','5','--dump-header','-','--config','-'],data=config.encode(),timeout=10)
+        raw = self.target.bridge.capture(config.encode())
         try:
             header,body = raw.split(b'\r\n\r\n',1); status = int(header.splitlines()[0].split()[1])
             return status,body
@@ -395,7 +669,7 @@ def restore_minio(*,manifest_path,artifacts_dir,private_key_path,endpoint=LOCAL_
             target.launch(); target.ready()
             try: client = target.authenticate(user,password)
             except MinioRestoreError as error:
-                if error.stage == 'interrupted': raise
+                if error.stage == 'interrupted' or error.stage.startswith('vm_'): raise
                 raise MinioRestoreError('authentication') from None
             except Exception: raise MinioRestoreError('authentication') from None
             report['inventory'] = inventory(client)
@@ -409,6 +683,7 @@ def restore_minio(*,manifest_path,artifacts_dir,private_key_path,endpoint=LOCAL_
             try: target.close(); report['cleanup_confirmed'] = True
             except BaseException:
                 report.update(status='failed_minio_restore',primary_stage=report.get('stage'),stage='cleanup')
+            if getattr(target,'bridge',None) is not None:report['http_bridge']=target.bridge.summary()
         else: report['cleanup_confirmed'] = True
         for number,handler in handlers.items(): signal.signal(number,handler)
     return report
