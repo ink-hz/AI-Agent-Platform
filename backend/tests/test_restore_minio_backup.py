@@ -1,5 +1,6 @@
 """Local synthetic AEAD/tar/S3/isolation contracts; real execution is separate."""
 from copy import deepcopy
+import base64
 from datetime import UTC, datetime
 import hashlib
 import importlib.util
@@ -8,8 +9,10 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import tarfile
+import time
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -210,20 +213,166 @@ def test_real_sigterm_inside_s3_calls_preserves_interruption_and_cleans_target(t
 def test_curl_xml_bucket_pagination_and_signature_only_on_stdin():
     mod = module(); calls = []
     class Runner:
-        def capture(self,args,**kwargs):
-            calls.append((args,kwargs))
+        def capture(self,config,**kwargs):
+            calls.append((config,kwargs))
             xml = ('<ListAllMyBucketsResult><Buckets><Bucket><Name>bucket</Name></Bucket></Buckets>'
                    '<ContinuationToken>next-bucket-page</ContinuationToken></ListAllMyBucketsResult>')
             return b'HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\n\r\n'+xml.encode()
     class Local:
-        identity = 'a'*64; docker = Runner()
+        identity = 'a'*64; bridge = Runner()
     client = mod.CurlS3(Local(),'temporary-user-sentinel','temporary-password-sentinel')
     page = client.list_buckets()
     assert page['ContinuationToken'] == 'next-bucket-page'
-    args,settings = calls[0]
-    assert 'temporary-user-sentinel' not in str(args) and 'temporary-password-sentinel' not in str(args)
-    assert b'Authorization: AWS4-HMAC-SHA256 ' in settings['data']
-    assert b'temporary-password-sentinel' not in settings['data']
+    config,settings = calls[0]
+    assert b'Authorization: AWS4-HMAC-SHA256 ' in config
+    assert b'temporary-password-sentinel' not in config
     client.list_buckets(ContinuationToken='next-bucket-page')
     assert len(calls) == 2
-    assert b'continuation-token=next-bucket-page' in calls[-1][1]['data']
+    assert b'continuation-token=next-bucket-page' in calls[-1][0]
+
+
+def fake_proc(tmp_path):
+    root = tmp_path / 'proc'; process = root / '123'; (process / 'ns').mkdir(parents=True)
+    (root / 'self/ns').mkdir(parents=True)
+    (root / 'self/ns/net').write_text('host-net')
+    (process / 'ns/net').write_text('target-net')
+    (process / 'cgroup').write_text('0::/system.slice/docker-'+'a'*64+'.scope\n')
+    (process / 'status').write_text('Uid:\t10001\t10001\t10001\t10001\nNSpid:\t123\t1\n')
+    (process / 'stat').write_text('123 (minio worker) S '+' '.join(['0']*18+['777']+['0']*8))
+    return root,process
+
+
+@pytest.mark.parametrize('change', ['cgroup','uid','nspid','starttime','netns'])
+def test_proc_gate_rejects_wrong_identity_or_pid_reuse_before_namespace_entry(tmp_path,change):
+    mod=module();root,process=fake_proc(tmp_path)
+    original,fd=mod.proc_identity(root,123,'a'*64);os.close(fd)
+    if change=='cgroup': (process/'cgroup').write_text('0::/docker/'+'b'*64+'\n')
+    elif change=='uid': (process/'status').write_text('Uid:\t0\t0\t0\t0\nNSpid:\t123\t1\n')
+    elif change=='nspid': (process/'status').write_text('Uid:\t10001\t10001\t10001\t10001\nNSpid:\t123\t2\n')
+    elif change=='starttime': (process/'stat').write_text((process/'stat').read_text().replace('777','888'))
+    else:
+        replacement=process/'ns/new';replacement.write_text('different-net');os.replace(replacement,process/'ns/net')
+    with pytest.raises(mod.MinioRestoreError,match='vm_identity'):
+        mod.proc_identity(root,123,'a'*64,original)
+
+
+def test_namespace_fd_remains_bound_when_proc_path_is_replaced(tmp_path):
+    mod=module();root,process=fake_proc(tmp_path)
+    identity,fd=mod.proc_identity(root,123,'a'*64)
+    try:
+        (process/'ns/net').unlink();(process/'ns/net').write_text('replacement')
+        observed=subprocess.check_output([sys.executable,'-c','import os,sys;print(os.fstat(int(sys.argv[1])).st_ino)',str(fd)],pass_fds=(fd,),text=True)
+        assert int(observed)==identity['net_inode']
+    finally:os.close(fd)
+
+
+def test_native_client_timeout_kills_and_reaps_real_child_before_return(tmp_path):
+    mod=module();registered=[]
+    command=[sys.executable,'-c','import os,time;os.read(0,1);time.sleep(30)']
+    code,output,stage=mod.bounded_client(command,b'\0synthetic-config',lambda pid:registered.append(pid),0.1)
+    assert stage=='vm_timeout' and code!=0 and registered
+    with pytest.raises(ProcessLookupError):os.kill(registered[0],0)
+
+
+def test_native_client_real_sigterm_kills_and_reaps_child(tmp_path):
+    mod=module();marker=tmp_path/'client.pid';harness=tmp_path/'harness.py'
+    harness.write_text("import importlib.util,sys,os,pathlib,signal\ns=importlib.util.spec_from_file_location('bridge',sys.argv[1]);m=importlib.util.module_from_spec(s);sys.modules[s.name]=m;s.loader.exec_module(m)\ndef stop(*_):raise KeyboardInterrupt()\nsignal.signal(signal.SIGTERM,stop)\ndef register(pid):pathlib.Path(sys.argv[2]).write_text(str(pid))\ncode,output,stage=m.bounded_client([sys.executable,'-c','import os,time;os.read(0,1);time.sleep(30)'],b'\\0config',register,30)\nprint(stage,flush=True)\n")
+    process=subprocess.Popen([sys.executable,str(harness),str(HELPER),str(marker)],stdout=subprocess.PIPE,text=True)
+    try:
+        deadline=time.monotonic()+5
+        while not marker.exists() and time.monotonic()<deadline:time.sleep(0.01)
+        pid=int(marker.read_text());process.send_signal(signal.SIGTERM)
+        assert process.communicate(timeout=5)[0].strip()=='interrupted'
+        with pytest.raises(ProcessLookupError):os.kill(pid,0)
+    finally:
+        if process.poll() is None:process.kill();process.wait()
+
+
+def test_bridge_fixed_stage_no_vendor_fallback_and_single_cleanup(tmp_path):
+    mod=module();calls=[]
+    class Local:
+        identity='a'*64;image=IMAGE;attempt='c'*32;name='restore-test'
+        def metadata(self,_):return dict(boundary_value(),running=True,pid=123,started_at='stable-start')
+    bridge=mod.NativeVMBridge(Local())
+    def control(mode,payload,data=None):
+        calls.append((mode,payload,data))
+        if mode=='arm':return {'ok':True}
+        if mode=='run':return {'ok':True,'client_stopped':True,'returncode':139,'stage':'vm_client','response':'','process':{'pid':123,'starttime':'777','net_inode':1,'container_id':'a'*64,'uid':10001,'nspid':[123,1]}}
+        return {'ok':True,'client_stopped':True}
+    bridge._call=control
+    with pytest.raises(mod.MinioRestoreError,match='vm_client'):bridge.capture(b'config-secret-sentinel')
+    bridge.close()
+    assert [mode for mode,_,_ in calls]==['arm','run','cleanup']
+    assert calls[1][2]==b'config-secret-sentinel'
+    assert 'config-secret-sentinel' not in json.dumps([payload for _,payload,_ in calls])
+
+
+def test_unknown_vm_cleanup_prevents_target_cleanup():
+    mod=module();target=mod.Target.__new__(mod.Target)
+    class Bridge:
+        def close(self):raise mod.MinioRestoreError('vm_cleanup')
+    target.bridge=Bridge()
+    class Docker:
+        def capture(self,*_,**__):raise AssertionError('target cleanup ran before client exit confirmation')
+    target.docker=Docker()
+    with pytest.raises(mod.MinioRestoreError,match='vm_cleanup'):target.close()
+
+
+def test_client_registration_failure_never_releases_stdin_gate(tmp_path):
+    mod=module();marker=tmp_path/'request-started';registered=[]
+    command=[sys.executable,'-c','import os,pathlib,sys,time;gate=os.read(0,1);pathlib.Path(sys.argv[1]).write_bytes(gate);time.sleep(30)',str(marker)]
+    def unavailable(pid):registered.append(pid);raise OSError('synthetic metadata write failure')
+    code,_,stage=mod.bounded_client(command,b'\0private-config',unavailable,1)
+    assert stage=='vm_control' and code!=0 and not marker.exists()
+    with pytest.raises(ProcessLookupError):os.kill(registered[0],0)
+
+
+def test_vm_program_compiles_and_host_cli_uses_explicit_profile_with_stdin_only(monkeypatch):
+    mod=module();calls=[]
+    compile(mod.vm_program(),'native_vm_bridge_program','exec')
+    def run(command,data,register,timeout,pass_fds=()):
+        calls.append((command,data));return 0,b'{"ok":true}',None
+    monkeypatch.setattr(mod,'bounded_client',run)
+    bridge=mod.NativeVMBridge(object())
+    assert bridge._call('arm',{'request':'a'*32},b'private-config-sentinel')=={'ok':True}
+    command,data=calls[0]
+    assert command[1:8]==['--profile','default','ssh','--','sudo','-n','/usr/bin/python3']
+    assert 'private-config-sentinel' not in str(command) and data==b'private-config-sentinel'
+
+
+def test_changed_docker_identity_rejected_before_any_vm_request():
+    mod=module();calls=[]
+    class Local:
+        identity='a'*64;image=IMAGE;attempt='c'*32;name='restore-test'
+        def metadata(self,_):return dict(boundary_value(),id='b'*64,running=True,pid=123,started_at='stable')
+    bridge=mod.NativeVMBridge(Local());bridge._call=lambda *args:calls.append(args)
+    with pytest.raises(mod.MinioRestoreError,match='container_boundary'):bridge.capture(b'config')
+    assert calls==[]
+
+
+def test_client_disappearing_at_kill_still_reaps_and_preserves_timeout(monkeypatch):
+    mod=module();kill=os.killpg;registered=[]
+    def disappeared(pid,number):
+        kill(pid,number)
+        raise ProcessLookupError()
+    monkeypatch.setattr(mod.os,'killpg',disappeared)
+    try:
+        code,_,stage=mod.bounded_client([sys.executable,'-c','import time;time.sleep(30)'],b'',registered.append,0.05)
+        assert stage=='vm_timeout' and code!=0
+        with pytest.raises(ProcessLookupError):os.kill(registered[0],0)
+    finally:
+        if registered:
+            try:os.waitpid(registered[0],0)
+            except ChildProcessError:pass
+
+
+def test_vm_cleanup_confirms_a_client_that_exits_between_probe_and_kill(tmp_path,monkeypatch):
+    mod=module();path=tmp_path/'request.json';path.write_text('{}')
+    record={'client_pid':123,'client_starttime':'777'};states=iter([True,False,False])
+    monkeypatch.setattr(mod,'vm_load',lambda *_:record)
+    monkeypatch.setattr(mod,'vm_alive',lambda *_:next(states,False))
+    monkeypatch.setattr(mod.os,'getpgid',lambda _:123)
+    def exited(*_):raise ProcessLookupError()
+    monkeypatch.setattr(mod.os,'killpg',exited)
+    mod.vm_cleanup(path,{'request':'a'*32})
+    assert not path.exists()

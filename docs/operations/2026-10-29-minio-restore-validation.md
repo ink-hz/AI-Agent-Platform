@@ -18,9 +18,9 @@ Docker 固定显式 `--host unix:///Users/neo/.colima/default/docker.sock`，忽
 
 根预审要求补齐明文资源保密边界：`--memory-swap=768m` 与 memory 完全相等以禁用 swap，`--ulimit core=0` 禁 core dump，`--cpus=1` 限制CPU，两个 tmpfs 均 noexec/nosuid/nodev。创建后必须实际 inspect `Memory=MemorySwap=805306368`、`NanoCpus=1000000000`、core Soft/Hard均0，及两个 Tmpfs均noexec且无exec；仅声明CLI参数不算通过。原d921未创建实际目标，无已有明文/资源需迁移。新增5个资源边界 RED 后实现，独立复审前仍不运行真实目标。
 
-随机本机临时 root 用户/密码只经 stdin 写到目标 0600 tmpfs 文件，由容器内 shell 读取并 export；凭据值不进入 host argv、Docker Config.Env、日志或报告，私钥从不进容器。使用临时 root **不验收原生产 IAM/权限**。准备期目标只运行等待 shell，逐文件提取不依赖镜像 tar。镜像须有 sh/cat/mkdir/curl/sha256sum；缺少依赖明确失败，不换镜像/协议。随后 MinIO 仅监听自身 loopback；30 秒有界健康轮询仅用于启动就绪，签名 S3 请求无重试。一次错误 secret 的签名 GET 必须403，正确临时身份 ListBuckets 必须200。
+随机本机临时 root 用户/密码只经 stdin 写到目标 0600 tmpfs 文件，由容器内 shell 读取并 export；凭据值不进入 host argv、Docker Config.Env、日志或报告，私钥从不进容器。使用临时 root **不验收原生产 IAM/权限**。准备期目标只运行等待 shell，逐文件提取不依赖镜像 tar。服务镜像须有 sh/cat/mkdir/sha256sum；首轮d43使用镜像内curl，后续客户端适配见下文。缺少依赖明确失败，不换服务镜像/协议。随后 MinIO 仅监听自身 loopback；30 秒有界健康轮询仅用于启动就绪，签名 S3 请求无重试。一次错误 secret 的签名 GET 必须403，正确临时身份 ListBuckets 必须200。
 
-本机请求经 botocore SigV4 签名后用 `docker exec curl --config -` 的 stdin 发送到同一容器 loopback，无端口转发或共享网络。清单范围为全部可见桶，包含版本配置、current objects、全部 versions、delete markers 和 unfinished multipart uploads；初始桶发现最多128页/128桶；桶内每类最多128页，每桶全部四类合计最多100000记录。桶内页面请求前检查从inventory开始计时的120秒deadline，初始桶发现循环本身尚无该deadline检查。输出只含桶名、数量、字节与排序元数据 SHA-256，不输出 keys、version IDs、upload IDs、内容或服务端错误正文。分页重复游标、权限不足和协议错误均首错失败，不修改 IAM。
+本机请求保持 botocore SigV4 签名，HTTP桥首轮为 `docker exec curl --config -`，后续已批准采用原生VM客户端，仅进入同一容器网络namespace；无端口转发或共享网络。清单范围为全部可见桶，包含版本配置、current objects、全部 versions、delete markers 和 unfinished multipart uploads；初始桶发现最多128页/128桶；桶内每类最多128页，每桶全部四类合计最多100000记录。桶内页面请求前检查从inventory开始计时的120秒deadline，初始桶发现循环本身尚无该deadline检查。输出只含桶名、数量、字节与排序元数据 SHA-256，不输出 keys、version IDs、upload IDs、内容或服务端错误正文。分页重复游标、权限不足和协议错误均首错失败，不修改 IAM。
 
 退出、超时、SIGINT/SIGTERM 都先终止 host CLI，再按精确 owned identity 停止并移除唯一目标，成功 scoped ps 确认不存在后才报告 cleanup_confirmed。daemon 无法确认时报告 cleanup 失败，保留 attempt/name/ID，禁止把未知当已清理；不自动重跑。SIGKILL 无法执行 finally，须按原 label/ID人工核对清理后再验证。原密文/旧基线和失败记录不删除。
 
@@ -69,4 +69,18 @@ backend/.venv/bin/python deploy/cloud/restore_minio_backup.py \
 
 主树 `tmp/security-first-batch-20261029/` 的本次收据均为0600（不提交）：`minio-source-logical-inventory-attempt1.json`、`minio-local-restore-attempt1.json`、`minio-local-restore-boundary-attempt1.json`、`minio-local-restore-cleanup-attempt1.json`、`minio-local-restore-events-attempt1.json`、`minio-local-curl-exit-diagnostic-attempt1.json`。服务端stderr、凭据和文件内容未写入这些收据。
 
-独立审查Minor口径已明确：代码120秒deadline检查覆盖桶内四类枚举；初始桶发现循环目前只有128页/128桶上限，没有同一个120秒门；100000记录上限按每桶计算。当前1桶无截断场景不受这两点影响，本文的整体文字不作为全局预算已实现证据。后续若增加全局门应单独测试和审查，本批没有改已审执行代码。
+独立审查Minor口径已明确：代码120秒deadline检查覆盖桶内四类枚举；初始桶发现循环目前只有128页/128桶上限，没有同一个120秒门；100000记录上限按每桶计算。当前1桶无截断场景不受这两点影响，本文的整体文字不作为全局预算已实现证据。后续若增加全局门应单独测试和审查；上述实际首轮保持已审d43代码不变，后续HTTP桥改动见下文。
+
+## 自身HTTP测试适配（待独立复审与一个新本机批次）
+
+首轮的curl139只证明进程异常退出，未证明QEMU根因，也不构成服务恢复失败归因的终点。测试HTTP客户端不应绑定被测vendor镜像的CPU架构；服务端仍使用原精确AMD64镜像和同一份archive、tmpfs隔离、随机本机临时root认证与Host botocore SigV4。没有换身份、改生产IAM或改原失败。父agent已批准单一NativeVMBridge设计，只改原三个文件，先TDD/独立复审，再执行一个新local批次；已过的生产只读清单不重跑。
+
+只读可行性确认：Colima default VM为aarch64，现有`/usr/bin/curl`8.5.0（aarch64-unknown-linux-gnu）、`/usr/bin/nsenter`支持`--net=<file>`、Python3、sudo/timeout均存在，sudo -n可用、cgroup2fs。未安装工具、创建新MinIO目标或重跑S3来验证此设计。
+
+health与signed GET统一走原生桥，无vendor curl回退。每请求前后检查Docker fullID/image/attempt及全部原boundary、Running、State.Pid/StartedAt；VM端检查该PID的cgroup含完整Docker ID组件、Uid四项10001、NSpid末项1、进程starttime和netns inode，后续请求与首个受检指纹完全一致。打开/pin精确netns FD，再使用`sudo`原生Python监督`nsenter --net=/proc/self/fd/N /usr/bin/curl`，只进入net，不进入mount/PID/user/env，不读取目标cmdline/env。FD固定避免路径/PID复用把客户端送入其他namespace；VM主机netns必须不同。
+
+签名配置仅stdin进入原生curl，密码/私钥不进VM参数、环境或元数据；curl清空环境、禁curlrc/proxy，core限制0。curl max-time为health2秒/signed5秒，VM监督7秒，Host Colima控制12秒。保留原30秒显式就绪轮询，仅health连接未就绪(exit7)可返回000继续；VM异常、timeout、身份变化及任何signed请求失败均明确固定`vm_*`阶段退出，不重试或fallback。
+
+每个HTTP request有唯一ID。VM `/run/orbbec-minio-http/<attempt>/<request>.json`只存root0700/0600非敏感scope、controller/client PID/starttime及终止状态，不存headers/config/HTTP正文。预登记后，原生子进程先等待gate，保存精确PID/starttime才放行stdin；VM监督在正常、timeout和TERM时kill/wait。Host CLI中断不被当作VM退出证明：外层忽略后续TERM后只调用一次scoped VM cleanup，按PID+starttime+request marker核对并终止该原生client/controller、确认已停，再清理服务目标。PID已复用时不杀新进程；未知则报告`http_bridge.status=incomplete`并保留VM证据和目标，人工核对后才能新批次，不循环清理。正常已终止请求元数据在确认后删除。
+
+工程证据：新增10项RED后实现；再补2项退出竞态RED（probe后进程消失仍须wait/确认），修后新42项与既有恢复38项合计 **80通过、0失败，0.99秒**。包括真实OS子进程timeout、真实TERM、登记失败不放行gate、netns FD路径替换后仍固定原对象、PID/starttime/Uid/NSpid/cgroup/netns拒绝、VM未知清理阻止target清理、stdin/明确profile及VM程序展开编译。proc和VM控制边界使用合成输入，尚未运行新MinIO目标，不冒充新批次实际通过。
