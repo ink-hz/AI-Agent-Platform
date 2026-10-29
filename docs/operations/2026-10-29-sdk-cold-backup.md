@@ -44,6 +44,8 @@
 
 容器内只读 SQL 使用120秒 timeout（TERM，5秒后kill），宿主 SQL 客户端等待150秒、采集器180秒。这样宿主 exec 客户端失联也不留下无期限只读 COUNT；不会杀 DB 主服务。数据库口令只由容器内 shell 引用 MARIADB_ROOT_PASSWORD 到 MYSQL_PWD，现有 grants 保持启用。
 
+shutdown 日志也是生产者接口合同：Docker logs --timestamps 的外层带时区 RFC3339 时间负责限定本次 since/until；MariaDB 10.6 内层日期与时间之间可有多个空格/横向空白，小时可一位或两位，例如 2026-10-29  4:36:40，不能硬编码单空格与04。仅扩展该可变时间格式；完整行仍须严格匹配 [Note] mariadbd: Shutdown complete 或 mysqld 对应消息，拒绝其他 daemon、正文子串、额外后缀和 InnoDB: Shutdown completed。日志证明始终与同一原DB实际 exit0、noOOM、exited/PID0共同成立，不能单凭一条关闭文本发布 complete。
+
 ## 六件密文与消费协议
 
 set_id 为 sdk-cold-UTC时间-8hex，filename 均为 kind-set_id.orb。所有 source 内容只走 stdout→加密 helper stdin；不落明文 tar/dump，不把私有 env 内容解析为宿主变量或日志。helper 固定10001:10001、rootfs只读、cap-drop ALL、no-new-privileges、network none、restart no、log-driver none；只读公钥卷和本次 ciphertext bind，没有业务源卷挂载。
@@ -82,6 +84,8 @@ objects 按 schema/table 排序，普通表与视图都 COUNT。单独证据文�
 首次生产 attempt sdk-cold-20261029T042431085647Z-328d1bf5 于2026-10-29 04:24:31 UTC启动，预检首错 source_identity 后停止；status=failed、source_actions.web/db 均为空、blocked=false，没有 stop/start 任何源，原服务无影响。负责人只读定位为 Web 没有 State.Health，旧 Docker Go 模板直接访问该缺失字段导致 formatter 失败，不能据此推断源 ID 变化。修正为 with index .State "Health" 的缺失字段安全访问，存在时仍仅输出 Status；用本机唯一自有、未启动、network none/log-driver none/tmpfs 容器的真实 Docker formatter 做 RED→GREEN 验证并移除该测试容器。原失败记录保留；修复不自动重跑整批，独立审查后由负责人另开新 batch。
 
 第二次生产 attempt sdk-cold-20261029T042923410027Z-70b3fd6c 于2026-10-29 04:29:23 UTC预检首错 source_volume 后停止；source_actions 仍为空，原服务没有停启。负责人只读确认两个卷的 name/local driver/mountpoint 均精确匹配而 options 均为 null。此失败原样保留；后续依上述统一合同和完整只读 preflight 门处理，不宣称前两次成功。
+
+第三次生产 attempt sdk-cold-20261029T043632540812Z-264c9f2d 已进入停机，在 db_unclean_shutdown 门失败关闭：DB实际 exit0/noOOM，而旧 regex 未识别厂商单小时/双空格时间，shutdown_proof=false。负责人已确认恢复同一原DB/Web，DB healthy/Web HTTP ready、helper清理完成、blocked=false；此次失败保留，不改写为成功。真实技术样本为 2026-10-29T04:36:40.040643105Z 2026-10-29  4:36:40 0 [Note] mariadbd: Shutdown complete。修复后只允许负责人使用该历史真实窗口只读复核 proof，并重新执行完整只读 preflight（含原Web重启后可能再生成的三配置 hash）；二者通过并经审查后才决定第四个 job，工具不自动停机或重跑。
 
 ## 准备与执行入口
 
