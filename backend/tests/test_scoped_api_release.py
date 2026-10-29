@@ -66,6 +66,31 @@ def test_live_contract_checks_image_defaults_and_named_mounts():
         h.assert_live_contract(config, inspect, image)
 
 
+@pytest.mark.parametrize('compose_key,image_key', [('command','Cmd'),('entrypoint','Entrypoint')])
+def test_live_contract_unescapes_only_rendered_compose_commands(compose_key, image_key):
+    h = load(); config = service(); api = config['services']['platform-api']
+    rendered = ['/bin/sh', '-ec', 'KEY="$$(cat /run/secrets/fixture-key)"; echo "$$KEY"']
+    actual = ['/bin/sh', '-ec', 'KEY="$(cat /run/secrets/fixture-key)"; echo "$KEY"']
+    api[compose_key] = rendered
+    inspect = {'Name':'/api','HostConfig':policy_host(), 'Config': {
+        'Image':api['image'],'Healthcheck':health_policy(),
+        'Env':['TOKEN=do-not-print','PLATFORM_RELEASE_SHA='+'b'*40,'PATH=/bin'],
+        'Cmd':api['command'], 'Entrypoint':None, 'User':'10001','WorkingDir':'/app/backend'},
+        'Mounts':[{'Type':'bind','Source':'/data/hr','Destination':'/hr','RW':False}],
+        'NetworkSettings':{'Networks':{'orbbec-agent-platform-internal':{'Aliases':['api','platform-api']}}}}
+    inspect['Config'][image_key] = actual
+    image = {'Config':{'Env':['PATH=/bin'],'User':'10001','WorkingDir':'/app/backend'}}
+    h.assert_live_contract(config, inspect, image)
+    inspect['Config'][image_key] = actual[:-1] + [actual[-1]+'; unexpected command']
+    with pytest.raises(h.ReleaseError, match='live_'+compose_key):
+        h.assert_live_contract(config, inspect, image)
+    # Image defaults are Docker argv already; literal double dollars stay literal.
+    api.pop(compose_key)
+    image['Config'][image_key] = rendered
+    inspect['Config'][image_key] = rendered
+    h.assert_live_contract(config, inspect, image)
+
+
 def test_command_uses_every_ordered_input_and_only_recreates_api():
     h = load(); state = {'working_dir': '/release/deploy/cloud', 'files': ['/a', '/b', '/c'],
                          'env_file': '/private/platform.env', 'project': 'orbbec-agent-platform'}

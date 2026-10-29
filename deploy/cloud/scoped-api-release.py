@@ -379,6 +379,14 @@ def assert_live_contract(config, live, image):
     require(env == dict(v.split('=', 1) for v in live['Config'].get('Env', [])), 'live_environment')
     for key, compose_key in [('Cmd', 'command'), ('Entrypoint', 'entrypoint'), ('User', 'user'), ('WorkingDir', 'working_dir')]:
         expected = service.get(compose_key, image['Config'].get(key))
+        if compose_key in ('command', 'entrypoint') and compose_key in service:
+            # Compose JSON retains escaped dollars; container creation collapses
+            # each $$ pair. Image defaults already contain the actual Docker argv.
+            if isinstance(expected, list):
+                require(all(isinstance(part, str) for part in expected), 'live_' + compose_key)
+                expected = [part.replace('$$', '$') for part in expected]
+            elif isinstance(expected, str):
+                expected = expected.replace('$$', '$')
         actual = live['Config'].get(key)
         require(expected == actual or (expected in (None, '', []) and actual in (None, '', [])), 'live_' + compose_key)
     mounts = []
