@@ -126,6 +126,12 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert "secret" not in str(events)
     assert not (tmp_path / "domain.db").exists()
     caplog.clear()
+    for path in ("/objects/invalid?limit=no", "/tasks?project_id=invalid"):
+        response = client.get(wf + path)
+        assert response.status_code == 401
+        assert response.headers["cache-control"] == "private, no-store"
+    assert not (tmp_path / "domain.db").exists()
+    caplog.clear()
     client.cookies.set(auth.cookie_name, "valid-cookie")
     headers = {
         "Origin": "https://agent.example.test",
@@ -237,6 +243,13 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert len(scoped_members.json()["items"])==1
     assert scoped_members.json()["items"][0]["display_name"] in {"Named project member","Project Owner"}
     assert client.get(f"{wf}/projects/{pid}/members?limit=51").status_code==422
+    for path in ("/objects/demand", "/tasks"):
+        page = client.get(wf + path)
+        assert page.status_code == 200, page.text
+        assert page.json()["total"] == 0
+        assert page.headers["cache-control"] == "private, no-store"
+        assert client.get(wf + path, params={"project_id": second_pid}).status_code == 404
+        assert client.get(wf + path, params={"limit": "invalid"}).status_code == 422
     assert client.get(base + "/projects").status_code == 403
     assert (
         client.get(wf + "/assets/manufacturing.js?release=development").status_code
@@ -310,3 +323,42 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert collision_client.get(wf + "/access").status_code == 503
     assert collision_client.get(base + "/access").status_code == 200
     assert legacy_file.read_bytes() == b"legacy sentinel"
+
+@pytest.mark.parametrize('role', list(Role))
+@pytest.mark.parametrize('path', ['/objects/{kind}', '/tasks'])
+def test_global_workflow_exact_auth_contract(role, path):
+    from app.control_plane.authorization import AuthorizationService
+    from app.manufacturing_paths import WORKFLOW_ROUTES
+    from test_dingtalk_auth_api import _NoObservationGrants
+    assert ('GET', path) in WORKFLOW_ROUTES
+    service = AuthorizationService(_NoObservationGrants())
+    context = AuthContext(uuid4(), role, uuid4(), False)
+    route = '/api/v1/manufacturing/workflow' + path
+    assert service.decide(None, 'GET', route, ()).status_code == 401
+    assert service.decide(context, 'GET', route, ()).allowed
+    assert not service.decide(context, 'POST', route, ()).allowed
+    assert not service.decide(context, 'GET', route + '/extra', ()).allowed
+
+
+def test_unavailable_global_routes_authenticate_before_validation(tmp_path, monkeypatch):
+    from app.manufacturing import build_manufacturing_router
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.control_plane.authorization import AuthorizationService
+    from app.control_plane.middleware import IdentitySecurityMiddleware
+    from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants
+    monkeypatch.delenv('PLATFORM_MANUFACTURING_ROOT', raising=False)
+    auth = FakeAuth()
+    app = FastAPI()
+    app.include_router(build_manufacturing_router())
+    app.add_middleware(IdentitySecurityMiddleware, auth=auth, authorization=AuthorizationService(_NoObservationGrants()), routes=app.routes, public_assets=frozenset())
+    client = TestClient(app, base_url='https://agent.example.test')
+    for path in ('/objects/invalid?limit=no&project_id=invalid', '/tasks?limit=no&project_id=invalid'):
+        url = '/api/v1/manufacturing/workflow' + path
+        response = client.get(url)
+        assert response.status_code == 401
+        client.cookies.set(auth.cookie_name, 'valid-cookie')
+        response = client.get(url)
+        assert response.status_code == 503
+        assert response.headers['cache-control'] == 'private, no-store'
+        client.cookies.clear()

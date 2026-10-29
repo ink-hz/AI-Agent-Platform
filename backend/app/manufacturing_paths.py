@@ -48,6 +48,8 @@ WORKFLOW_ROUTES = frozenset(
         ("GET", "/assets/{asset_name}"),
         ("GET", "/handbook"),
         ("GET", "/dashboard"),
+        ("GET", "/objects/{kind}"),
+        ("GET", "/tasks"),
         ("GET", "/projects"),
         ("POST", "/projects"),
         ("GET", "/projects/{project_id}"),
