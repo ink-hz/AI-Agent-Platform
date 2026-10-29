@@ -2,15 +2,15 @@
 
 本任务只验证已成功集合 `20261029T032929866671Z-4b220d42` 的同一份附件密文能否在隔离本机 MinIO 中恢复并经认证枚举。原 `backup-restore-actual-attempt1.json`、8 分钟前采集的全目录基线、原 manifest/三件密文全部保留。原先的 `attachments_baseline` 失败不能改绿或视为同一时点对账通过。
 
-实现限于 `deploy/cloud/restore_minio_backup.py`、`backend/tests/test_restore_minio_backup.py` 和本文，不修改 backup_runtime、SDK、主计划或生产服务。父 agent 已批准本设计；代码提交后先独立审查，再执行真实恢复。
+实现限于 `deploy/cloud/restore_minio_backup.py`、`backend/tests/test_restore_minio_backup.py` 和本文，不修改 backup_runtime、SDK、主计划或生产服务。父 agent 已批准本设计；d43正式独立审查无 Critical/Important 后执行，实际结果分别记录在下文。
 
 ## 设计与执行计划
 
 - [x] 写 RED：真实合成 AEAD/tar、输入失败不创建目标、分页/权限拒绝、隔离边界、唯一目标清理及信号；实现后 GREEN。
 - [x] 再补 RED：真实 SIGTERM 在认证/枚举过程中保留 interrupted；curl XML 桶分页和签名只经 stdin。修后与既有恢复测试共同 GREEN。
-- [ ] 独立审查本提交，确认实际执行命令、输入集合和目标隔离。
+- [x] 独立审查d43，无 Critical/Important；已归并主线 `1a4e6525`，合并后65项测试通过。
 - [ ] 新建唯一自有 MinIO，真实启动、错误凭据拒绝、正确凭据签名 GET、所有可见桶与对象/版本/删除标记/未完成 multipart 分页枚举，确认删除目标。
-- [ ] 现有生产 API 内以原已挂载专用 S3 凭据只读枚举，只输出桶/count/hash；与父 agent 的恢复 DB 引用证据并列报告。
+- [x] 现有生产 API 内以原已挂载专用 S3 凭据只读枚举，只输出桶/count/hash；与父 agent 的恢复 DB 引用证据并列报告。
 
 脚本复用**同 checkout** `restore_backup_set.py` 的 manifest、私钥权限/公钥指纹、固定密文 FD/hash/version、AEAD 和安全 tar 校验函数，不改变加密协议。只恢复附件，不重跑数据库恢复。附件先完整认证/验证 tar，第二遍流式解密逐文件写入目标 tmpfs；不在宿主写明文。读取目标文件的 SHA-256，确认提取后的文件数/字节数/完整路径与内容聚合等于 archive，再允许 MinIO 启动。tar 链接、绝对路径、`..`、特殊文件和重复项按既有规则拒绝。
 
@@ -20,7 +20,7 @@ Docker 固定显式 `--host unix:///Users/neo/.colima/default/docker.sock`，忽
 
 随机本机临时 root 用户/密码只经 stdin 写到目标 0600 tmpfs 文件，由容器内 shell 读取并 export；凭据值不进入 host argv、Docker Config.Env、日志或报告，私钥从不进容器。使用临时 root **不验收原生产 IAM/权限**。准备期目标只运行等待 shell，逐文件提取不依赖镜像 tar。镜像须有 sh/cat/mkdir/curl/sha256sum；缺少依赖明确失败，不换镜像/协议。随后 MinIO 仅监听自身 loopback；30 秒有界健康轮询仅用于启动就绪，签名 S3 请求无重试。一次错误 secret 的签名 GET 必须403，正确临时身份 ListBuckets 必须200。
 
-本机请求经 botocore SigV4 签名后用 `docker exec curl --config -` 的 stdin 发送到同一容器 loopback，无端口转发或共享网络。清单范围为全部可见桶，包含版本配置、current objects、全部 versions、delete markers 和 unfinished multipart uploads；每类最多128页，总记录最多100000，整体120秒限额。输出只含桶名、数量、字节与排序元数据 SHA-256，不输出 keys、version IDs、upload IDs、内容或服务端错误正文。分页重复游标、权限不足和协议错误均首错失败，不修改 IAM。
+本机请求经 botocore SigV4 签名后用 `docker exec curl --config -` 的 stdin 发送到同一容器 loopback，无端口转发或共享网络。清单范围为全部可见桶，包含版本配置、current objects、全部 versions、delete markers 和 unfinished multipart uploads；初始桶发现最多128页/128桶；桶内每类最多128页，每桶全部四类合计最多100000记录。桶内页面请求前检查从inventory开始计时的120秒deadline，初始桶发现循环本身尚无该deadline检查。输出只含桶名、数量、字节与排序元数据 SHA-256，不输出 keys、version IDs、upload IDs、内容或服务端错误正文。分页重复游标、权限不足和协议错误均首错失败，不修改 IAM。
 
 退出、超时、SIGINT/SIGTERM 都先终止 host CLI，再按精确 owned identity 停止并移除唯一目标，成功 scoped ps 确认不存在后才报告 cleanup_confirmed。daemon 无法确认时报告 cleanup 失败，保留 attempt/name/ID，禁止把未知当已清理；不自动重跑。SIGKILL 无法执行 finally，须按原 label/ID人工核对清理后再验证。原密文/旧基线和失败记录不删除。
 
@@ -51,4 +51,22 @@ backend/.venv/bin/python deploy/cloud/restore_minio_backup.py \
 
 当前原 archive 的42个普通文件/42277字节均在 `.minio.sys` 下，这是附加物理证据，**不能独立推出业务对象为空**。父 agent 已恢复两库：replica8表/19818行，control209表/1846752行。对象引用证据有2条 uploading 附件/上传意图，size合计1595518，已提交sha256/immutable_locator均为空；另1条 abandoned write_attempt size0/hash0，artifact_versions/derivatives0。上传意图数量和请求字节不等于已归档对象；仍须与认证 S3 的 current/version/delete/multipart 清单核对。
 
-本文当前仅记录设计与工程验证；真实 MinIO 恢复、原生产 IAM、同一时点跨DB/对象原子性和完整业务灾备未宣称通过。实际收据、首错及后续独立复验分别追加，原失败不覆盖。
+## 实际只读源清单（独立通过）
+
+代码来源为 `d43a224d0841edca46eab583ef52f71192ccf935`，2026-10-29 03:56:11–03:56:12 UTC 在既有 API 容器内通过已挂载凭据执行批准的只读程序。fresh installed resolver 得到 API `a95da88456840af72de6565ad46e5a292e59ad8174b07c36b6e9567351c1fa9e`、image `sha256:cd3fb491ca9a99cc11154a747b48ca821f7f4adfee963586cd329a4d41acdac6`；46个有序输入配置聚合 `3b2ed6609e61d824639d610d24a92233a4d77289d1a96851901f2a6485d0bb34`，完整前后 resolve 相等。MinIO exact image仍为上述d249。没有秘密值、keys或body离开容器，没有写对象、消息、IAM或生产停启。
+
+全部可见桶1个：`orbbec-agent-attachments`，versioning=Enabled；current objects=0、versions=0、delete markers=0、unfinished multipart uploads=0、object_bytes=0，元数据聚合 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。配置桶存在，全部四类只读清单均成功，非权限失败冒充空清单。该观察晚于03:29备份捕获，不宣称同一时点跨资源原子对账。
+
+## 实际本机恢复首轮（失败保留，目标已清理）
+
+使用未修改的d43代码、原set与原私钥、精确colima endpoint和d249镜像，耗时13.073秒。原附件 ciphertext SHA-256为 `06b58658f147286f5230662dde3624c888372517056a60e7fbcf6a302380ee47`；AEAD/tar通过，42文件/42277字节，路径与内容聚合 `33a55b5bec7bce2ed1f57ff6749d40cf1e0ff25a18c086f2f7739f0ff0c088e8`。按批准函数的执行顺序，提取后目标逐文件哈希与该聚合相等才执行launch；该条件已走过。
+
+准备后只读观察到的真实边界为：uid/gid10001、network none、无端口/持久mount、lognone、readonly、memory=swap=805306368、NanoCpus=1000000000、core Soft/Hard=0、两个tmpfs均noexec/nosuid/nodev且对应uid/gid10001。临时随机root凭据只经stdin/tmpfs，未使用原生产IAM身份。
+
+首错是稳定 `stage=docker`，不是完整 MinIO 逻辑恢复通过。只读daemon events进一步保留：health curl从连接未就绪(exit7)转exit0，随后3个signed-config-stdin curl exit0，第4个exit139。结合固定代码调用次序，可推断就绪、错误secret拒绝、正确ListBuckets及版本配置前置已走过，首个ListObjectsV2的curl进程异常退出；没有保存每步HTTP独立收据，不将这些事件补写成完整认证/逻辑清单验收。daemon为aarch64，精确源image为linuxamd64；架构差异是环境事实，**未证明它是exit139根因**。没有重建目标、自动重试失败请求、替换client/身份、换archive或改旧baseline。
+
+唯一目标 `f2d0bae5774780846ec09ec2d4ef296ebdd7247feb2ade3f5f4add55413bed11`（attempt `48eeb83d153a49b7906388cae4765e92`）已stop/rm，独立成功scoped ps确认remaining=0、absence=true。失败与原错误均保留，后续新批次/客户端适配须另行审查；原生产IAM、完整MinIO四类逻辑恢复、跨DB/对象原子性和业务灾备均未宣称通过。
+
+主树 `tmp/security-first-batch-20261029/` 的本次收据均为0600（不提交）：`minio-source-logical-inventory-attempt1.json`、`minio-local-restore-attempt1.json`、`minio-local-restore-boundary-attempt1.json`、`minio-local-restore-cleanup-attempt1.json`、`minio-local-restore-events-attempt1.json`、`minio-local-curl-exit-diagnostic-attempt1.json`。服务端stderr、凭据和文件内容未写入这些收据。
+
+独立审查Minor口径已明确：代码120秒deadline检查覆盖桶内四类枚举；初始桶发现循环目前只有128页/128桶上限，没有同一个120秒门；100000记录上限按每桶计算。当前1桶无截断场景不受这两点影响，本文的整体文字不作为全局预算已实现证据。后续若增加全局门应单独测试和审查，本批没有改已审执行代码。
