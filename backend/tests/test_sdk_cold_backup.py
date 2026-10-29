@@ -3,11 +3,13 @@ from copy import deepcopy
 from datetime import UTC, datetime
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 
 import pytest
 
@@ -253,7 +255,9 @@ def test_six_captures_use_only_cold_sources_then_restore_exact_original_ids(tmp_
     assert source_actions(runner, "stop") == [runner.sources["web"]["id"], runner.sources["db"]["id"]]
     assert source_actions(runner, "start") == [runner.sources["db"]["id"], runner.sources["web"]["id"]]
     producers = [p for p, _ in runner.pipelines]
-    assert sum(p[:2] == ("/usr/bin/docker", "cp") for p in producers) == 3
+    assert sum("--copy-config" in p for p in producers) == 3
+    for producer in producers[2:5]:
+        assert producer[:4] == (sys.executable, str(SCRIPT.resolve()), "--copy-config", runner.sources["web"]["id"])
     assert all("exec" not in p for p in producers)
     assert not runner.helpers
     assert not backup.journal_path.exists()
@@ -582,3 +586,194 @@ def test_real_shared_pipeline_encrypts_without_plaintext_dump_files(tmp_path):
         decrypt_stream(source, restored, key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()))
     assert restored.getvalue() == b"synthetic cold tar stream" * 1000
     assert {p.name for p in tmp_path.iterdir()} == {"public", "fixture.orb"}
+
+
+def config_tar(*, name="config.php", content=b"synthetic private configuration", kind=tarfile.REGTYPE,
+               extra=False, pax=False):
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT if pax else tarfile.USTAR_FORMAT) as archive:
+        item = tarfile.TarInfo(name)
+        item.type = kind
+        if pax:
+            item.pax_headers = {"mtime": "1.25"}
+        if kind == tarfile.REGTYPE:
+            item.size = len(content)
+        else:
+            item.linkname = "config.php"
+        archive.addfile(item, io.BytesIO(content) if kind == tarfile.REGTYPE else None)
+        if extra:
+            archive.addfile(tarfile.TarInfo("extra"), io.BytesIO())
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("pax", [False, True])
+def test_config_stream_validates_actual_file_and_forwards_identical_archive(pax):
+    module = sdk_module()
+    value, destination = config_tar(pax=pax), io.BytesIO()
+    module.validate_config_tar(io.BytesIO(value), destination, "config.php",
+                               hashlib.sha256(b"synthetic private configuration").hexdigest())
+    assert destination.getvalue() == value
+
+
+@pytest.mark.parametrize("problem", ["changed", "path", "symlink", "hardlink", "extra", "oversize", "truncated", "trailing"])
+def test_config_stream_rejects_unpinned_or_ambiguous_captured_bytes(problem):
+    module = sdk_module()
+    options = {"content": b"changed during shutdown"} if problem == "changed" else {}
+    if problem == "path":
+        options["name"] = "../config.php"
+    if problem in {"symlink", "hardlink"}:
+        options["kind"] = tarfile.SYMTYPE if problem == "symlink" else tarfile.LNKTYPE
+    if problem == "extra":
+        options["extra"] = True
+    if problem == "oversize":
+        module.MAX_CONFIG_BYTES = 4
+    value = config_tar(**options)
+    if problem == "truncated":
+        value = value[:520]
+    if problem == "trailing":
+        value += b"unexpected nonzero tail"
+    with pytest.raises(module.SDKError, match="configuration_archive"):
+        module.validate_config_tar(io.BytesIO(value), io.BytesIO(), "config.php",
+                                   hashlib.sha256(b"synthetic private configuration").hexdigest())
+
+
+def test_copy_config_restricts_identity_path_and_checks_child_exit(monkeypatch):
+    module = sdk_module()
+    identity = module.PINNED_SOURCES["web"]["id"]
+    path = next(iter(module.CONFIG_HASHES))
+    content = b"synthetic private configuration"
+    module.CONFIG_HASHES[path] = hashlib.sha256(content).hexdigest()
+    calls = []
+    class Child:
+        stdout = io.BytesIO(config_tar(content=content))
+        returncode = 7
+        def wait(self, timeout=None):
+            return self.returncode
+        def poll(self):
+            return self.returncode
+    def popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return Child()
+    monkeypatch.setattr(module.subprocess, "Popen", popen)
+    for wrong_id, wrong_path in (("0" * 64, path), (identity, "/unknown")):
+        with pytest.raises(module.SDKError, match="configuration_scope"):
+            module.copy_config(wrong_id, wrong_path, output=io.BytesIO())
+    assert not calls
+    with pytest.raises(module.SDKError, match="configuration_copy"):
+        module.copy_config(identity, path, output=io.BytesIO())
+    assert calls[0][0] == ["/usr/bin/docker", "cp", identity + ":" + path, "-"]
+    assert calls[0][1]["stderr"] == subprocess.DEVNULL
+    assert not calls[0][1].get("start_new_session"), "cp must stay in the producer's owned process group"
+
+
+@pytest.mark.parametrize("role", ["web", "db"])
+@pytest.mark.parametrize("interruption", ["inspect", "TERM", "TERM-during-CLI"])
+def test_finally_waits_for_accepted_delayed_stop_before_same_id_recovery(tmp_path, role, interruption):
+    module, backup, runner, _ = fixture_sdk(tmp_path)
+    instant, pending = [0], {}
+    identity = runner.sources[role]["id"]
+    original = runner.capture
+    backup.monotonic = lambda: instant[0]
+    backup.sleep = lambda seconds: instant.__setitem__(0, instant[0] + seconds)
+    def capture(command, **kwargs):
+        if command[1:2] == ["stop"] and command[-1] == identity:
+            runner.calls.append(tuple(command))
+            pending.update(at=instant[0] + 3, interrupted=False)
+            if interruption == "TERM-during-CLI":
+                pending["interrupted"] = True
+                module.signal.raise_signal(module.signal.SIGTERM)
+            return (identity + "\n").encode()
+        if command[1:2] == ["inspect"] and command[-1] == identity and pending:
+            if not pending["interrupted"]:
+                pending["interrupted"] = True
+                if interruption == "TERM":
+                    module.signal.raise_signal(module.signal.SIGTERM)
+                raise module.runtime.BackupError("capture")
+            if instant[0] >= pending["at"]:
+                runner.sources[role].update(running=False, status="exited", pid=0, exit_code=0)
+                pending.clear()
+        return original(command, **kwargs)
+    runner.capture = capture
+    with pytest.raises(module.SDKError):
+        backup.run()
+    assert instant[0] >= 3
+    assert source_actions(runner, "stop").count(identity) == 1
+    assert source_actions(runner, "start") == (
+        [runner.sources["web"]["id"]] if role == "web"
+        else [runner.sources["db"]["id"], runner.sources["web"]["id"]])
+    assert all(value["running"] for value in runner.sources.values())
+    assert backup.journal["source_actions"][role]["reconciled_in_finally"] is True
+    assert not backup.journal_path.exists()
+
+
+def test_pending_db_stop_observation_is_bounded_and_does_not_restart_web(tmp_path):
+    module, backup, runner, _ = fixture_sdk(tmp_path)
+    instant, pending = [0], [False]
+    identity, original = runner.sources["db"]["id"], runner.capture
+    backup.monotonic = lambda: instant[0]
+    backup.sleep = lambda seconds: instant.__setitem__(0, instant[0] + seconds)
+    def capture(command, **kwargs):
+        if command[1:2] == ["stop"] and command[-1] == identity:
+            runner.calls.append(tuple(command))
+            pending[0] = True
+            return b""
+        if command[1:2] == ["inspect"] and command[-1] == identity and pending[0]:
+            if pending[0] is True:
+                pending[0] = "observing"
+                raise module.runtime.BackupError("capture")
+        return original(command, **kwargs)
+    runner.capture = capture
+    with pytest.raises(module.SDKError, match="db_stop_unresolved"):
+        backup.run()
+    assert instant[0] == module.DB_TIMEOUT + 35
+    assert source_actions(runner, "stop").count(identity) == 1
+    assert not source_actions(runner, "start")
+    assert backup.journal_path.is_file()
+    assert backup.journal["blocked"] is True
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_real_config_producer_crypto_pipeline_rejects_shutdown_content_drift(tmp_path, changed):
+    module = sdk_module()
+    from app.cloud_replica.backup import decrypt_stream
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, NoEncryption
+    key = X25519PrivateKey.generate()
+    public, encrypted = tmp_path / "public", tmp_path / "fixture.orb"
+    public.write_bytes(key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw))
+    public.chmod(0o600)
+    original = b"synthetic private configuration"
+    value = config_tar(content=b"changed during shutdown" if changed else original)
+    identity, path = module.PINNED_SOURCES["web"]["id"], next(iter(module.CONFIG_HASHES))
+    # Only the Docker daemon boundary is synthetic. Run real child processes,
+    # copy_config, tar validation, shared pipeline and original crypto CLI.
+    child_source = "import sys;sys.stdout.buffer.write(bytes.fromhex(" + repr(value.hex()) + "))"
+    producer_source = f"""
+import importlib.util,subprocess,sys
+spec=importlib.util.spec_from_file_location('sdk_test_producer',{str(SCRIPT)!r})
+m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m)
+m.CONFIG_HASHES[{path!r}]={hashlib.sha256(original).hexdigest()!r}
+popen=subprocess.Popen
+def docker(command,**kwargs):
+    assert command==[m.DOCKER,'cp',{identity + ':' + path!r},'-']
+    return popen([sys.executable,'-c',{child_source!r}],**kwargs)
+m.subprocess.Popen=docker
+raise SystemExit(m.main(['--copy-config',{identity!r},{path!r}]))
+"""
+    encryptor = ["/usr/bin/env", "PYTHONPATH=" + str(ROOT / "backend"),
+                 "PLATFORM_REPLICA_BACKUP_PUBLIC_KEY_FILE=" + str(public),
+                 "PLATFORM_REPLICA_BACKUP_PATH=" + str(encrypted),
+                 sys.executable, "-m", "app.cloud_replica.cli", "backup"]
+    runner = module.SDKProcessRunner()
+    if changed:
+        with pytest.raises(module.runtime.BackupError, match="capture_producer"):
+            runner.pipeline([sys.executable, "-c", producer_source], encryptor, stage="capture", timeout=30)
+    else:
+        receipt = json.loads(runner.pipeline([sys.executable, "-c", producer_source], encryptor, stage="capture", timeout=30))
+        assert receipt["status"] == "backed_up"
+        restored = io.BytesIO()
+        with encrypted.open("rb") as source:
+            decrypt_stream(source, restored, key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption()))
+        assert restored.getvalue() == value
+    assert runner.native_stopped()
+    assert {p.name for p in tmp_path.iterdir()} <= {"public", "fixture.orb"}

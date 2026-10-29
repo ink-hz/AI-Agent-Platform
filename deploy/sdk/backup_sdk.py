@@ -17,6 +17,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.request
@@ -38,6 +39,8 @@ PUBLIC_VOLUME = runtime.PUBLIC_VOLUME
 UTC = timezone.utc
 DOCKER = "/usr/bin/docker"
 WEB_TIMEOUT, DB_TIMEOUT, READY_TIMEOUT = 30, 120, 300
+MAX_CONFIG_BYTES = 16 * 1024 * 1024
+MAX_CONFIG_ARCHIVE_BYTES = MAX_CONFIG_BYTES + 1024 * 1024
 ARTIFACT_KINDS = ("db-volume", "web-volume", "app-config", "php-config", "apache-config", "deployment-config")
 CONFIG_HASHES = {
     "/apps/zentao/config/config.php": "2d44c9598fda676255b8a5185d5a02b37001fd7be2873d8aac6340eb2415584f",
@@ -150,6 +153,87 @@ def tree_metadata(path):
             "estimated_tar_bytes": estimated}
 
 
+def validate_config_tar(source, destination, basename, expected_sha256):
+    """Forward original bytes; exit success only for one pinned regular member.
+
+    Forwarding before validation is intentional: a failure makes the producer
+    nonzero, so even a successful encryptor cannot publish a complete set.
+    """
+    class Forward:
+        size = 0
+
+        def read(self, size):
+            chunk = source.read(min(size, 65536))
+            self.size += len(chunk)
+            if self.size > MAX_CONFIG_ARCHIVE_BYTES:
+                raise SDKError("configuration_archive")
+            pending = memoryview(chunk)
+            while pending:
+                written = destination.write(pending)
+                if not written:
+                    raise SDKError("configuration_archive")
+                pending = pending[written:]
+            return chunk
+
+    forwarded, members = Forward(), 0
+    try:
+        with tarfile.open(fileobj=forwarded, mode="r|", bufsize=512) as archive:
+            for member in archive:
+                members += 1
+                if (members != 1 or member.name != basename or member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE)
+                        or member.linkname or member.sparse is not None
+                        or any(key.startswith("GNU.sparse") for key in member.pax_headers)
+                        or not 0 <= member.size <= MAX_CONFIG_BYTES):
+                    raise SDKError("configuration_archive")
+                digest, size = hashlib.sha256(), 0
+                with archive.extractfile(member) as content:
+                    while chunk := content.read(65536):
+                        size += len(chunk)
+                        digest.update(chunk)
+                if size != member.size or digest.hexdigest() != expected_sha256:
+                    raise SDKError("configuration_archive")
+            # TarFile consumed the first zero EOF block. Drain its stream,
+            # including buffered bytes, and require the second plus zero padding.
+            padding = 0
+            while chunk := archive.fileobj.read(65536):
+                if any(chunk):
+                    raise SDKError("configuration_archive")
+                padding += len(chunk)
+            if members != 1 or padding < 512 or forwarded.size % 512:
+                raise SDKError("configuration_archive")
+        destination.flush()
+    except (tarfile.TarError, OSError, ValueError, EOFError):
+        raise SDKError("configuration_archive") from None
+
+
+def copy_config(identity, path, *, output=None):
+    """Internal producer only; cp stays in its parent's owned process group."""
+    if identity != PINNED_SOURCES["web"]["id"] or path not in CONFIG_HASHES:
+        raise SDKError("configuration_scope")
+    child = None
+    try:
+        child = subprocess.Popen([DOCKER, "cp", identity + ":" + path, "-"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        validate_config_tar(child.stdout, output if output is not None else sys.stdout.buffer,
+                            Path(path).name, CONFIG_HASHES[path])
+        if child.wait(timeout=30) != 0:
+            raise SDKError("configuration_copy")
+    except (OSError, subprocess.SubprocessError):
+        raise SDKError("configuration_copy") from None
+    finally:
+        if child is not None:
+            try:
+                if child.poll() is None:
+                    child.terminate()
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=5)
+            finally:
+                child.stdout.close()
+
+
 class HostProbe:
     def tree(self, value):
         pid = value["pid"]
@@ -237,18 +321,18 @@ class SDKColdBackup:
         except runtime.BackupError:
             raise SDKError(stage) from None
 
-    def _json(self, args, stage):
+    def _json(self, args, stage, *, timeout=60):
         try:
-            value = json.loads(self._capture(args, stage))
+            value = json.loads(self._capture(args, stage, timeout=timeout))
             if not isinstance(value, dict):
                 raise ValueError()
             return value
         except (ValueError, TypeError):
             raise SDKError(stage) from None
 
-    def _source(self, role, *, stable=True):
+    def _source(self, role, *, stable=True, timeout=60):
         expected = self.expected[role]
-        value = self._json(["inspect", "--format", INSPECT, expected["id"]], "source_identity")
+        value = self._json(["inspect", "--format", INSPECT, expected["id"]], "source_identity", timeout=timeout)
         labels, config = value.get("labels") or {}, value.get("host_config") or {}
         if (any(value.get(field) != expected[field] for field in ("id", "name", "image_id"))
                 or mounts(value.get("mounts", [])) != mounts(expected["mounts"])
@@ -407,8 +491,10 @@ class SDKColdBackup:
         try:
             self._capture(["stop", "--time", str(limit), self.expected[role]["id"]], role + "_stop", timeout=limit + 30)
             action["stop_cli_ok"] = True
-        except SDKError:
+        except SDKError as error:
             action["stop_cli_ok"] = False
+            if str(error) == "interrupted":
+                raise
         value = self._source(role)
         deadline = self.monotonic() + limit + 5
         while value.get("running") is True and self.monotonic() < deadline:
@@ -513,7 +599,9 @@ class SDKColdBackup:
             self._artifact(kind, scope, ["/usr/bin/tar", "--numeric-owner", "-C",
                                         self.expected[role]["mounts"][0]["Source"], "-cf", "-", "."], source_role=role)
         for kind, path in zip(ARTIFACT_KINDS[2:5], CONFIG_HASHES):
-            self._artifact(kind, "container_file:" + path, [DOCKER, "cp", self.expected["web"]["id"] + ":" + path, "-"], file_path=path)
+            self._artifact(kind, "container_file:" + path,
+                           [sys.executable, str(Path(__file__).resolve()), "--copy-config",
+                            self.expected["web"]["id"], path], file_path=path)
         self._artifact("deployment-config", "sdk_private_configuration",
                        ["/usr/bin/tar", "--numeric-owner", "-C", str(self.paths.deployment), "-cf", "-", "sdk.env", "sdk-compose.yaml"])
 
@@ -527,16 +615,40 @@ class SDKColdBackup:
                 raise SDKError("db_not_ready")
             self.sleep(2)
 
+    def _settle_pending_stop(self, role):
+        action = self.journal["source_actions"][role]
+        if not action.get("stop_call_started") or action.get("stopped_observed"):
+            return self._source(role)
+        # A returned/lost Docker CLI is not proof that daemon stop has settled.
+        # Only observe; never send a second stop or start against pending work.
+        limit = (WEB_TIMEOUT if role == "web" else DB_TIMEOUT) + 35
+        deadline = self.monotonic() + limit
+        action["recovery_stop_observation_started_at"] = runtime.timestamp(self.clock())
+        self._recovery_save(role + "_stop_pending")
+        while True:
+            remaining = max(0, deadline - self.monotonic())
+            try:
+                value = self._source(role, timeout=max(1, min(5, remaining)))
+            except SDKError:
+                value = None
+            if value is not None:
+                action["daemon_state"] = {key: value.get(key) for key in (
+                    "running", "status", "pid", "exit_code", "oom_killed", "finished_at")}
+                if value.get("running") is False and value.get("pid") == 0 and value.get("status") == "exited":
+                    action.update(stopped_observed=True, reconciled_in_finally=True)
+                    self._recovery_save(role + "_stop_reconciled")
+                    return value
+            if self.monotonic() >= deadline:
+                action["stop_observation_unresolved"] = True
+                self._recovery_save(role + "_stop_unresolved")
+                raise SDKError(role + "_stop_unresolved")
+            self.sleep(min(1, remaining))
+
     def _resume(self):
         actions = self.journal.get("source_actions", {})
         if not any(action.get("stop_call_started") for action in actions.values()):
             return True
-        db, action = self._source("db"), actions["db"]
-        if (action.get("stop_call_started") and db.get("running") is False
-                and db.get("pid") == 0 and db.get("status") == "exited"):
-            action.update(stopped_observed=True, reconciled_in_finally=True)
-        if action.get("stop_call_started") and not action.get("stopped_observed"):
-            raise SDKError("db_stop_unresolved")
+        db, action = self._settle_pending_stop("db"), actions["db"]
         if action.get("stopped_observed") and db.get("running") is not True:
             action["restart_intent"] = True
             self._recovery_save("db_restart_intent")
@@ -548,12 +660,7 @@ class SDKColdBackup:
         self._await_db()
         action["ready"] = True
         self._recovery_save("db_ready")
-        web, action = self._source("web"), actions["web"]
-        if (action.get("stop_call_started") and web.get("running") is False
-                and web.get("pid") == 0 and web.get("status") == "exited"):
-            action.update(stopped_observed=True, reconciled_in_finally=True)
-        if action.get("stop_call_started") and not action.get("stopped_observed"):
-            raise SDKError("web_stop_unresolved")
+        web, action = self._settle_pending_stop("web"), actions["web"]
         if action.get("stopped_observed"):
             if web.get("running") is not True:
                 action["restart_intent"] = True
@@ -734,6 +841,12 @@ def shutdown_proof(identity, since, until):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "--copy-config":
+        try:
+            copy_config(*argv[1:])
+            return 0
+        except Exception:
+            return 1
     if argv and argv[0] in {"--db-proof", "--shutdown-proof"}:
         try:
             value = database_proof(*argv[1:]) if argv[0] == "--db-proof" else shutdown_proof(*argv[1:])
