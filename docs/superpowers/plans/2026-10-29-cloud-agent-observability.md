@@ -79,8 +79,12 @@ Files: `backend/app/cloud_replica/repository.py`, `backend/app/observability/mod
 ### Task 5: integrated acceptance and staged production cutover
 
 - [x] Synthetic source DB→adapter→publisher→real HTTP tests for all four families, including real seven-turn fixture shape and identity equality.
-- [ ] Whole-branch independent review; resolve Important/Critical findings with focused retests.
-- [ ] Reconcile current master/security release, merge exact tested changes, preserve release/config backups and build exact candidate.
-- [ ] Deploy disabled worker, validate least privileges and baseline source/cloud counts, then controlled per-agent ownership cutover and historical backfill.
-- [ ] Read-only verify the actual seven-turn incident title/count/identity/outcomes; verify source-status progress and lag for every deployed source, including an intentionally isolated non-production outage test.
-- [ ] Record exact source/release SHA, migrations, test counts, production comparisons, native/office coverage and remaining limits. No completion claim before the affected checks pass.
+- [x] Whole-branch independent review; resolve Important/Critical findings with focused retests.
+- [x] Reconcile current master/security release, merge exact tested changes, preserve release/config backups and build exact candidate.
+- [x] Deploy disabled worker, validate least privileges and baseline source/cloud counts, then controlled per-agent ownership cutover and historical backfill.
+- [x] Read-only verify the actual seven-turn incident title/count/identity/outcomes; verify source-status progress and lag for every deployed source, including an intentionally isolated non-production outage test.
+- [x] Record exact source/release SHA, migrations, test counts, production comparisons, native/office coverage and remaining limits. No completion claim before the affected checks pass.
+
+## 发布验收记录
+
+已发布应用 b4c258b4，操作工具0a7616b8；见 `docs/operations/2026-10-29-cloud-agent-sync-rollout.md`。10秒轮询及源读取预算已实测；切换后自然提交到API可见的延迟样本尚未获得，保持未验证，不以水位年龄冒充端到端延迟。

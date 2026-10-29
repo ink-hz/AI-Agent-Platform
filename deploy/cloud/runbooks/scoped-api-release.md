@@ -211,3 +211,7 @@ Tests use disposable Git/filesystem fixtures and replace only the Docker/OS
 process boundary for transaction cases. They perform no SSH, production Docker,
 model calls, migrations or business writes. Real host build, Compose parity,
 API recreation and production acceptance remain separate gates.
+
+## HostConfig 比较状态版本
+
+原始运行快照仍按原始哈希核对；重建后的比较只对唯一目标的 Binds/Mounts 列表排序，保留每个条目和其他字段，重复目标拒绝。新事务状态必须带 `hostconfig_hash_scheme=unique-mount-lists-v1`；旧原始哈希状态在任何重建前拒绝。需要恢复旧事务时，必须取得与旧哈希精确匹配的原始 HostConfig，保存原始状态，显式原子迁移仅相关哈希/版本字段并保留 raw 证据，重新验证全部配置、身份、锁、其他服务和健康；不得直接删锁或跳过未知差异。
