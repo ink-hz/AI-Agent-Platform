@@ -66,6 +66,7 @@ class FakeRunner:
         self.retention_fails = False
         self.producer_fails = False
         self.encryptor_fails = False
+        self.daemon_default_log_driver = 'json-file'
         self.containers = {}
         self.jobs = {}
         for index, service in enumerate(("platform-api", "platform-postgres", "platform-minio")):
@@ -110,7 +111,10 @@ class FakeRunner:
             return (self.containers[service]["id"] + "\n").encode()
         if args[0] == "inspect":
             if args[-1] in self.jobs:
-                return json.dumps(self.jobs[args[-1]]).encode()
+                value = deepcopy(self.jobs[args[-1]])
+                if '.HostConfig.LogConfig.Type' not in args[args.index('--format') + 1]:
+                    value.pop('log_driver', None)
+                return json.dumps(value).encode()
             return json.dumps(next(value for value in self.containers.values()
                                    if value["id"] == args[-1])).encode()
         if args[:2] == ["image", "inspect"]:
@@ -132,6 +136,8 @@ class FakeRunner:
             identity = hashlib.sha256(name.encode()).hexdigest()
             self.jobs[identity] = {'id':identity, 'name':'/' + name, 'labels':labels,
                                    'image_id':next(value for value in args if value.startswith('sha256:')),
+                                   'log_driver':(args[args.index('--log-driver') + 1]
+                                                 if '--log-driver' in args else self.daemon_default_log_driver),
                                    'running':False, 'status':'created', 'exit_code':0, 'arguments':list(command)}
             return identity.encode()
         if args[0] == 'start':
@@ -458,6 +464,8 @@ def finish(item, code):
     (root / (item['id'] + '.done')).touch()
 if sys.argv[1] == '--worker':
     item = find(sys.argv[2])
+    if item['role'].endswith('-source') and item['log_driver'] != 'none':
+        (root / (item['id'] + '.dump-log')).write_bytes(b'synthetic-plaintext-dump')
     def terminate(*_):
         time.sleep(0.2)
         finish(find(item['id']), 143)
@@ -486,6 +494,8 @@ if args[0] == 'ps':
 if args[0] == 'inspect':
     item = find(args[-1])
     if item is None: raise SystemExit(1)
+    if '.HostConfig.LogConfig.Type' not in args[args.index('--format') + 1]:
+        item.pop('log_driver', None)
     print(json.dumps(item)); raise SystemExit(0)
 if args[0] in ('stop', 'kill'):
     item = find(args[-1])
@@ -517,7 +527,9 @@ if args[0] in ('create', 'run', 'exec'):
     identity = hashlib.sha256(name.encode()).hexdigest()
     item = {'id':identity, 'name':'/'+name, 'labels':labels, 'role':role,
             'image_id':next((value for value in args if value.startswith('sha256:')), ''),
+            'log_driver':(args[args.index('--log-driver')+1] if '--log-driver' in args else 'json-file'),
             'running':False, 'status':'created', 'exit_code':0, 'arguments':args}
+    write(root / (identity + '.log-policy'), {'role':role, 'log_driver':item['log_driver']})
     save(item)
     if args[0] == 'create': print(identity); raise SystemExit(0)
 elif args[0] == 'start':
@@ -608,6 +620,40 @@ def _cleanup_fake_workers(tmp_path):
         pid = int(path.read_text())
         if _pid_live(pid):
             os.killpg(pid, signal.SIGKILL)
+
+
+def test_daemon_default_logging_never_persists_helper_stdout(tmp_path):
+    command, environment = _lifecycle_fixture(tmp_path, '')
+    try:
+        result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=15)
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        policies = [json.loads(path.read_text()) for path in (tmp_path / 'daemon').glob('*.log-policy')]
+        assert {item['role'] for item in policies} == {
+            'public-copy', 'replica-source', 'control-source', 'replica-encryptor',
+            'control-encryptor', 'attachments-encryptor', 'retention',
+        }
+        assert not list((tmp_path / 'daemon').glob('*.dump-log')), 'daemon persisted plaintext producer stdout'
+        assert all(item['log_driver'] == 'none' for item in policies), 'helper inherited daemon log driver'
+    finally:
+        _cleanup_fake_workers(tmp_path)
+
+
+@pytest.mark.parametrize('actual_driver', ['json-file', 'local', None, 'none '])
+def test_owned_identity_rejects_claimed_none_with_wrong_daemon_log_driver(tmp_path, actual_driver):
+    module, runtime, runner, _ = fixture_runtime(tmp_path)
+    capture = runner.capture
+    def wrong_daemon_policy(command, *, stage, timeout=60):
+        output = capture(command, stage=stage, timeout=timeout)
+        if command[1] == 'create':
+            # Simulate a daemon policy different from the requested CLI setting.
+            runner.jobs[output.decode()]['log_driver'] = actual_driver
+        return output
+    runner.capture = wrong_daemon_policy
+    lifecycle = module.ContainerLifecycle(runtime.paths.private_dir, runner, runtime.docker, runtime.clock)
+    with pytest.raises(module.BackupError, match='lifecycle_identity'):
+        lifecycle.create('public-copy', [], 'sha256:' + '4' * 64, ['synthetic-command'])
+    assert not any(command[1] == 'start' for command, _ in runner.commands)
+    assert (runtime.paths.private_dir / 'backup-inflight.json').exists()
 
 
 @pytest.mark.parametrize('role', ['public-copy', 'replica-source', 'replica-encryptor', 'retention'])

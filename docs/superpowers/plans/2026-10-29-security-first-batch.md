@@ -73,6 +73,25 @@ authentication/backup remains a separate parent-controlled validation. Loopback
 The self-IP matches the existing SCRAM host rule; `PGREQUIREAUTH=scram-sha-256`
 requires that exchange and fails explicitly without changing HBA or network path.
 
+The follow-up review of `a83d320b` accepted the execution ownership fix but found
+one confidentiality blocker introduced by the independent PG client: attached
+stdout still passes through the daemon logging driver. A pipe and subsequent
+container removal do not prevent a default `json-file`/other driver from first
+writing a plaintext dump on the host. The shared lifecycle executor therefore
+creates **every** helper (public copy, PG producers, encryptors and retention)
+with explicit `--log-driver none`. Before any start, and at subsequent owned-ID
+checks, selective inspect must report `HostConfig.LogConfig.Type` exactly `none`;
+CLI intent alone is insufficient. A missing/different value fails identity and
+retains unresolved intent under the existing cleanup/admission contract. This
+does not alter the dump, encryption, network or credential protocol.
+
+- [x] RED/GREEN: the real-process simulated daemon defaults to `json-file` and
+  records plaintext producer stdout unless disabled. Verify all seven helper
+  roles explicitly select `none`, no simulated plaintext log is written, and a
+  requested `none` with non-none/missing daemon metadata is rejected before start.
+- [ ] Repeat independent review of the logging boundary before production use;
+  actual daemon inspection/authentication and restoration remain separate gates.
+
 Already complete backup manifests/markers remain complete if retention is
 interrupted; retention records failure or unknown completion separately, never
 inventing rollback. If cleanup is unresolved, neither a failure receipt nor an

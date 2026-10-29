@@ -792,6 +792,22 @@ and denies a second job. All host CLI/native producer process groups are also
 killed/reaped on failure or signal. Only owned helper IDs are stopped; never
 the shared PostgreSQL service.
 
+The follow-up `a83d320b` review accepted the lifecycle ownership correction but
+blocked the PG client's daemon logging path: `docker start --attach` pipes do
+not bypass the Docker log driver, and later removal cannot undo plaintext that
+was already written. Logging is therefore part of the same executor's
+confidentiality contract. Every auxiliary container is created with explicit
+`--log-driver none`, including public-copy, both PG clients, all three encryptors
+and retention. Selective inspect must confirm `HostConfig.LogConfig.Type` is
+exactly `none` before start and throughout owned-container checks; a CLI flag,
+daemon default, missing field or different driver is insufficient. The confirmed
+driver is retained in each lifecycle entry. Identity failure stops before start
+and follows the existing unresolved-journal admission rule. Local tests reproduce
+a simulated daemon writing producer stdout under default `json-file`, then prove
+no such write with the corrected policy and reject falsely claimed `none`.
+These are local substitutes; installation still requires independent review and
+the actual daemon/PG verification gates.
+
 The host recovery public key remains root-owned 0600, exactly 32 bytes. Only that
 public file is mounted read-only into a networkless, immutable-image preparation
 process, which atomically copies it into the dedicated backup-secrets volume as

@@ -55,6 +55,7 @@ VOLUME_FORMAT = '{"name":{{json .Name}},"driver":{{json .Driver}},"options":{{js
 IMAGE_FORMAT = '{"id":{{json .Id}},"tags":{{json .RepoTags}}}'
 LIFECYCLE_FORMAT = ('{"id":{{json .Id}},"name":{{json .Name}},"image_id":{{json .Image}},'
                     '"labels":{{json .Config.Labels}},"running":{{json .State.Running}},'
+                    '"log_driver":{{json .HostConfig.LogConfig.Type}},'
                     '"status":{{json .State.Status}},"exit_code":{{json .State.ExitCode}}}')
 PG_DUMP_CLIENT = r'''set -eu
 umask 077
@@ -275,6 +276,7 @@ class ContainerLifecycle:
     def _owned(self, value, entry):
         labels = value.get("labels") or {}
         if (not isinstance(labels, dict) or value.get("name") != "/" + entry["name"] or value.get("image_id") != entry["image_id"]
+                or value.get("log_driver") != "none"
                 or labels.get("io.orbbec.backup.owner") != PROJECT
                 or labels.get("io.orbbec.backup.attempt") != self.attempt_id
                 or labels.get("io.orbbec.backup.role") != entry["role"]
@@ -291,13 +293,13 @@ class ContainerLifecycle:
         labels = ["--label", "io.orbbec.backup.owner=" + PROJECT,
                   "--label", "io.orbbec.backup.attempt=" + self.attempt_id,
                   "--label", "io.orbbec.backup.role=" + role]
-        identity = self._capture(["create", "--pull=never", "--restart=no", "--name", entry["name"],
+        identity = self._capture(["create", "--pull=never", "--restart=no", "--log-driver", "none", "--name", entry["name"],
                                   *labels, *options, image_id, *command], stage="lifecycle_create", timeout=30).decode("ascii").strip()
         if not CONTAINER_ID.fullmatch(identity):
             raise BackupError("lifecycle_identity")
         value = self._inspect(identity)
         self._owned(value, entry)
-        entry.update(id=identity, state="created")
+        entry.update(id=identity, state="created", log_driver=value["log_driver"])
         self._save()
         return entry
 
