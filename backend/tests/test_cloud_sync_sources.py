@@ -236,3 +236,91 @@ def test_existing_exporter_and_legacy_assembler_have_identical_stable_identity_b
     new_record, old_record = encode(raw),encode(legacy)
     assert (new_record['key'],new_record['user_id'],new_record['turns'][0]['key']) == (
         old_record['key'],old_record['user_id'],old_record['turns'][0]['key'])
+
+
+@pytest.mark.parametrize('column,value', [('done',[]),('done',''),('done',False),('sources',{}),('sources',''),('sources',False)])
+def test_empty_wrong_json_shapes_fail_instead_of_defaulting(column,value):
+    tables = records()
+    tables['chat_turns'][0][column] = value
+    with pytest.raises(ValueError,match='source_row_invalid'):
+        project('fae',tables)
+
+
+@pytest.mark.parametrize('column', ['done','sources'])
+def test_missing_or_null_optional_json_uses_only_contract_defaults(column):
+    tables = records()
+    del tables['chat_turns'][0][column]
+    assert len(project('fae',tables)[0].turns) == 1
+    tables['chat_turns'][0][column] = None
+    assert len(project('fae',tables)[0].turns) == 1
+
+
+# Mirror the native FAE protocol's runtime failures plus the established
+# platform outcome vocabulary. Failure explanations are business text, not
+# evidence of a completed execution.
+RUNTIME_FAILURE_OUTCOMES = (
+    'budget_exhausted','max_duration','empty_answer','truncated_answer','tool_xml_leak',
+    'unstructured_final','invalid_answer_contract','provider_unavailable','provider_configuration_error',
+    'provider_protocol_error','provider_rate_limited','provider_error','internal_error',
+    'schema_error','persistence_error','authorization_error','provider_refusal','unsafe_fail_suspected',
+    'timeout',
+)
+
+
+@pytest.mark.parametrize('kind',['fae','admin','daq'])
+@pytest.mark.parametrize('outcome',RUNTIME_FAILURE_OUTCOMES)
+def test_runtime_failure_explanations_remain_failed_through_sanitizer_and_encoder(kind,outcome):
+    tables = records(kind)
+    table = ('admin_' if kind == 'admin' else '') + 'chat_turns'
+    tables[table][0].update(outcome=outcome,done={},answer='Native runtime failure explanation')
+    raw, = project(kind,tables)
+    turn = encode(raw)['turns'][0]
+    assert turn['outcome'] == outcome
+    assert turn['trace']['status'] in {'failed','timeout'}
+    assert turn['answer']['text'] == 'Native runtime failure explanation'
+
+
+@pytest.mark.parametrize('outcome',['cancelled','error','pending','processing','failed','partial','unavailable'])
+def test_native_non_success_states_survive_projection_sanitizer_and_encoder(outcome):
+    tables = records()
+    tables['chat_turns'][0].update(outcome=outcome,done={},answer='Native status explanation')
+    raw, = project('fae',tables)
+    turn = encode(raw)['turns'][0]
+    assert turn['outcome'] == outcome
+    assert turn['trace']['status'] == outcome
+    assert turn['answer']['text'] == 'Native status explanation'
+
+
+@pytest.mark.parametrize('outcome',['resolved','safe_abstained','escalate_rd','escalate_fae','success'])
+def test_known_final_answer_outcomes_have_completed_execution_without_changing_semantics(outcome):
+    tables = records()
+    tables['chat_turns'][0].update(outcome=outcome,done={})
+    turn = encode(project('fae',tables)[0])['turns'][0]
+    assert turn['outcome'] == outcome
+    assert turn['trace']['status'] == 'completed'
+
+
+@pytest.mark.parametrize('outcome',[None,'unknown','unregistered_result'])
+def test_unknown_outcome_with_nonempty_text_does_not_invent_completed_execution(outcome):
+    tables = records()
+    tables['chat_turns'][0].update(outcome=outcome,done={},answer='Nonempty native text')
+    turn = encode(project('fae',tables)[0])['turns'][0]
+    assert turn['trace']['status'] == 'unknown'
+
+
+@pytest.mark.parametrize('status',['failed','cancelled','error','timeout','pending','processing','running'])
+def test_explicit_native_non_success_trace_evidence_is_preserved(status):
+    tables = records()
+    tables['chat_turns'][0].update(outcome='resolved',done={'status':status})
+    turn = encode(project('fae',tables)[0])['turns'][0]
+    assert turn['outcome'] == 'resolved'
+    assert turn['trace']['status'] == status
+
+
+@pytest.mark.parametrize('outcome',['provider_unavailable','provider_configuration_error','cancelled','pending'])
+def test_explicit_success_trace_cannot_overrule_known_failure_or_inflight_outcome(outcome):
+    tables = records()
+    tables['chat_turns'][0].update(outcome=outcome,done={'status':'completed'})
+    turn = encode(project('fae',tables)[0])['turns'][0]
+    assert turn['outcome'] == outcome
+    assert turn['trace']['status'] not in {'success','succeeded','completed'}

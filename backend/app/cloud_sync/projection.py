@@ -15,6 +15,45 @@ from app.sync_remote.voc_export import project_voc_rows
 from .models import SOURCE_IDENTITIES, SourceReadError
 
 
+# The native FAE protocol's runtime-failure outcomes and the existing platform
+# failure vocabulary. These describe execution failure even when the producer
+# persists an explanatory answer. Completion requires an explicit known final
+# outcome or native execution status, never merely nonempty text.
+_FAILED_EXECUTION_OUTCOMES = frozenset({
+    'budget_exhausted', 'max_duration', 'empty_answer', 'truncated_answer',
+    'tool_xml_leak', 'unstructured_final', 'invalid_answer_contract',
+    'provider_unavailable', 'provider_configuration_error', 'provider_protocol_error',
+    'provider_rate_limited', 'provider_error', 'internal_error', 'schema_error',
+    'persistence_error', 'authorization_error', 'provider_refusal',
+    'unsafe_fail_suspected', 'delivery_failed',
+})
+_COMPLETED_EXECUTION_OUTCOMES = frozenset({
+    'resolved', 'safe_abstained', 'escalate_rd', 'escalate_fae', 'success', 'sent',
+})
+_NON_SUCCESS_EXECUTION_STATES = frozenset({
+    'failed', 'cancelled', 'error', 'timeout', 'pending', 'processing', 'partial', 'unavailable',
+})
+
+
+def _execution_status(outcome: str | None, done: dict) -> str:
+    if outcome in _NON_SUCCESS_EXECUTION_STATES:
+        derived = outcome
+    elif outcome in _FAILED_EXECUTION_OUTCOMES:
+        derived = 'failed'
+    elif outcome in _COMPLETED_EXECUTION_OUTCOMES:
+        derived = 'completed'
+    else:
+        derived = 'unknown'
+    explicit = _text(done.get('status'))
+    if explicit is None:
+        return derived
+    # A contradictory success flag must not hide an explicitly persisted
+    # failure/inflight outcome. Other native execution evidence stays intact.
+    if explicit in {'success', 'succeeded', 'completed'} and derived in _NON_SUCCESS_EXECUTION_STATES:
+        return derived
+    return explicit
+
+
 def timestamp(value: Any, *, optional: bool = False) -> datetime | None:
     if value is None and optional:
         return None
@@ -146,19 +185,20 @@ def project_rows(kind: str, tables: dict[str, list[dict]]) -> tuple[RawSession, 
             if ((fallback is not None and type(fallback) is not bool)
                     or (duration is not None and (type(duration) is not int or duration < 0))):
                 raise SourceReadError('source_row_invalid')
-            done = turn.get('done') or {}
+            done = turn.get('done')
+            if done is None:
+                done = {}
             if not isinstance(done, dict):
                 raise SourceReadError('source_row_invalid')
             trace = None
             if kind != 'voc':
-                status = _text(done.get('status'))
-                if status is None:
-                    status = outcome if outcome in {'failed', 'cancelled', 'error', 'processing', 'pending'} else ('completed' if answer else 'failed')
-                trace = RawTraceAggregate(status=status,
+                trace = RawTraceAggregate(status=_execution_status(outcome, done),
                     duration_ms=duration, engine=_text(done.get('engine')), backend=_text(done.get('backend')),
                     model=_text(done.get('actual_provider_model')), input_tokens=None, output_tokens=None,
                     cost_usd=None, error_class=_text(done.get('error_type')))
-            sources = turn.get('sources') or []
+            sources = turn.get('sources')
+            if sources is None:
+                sources = []
             if not isinstance(sources, list) or any(not isinstance(value, dict) for value in sources):
                 raise SourceReadError('source_row_invalid')
             projected_turns.append(RawTurn(

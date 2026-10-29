@@ -477,7 +477,8 @@ def _sanitize_trace(trace):
     return SanitizedTraceAggregate(
         status=_safe_enum(
             trace.status,
-            {"success", "succeeded", "completed", "failed", "partial", "timeout", "running", "unknown"},
+            {"success", "succeeded", "completed", "failed", "partial", "timeout", "running", "unknown",
+             "cancelled", "error", "pending", "processing", "unavailable"},
         ),
         duration_ms=_safe_count(trace.duration_ms),
         engine=_safe_identifier(trace.engine),
@@ -550,7 +551,7 @@ def sanitize_session(
                 outcome=_safe_enum(
                     turn.outcome,
                     {
-                        "success", "failed", "partial", "timeout", "unknown",
+                        "success", "failed", "partial", "timeout", "unknown", "cancelled", "error",
                         "resolved", "safe_abstained", "escalate_rd", "escalate_fae",
                         "unsafe_fail_suspected", "budget_exhausted", "max_duration",
                         "empty_answer", "truncated_answer", "tool_xml_leak",
