@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 
 import pytest
@@ -367,12 +368,89 @@ def test_client_disappearing_at_kill_still_reaps_and_preserves_timeout(monkeypat
 
 
 def test_vm_cleanup_confirms_a_client_that_exits_between_probe_and_kill(tmp_path,monkeypatch):
-    mod=module();path=tmp_path/'request.json';path.write_text('{}')
-    record={'client_pid':123,'client_starttime':'777'};states=iter([True,False,False])
-    monkeypatch.setattr(mod,'vm_load',lambda *_:record)
-    monkeypatch.setattr(mod,'vm_alive',lambda *_:next(states,False))
-    monkeypatch.setattr(mod.os,'getpgid',lambda _:123)
+    mod=module();path=tmp_path/'request.json'
+    record={'state':'running','client_pid':123,'client_starttime':'777'};path.write_text(json.dumps(record));path.chmod(0o600)
+    monkeypatch.setattr(mod,'vm_load',lambda p,_:json.loads(p.read_text()))
     def exited(*_):raise ProcessLookupError()
-    monkeypatch.setattr(mod.os,'killpg',exited)
+    monkeypatch.setattr(mod.os,'pidfd_open',exited,raising=False)
+    monkeypatch.setattr(mod.signal,'pidfd_send_signal',exited,raising=False)
     mod.vm_cleanup(path,{'request':'a'*32})
-    assert not path.exists()
+    assert json.loads(path.read_text())['cancel_confirmed'] is True
+    assert path.with_suffix('.lock').exists()
+
+
+def test_cancel_barrier_prevents_late_armed_run_resurrection(tmp_path,monkeypatch):
+    mod=module();scope={'attempt':'c'*32,'request':'d'*32,'container_id':'a'*64,'run_invoked':True}
+    path=tmp_path/'request.json';path.write_text(json.dumps(dict(scope,state='armed')));path.chmod(0o600)
+    monkeypatch.setattr(mod,'vm_load',lambda p,_:json.loads(p.read_text()))
+    observed=threading.Event();resume=threading.Event();result={};marker=tmp_path/'client-started'
+    def delayed_run():
+        stale=mod.vm_load(path,scope);assert stale['state']=='armed'
+        observed.set();resume.wait(3)
+        try:
+            claimed=mod.vm_claim(path,scope,{'controller_pid':321,'controller_starttime':'777'})
+            mod.vm_record(path,claimed);marker.touch()
+        except BaseException as error:result['error']=error
+    worker=threading.Thread(target=delayed_run);worker.start()
+    try:
+        assert observed.wait(2)
+        mod.vm_cleanup(path,scope)
+        assert path.exists(), 'cleanup erased cancellation evidence, allowing a stale run to resurrect'
+        cancelled=json.loads(path.read_text());assert cancelled['state']=='cancelled' and cancelled['cancel_confirmed'] is True
+        lock=path.with_suffix('.lock');inode=lock.stat().st_ino
+        resume.set();worker.join(3)
+        assert not worker.is_alive() and not marker.exists()
+        assert isinstance(result.get('error'),mod.MinioRestoreError)
+        with pytest.raises(mod.MinioRestoreError,match='vm_control'):
+            mod.vm_update(path,scope,{'state':'running','client_pid':999},expected={'starting'})
+        mod.vm_update(path,scope,{'state':'completed'})
+        mod.vm_update(path,scope,{'state':'failed'})
+        assert json.loads(path.read_text())==cancelled and lock.stat().st_ino==inode
+    finally:resume.set();worker.join(3)
+
+
+@pytest.mark.parametrize('race',['after_validation','before_open','disappeared'])
+def test_pidfd_never_signals_replacement_process(monkeypatch,race):
+    mod=module();read_fd,write_fd=os.pipe();handles={};sent=[]
+    original={'identity':'original','alive':True};replacement={'identity':'replacement','alive':True};table={123:original}
+    def pidfd_open(pid,flags=0):
+        if race=='disappeared':raise ProcessLookupError()
+        if race=='before_open':original['alive']=False;table[pid]=replacement
+        descriptor=os.dup(read_fd);handles[descriptor]=table[pid];return descriptor
+    def alive(*_):
+        if race!='after_validation':return False
+        assert table[123] is original
+        # Reuse happens after validation; the open pidfd still owns original.
+        original['alive']=False;table[123]=replacement
+        return True
+    def pidfd_signal(descriptor,number,*_):
+        target=handles[descriptor];target['alive']=False
+        sent.append((target['identity'],number));os.write(write_fd,b'exited')
+    monkeypatch.setattr(mod.os,'pidfd_open',pidfd_open,raising=False)
+    monkeypatch.setattr(mod.signal,'pidfd_send_signal',pidfd_signal,raising=False)
+    monkeypatch.setattr(mod,'vm_alive',alive)
+    def numeric(*_):table[123]['alive']=False;raise AssertionError('numeric PID signaling reached replacement')
+    monkeypatch.setattr(mod.os,'kill',numeric);monkeypatch.setattr(mod.os,'killpg',numeric)
+    try:
+        mod.vm_stop_verified(123,'777','d'*32,signal.SIGKILL)
+        assert replacement['alive'] is True
+        assert len(sent)==(1 if race=='after_validation' else 0)
+        assert all(identity=='original' for identity,_ in sent)
+    finally:os.close(read_fd);os.close(write_fd)
+
+
+@pytest.mark.parametrize('stage',['vm_client','vm_timeout','interrupted'])
+def test_health_code7_only_normal_connection_refusal_is_retryable(stage):
+    mod=module()
+    class Local:
+        identity='a'*64;image=IMAGE;attempt='c'*32;name='restore-test'
+        def metadata(self,_):return dict(boundary_value(),running=True,pid=123,started_at='stable')
+    bridge=mod.NativeVMBridge(Local())
+    def control(mode,*_):
+        if mode=='arm':return {'ok':True}
+        return {'ok':True,'client_stopped':True,'returncode':7,'stage':stage,'response':'',
+                'process':{'pid':123,'container_id':'a'*64,'uid':10001,'starttime':'777','net_inode':1}}
+    bridge._call=control
+    if stage=='vm_client':assert bridge.capture(b'health-config',health=True)==b'000'
+    else:
+        with pytest.raises(mod.MinioRestoreError,match=stage):bridge.capture(b'health-config',health=True)

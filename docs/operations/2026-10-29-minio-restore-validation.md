@@ -81,6 +81,18 @@ health与signed GET统一走原生桥，无vendor curl回退。每请求前后�
 
 签名配置仅stdin进入原生curl，密码/私钥不进VM参数、环境或元数据；curl清空环境、禁curlrc/proxy，core限制0。curl max-time为health2秒/signed5秒，VM监督7秒，Host Colima控制12秒。保留原30秒显式就绪轮询，仅health连接未就绪(exit7)可返回000继续；VM异常、timeout、身份变化及任何signed请求失败均明确固定`vm_*`阶段退出，不重试或fallback。
 
-每个HTTP request有唯一ID。VM `/run/orbbec-minio-http/<attempt>/<request>.json`只存root0700/0600非敏感scope、controller/client PID/starttime及终止状态，不存headers/config/HTTP正文。预登记后，原生子进程先等待gate，保存精确PID/starttime才放行stdin；VM监督在正常、timeout和TERM时kill/wait。Host CLI中断不被当作VM退出证明：外层忽略后续TERM后只调用一次scoped VM cleanup，按PID+starttime+request marker核对并终止该原生client/controller、确认已停，再清理服务目标。PID已复用时不杀新进程；未知则报告`http_bridge.status=incomplete`并保留VM证据和目标，人工核对后才能新批次，不循环清理。正常已终止请求元数据在确认后删除。
+每个HTTP request有唯一ID。VM `/run/orbbec-minio-http/<attempt>/<request>.json`只存root0700/0600非敏感scope、controller/client PID/starttime及终止状态，不存headers/config/HTTP正文。预登记后，原生子进程先等待gate，保存精确PID/starttime才放行stdin；VM监督在正常、timeout和TERM时通过已持有的pidfd终止并wait。Host CLI中断不被当作VM退出证明：外层忽略后续TERM后只调用一次scoped VM cleanup，打开pidfd后复核PID+starttime+request marker，只向该稳定内核句柄发信号并确认已停，再清理服务目标。PID已复用时不杀新进程；未知则报告`http_bridge.status=incomplete`并保留VM证据和目标，人工核对后才能新批次，不循环清理。稳定.lock与cancelled tombstone永久保留于本次VM运行的/run中，不能删除后允许迟到run重建记录。
 
 工程证据：新增10项RED后实现；再补2项退出竞态RED（probe后进程消失仍须wait/确认），修后新42项与既有恢复38项合计 **80通过、0失败，0.99秒**。包括真实OS子进程timeout、真实TERM、登记失败不放行gate、netns FD路径替换后仍固定原对象、PID/starttime/Uid/NSpid/cgroup/netns拒绝、VM未知清理阻止target清理、stdin/明确profile及VM程序展开编译。proc和VM控制边界使用合成输入，尚未运行新MinIO目标，不冒充新批次实际通过。
+
+### 244正式审查修订门（两个Important、一个Minor）
+
+原244尚未运行新目标。审查发现共同的“检查后再行动”契约缺陷：run读取armed与登记controller间无互斥，cleanup可能误确认后被迟到run复活；PID/starttime检查后的数字PID信号也不能固定同一个进程。HTTP request owner负责原子claim/cancel及所有后续状态写入，内核pidfd负责信号对象直到终止，健康分类负责保留失败阶段；不能再把一次观测当作持续所有权。
+
+每request使用永不替换/删除的`.lock` inode和flock。arm、run锁内重读armed并登记controller、client register及完成/失败写入均串行；cleanup先锁内写cancelled，再检查并终止已登记进程，最后锁内记录cancel_confirmed。晚到run不能claim，已取消后register拒绝，完成/异常处理不得覆盖tombstone；记录与稳定锁均保留，避免旧worker拿到不同锁文件复活。无需新增通用远程作业设施。
+
+只读VM probe确认Python `os.pidfd_open`及`signal.pidfd_send_signal`均存在，自身pidfd signal0成功。VM cleanup先打开pidfd，再复核原PID/starttime/request标识，信号只发稳定句柄并poll终止；若PID已消失/复用则不信号替代者。缺能力、权限或无法确认均incomplete，无数字PID/killpg回退。VM监督持有其子进程pidfd；若句柄建立失败，gate不放行，通过stdin EOF让尚未请求的子进程退出，不能确认就失败。Host Colima CLI仍由其直接父进程持有并回收。
+
+health code7只有正常完成所记录的`stage=vm_client`连接未就绪可变000；`vm_timeout`、`interrupted`等即使同为code7也失败，不进入下一次health请求。签名S3请求仍没有重试。
+
+新增barrier并发、pidfd校验后替换/打开前复用/已消失、health code7三种stage：先 **6 RED、1控制通过**，修后新49项与既有38项合计 **87通过、0失败**。barrier验证读armed暂停→cleanup确认→迟到claim不得启动client，register/完成/失败均不能覆盖取消记录；pidfd模型显式把同一个数字PID换成替代进程，数字kill/killpg一旦被用即测试失败，稳定句柄只能指向原进程。原139、生产已过清单和第一次恢复失败均保留，当前没有新target或真实S3请求；本修订须独立复审后才执行授权的新local单批次。
