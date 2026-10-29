@@ -707,24 +707,103 @@ one successful import, and confirm freshness returns without losing history.
 
 ## Encrypted backup and restore drill
 
-The cloud timer runs the encrypted backup daily. Manual execution is:
+The cloud timer runs the encrypted backup daily. On 2026-10-29 the old script
+was found to require a bare Git SHA image tag and select stale `current` Compose
+inputs. The reviewed `backup.sh` + `backup_runtime.py` pair instead discovers the
+unique running `platform-api`, `platform-postgres` and `platform-minio` containers
+in project `orbbec-agent-platform`. It checks their immutable IDs, restart times,
+service labels and data mounts, hashes **every ordered input** in the API's actual
+`com.docker.compose.project.config_files` label, and uses the running API image
+ID with `--pull=never`. It never runs `compose up`, reads the stale platform.env
+image selection, or changes a service. PostgreSQL and MinIO may have older creation
+labels; those are retained as metadata rather than substituted for the API chain.
+
+Before installation, review the exact commit and check the running labels/mounts.
+The expected host binds are `/data/orbbec-agent-platform/postgres` to PostgreSQL's
+`/var/lib/postgresql/data` and `/data/orbbec-agent-platform/attachments` to MinIO's
+`/data`. The existing local bind volume `orbbec-agent-platform-backups` must point
+to `/data/orbbec-agent-platform/backups`; the helper refuses unknown resources
+instead of creating or repointing that volume. Production verification and the
+off-host restore are separate steps; local process substitutes do not prove them.
+
+Install both reviewed files together into a root-owned immutable operations
+directory and select that script with an `ExecStart=` systemd drop-in. Capture the
+previous effective service and drop-in before changing it, then daemon-reload.
+Do not rewrite old releases or move `current`. Rollback restores the previous
+service selection and reloads systemd, preserving all encrypted archives and
+receipts. This runbook does not claim a particular helper commit is installed.
+Manual execution should use the **effective installed service**, not a guessed
+path under `current`:
 
 ```bash
 ssh -i /Users/neo/.ssh/orbbec_aliyun_ed25519 -o BatchMode=yes \
-  root@47.106.112.69 /opt/orbbec-agent-platform/current/deploy/cloud/backup.sh
+  root@47.106.112.69 systemctl start orbbec-agent-platform-backup.service
 ```
 
-Copy one `.orb` backup to an approved recovery host without changing it. Run the
-restore drill with the local recovery private key:
+The fixed private `backup.lock` uses nonblocking flock; an overlapping manual or
+timer run exits nonzero at stage `lock`. One unique set contains encrypted custom
+pg_dump archives for **agent_platform** and **agent_platform_control**, and an
+encrypted tar stream of the observed MinIO data directory. Each artifact records
+its own scope, capture start/finish time, sizes and ciphertext SHA-256. These are
+independent live captures, **not a cross-database/object atomic snapshot**. Runtime,
+container/restart/image identity, public-key identity and ordered file hashes are
+checked before and after captures; any change stops this set without advancing
+the old success marker. Failed or incomplete encrypted artifacts are retained for
+diagnosis; there is no blanket cleanup or automatic retry.
+
+The host recovery public key remains root-owned 0600, exactly 32 bytes. Only that
+public file is mounted read-only into a networkless, immutable-image preparation
+process, which atomically copies it into the dedicated backup-secrets volume as
+10001:10001/0600. Encryptors run as 10001 with read-only roots, no capabilities and
+no network. Database and tar plaintext streams go directly through pipes to the
+unchanged `app.cloud_replica.cli backup` X25519/AES-GCM protocol. Both producer and
+encryptor return codes must succeed. The recovery private key remains off-host.
+
+After all three artifacts pass, their files and backup directory are fsynced
+before a root-private manifest is atomically committed
+under `private/backup-manifests/<set-id>.json`, followed by the compatible
+`private/last-backup-success` marker containing the three filenames. A complete
+set produces `CLOUD_BACKUP_COMPLETE`. The existing replica data retention then
+runs separately using the same immutable API image and existing import-secrets
+volume/network; its status and counts are atomically recorded in the set's
+`.retention.json` and `private/last-backup-retention.json`. A retention failure
+returns nonzero and records the failure, while the valid backup/marker remain
+available. Only successful backup **and** retention produce `CLOUD_BACKUP_OK`.
+`private/last-backup-failure.json` records stable stages and available exit codes,
+without stderr, configuration contents, keys or database text. Retention here is
+replica data expiry; it is not an encrypted-archive deletion policy.
+
+The installed helper has a read-only integrity/freshness command:
+
+```bash
+/absolute/path/to/reviewed/backup.sh --check --max-age-seconds 93600
+```
+
+It reads the marker and complete manifest and rehashes all three ciphertext files,
+without Docker calls, retention or writes. It emits bounded safe JSON. Missing,
+corrupt, future-dated or older evidence exits nonzero; failed/pending retention
+is reported independently and also makes the CLI exit nonzero. The 26-hour value
+is an operational threshold, **not an agreed business RPO**. This command performs
+a full ciphertext read and is intended for deliberate checks; an external alert
+receiver or periodic monitor has not been connected by this change.
+
+Copy all three `.orb` files and the private manifest to an approved recovery host,
+verify ciphertext SHA-256/size, and restore with the local recovery private key.
+The existing replica-only smoke drill remains:
 
 ```bash
 deploy/cloud/restore-drill.sh /absolute/path/replica.orb \
   "$private_root/backup-recovery-x25519.key"
 ```
 
-The approved recovery host must have Docker. The drill streams decrypted bytes
-directly into a disposable PostgreSQL container and never creates a plaintext
-dump file. Record `RESTORE_DRILL_OK=1` only after this succeeds.
+The approved recovery host must have Docker. Stream decrypted database bytes
+directly into disposable PostgreSQL instances with no production mounts or
+published ports; restore and compare both databases' schema/table/row aggregates.
+Verify the attachment tar entries and content identity separately in an isolated
+directory. The replica-only drill above cannot prove control-database or object
+recovery. Record the exact backup set, reviewed/runtime versions, each restoration
+result and unexecuted scope; record `RESTORE_DRILL_OK=1` only for the scope actually
+restored. No production recovery private key or plaintext dump file is required.
 
 ## Enable five-minute sync
 

@@ -319,14 +319,19 @@ def test_release_scripts_enforce_data_disk_and_bounded_retention() -> None:
     assert '"$release_path/PREVIOUS_PLATFORM_ENV"' not in stage
 
 
-def test_backups_cover_control_database_and_attachment_objects_on_data_disk() -> None:
-    backup = (CLOUD / "backup.sh").read_text(encoding="utf-8")
+def test_backups_cover_control_database_and_attachment_objects_on_data_disk(tmp_path) -> None:
+    from test_cloud_backup_runtime import fixture_runtime
 
-    assert "backup_path=/data/orbbec-agent-platform/backups" in backup
-    assert "attachment_path=/data/orbbec-agent-platform/attachments" in backup
-    assert "agent_platform_control" in backup
-    assert 'object_backup_name="attachments-$timestamp.orb"' in backup
-    assert "docker volume create orbbec-agent-platform-backups" not in backup
+    module, runtime, runner, _ = fixture_runtime(tmp_path)
+    manifest = runtime.run()
+    assert module.BackupPaths().backup_dir == Path("/data/orbbec-agent-platform/backups")
+    assert module.BackupPaths().attachment_dir == Path("/data/orbbec-agent-platform/attachments")
+    assert [artifact["scope"] for artifact in manifest["artifacts"]] == [
+        "database:agent_platform", "database:agent_platform_control", "minio_data_directory",
+    ]
+    assert all(Path(artifact["filename"]).suffix == ".orb" for artifact in manifest["artifacts"])
+    assert not any(command[1:3] == ("volume", "create") and command[-1] == module.BACKUP_VOLUME
+                   for command, _ in runner.commands)
 
 
 def test_cloud_registry_and_contract_have_no_source_coordinates():
@@ -531,14 +536,15 @@ def test_remote_stage_enforces_data_disk_and_bounded_release_retention():
 
 
 def test_platform_growing_volumes_are_bound_to_data_disk():
+    from test_cloud_backup_runtime import runtime_module
+
     stage = (CLOUD / "remote-stage.sh").read_text(encoding="utf-8")
-    backup = (CLOUD / "backup.sh").read_text(encoding="utf-8")
 
     assert 'postgres_data="$data_path/postgres"' in stage
     assert 'ensure_bind_volume orbbec-agent-platform-postgres-data "$postgres_data"' in stage
     assert 'backup_data="$data_path/backups"' in stage
     assert 'ensure_bind_volume orbbec-agent-platform-backups "$backup_data"' in stage
-    assert '/data/orbbec-agent-platform/backups' in backup
+    assert runtime_module().BackupPaths().backup_dir == Path('/data/orbbec-agent-platform/backups')
 
 
 def test_raw_key_files_inside_runtime_volumes_use_reader_contract_mode():
@@ -910,7 +916,7 @@ def _run_workspace_snapshot(tmp_path: Path, active_config: Path):
     harness.write_text(
         f"""#!/bin/bash
 set -euo pipefail
-python={ROOT / 'backend/.venv/bin/python'}
+python={sys.executable}
 remote() {{ "$@"; }}
 {snapshot}
 workspace_non_regression_snapshot
@@ -1419,7 +1425,7 @@ def _run_fae_history_contract(
 set -eEuo pipefail
 umask 077
 fail() {{ exit 91; }}
-python={ROOT / 'backend/.venv/bin/python'}
+python={sys.executable}
 base=https://agent.orbbec.com.cn
 temporary={temporary}
 curl_owner=({stub} --config owner)
@@ -1639,7 +1645,7 @@ def _run_fae_live_contract(
         f"""#!/bin/bash
 set -euo pipefail
 fail() {{ exit 91; }}
-python={ROOT / 'backend/.venv/bin/python'}
+python={sys.executable}
 base=https://agent.orbbec.com.cn
 temporary={tmp_path}
 require_private_file() {{
@@ -1751,7 +1757,7 @@ def _run_config_value(tmp_path: Path, value: dict, field: str) -> subprocess.Com
     harness.write_text(
         f"""#!/bin/bash
 set -euo pipefail
-python={ROOT / 'backend/.venv/bin/python'}
+python={sys.executable}
 config_path={config}
 {function}
 config_value {field}
@@ -2125,7 +2131,7 @@ def _run_fae_report_probe(tmp_path: Path, mode: str, render_mode: str = "report"
         f"""#!/bin/bash
 set -euo pipefail
 fail() {{ exit 91; }}
-python={ROOT / 'backend/.venv/bin/python'}
+python={sys.executable}
 repository_root={ROOT}
 chrome_pid=""
 node_pid=""
@@ -2326,7 +2332,7 @@ owner_cookie_file={tmp_path / 'owner.cookie'}
 viewer_cookie_file={tmp_path / 'viewer.cookie'}
 hr_prompt_file={tmp_path / 'prompt'}
 evidence_file={evidence}
-python={ROOT / 'backend/.venv/bin/python'}
+python={sys.executable}
 {acceptance}
 accept_v2_real
 """,

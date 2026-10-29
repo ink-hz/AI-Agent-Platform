@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from test_cloud_backup_runtime import fixture_runtime
+
 
 ROOT = Path(__file__).parents[2]
 
@@ -11,28 +13,27 @@ def test_session_expiry_uses_calendar_year_not_fixed_day_count():
     assert "timedelta(days=365)" not in store
 
 
-def test_backup_and_restore_scripts_never_create_plaintext_dump_files():
-    backup = (ROOT / "deploy" / "cloud" / "backup.sh").read_text(encoding="utf-8")
+def test_backup_and_restore_scripts_never_create_plaintext_dump_files(tmp_path):
+    _, runtime, runner, _ = fixture_runtime(tmp_path)
+    runtime.run()
     restore = (ROOT / "deploy" / "cloud" / "restore-drill.sh").read_text(encoding="utf-8")
 
-    assert "pg_dump" in backup
-    assert "app.cloud_replica.cli backup" in backup
     assert "app.cloud_replica.cli restore-stream" in restore
     assert "pg_restore" in restore
-    assert ".sql" not in backup
-    assert ".dump" not in backup
     assert ".sql" not in restore
     assert ".dump" not in restore
-    assert "mktemp -d" not in backup
-    assert "CLOUD_BACKUP_OK" in backup
     assert "CLOUD_RESTORE_DRILL_OK" in restore
-    assert "chmod 600 /target/recovery-public-key" in backup
-    assert 'platform_image="$(/usr/bin/sed -n' in backup
-    assert "/usr/bin/docker run --rm -i --user 10001:10001 --read-only" in backup
-    assert "--security-opt no-new-privileges:true --network none" in backup
-    assert "TMPDIR=/backups" in backup
-    assert "--network orbbec-agent-platform-internal" in backup
-    assert '"${compose[@]}" run' not in backup
+    for producer, encryptor, _ in runner.pipelines:
+        assert "compose" not in producer
+        assert not any(argument.endswith((".sql", ".dump")) for argument in producer)
+        assert encryptor[-4:] == ("python", "-m", "app.cloud_replica.cli", "backup")
+        assert "10001:10001" in encryptor and "--read-only" in encryptor
+        assert "no-new-privileges:true" in encryptor and "none" in encryptor
+        assert "TMPDIR=/backups" in encryptor
+    assert "pg_dump" in runner.pipelines[0][0]
+    assert "pg_dump" in runner.pipelines[1][0]
+    retention = next(command for command, stage in runner.commands if stage == "retention")
+    assert "orbbec-agent-platform-internal" in retention
 
 
 def test_daily_backup_timer_is_platform_scoped_and_persistent():
