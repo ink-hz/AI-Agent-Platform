@@ -67,6 +67,7 @@ class FakeRunner:
         self.start_client_timeout = False
         self.helper_scope_bad = False
         self.external = {}
+        self.volume_options = None
         self.pubhash = hashlib.sha256(paths.public_key.read_bytes()).hexdigest()
 
     def native_stopped(self):
@@ -108,7 +109,7 @@ class FakeRunner:
             name = args[-1]
             source = next((s["mounts"][0]["Source"] for s in self.sources.values()
                            if s["mounts"][0]["Name"] == name), str(self.paths.public_key.parent))
-            return json.dumps({"name": name, "driver": "local", "options": {}, "mountpoint": source}).encode()
+            return json.dumps({"name": name, "driver": "local", "options": self.volume_options, "mountpoint": source}).encode()
         if args[0] == "exec":
             path = args[-1]
             return (self.module.CONFIG_HASHES[path] + "  " + path + "\n").encode()
@@ -267,6 +268,71 @@ def test_six_captures_use_only_cold_sources_then_restore_exact_original_ids(tmp_
     assert result["lifecycle"]["cleanup_confirmed"] is True
     assert result["quiesced_baseline"]["objects"][0]["rows"] == 7
     assert result["quiesced_baseline_evidence"]["sha256"]
+
+
+@pytest.mark.parametrize("options", [None, {}])
+def test_local_volume_identity_normalizes_only_known_empty_options(options):
+    module = sdk_module()
+    value = {"name": "fixed-volume", "driver": "local", "options": options, "mountpoint": "/fixed/data"}
+    original = deepcopy(value)
+    identity = module.local_volume_identity(value, "fixed-volume", mountpoint="/fixed/data")
+    assert identity == {**value, "options": {}}
+    assert value == original, "keep raw evidence separate from semantic identity"
+
+
+@pytest.mark.parametrize("mutation", ["nonempty_options", "list_options", "false_options", "string_options",
+                                     "missing_options", "extra_field", "name", "driver", "mountpoint", "relative"])
+def test_local_volume_identity_rejects_unknown_or_changed_identity(mutation):
+    module = sdk_module()
+    value = {"name": "fixed-volume", "driver": "local", "options": None, "mountpoint": "/fixed/data"}
+    if mutation == "nonempty_options":
+        value["options"] = {"type": "none", "o": "bind", "device": "/other"}
+    elif mutation == "list_options":
+        value["options"] = []
+    elif mutation == "false_options":
+        value["options"] = False
+    elif mutation == "string_options":
+        value["options"] = ""
+    elif mutation == "missing_options":
+        del value["options"]
+    elif mutation == "extra_field":
+        value["unrecognized_identity"] = "unknown"
+    else:
+        value[mutation if mutation != "relative" else "mountpoint"] = {
+            "name": "other-volume", "driver": "nfs", "mountpoint": "/other", "relative": "relative/data"}[mutation]
+    with pytest.raises(module.SDKError, match="source_volume"):
+        module.local_volume_identity(value, "fixed-volume", mountpoint="/fixed/data")
+
+
+@pytest.mark.parametrize("options", [None, {}])
+def test_entire_preflight_accepts_real_empty_volume_representations_without_lifecycle(tmp_path, options):
+    _, backup, runner, _ = fixture_sdk(tmp_path)
+    runner.volume_options = options
+    runner.sources["web"]["health"] = None
+    backup._preflight()
+    assert backup.journal["phase"] == "preflight_verified"
+    assert backup.lifecycle is None and not runner.helpers and not runner.pipelines
+    assert not source_actions(runner, "stop") and not source_actions(runner, "start")
+    checked_volumes = [call[-1] for call in runner.calls if call[1:3] == ("volume", "inspect")]
+    assert len(checked_volumes) == 3
+
+
+@pytest.mark.parametrize("scope", ["public", "source"])
+def test_preflight_rejects_nonempty_options_for_every_volume_consumer(tmp_path, scope):
+    module, backup, runner, _ = fixture_sdk(tmp_path)
+    original = runner.capture
+    def capture(command, **kwargs):
+        result = original(command, **kwargs)
+        if command[1:3] == ["volume", "inspect"]:
+            value = json.loads(result)
+            if (value["name"] == module.PUBLIC_VOLUME) == (scope == "public"):
+                value["options"] = {"o": "bind"}
+                return json.dumps(value).encode()
+        return result
+    runner.capture = capture
+    with pytest.raises(module.SDKError, match="public_key" if scope == "public" else "source_volume"):
+        backup._preflight()
+    assert not source_actions(runner, "stop") and not source_actions(runner, "start")
 
 
 @pytest.mark.parametrize("mutation", ["image", "mount_field", "unhealthy", "mode"])

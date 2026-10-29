@@ -131,6 +131,23 @@ def mounts(value):
     return sorted(value, key=lambda item: runtime.canonical(item))
 
 
+def local_volume_identity(value, name, *, mountpoint=None, stage="source_volume"):
+    """Match RuntimeBackup._volume's null/{} no-options meaning, narrowly.
+
+    Preserve raw evidence; never normalize missing/unknown fields or other false
+    values into a known local volume identity.
+    """
+    if not isinstance(value, dict) or set(value) != {"name", "driver", "options", "mountpoint"}:
+        raise SDKError(stage)
+    options, path = value["options"], value["mountpoint"]
+    if (value["name"] != name or value["driver"] != "local"
+            or not (options is None or (type(options) is dict and not options))
+            or not isinstance(path, str) or not Path(path).is_absolute()
+            or (mountpoint is not None and path != mountpoint)):
+        raise SDKError(stage)
+    return {**value, "options": {}}
+
+
 def tree_metadata(path):
     path = Path(path)
     root = path.lstat()
@@ -389,10 +406,9 @@ class SDKColdBackup:
         public = runtime.file_identity(self.paths.public_key, stage="public_key", private=True)
         if public["size_bytes"] != 32:
             raise SDKError("public_key")
-        public_volume = self._json(["volume", "inspect", "--format", runtime.VOLUME_FORMAT, PUBLIC_VOLUME], "public_key")
-        if (public_volume.get("name") != PUBLIC_VOLUME or public_volume.get("driver") != "local"
-                or public_volume.get("options") or not Path(public_volume["mountpoint"]).is_absolute()):
-            raise SDKError("public_key")
+        public_volume = local_volume_identity(
+            self._json(["volume", "inspect", "--format", runtime.VOLUME_FORMAT, PUBLIC_VOLUME], "public_key"),
+            PUBLIC_VOLUME, stage="public_key")
         key_path = Path(public_volume["mountpoint"]) / "recovery-public-key"
         mounted_key = runtime.file_identity(key_path, stage="public_key")
         if mounted_key["sha256"] != public["sha256"] or mounted_key["size_bytes"] != 32:
@@ -422,8 +438,7 @@ class SDKColdBackup:
         for role, value in self.expected.items():
             mount = value["mounts"][0]
             volume = self._json(["volume", "inspect", "--format", runtime.VOLUME_FORMAT, mount["Name"]], "source_volume")
-            if volume != {"name": mount["Name"], "driver": "local", "options": {}, "mountpoint": mount["Source"]}:
-                raise SDKError("source_volume")
+            local_volume_identity(volume, mount["Name"], mountpoint=mount["Source"])
             trees[role] = tree_metadata(mount["Source"])
             if self.paths.root.is_relative_to(Path(mount["Source"])) or Path(mount["Source"]).is_relative_to(self.paths.root):
                 raise SDKError("source_directory")
