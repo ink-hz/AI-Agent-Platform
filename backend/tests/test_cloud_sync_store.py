@@ -54,6 +54,21 @@ def role_dsn(dsn, role):
     return urlunsplit(parts._replace(netloc=f"{role}@{parts.hostname}:{parts.port}"))
 
 
+def set_publisher(
+    conn,
+    agent=AGENT,
+    source_kind="fae",
+    mode="cloud_direct",
+    publisher="cloud",
+    writer="cloud_fae_test",
+    instance=None,
+):
+    conn.execute(
+        "select platform_replica.set_agent_publisher(%s,%s,%s,%s,%s,%s)",
+        (agent, source_kind, mode, publisher, writer, instance),
+    )
+
+
 @pytest.fixture(scope="module")
 def sync_db(request):
     dsn = request.getfixturevalue("observability_database")
@@ -78,13 +93,8 @@ def environment(sync_db):
             "platform_replica.generations, platform_replica.import_audit, "
             "platform_replica.management_projections, platform_replica.agent_sources cascade"
         )
-        conn.execute(
-            "insert into platform_replica.agent_sources "
-            "(agent_id, source_kind, mode, publisher, writer_role) values "
-            "(%s, 'fae', 'cloud_direct', 'cloud', 'cloud_fae_test'), "
-            "('ai-daq-fae-agent', 'fae', 'cloud_direct', 'cloud', 'cloud_other_test')",
-            (AGENT,),
-        )
+        set_publisher(conn)
+        set_publisher(conn, agent="ai-daq-fae-agent", writer="cloud_other_test")
     cipher = FieldCipher(b"e" * 32)
     return SimpleNamespace(
         dsn=sync_db,
@@ -219,9 +229,7 @@ def test_atomic_rollback_when_a_session_key_belongs_to_another_agent(environment
     # Shared dedicated worker logins may be assigned several agents, but a key
     # may never move between them even if that login can publish both agents.
     with psycopg.connect(env.dsn) as conn:
-        conn.execute(
-            "update platform_replica.agent_sources set writer_role='cloud_fae_test' where agent_id='ai-daq-fae-agent'"
-        )
+        set_publisher(conn, agent="ai-daq-fae-agent")
     env.cloud.publish_snapshot(snapshot(), (record(),))
     prior = env.cloud.source_statuses()["ai-daq-fae-agent"]
     with pytest.raises(Exception, match="publish_failed|scope"):
@@ -243,10 +251,11 @@ def test_office_management_projection_and_local_source_progress_are_independent(
     env = environment
     env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
     with psycopg.connect(env.dsn) as conn:
-        conn.execute(
-            "insert into platform_replica.agent_sources (agent_id,source_kind,mode,publisher,source_instance_id) values "
-            "('metabot-local','metabot','office','office','legacy-office'), "
-            "('remote-admin','admin','office','office','legacy-office')"
+        set_publisher(
+            conn, "metabot-local", "metabot", "office", "office", None, "legacy-office"
+        )
+        set_publisher(
+            conn, "remote-admin", "admin", "office", "office", None, "legacy-office"
         )
     projection = {
         "kind": "review_feedback_totals_projection",
@@ -372,7 +381,7 @@ def test_publishers_are_serialized_and_other_agents_progress_independently(envir
 
     with psycopg.connect(env.dsn) as blocker, ThreadPoolExecutor(max_workers=2) as pool:
         blocker.execute(
-            "select agent_id from platform_replica.agent_sources where agent_id=%s for update",
+            "select platform_replica.lock_agent_writer(%s, true)",
             (AGENT,),
         )
         newer = pool.submit(
@@ -427,10 +436,7 @@ def test_migration_is_idempotent_reader_and_worker_grants_are_scoped(environment
             ).fetchone()[0]
             > 0
         )
-        conn.execute(
-            "update platform_replica.agent_sources set publisher='office', mode='office', writer_role=null where agent_id=%s",
-            (AGENT,),
-        )
+        set_publisher(conn, mode="office", publisher="office", writer=None)
         assert (
             conn.execute(
                 "select ownership_epoch from platform_replica.agent_sources where agent_id=%s",
@@ -460,9 +466,7 @@ def test_cloud_ownership_can_only_be_seeded_for_canonical_direct_sources(environ
         pytest.raises(psycopg.errors.CheckViolation),
         psycopg.connect(environment.dsn) as conn,
     ):
-        conn.execute(
-            "insert into platform_replica.agent_sources (agent_id,source_kind,mode,publisher,writer_role) values ('unregistered-agent','fae','cloud_direct','cloud','cloud_fae_test')"
-        )
+        set_publisher(conn, agent="unregistered-agent")
 
 
 @pytest.mark.postgres
@@ -473,11 +477,10 @@ def test_office_retention_cleans_eligible_rows_while_preserving_cloud_and_native
     env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
     cloud_payload = session_row(env)
     with psycopg.connect(env.dsn) as conn:
-        conn.execute(
-            "insert into platform_replica.agent_sources (agent_id,source_kind,mode,publisher,source_instance_id) values "
-            "('metabot-local','metabot','office','office','legacy-office'), "
-            "('native-agent','native','native','native',null)"
+        set_publisher(
+            conn, "metabot-local", "metabot", "office", "office", None, "legacy-office"
         )
+        set_publisher(conn, "native-agent", "native", "native", "native", None, None)
     local = record(key="c", agent="metabot-local")
     local.update(source_kind="metabot", channel="feishu")
     unclaimed = record(key="d", agent="unclaimed-local")
@@ -539,3 +542,262 @@ def test_office_retention_cleans_eligible_rows_while_preserving_cloud_and_native
         assert conn.execute(
             "select deleted_session_count,deleted_agent_count,deleted_management_count from platform_replica.retention_audit order by retention_run_id desc limit 1"
         ).fetchone() == (2, 2, 1)
+
+
+@pytest.mark.postgres
+def test_first_ownership_seed_waits_for_unclaimed_office_write_before_cloud_success(
+    environment,
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from time import monotonic, sleep
+
+    env = environment
+    env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    with psycopg.connect(env.dsn) as conn:
+        # Fixture-only reconstruction of the pre-registry starting state.
+        conn.execute("truncate platform_replica.agent_sources")
+        set_publisher(conn, agent="ai-daq-fae-agent", writer="cloud_other_test")
+    office = psycopg.connect(role_dsn(env.dsn, "office_test"))
+    pool = ThreadPoolExecutor(max_workers=2)
+    try:
+        office.execute(
+            "update platform_replica.sessions set payload_sha256=%s where agent_id=%s",
+            ("0" * 64, AGENT),
+        )
+
+        def first_seed():
+            with psycopg.connect(env.dsn, application_name="cloud_first_seed") as conn:
+                set_publisher(conn)
+
+        seed = pool.submit(first_seed)
+        deadline = monotonic() + 3
+        while monotonic() < deadline and not seed.done():
+            with psycopg.connect(env.dsn) as conn:
+                waiting = conn.execute(
+                    "select count(*) from pg_stat_activity where application_name='cloud_first_seed' and wait_event_type='Lock'"
+                ).fetchone()[0]
+            if waiting:
+                break
+            sleep(0.01)
+        assert not seed.done(), "initial ownership crossed an uncommitted office write"
+        from app.cloud_sync.store import CloudSyncStore
+
+        publisher = CloudSyncStore(
+            role_dsn(env.dsn, "cloud_fae_test"),
+            cipher=env.cipher,
+            connect=lambda dsn, **kw: psycopg.connect(
+                dsn, application_name="cloud_first_publication", **kw
+            ),
+        )
+        publication = pool.submit(
+            publisher.publish_snapshot,
+            snapshot(NOW + timedelta(seconds=10)),
+            (record(turns=7),),
+        )
+        deadline = monotonic() + 3
+        while monotonic() < deadline and not publication.done():
+            with psycopg.connect(env.dsn) as conn:
+                waiting = conn.execute(
+                    "select count(*) from pg_stat_activity where application_name='cloud_first_publication' and wait_event_type='Lock'"
+                ).fetchone()[0]
+            if waiting:
+                break
+            sleep(0.01)
+        assert waiting, "publication did not reach the agent transaction barrier"
+        # A different agent continues while this first seed is blocked.
+        assert (
+            env.other.publish_snapshot(
+                snapshot(agent="ai-daq-fae-agent"),
+                (record(key="c", agent="ai-daq-fae-agent"),),
+            ).changed_sessions
+            == 1
+        )
+        assert not publication.done(), "cloud success crossed the office commit barrier"
+        office.commit()
+        seed.result(timeout=3)
+        assert publication.result(timeout=3).changed_sessions == 1
+        assert env.cloud.source_statuses()[AGENT]["source_turns"] == 7
+    finally:
+        office.rollback()
+        office.close()
+        pool.shutdown(wait=True)
+
+
+@pytest.mark.postgres
+def test_controlled_ownership_api_resets_only_changed_source_state(environment):
+    env = environment
+    env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    previous = session_row(env)
+    status = env.cloud.source_statuses()[AGENT]
+    with psycopg.connect(env.dsn) as conn:
+        audit_before = conn.execute(
+            "select count(*) from platform_replica.agent_source_ownership_audit where agent_id=%s",
+            (AGENT,),
+        ).fetchone()[0]
+        set_publisher(conn)
+        assert (
+            conn.execute(
+                "select count(*) from platform_replica.agent_source_ownership_audit where agent_id=%s",
+                (AGENT,),
+            ).fetchone()[0]
+            == audit_before
+        )
+    assert env.cloud.source_statuses()[AGENT] == status
+    with psycopg.connect(env.dsn) as conn:
+        set_publisher(conn, mode="office", publisher="office", writer=None)
+    assert session_row(env) == previous
+    switched = env.cloud.source_statuses()[AGENT]
+    assert switched["ownership_epoch"] == status["ownership_epoch"] + 1
+    assert switched["last_source_success_at"] is None
+    assert switched["source_sessions"] is None
+    assert switched["last_published_at"] == status["last_published_at"]
+    for sql in (
+        "insert into platform_replica.agent_sources (agent_id,source_kind,mode,publisher) values ('bypass','metabot','office','office')",
+        "update platform_replica.agent_sources set publisher='native',mode='native' where agent_id='ai-fae-agent'",
+        "delete from platform_replica.agent_sources where agent_id='ai-fae-agent'",
+    ):
+        with (
+            pytest.raises(psycopg.errors.InsufficientPrivilege),
+            psycopg.connect(env.dsn) as conn,
+        ):
+            conn.execute(sql)
+    with (
+        pytest.raises(psycopg.errors.InsufficientPrivilege),
+        psycopg.connect(role_dsn(env.dsn, "cloud_fae_test")) as conn,
+    ):
+        set_publisher(conn)
+
+
+@pytest.mark.postgres
+def test_existing_takeover_and_publication_share_lock_order_without_blocking_other_agents(
+    environment,
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from time import monotonic, sleep
+
+    env = environment
+    env.cloud.publish_snapshot(snapshot(), (record(),))
+    writer = psycopg.connect(role_dsn(env.dsn, "cloud_fae_test"))
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        writer.execute("select platform_replica.lock_agent_writer(%s,true)", (AGENT,))
+        writer.execute(
+            "update platform_replica.agent_sources set last_attempt_at=%s where agent_id=%s",
+            (NOW, AGENT),
+        )
+
+        def takeover():
+            with psycopg.connect(env.dsn, application_name="existing_takeover") as conn:
+                conn.execute("set statement_timeout='2s'")
+                set_publisher(conn, mode="office", publisher="office", writer=None)
+
+        switch = pool.submit(takeover)
+        deadline = monotonic() + 2
+        waiting = False
+        while monotonic() < deadline and not switch.done():
+            with psycopg.connect(env.dsn) as conn:
+                waiting = bool(
+                    conn.execute(
+                        "select count(*) from pg_stat_activity where application_name='existing_takeover' and wait_event_type='Lock'"
+                    ).fetchone()[0]
+                )
+            if waiting:
+                break
+            sleep(0.01)
+        assert waiting and not switch.done()
+        assert (
+            env.other.publish_snapshot(
+                snapshot(agent="ai-daq-fae-agent"),
+                (record(key="c", agent="ai-daq-fae-agent"),),
+            ).changed_sessions
+            == 1
+        )
+        writer.commit()
+        switch.result(timeout=3)
+        assert env.cloud.source_statuses()[AGENT]["publisher"] == "office"
+    finally:
+        writer.rollback()
+        writer.close()
+        pool.shutdown(wait=True)
+
+
+@pytest.mark.postgres
+def test_direct_row_write_cannot_invert_advisory_and_session_row_locks(environment):
+    env = environment
+    env.cloud.publish_snapshot(snapshot(), (record(),))
+    with psycopg.connect(role_dsn(env.dsn, "cloud_fae_test")) as publisher:
+        publisher.execute(
+            "select platform_replica.lock_agent_writer(%s,true)", (AGENT,)
+        )
+        with (
+            pytest.raises(psycopg.errors.LockNotAvailable, match="agent_writer_busy"),
+            psycopg.connect(role_dsn(env.dsn, "office_test")) as office,
+        ):
+            office.execute("set statement_timeout='1s'")
+            office.execute(
+                "update platform_replica.sessions set payload_sha256=%s where agent_id=%s",
+                ("0" * 64, AGENT),
+            )
+        publisher.execute(
+            "update platform_replica.sessions set updated_at=updated_at where agent_id=%s",
+            (AGENT,),
+        )
+
+
+@pytest.mark.postgres
+def test_publication_waits_for_existing_takeover_before_rechecking_authority(
+    environment,
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from time import monotonic, sleep
+
+    from app.cloud_sync.store import CloudSyncStore
+
+    env = environment
+    env.cloud.publish_snapshot(snapshot(), (record(),))
+    previous = session_row(env)
+    operator = psycopg.connect(env.dsn)
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        set_publisher(operator, mode="office", publisher="office", writer=None)
+        publisher = CloudSyncStore(
+            role_dsn(env.dsn, "cloud_fae_test"),
+            cipher=env.cipher,
+            connect=lambda dsn, **kw: psycopg.connect(
+                dsn, application_name="cloud_after_takeover", **kw
+            ),
+        )
+        publication = pool.submit(
+            publisher.publish_snapshot,
+            snapshot(NOW + timedelta(seconds=10)),
+            (record(turns=7),),
+        )
+        deadline = monotonic() + 2
+        waiting = False
+        while monotonic() < deadline and not publication.done():
+            with psycopg.connect(env.dsn) as conn:
+                waiting = bool(
+                    conn.execute(
+                        "select count(*) from pg_stat_activity where application_name='cloud_after_takeover' and wait_event_type='Lock'"
+                    ).fetchone()[0]
+                )
+            if waiting:
+                break
+            sleep(0.01)
+        assert waiting and not publication.done()
+        assert (
+            env.other.publish_snapshot(
+                snapshot(agent="ai-daq-fae-agent"),
+                (record(key="c", agent="ai-daq-fae-agent"),),
+            ).changed_sessions
+            == 1
+        )
+        operator.commit()
+        with pytest.raises(Exception, match="agent_ownership_invalid"):
+            publication.result(timeout=3)
+        assert session_row(env) == previous
+        assert env.cloud.source_statuses()[AGENT]["last_source_success_at"] is None
+    finally:
+        operator.rollback()
+        operator.close()
+        pool.shutdown(wait=True)

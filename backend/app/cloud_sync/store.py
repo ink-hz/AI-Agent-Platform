@@ -78,9 +78,13 @@ class CloudSyncStore:
         try:
             with self._connect() as connection, connection.transaction():
                 cursor = connection.cursor()
-                # Stable row lock serializes publishers and ownership changes together.
+                # This boundary also exists before the first authority row.
                 cursor.execute(
-                    "select * from platform_replica.agent_sources where agent_id=%s for update",
+                    "select platform_replica.lock_agent_writer(%s, true)",
+                    (snapshot.agent_id,),
+                )
+                cursor.execute(
+                    "select * from platform_replica.agent_sources where agent_id=%s",
                     (snapshot.agent_id,),
                 )
                 state = cursor.fetchone()
@@ -198,6 +202,9 @@ class CloudSyncStore:
         try:
             with self._connect() as connection, connection.transaction():
                 cursor = connection.cursor()
+                cursor.execute(
+                    "select platform_replica.lock_agent_writer(%s, true)", (agent_id,)
+                )
                 cursor.execute(
                     """update platform_replica.agent_sources set last_attempt_at=%s,
                         last_failure_at=%s,last_error=%s where agent_id=%s

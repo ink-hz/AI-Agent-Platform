@@ -49,14 +49,36 @@ alter table platform_replica.sessions add column if not exists writer_publisher 
 alter table platform_replica.sessions add column if not exists writer_epoch bigint;
 alter table platform_replica.import_audit add column if not exists skipped_session_count integer not null default 0;
 
+-- One namespace covers writers even before a registry row exists. Call this
+-- before acquiring row locks; trigger guards use a nonblocking check below.
+create or replace function platform_replica.lock_agent_writer(target_agent text, exclusive boolean default false)
+returns void language plpgsql security definer
+set search_path = pg_catalog, platform_replica as $$
+begin
+    if exclusive then
+        perform pg_advisory_xact_lock(hashtextextended('platform_replica.agent_writer:' || target_agent, 0));
+    else
+        perform pg_advisory_xact_lock_shared(hashtextextended('platform_replica.agent_writer:' || target_agent, 0));
+    end if;
+end $$;
+revoke all on function platform_replica.lock_agent_writer(text, boolean) from public;
+grant execute on function platform_replica.lock_agent_writer(text, boolean)
+    to platform_replica_import, platform_cloud_sync;
+
 create or replace function platform_replica.check_agent_writer(target_agent text)
 returns void language plpgsql security definer
 set search_path = pg_catalog, platform_replica as $$
 declare authority platform_replica.agent_sources%rowtype;
 begin
-    -- Lock ownership through the write transaction; takeover cannot race it.
+    -- A BEFORE ROW trigger can already hold a session row lock. Never wait
+    -- here behind a publisher that holds advisory and needs that row. Normal
+    -- writers pre-acquire this same lock before DML; direct SQL fails visibly
+    -- if it arrived after a takeover/publication already owns the boundary.
+    if not pg_try_advisory_xact_lock_shared(hashtextextended('platform_replica.agent_writer:' || target_agent, 0)) then
+        raise exception 'agent_writer_busy' using errcode = '55P03';
+    end if;
     select * into authority from platform_replica.agent_sources
-        where agent_id = target_agent for share;
+        where agent_id = target_agent;
     if exists (select 1 from pg_roles where rolname = session_user and rolsuper) then
         return;
     end if;
@@ -107,13 +129,25 @@ begin
         NEW.writer_role, NEW.source_instance_id, NEW.ownership_epoch)
         is not distinct from (OLD.agent_id, OLD.source_kind, OLD.mode, OLD.publisher,
         OLD.writer_role, OLD.source_instance_id, OLD.ownership_epoch) then
-        perform platform_replica.check_agent_writer(NEW.agent_id);
-        return NEW;
+        -- UPDATE already locked this authority row. Validate its old owner
+        -- without taking advisory after the row lock (the setter takes the
+        -- inverse order). The row itself serializes this state-only change.
+        if exists (select 1 from pg_roles where rolname = session_user and rolsuper)
+           or (OLD.publisher = 'cloud' and OLD.writer_role = session_user
+               and pg_has_role(session_user, 'platform_cloud_sync', 'member'))
+           or (OLD.publisher = 'office'
+               and pg_has_role(session_user, 'platform_replica_import', 'member')) then
+            return NEW;
+        end if;
+        raise exception 'agent_writer_ownership' using errcode = '42501';
     end if;
     if not exists (select 1 from pg_roles where rolname = session_user and rolsuper) then
         raise exception 'agent_ownership_admin_required' using errcode = '42501';
     end if;
-    if TG_OP = 'DELETE' then return OLD; end if;
+    if TG_OP = 'DELETE'
+       or current_setting('platform_replica.ownership_agent', true) is distinct from NEW.agent_id then
+        raise exception 'agent_ownership_use_set_agent_publisher' using errcode = '42501';
+    end if;
     if TG_OP = 'UPDATE' then NEW.ownership_epoch := OLD.ownership_epoch + 1; end if;
     insert into platform_replica.agent_source_ownership_audit
         (agent_id, ownership_epoch, publisher, writer_role)
@@ -124,3 +158,52 @@ revoke all on function platform_replica.guard_source_state() from public;
 drop trigger if exists replica_source_state on platform_replica.agent_sources;
 create trigger replica_source_state before insert or update or delete on platform_replica.agent_sources
     for each row execute function platform_replica.guard_source_state();
+
+
+-- Controlled installation/takeover/rollback API. The advisory lock must precede
+-- the INSERT/UPDATE row lock, including first ownership assignment. Applications
+-- cannot call this function or alter ownership columns.
+create or replace function platform_replica.set_agent_publisher(
+    agent_id text, source_kind text, mode text,
+    publisher text, writer_role name, source_instance_id text
+) returns void language plpgsql security definer
+set search_path = pg_catalog, platform_replica as $$
+declare
+    target_agent alias for $1;
+    target_source_kind alias for $2;
+    target_mode alias for $3;
+    target_publisher alias for $4;
+    target_writer_role alias for $5;
+    target_source_instance_id alias for $6;
+    previous_marker text;
+begin
+    if not exists (select 1 from pg_roles where rolname = session_user and rolsuper) then
+        raise exception 'agent_ownership_admin_required' using errcode = '42501';
+    end if;
+    perform platform_replica.lock_agent_writer(target_agent, true);
+    previous_marker := current_setting('platform_replica.ownership_agent', true);
+    perform set_config('platform_replica.ownership_agent', target_agent, true);
+    if exists (select 1 from platform_replica.agent_sources authority where authority.agent_id = target_agent) then
+        update platform_replica.agent_sources as authority set
+            source_kind = target_source_kind, mode = target_mode,
+            publisher = target_publisher, writer_role = target_writer_role,
+            source_instance_id = target_source_instance_id,
+            last_attempt_at = null, last_source_success_at = null,
+            last_failure_at = null, last_error = null, source_sessions = null,
+            source_turns = null, last_duration_ms = null
+        where authority.agent_id = target_agent
+          and (authority.source_kind, authority.mode, authority.publisher,
+               authority.writer_role, authority.source_instance_id)
+              is distinct from
+              (target_source_kind, target_mode, target_publisher,
+               target_writer_role, target_source_instance_id);
+    else
+        insert into platform_replica.agent_sources
+            (agent_id, source_kind, mode, publisher, writer_role, source_instance_id)
+            values (target_agent, target_source_kind, target_mode, target_publisher,
+                    target_writer_role, target_source_instance_id);
+    end if;
+    perform set_config('platform_replica.ownership_agent', coalesce(previous_marker, ''), true);
+end $$;
+revoke all on function platform_replica.set_agent_publisher(text, text, text, text, name, text)
+    from public, platform_replica_import, platform_cloud_sync, platform_replica_read;

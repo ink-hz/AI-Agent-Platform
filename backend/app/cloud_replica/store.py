@@ -402,14 +402,21 @@ class ReplicaStore:
                     accepted_records = prepared_records
                     if ownership_enabled:
                         accepted = []
-                        # Share-lock every registered authority before writing so a
-                        # root-controlled takeover cannot race an old office batch.
-                        cursor.execute("select agent_id, publisher from platform_replica.agent_sources order by agent_id for share")
+                        # Acquire the shared per-agent boundary before row locks,
+                        # including agents without a registered authority yet.
+                        cursor.execute("select session_key, agent_id from platform_replica.sessions where session_key=any(%s::text[])",
+                            ([item.session_key for item in prepared_records],))
+                        existing_agents = {row["session_key"]: row["agent_id"] for row in cursor.fetchall()}
+                        agents = {item.agent_id for item in prepared_records} | set(existing_agents.values())
+                        cursor.execute("select agent_id from platform_replica.agent_sources where publisher='office' and mode='office' and source_kind='metabot' and source_instance_id=%s",
+                            (batch.header.source_instance_id,))
+                        agents.update(row["agent_id"] for row in cursor.fetchall())
+                        for agent_id in sorted(agents):
+                            cursor.execute("select platform_replica.lock_agent_writer(%s, false)", (agent_id,))
+                        cursor.execute("select agent_id, publisher from platform_replica.agent_sources where agent_id=any(%s::text[])", (sorted(agents),))
                         authorities = {row["agent_id"]: row["publisher"] for row in cursor.fetchall()}
                         for item in prepared_records:
-                            cursor.execute("select agent_id from platform_replica.sessions where session_key=%s", (item.session_key,))
-                            existing_session = cursor.fetchone()
-                            existing_agent = existing_session["agent_id"] if existing_session else item.agent_id
+                            existing_agent = existing_agents.get(item.session_key, item.agent_id)
                             if any(authorities.get(agent) in {"cloud", "native"} for agent in (item.agent_id, existing_agent)):
                                 skipped_session_count += 1
                             else:
@@ -582,9 +589,14 @@ class ReplicaStore:
                     session_scope = ""
                     agent_scope = ""
                     if registry and registry["relation"]:
-                        # Retention remains an office-owned operation. Lock its
-                        # authorities so takeover cannot race counts/deletions.
-                        cursor.execute("select agent_id from platform_replica.agent_sources where publisher='office' order by agent_id for share")
+                        # Retention remains an office-owned operation. Acquire
+                        # locks before DML, covering unclaimed agents too.
+                        cursor.execute("""select a.agent_id from platform_replica.agents a
+                            where not exists (select 1 from platform_replica.agent_sources ownership
+                                where ownership.agent_id=a.agent_id and ownership.publisher <> 'office')
+                            order by a.agent_id""")
+                        for row in cursor.fetchall():
+                            cursor.execute("select platform_replica.lock_agent_writer(%s, false)", (row["agent_id"],))
                         session_scope = """ and pg_has_role(session_user, 'platform_replica_import', 'member')
                             and not exists (select 1 from platform_replica.agent_sources ownership
                                 where ownership.agent_id=platform_replica.sessions.agent_id
