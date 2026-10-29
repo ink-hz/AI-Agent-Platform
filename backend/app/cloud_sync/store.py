@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -28,6 +29,16 @@ class PublishResult:
     deleted_sessions: int
     source_sessions: int
     source_turns: int
+
+
+@dataclass(slots=True)
+class ObservationLease:
+    agent_id: str
+    ownership_epoch: int
+    _store: CloudSyncStore
+    _backend_pid: int
+    _lock_key: int
+    _active: bool = True
 
 
 class CloudSyncStore:
@@ -67,9 +78,70 @@ class CloudSyncStore:
             ),
         )
 
+    @contextmanager
+    def observation_cycle(self, agent_id: str) -> Iterator[ObservationLease | None]:
+        """Serialize source acquisition through publication across worker processes."""
+        lease = None
+        body_failed = False
+        try:
+            with self._connect() as connection, connection.transaction():
+                cursor = connection.cursor()
+                cursor.execute(
+                    """select pg_try_advisory_xact_lock(hashtextextended(%s,0)) as acquired,
+                    hashtextextended(%s,0) as lock_key, pg_backend_pid() as backend_pid""",
+                    ("platform_replica.agent_observation:" + agent_id,) * 2,
+                )
+                lock = cursor.fetchone()
+                if lock["acquired"]:
+                    cursor.execute(
+                        "select *, session_user as writer, pg_has_role(session_user, 'platform_cloud_sync', 'member') as cloud_writer from platform_replica.agent_sources where agent_id=%s",
+                        (agent_id,),
+                    )
+                    state = cursor.fetchone()
+                    if (
+                        not state
+                        or state["publisher"] != "cloud"
+                        or state["mode"] != "cloud_direct"
+                        or state["writer_role"] != state["writer"]
+                        or not state["cloud_writer"]
+                    ):
+                        raise CloudSyncStoreError("agent_ownership_invalid")
+                    lease = ObservationLease(
+                        agent_id,
+                        state["ownership_epoch"],
+                        self,
+                        lock["backend_pid"],
+                        lock["lock_key"],
+                    )
+                try:
+                    yield lease
+                except BaseException:
+                    body_failed = True
+                    raise
+                finally:
+                    if lease is not None:
+                        lease._active = False
+        except CloudSyncStoreError:
+            raise
+        except Exception:
+            if body_failed:
+                raise
+            raise CloudSyncStoreError("observation_cycle_failed") from None
+
     def publish_snapshot(
-        self, snapshot: AgentSnapshot, records: tuple[dict, ...]
+        self,
+        snapshot: AgentSnapshot,
+        records: tuple[dict, ...],
+        *,
+        lease: ObservationLease | None = None,
     ) -> PublishResult:
+        if (
+            not isinstance(lease, ObservationLease)
+            or not lease._active
+            or lease._store is not self
+            or lease.agent_id != snapshot.agent_id
+        ):
+            raise CloudSyncStoreError("observation_lease_invalid")
         if snapshot.complete is not True:
             raise CloudSyncStoreError("snapshot_incomplete")
         if len(snapshot.sessions) != len(records):
@@ -119,6 +191,23 @@ class CloudSyncStore:
                 cursor.execute("select session_user as writer")
                 if cursor.fetchone()["writer"] != state["writer_role"]:
                     raise CloudSyncStoreError("agent_ownership_invalid")
+                if state["ownership_epoch"] != lease.ownership_epoch:
+                    raise CloudSyncStoreError("observation_ownership_changed")
+                # Check the original lease holder after taking publication's lock.
+                # If its connection was lost before this point a newer cycle may
+                # already have published, so a Python token alone is insufficient.
+                cursor.execute(
+                    """select exists (select 1 from pg_locks
+                    where locktype='advisory' and granted and mode='ExclusiveLock'
+                      and pid=%s and classid=%s::oid and objid=%s::oid and objsubid=1) as held""",
+                    (
+                        lease._backend_pid,
+                        (lease._lock_key >> 32) & 0xFFFFFFFF,
+                        lease._lock_key & 0xFFFFFFFF,
+                    ),
+                )
+                if not cursor.fetchone()["held"]:
+                    raise CloudSyncStoreError("observation_lease_lost")
                 previous = state["last_source_success_at"]
                 if previous is not None and observed <= previous:
                     return PublishResult(

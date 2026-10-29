@@ -44,7 +44,7 @@ def main(argv=None) -> int:
         )
         if args.command == "once":
             results = [worker.run_once(p) for p in config.sources]
-            return int(any(result is None for result in results))
+            return int(any(result is None or result.status not in {"published", "unchanged"} for result in results))
         stop = threading.Event()
         signal.signal(signal.SIGTERM, lambda *unused: stop.set())
         signal.signal(signal.SIGINT, lambda *unused: stop.set())

@@ -4,22 +4,23 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import psycopg
 import pytest
-
 from app.cloud_replica.crypto import FieldCipher
 from app.cloud_replica.repository import ReplicaObservabilityRepository
 from app.cloud_sync.store import CloudSyncStore
 from app.observability.routes import router
 from app.observability.service import ObservabilityService
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from test_cloud_repository import _record
-from test_observability_migration_runner import observability_database
+from test_observability_migration_runner import (
+    observability_database,  # noqa: F401 -- pytest fixture
+)
 
 
 @pytest.mark.postgres
-def test_encrypted_publication_reader_role_and_http_preserve_independent_source_failure(observability_database):
+def test_encrypted_publication_reader_role_and_http_preserve_independent_source_failure(observability_database):  # noqa: F811 -- pytest fixture
     """A real committed replica and SELECT-only reader feed the HTTP consumer."""
     dsn = observability_database
     root = Path(__file__).parents[1]
@@ -52,9 +53,11 @@ def test_encrypted_publication_reader_role_and_http_preserve_independent_source_
     def snapshot(agent_id, source_kind, observed, count):
         return SimpleNamespace(agent_id=agent_id, source_kind=source_kind, source_observed_at=observed,
                                sessions=(object(),) * count, complete=True, elapsed_ms=5)
-    fae.publish_snapshot(snapshot("ai-fae-agent", "fae", now - timedelta(hours=1), 1), (record,))
+    with fae.observation_cycle("ai-fae-agent") as lease:
+        fae.publish_snapshot(snapshot("ai-fae-agent", "fae", now - timedelta(hours=1), 1), (record,), lease=lease)
     fae.record_failure("ai-fae-agent", "source_unavailable", now)
-    admin.publish_snapshot(snapshot("ai-admin-agent", "admin", now, 0), ())
+    with admin.observation_cycle("ai-admin-agent") as lease:
+        admin.publish_snapshot(snapshot("ai-admin-agent", "admin", now, 0), (), lease=lease)
 
     repository = ReplicaObservabilityRepository(role_dsn("freshness_reader"), cipher=cipher, now=lambda: now)
     app = FastAPI()

@@ -6,14 +6,16 @@ from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from test_observability_migration_runner import (
-    observability_database,  # noqa: F401 -- pytest fixture dependency
-)
-
 from app.cloud_replica.crypto import BatchSigner, BatchVerifier, FieldCipher
 from app.cloud_replica.protocol import BatchLimits, BatchState, encode_batch
 from app.cloud_replica.store import ReplicaStore, import_verified_stream
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from test_cloud_sync_sources_postgres import (
+    source_database,  # noqa: F401 -- pytest fixture dependency
+)
+from test_observability_migration_runner import (
+    observability_database,  # noqa: F401 -- pytest fixture dependency
+)
 
 ROOT = Path(__file__).parents[1]
 NOW = datetime(2026, 10, 29, tzinfo=UTC)
@@ -52,6 +54,12 @@ def snapshot(at=NOW, agent=AGENT, complete=True, count=1):
 def role_dsn(dsn, role):
     parts = urlsplit(dsn)
     return urlunsplit(parts._replace(netloc=f"{role}@{parts.hostname}:{parts.port}"))
+
+
+def publish(store, value, records):
+    with store.observation_cycle(value.agent_id) as lease:
+        assert lease is not None
+        return store.publish_snapshot(value, records, lease=lease)
 
 
 def set_publisher(
@@ -117,19 +125,17 @@ def session_row(env, key="a"):
 @pytest.mark.postgres
 def test_changed_only_monotonic_complete_publication_and_failure(environment):
     env = environment
-    first = env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    first = publish(env.cloud, snapshot(), (record(turns=7),))
     assert first.changed_sessions == 1
     previous = session_row(env)
     assert (
-        env.cloud.publish_snapshot(
-            snapshot(NOW + timedelta(seconds=10)), (record(turns=7),)
+        publish(
+            env.cloud, snapshot(NOW + timedelta(seconds=10)), (record(turns=7),)
         ).changed_sessions
         == 0
     )
     assert session_row(env) == previous
-    assert (
-        env.cloud.publish_snapshot(snapshot(NOW), (record(turns=0),)).status == "stale"
-    )
+    assert publish(env.cloud, snapshot(NOW), (record(turns=0),)).status == "stale"
     env.cloud.record_failure(AGENT, "source_unavailable", NOW + timedelta(seconds=20))
     state = env.cloud.source_statuses()[AGENT]
     assert state["last_source_success_at"] == NOW + timedelta(seconds=10)
@@ -137,8 +143,8 @@ def test_changed_only_monotonic_complete_publication_and_failure(environment):
     assert state["source_turns"] == 7
     assert state["source_sessions"] == 1
     assert (
-        env.cloud.publish_snapshot(
-            snapshot(NOW + timedelta(seconds=30), count=0), ()
+        publish(
+            env.cloud, snapshot(NOW + timedelta(seconds=30), count=0), ()
         ).deleted_sessions
         == 1
     )
@@ -148,7 +154,7 @@ def test_changed_only_monotonic_complete_publication_and_failure(environment):
 @pytest.mark.postgres
 def test_old_signed_office_batch_is_acknowledged_without_overwrite(environment):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    publish(env.cloud, snapshot(), (record(turns=7),))
     original = session_row(env)
     private = Ed25519PrivateKey.generate()
     state = BatchState(
@@ -183,16 +189,12 @@ def test_old_signed_office_batch_is_acknowledged_without_overwrite(environment):
 @pytest.mark.postgres
 def test_cross_agent_database_ownership_and_incomplete_snapshot(environment):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     previous = session_row(env)
     with pytest.raises(Exception, match="ownership|publish_failed"):
-        env.other.publish_snapshot(
-            snapshot(NOW + timedelta(seconds=1)), (record(turns=2),)
-        )
+        publish(env.other, snapshot(NOW + timedelta(seconds=1)), (record(turns=2),))
     with pytest.raises(Exception, match="incomplete"):
-        env.cloud.publish_snapshot(
-            snapshot(NOW + timedelta(seconds=2), complete=False), ()
-        )
+        publish(env.cloud, snapshot(NOW + timedelta(seconds=2), complete=False), ())
     with (
         pytest.raises(psycopg.Error),
         psycopg.connect(role_dsn(env.dsn, "office_test")) as conn,
@@ -230,10 +232,11 @@ def test_atomic_rollback_when_a_session_key_belongs_to_another_agent(environment
     # may never move between them even if that login can publish both agents.
     with psycopg.connect(env.dsn) as conn:
         set_publisher(conn, agent="ai-daq-fae-agent")
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     prior = env.cloud.source_statuses()["ai-daq-fae-agent"]
     with pytest.raises(Exception, match="publish_failed|scope"):
-        env.cloud.publish_snapshot(
+        publish(
+            env.cloud,
             snapshot(NOW + timedelta(seconds=1), agent="ai-daq-fae-agent", count=2),
             (
                 record(key="c", agent="ai-daq-fae-agent"),
@@ -249,7 +252,7 @@ def test_office_management_projection_and_local_source_progress_are_independent(
     environment,
 ):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    publish(env.cloud, snapshot(), (record(turns=7),))
     with psycopg.connect(env.dsn) as conn:
         set_publisher(
             conn, "metabot-local", "metabot", "office", "office", None, "legacy-office"
@@ -310,7 +313,7 @@ def test_office_management_projection_and_local_source_progress_are_independent(
 @pytest.mark.postgres
 def test_session_write_and_source_watermark_rollback_together(environment):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     previous = session_row(env)
     prior_state = env.cloud.source_statuses()[AGENT]
     with psycopg.connect(env.dsn) as conn:
@@ -322,9 +325,7 @@ def test_session_write_and_source_watermark_rollback_together(environment):
         )
     try:
         with pytest.raises(Exception, match="publish_failed"):
-            env.cloud.publish_snapshot(
-                snapshot(NOW + timedelta(seconds=1)), (record(turns=7),)
-            )
+            publish(env.cloud, snapshot(NOW + timedelta(seconds=1)), (record(turns=7),))
         assert session_row(env) == previous
         assert env.cloud.source_statuses()[AGENT] == prior_state
     finally:
@@ -338,11 +339,9 @@ def test_session_write_and_source_watermark_rollback_together(environment):
 @pytest.mark.postgres
 def test_delayed_success_does_not_erase_a_more_recent_failure(environment):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     env.cloud.record_failure(AGENT, "source_unavailable", NOW + timedelta(seconds=20))
-    env.cloud.publish_snapshot(
-        snapshot(NOW + timedelta(seconds=10)), (record(turns=2),)
-    )
+    publish(env.cloud, snapshot(NOW + timedelta(seconds=10)), (record(turns=2),))
     state = env.cloud.source_statuses()[AGENT]
     assert state["last_attempt_at"] == NOW + timedelta(seconds=20)
     assert state["last_error"] == "source_unavailable"
@@ -357,7 +356,7 @@ def test_publishers_are_serialized_and_other_agents_progress_independently(envir
     from app.cloud_sync.store import CloudSyncStore
 
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
 
     def publisher(name):
         return CloudSyncStore(
@@ -385,25 +384,29 @@ def test_publishers_are_serialized_and_other_agents_progress_independently(envir
             (AGENT,),
         )
         newer = pool.submit(
-            publisher("cloud_sync_new").publish_snapshot,
+            publish,
+            publisher("cloud_sync_new"),
             snapshot(NOW + timedelta(seconds=20)),
             (record(turns=7),),
         )
         wait_for_lock("cloud_sync_new")
-        older = pool.submit(
-            publisher("cloud_sync_old").publish_snapshot,
-            snapshot(NOW + timedelta(seconds=10)),
-            (record(turns=2),),
-        )
-        wait_for_lock("cloud_sync_old")
-        independent = env.other.publish_snapshot(
+        older_store = publisher("cloud_sync_old")
+        with older_store.observation_cycle(AGENT) as busy:
+            assert busy is None
+        independent = publish(
+            env.other,
             snapshot(agent="ai-daq-fae-agent"),
             (record(key="c", agent="ai-daq-fae-agent"),),
         )
         assert independent.changed_sessions == 1
         blocker.commit()
         assert newer.result(timeout=3).status == "published"
-        assert older.result(timeout=3).status == "stale"
+        assert (
+            publish(
+                older_store, snapshot(NOW + timedelta(seconds=10)), (record(turns=2),)
+            ).status
+            == "stale"
+        )
     assert env.cloud.source_statuses()[AGENT]["source_turns"] == 7
 
 
@@ -445,7 +448,7 @@ def test_migration_is_idempotent_reader_and_worker_grants_are_scoped(environment
             == 2
         )
     with pytest.raises(Exception, match="ownership"):
-        env.cloud.publish_snapshot(snapshot(), (record(),))
+        publish(env.cloud, snapshot(), (record(),))
 
 
 @pytest.mark.postgres
@@ -453,10 +456,10 @@ def test_complete_snapshot_rejects_missing_encoded_sessions_before_deletion(
     environment,
 ):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     previous = session_row(env)
     with pytest.raises(Exception, match="snapshot_record_count"):
-        env.cloud.publish_snapshot(snapshot(NOW + timedelta(seconds=10)), ())
+        publish(env.cloud, snapshot(NOW + timedelta(seconds=10)), ())
     assert session_row(env) == previous
 
 
@@ -474,7 +477,7 @@ def test_office_retention_cleans_eligible_rows_while_preserving_cloud_and_native
     environment,
 ):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    publish(env.cloud, snapshot(), (record(turns=7),))
     cloud_payload = session_row(env)
     with psycopg.connect(env.dsn) as conn:
         set_publisher(
@@ -552,7 +555,7 @@ def test_first_ownership_seed_waits_for_unclaimed_office_write_before_cloud_succ
     from time import monotonic, sleep
 
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    publish(env.cloud, snapshot(), (record(turns=7),))
     with psycopg.connect(env.dsn) as conn:
         # Fixture-only reconstruction of the pre-registry starting state.
         conn.execute("truncate platform_replica.agent_sources")
@@ -589,24 +592,23 @@ def test_first_ownership_seed_waits_for_unclaimed_office_write_before_cloud_succ
                 dsn, application_name="cloud_first_publication", **kw
             ),
         )
-        publication = pool.submit(
-            publisher.publish_snapshot,
-            snapshot(NOW + timedelta(seconds=10)),
-            (record(turns=7),),
-        )
-        deadline = monotonic() + 3
-        while monotonic() < deadline and not publication.done():
-            with psycopg.connect(env.dsn) as conn:
-                waiting = conn.execute(
-                    "select count(*) from pg_stat_activity where application_name='cloud_first_publication' and wait_event_type='Lock'"
-                ).fetchone()[0]
-            if waiting:
-                break
-            sleep(0.01)
-        assert waiting, "publication did not reach the agent transaction barrier"
+        with (
+            pytest.raises(Exception, match="agent_ownership_invalid"),
+            publisher.observation_cycle(AGENT),
+        ):
+            pytest.fail("unregistered source cycle must not start")
+
+        def publish_after_seed():
+            seed.result(timeout=3)
+            return publish(
+                publisher, snapshot(NOW + timedelta(seconds=10)), (record(turns=7),)
+            )
+
+        publication = pool.submit(publish_after_seed)
         # A different agent continues while this first seed is blocked.
         assert (
-            env.other.publish_snapshot(
+            publish(
+                env.other,
                 snapshot(agent="ai-daq-fae-agent"),
                 (record(key="c", agent="ai-daq-fae-agent"),),
             ).changed_sessions
@@ -626,7 +628,7 @@ def test_first_ownership_seed_waits_for_unclaimed_office_write_before_cloud_succ
 @pytest.mark.postgres
 def test_controlled_ownership_api_resets_only_changed_source_state(environment):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(turns=7),))
+    publish(env.cloud, snapshot(), (record(turns=7),))
     previous = session_row(env)
     status = env.cloud.source_statuses()[AGENT]
     with psycopg.connect(env.dsn) as conn:
@@ -676,7 +678,7 @@ def test_existing_takeover_and_publication_share_lock_order_without_blocking_oth
     from time import monotonic, sleep
 
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     writer = psycopg.connect(role_dsn(env.dsn, "cloud_fae_test"))
     pool = ThreadPoolExecutor(max_workers=1)
     try:
@@ -706,7 +708,8 @@ def test_existing_takeover_and_publication_share_lock_order_without_blocking_oth
             sleep(0.01)
         assert waiting and not switch.done()
         assert (
-            env.other.publish_snapshot(
+            publish(
+                env.other,
                 snapshot(agent="ai-daq-fae-agent"),
                 (record(key="c", agent="ai-daq-fae-agent"),),
             ).changed_sessions
@@ -724,7 +727,7 @@ def test_existing_takeover_and_publication_share_lock_order_without_blocking_oth
 @pytest.mark.postgres
 def test_direct_row_write_cannot_invert_advisory_and_session_row_locks(environment):
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     with psycopg.connect(role_dsn(env.dsn, "cloud_fae_test")) as publisher:
         publisher.execute(
             "select platform_replica.lock_agent_writer(%s,true)", (AGENT,)
@@ -754,7 +757,7 @@ def test_publication_waits_for_existing_takeover_before_rechecking_authority(
     from app.cloud_sync.store import CloudSyncStore
 
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     previous = session_row(env)
     operator = psycopg.connect(env.dsn)
     pool = ThreadPoolExecutor(max_workers=1)
@@ -768,7 +771,8 @@ def test_publication_waits_for_existing_takeover_before_rechecking_authority(
             ),
         )
         publication = pool.submit(
-            publisher.publish_snapshot,
+            publish,
+            publisher,
             snapshot(NOW + timedelta(seconds=10)),
             (record(turns=7),),
         )
@@ -786,7 +790,8 @@ def test_publication_waits_for_existing_takeover_before_rechecking_authority(
             sleep(0.01)
         assert waiting and not publication.done()
         assert (
-            env.other.publish_snapshot(
+            publish(
+                env.other,
                 snapshot(agent="ai-daq-fae-agent"),
                 (record(key="c", agent="ai-daq-fae-agent"),),
             ).changed_sessions
@@ -829,7 +834,7 @@ def test_publication_lock_timeout_rolls_back_without_blocking_other_agents(envir
     from app.cloud_sync.store import CloudSyncStore, CloudSyncStoreError
 
     env = environment
-    env.cloud.publish_snapshot(snapshot(), (record(),))
+    publish(env.cloud, snapshot(), (record(),))
     previous = session_row(env)
     state = env.cloud.source_statuses()[AGENT]
     bounded = CloudSyncStore(
@@ -842,12 +847,11 @@ def test_publication_lock_timeout_rolls_back_without_blocking_other_agents(envir
         blocker.execute("select platform_replica.lock_agent_writer(%s,true)", (AGENT,))
         started = monotonic()
         with pytest.raises(CloudSyncStoreError, match="^publish_failed$"):
-            bounded.publish_snapshot(
-                snapshot(NOW + timedelta(seconds=10)), (record(turns=7),)
-            )
+            publish(bounded, snapshot(NOW + timedelta(seconds=10)), (record(turns=7),))
         assert monotonic() - started < 3
         assert (
-            env.other.publish_snapshot(
+            publish(
+                env.other,
                 snapshot(agent="ai-daq-fae-agent"),
                 (record(key="c", agent="ai-daq-fae-agent"),),
             ).changed_sessions
@@ -873,3 +877,185 @@ def test_replica_connection_timeouts_cannot_disable_or_exceed_worker_budget(kwar
 
     with pytest.raises(CloudSyncStoreError, match="timeout_config_invalid"):
         CloudSyncStore("unused-test-dsn", cipher=FieldCipher(b"e" * 32), **kwargs)
+
+
+@pytest.mark.postgres
+def test_observation_cycle_prevents_reversed_actual_source_completion(
+    environment, request
+):
+    from app.cloud_replica.exporter import build_session_record
+    from app.cloud_replica.repository import ReplicaObservabilityRepository
+    from app.cloud_replica.sanitize import SanitizationPolicy, sanitize_session
+    from app.cloud_sync.store import CloudSyncStore
+    from test_cloud_sync_sources import TID
+    from test_cloud_sync_sources_postgres import source
+
+    source_db = request.getfixturevalue("source_database")
+    env = environment
+    second = CloudSyncStore(role_dsn(env.dsn, "cloud_fae_test"), cipher=env.cipher)
+
+    def encode(value):
+        return tuple(
+            build_session_record(
+                raw, sanitize_session(raw, SanitizationPolicy()), b"k" * 32
+            )
+            for raw in value.sessions
+        )
+
+    observed_busy = []
+
+    def factory(*args, **kwargs):
+        real = psycopg.connect(*args, **kwargs)
+
+        class Cursor:
+            def __init__(self, cursor):
+                self.cursor = cursor
+
+            def execute(self, query, params=None):
+                self.cursor.execute(query, params)
+                rendered = (
+                    query.as_string(real) if hasattr(query, "as_string") else str(query)
+                )
+                if "current_database() as database" in rendered:
+                    with psycopg.connect(source_db[0], autocommit=True) as writer:
+                        writer.execute(
+                            "update public.chat_turns set answer='newer answer' where id=%s",
+                            (TID,),
+                        )
+                    # The exact reviewer interleaving tries a second source read
+                    # here, but the second process cannot enter the cycle now.
+                    with second.observation_cycle(AGENT) as lease:
+                        observed_busy.append(lease is None)
+                    with env.other.observation_cycle("ai-daq-fae-agent") as lease:
+                        assert lease is not None
+                return self
+
+            def __getattr__(self, name):
+                return getattr(self.cursor, name)
+
+        class Connection:
+            def __enter__(self):
+                real.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return real.__exit__(*args)
+
+            def transaction(self):
+                return real.transaction()
+
+            def cursor(self):
+                return Cursor(real.cursor())
+
+        return Connection()
+
+    with env.cloud.observation_cycle(AGENT) as lease:
+        older = source(source_db, connection_factory=factory).read_snapshot()
+        assert older.sessions[0].turns[0].answer == "answer"
+        env.cloud.publish_snapshot(older, encode(older), lease=lease)
+    assert observed_busy == [True]
+    with second.observation_cycle(AGENT) as lease:
+        newer = source(source_db).read_snapshot()
+        assert newer.sessions[0].turns[0].answer == "newer answer"
+        second.publish_snapshot(newer, encode(newer), lease=lease)
+    persisted = ReplicaObservabilityRepository(env.dsn, cipher=env.cipher).get_session(
+        encode(newer)[0]["key"]
+    )
+    assert persisted.turns[0].answer == "newer answer"
+
+
+@pytest.mark.postgres
+def test_observation_lease_is_required_scoped_and_released_after_source_failure(
+    environment,
+):
+    from app.cloud_sync.models import SourceReadError
+    from app.cloud_sync.store import CloudSyncStore, CloudSyncStoreError
+
+    env = environment
+    second = CloudSyncStore(role_dsn(env.dsn, "cloud_fae_test"), cipher=env.cipher)
+    with pytest.raises(CloudSyncStoreError, match="observation_lease_invalid"):
+        env.cloud.publish_snapshot(snapshot(), (record(),))
+    with (
+        pytest.raises(SourceReadError, match="source_unavailable"),
+        env.cloud.observation_cycle(AGENT) as abandoned,
+    ):
+        assert abandoned is not None
+        with pytest.raises(CloudSyncStoreError, match="observation_lease_invalid"):
+            second.publish_snapshot(snapshot(), (record(),), lease=abandoned)
+        with pytest.raises(CloudSyncStoreError, match="observation_lease_invalid"):
+            env.cloud.publish_snapshot(
+                snapshot(agent="ai-daq-fae-agent"),
+                (record(agent="ai-daq-fae-agent"),),
+                lease=abandoned,
+            )
+        raise SourceReadError("source_unavailable")
+    with pytest.raises(CloudSyncStoreError, match="observation_lease_invalid"):
+        env.cloud.publish_snapshot(snapshot(), (record(),), lease=abandoned)
+    with second.observation_cycle(AGENT) as next_lease:
+        assert next_lease is not None
+        assert (
+            second.publish_snapshot(
+                snapshot(), (record(),), lease=next_lease
+            ).changed_sessions
+            == 1
+        )
+
+
+@pytest.mark.postgres
+def test_mid_observation_takeover_invalidates_lease_even_if_writer_returns(environment):
+    from app.cloud_sync.store import CloudSyncStoreError
+
+    env = environment
+    with env.cloud.observation_cycle(AGENT) as lease:
+        with psycopg.connect(env.dsn) as operator:
+            set_publisher(operator, mode="office", publisher="office", writer=None)
+            set_publisher(operator)
+        with pytest.raises(CloudSyncStoreError, match="observation_ownership_changed"):
+            env.cloud.publish_snapshot(snapshot(), (record(),), lease=lease)
+    assert session_row(env) is None
+    assert env.cloud.source_statuses()[AGENT]["last_source_success_at"] is None
+
+
+@pytest.mark.postgres
+def test_lost_observation_backend_cannot_publish_with_a_live_python_token(environment):
+    from app.cloud_sync.store import CloudSyncStore, CloudSyncStoreError
+
+    env = environment
+    second = CloudSyncStore(role_dsn(env.dsn, "cloud_fae_test"), cipher=env.cipher)
+    # Lease cleanup on a disconnected connection may also report the same
+    # payload-free transport boundary; the publication itself must reject first.
+    with (
+        pytest.raises(CloudSyncStoreError, match="observation_cycle_failed"),
+        env.cloud.observation_cycle(AGENT) as lease,
+    ):
+        with psycopg.connect(env.dsn) as operator:
+            operator.execute("select pg_terminate_backend(%s)", (lease._backend_pid,))
+        with second.observation_cycle(AGENT) as newer:
+            assert newer is not None
+            second.publish_snapshot(
+                snapshot(NOW + timedelta(seconds=10)),
+                (record(turns=7),),
+                lease=newer,
+            )
+        with pytest.raises(CloudSyncStoreError, match="observation_lease_lost"):
+            env.cloud.publish_snapshot(
+                snapshot(NOW + timedelta(seconds=20)),
+                (record(turns=2),),
+                lease=lease,
+            )
+    assert env.cloud.source_statuses()[AGENT]["source_turns"] == 7
+
+
+@pytest.mark.postgres
+def test_observation_cycle_requires_cloud_group_as_well_as_assigned_login(environment):
+    from app.cloud_sync.store import CloudSyncStore, CloudSyncStoreError
+
+    env = environment
+    with psycopg.connect(env.dsn) as operator:
+        set_publisher(operator, writer="office_test")
+    unprivileged = CloudSyncStore(role_dsn(env.dsn, "office_test"), cipher=env.cipher)
+    with (
+        pytest.raises(CloudSyncStoreError, match="agent_ownership_invalid"),
+        unprivileged.observation_cycle(AGENT),
+    ):
+        pytest.fail("a source cycle requires the assigned cloud publisher role")

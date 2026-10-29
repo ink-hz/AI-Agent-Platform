@@ -142,6 +142,15 @@ batches neither overwrite nor expire cloud-owned records. Retain only approved
 private receipts, not business payloads in ordinary logs. Do not fabricate a
 production conversation or call a model to test this path.
 
+After each accepted source cutover, atomically update the Mac publisher's private
+`sync.env` `PLATFORM_REPLICA_EXCLUDED_AGENT_IDS` CSV to include its exact Agent ID:
+`ai-fae-agent`, `ai-daq-fae-agent`, `ai-admin-agent`, or `voc`. Preserve exclusions
+for sources already accepted and all unrelated settings. The updated exporter
+applies this before pagination; do not reset its state, batch queue, sequence or
+signature chain. Check/drain existing signed batches through the ownership-aware
+importer, which acknowledges and skips cloud-owned session payloads. DB ownership
+remains the write boundary while this office optimization is being installed.
+
 After all four sources pass and the default config matches those owned sources:
 
 ```sh
@@ -162,6 +171,15 @@ production acceptance.
 ## Rollback ownership while preserving payloads
 
 Stop the worker before any rollback; record the last source/publication state.
+Before restoring office ownership, refresh the corresponding Mac mirror from the
+actual cloud source and verify it is at least as current as the accepted replica.
+Pause office publication while preparing this step. Remove only that Agent ID
+from the private `PLATFORM_REPLICA_EXCLUDED_AGENT_IDS` CSV before resuming the
+office publisher; retain exclusions for Agents still cloud-owned. Preserve its
+existing export state and signature chain. Do not let an old mirror or queued
+pre-cutover payload overwrite current answers after handing ownership back.
+
+
 Restore the recorded office `source_instance_id`, never invent one:
 
 ```sh
@@ -175,6 +193,7 @@ ownership and clears unproven source-success state; it does not delete encrypted
 session payloads. Resume the approved office publisher and verify its next valid
 signed batch and source-scoped expiry. Preserve independent management/review
 projections. Do not restore an old whole database over current business data.
+
 
 For partial rollback keep the persistent worker stopped until root has reviewed
 and atomically installed a0600 owned10001:10001 config containing only the

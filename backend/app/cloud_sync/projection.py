@@ -1,19 +1,26 @@
 """Canonical business-row projection; no identity claims from display metadata."""
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
 from datetime import datetime
-import hashlib
 from typing import Any
 from uuid import UUID
 
-from app.cloud_replica.models import RawSession, RawTraceAggregate, RawTurn, VerifiedSubject
+from app.cloud_replica.models import (
+    RawSession,
+    RawTraceAggregate,
+    RawTurn,
+    VerifiedSubject,
+)
 from app.sync_remote.importer import (
-    ImportValidationError, _fae_verified_subject, normalize_session_subject_link,
+    ImportValidationError,
+    _fae_verified_subject,
+    normalize_session_subject_link,
 )
 from app.sync_remote.voc_export import project_voc_rows
-from .models import SOURCE_IDENTITIES, SourceReadError
 
+from .models import SOURCE_IDENTITIES, SourceReadError
 
 # The native FAE protocol's runtime-failure outcomes and the existing platform
 # failure vocabulary. These describe execution failure even when the producer

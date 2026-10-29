@@ -1,5 +1,6 @@
 """Worker/configuration boundaries; no business source or model calls."""
 import json
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -87,7 +88,12 @@ class Store:
         self.published = []
         self.failed = []
 
-    def publish_snapshot(self, snap, records):
+    @contextmanager
+    def observation_cycle(self, agent_id):
+        yield object()
+
+    def publish_snapshot(self, snap, records, *, lease):
+        assert lease is not None
         self.published.append((snap, records))
         return SimpleNamespace(status="published", changed_sessions=1, deleted_sessions=0,
                                source_sessions=1, source_turns=1)
@@ -134,6 +140,21 @@ def test_source_failure_retains_data_and_does_not_log_payload(tmp_path, capsys):
     assert "customer-private" not in output.out + output.err
 
 
+def test_busy_observation_cycle_skips_source_before_reading(tmp_path):
+    def unexpected_read(profile):
+        pytest.fail("a second observer must not acquire an older source snapshot")
+
+    w, store = worker(tmp_path, unexpected_read)
+
+    @contextmanager
+    def busy(agent_id):
+        yield None
+
+    store.observation_cycle = busy
+    assert w.run_once(profile(tmp_path)).status == "busy"
+    assert not store.published and not store.failed
+
+
 def test_incomplete_or_foreign_snapshot_is_not_published(tmp_path):
     from dataclasses import replace
     snap = replace(snapshot(tmp_path), complete=False)
@@ -162,7 +183,7 @@ def test_one_source_failure_does_not_prevent_other_source_publication(tmp_path):
 def test_publication_failure_does_not_report_success(tmp_path):
     snap = snapshot(tmp_path)
     w, store = worker(tmp_path, lambda p: SimpleNamespace(read_snapshot=lambda: snap))
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise RuntimeError("fixture failed commit")
     store.publish_snapshot = fail
     assert w.run_once(profile(tmp_path)) is None
@@ -229,3 +250,21 @@ def test_health_uses_every_configured_source_not_another_recent_agent(tmp_path):
     states[p.agent_id]["last_failure_at"] = NOW
     assert healthy_sources(states, (p,), now=NOW, max_age_seconds=60) is False
     assert healthy_sources({}, (p,), now=NOW, max_age_seconds=60) is False
+
+
+@pytest.mark.parametrize("status,code", [("published", 0), ("unchanged", 0),
+                                         ("busy", 1), ("stale", 1), (None, 1)])
+def test_once_cli_requires_completed_source_publication(tmp_path, monkeypatch, status, code):
+    from app.cloud_sync import cli
+
+    monkeypatch.setattr(cli, "load_config", lambda path: SimpleNamespace(
+        replica_database_url_file="dsn", replica_encryption_key_file="key",
+        identity_key_file="identity", include_verified_subject=True,
+        sources=(profile(tmp_path),)))
+    monkeypatch.setattr(cli, "_read_dsn", lambda path: "fixture")
+    monkeypatch.setattr(cli, "read_key_file", lambda *args, **kwargs: b"k" * 32)
+    monkeypatch.setattr(cli, "CloudSyncStore", lambda *args, **kwargs: object())
+    result = SimpleNamespace(status=status) if status else None
+    monkeypatch.setattr(cli, "CloudSyncWorker", lambda **kwargs: SimpleNamespace(
+        run_once=lambda p: result))
+    assert cli.main(["once", "--config", "fixture"]) == code

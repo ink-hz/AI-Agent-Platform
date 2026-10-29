@@ -1,16 +1,16 @@
-from datetime import UTC, datetime
-from pathlib import Path
+from datetime import timedelta
 
 import psycopg
-from psycopg import sql
 import pytest
-
-from test_observability_migration_runner import observability_database
-from test_cloud_sync_sources import SID, TID, UID, NOW, module
+from psycopg import sql
+from test_cloud_sync_sources import NOW, SID, TID, UID, module
+from test_observability_migration_runner import (
+    observability_database,  # noqa: F401 -- pytest fixture
+)
 
 
 @pytest.fixture
-def source_database(observability_database, tmp_path):
+def source_database(observability_database, tmp_path):  # noqa: F811 -- pytest fixture
     with psycopg.connect(observability_database, autocommit=True) as conn:
         conn.execute('drop schema if exists cloud_source_test cascade')
         conn.execute('create schema cloud_source_test')
@@ -30,7 +30,7 @@ def source_database(observability_database, tmp_path):
 
 
 def source(source_database, **kwargs):
-    dsn, path = source_database
+    _dsn, path = source_database
     profile = module('models').SourceProfile('ai-fae-agent', 'fae', str(path), 'postgres')
     return module('sources').DatabaseAgentSource(profile, **kwargs)
 
@@ -64,7 +64,7 @@ def test_repeatable_read_does_not_mix_late_commit_with_session_header(source_dat
             def __init__(self, cursor): self.cursor = cursor
             def execute(self, query, params=None):
                 nonlocal committed
-                result = self.cursor.execute(query, params)
+                self.cursor.execute(query, params)
                 rendered = query.as_string(real) if hasattr(query, 'as_string') else str(query)
                 if 'current_database()' in rendered and not committed:
                     with psycopg.connect(dsn, autocommit=True) as writer:
@@ -81,6 +81,47 @@ def test_repeatable_read_does_not_mix_late_commit_with_session_header(source_dat
     first = source(source_database, connection_factory=factory).read_snapshot()
     assert first.sessions[0].turns[0].answer == 'answer'
     assert source(source_database).read_snapshot().sessions[0].turns[0].answer == 'late committed answer'
+
+
+@pytest.mark.postgres
+def test_source_observation_time_precedes_snapshot_queries(source_database):
+    current = [NOW]
+
+    def factory(*args, **kwargs):
+        real = psycopg.connect(*args, **kwargs)
+
+        class Cursor:
+            def __init__(self):
+                self.cursor = real.cursor()
+
+            def execute(self, query, params=None):
+                self.cursor.execute(query, params)
+                if isinstance(query, str) and query.startswith('select '):
+                    current[0] = NOW + timedelta(seconds=5)
+                return self
+
+            def __getattr__(self, name):
+                return getattr(self.cursor, name)
+
+        class Connection:
+            def __enter__(self):
+                real.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return real.__exit__(*args)
+
+            def transaction(self):
+                return real.transaction()
+
+            def cursor(self):
+                return Cursor()
+
+        return Connection()
+
+    snapshot = source(source_database, connection_factory=factory,
+                      clock=lambda: current[0]).read_snapshot()
+    assert snapshot.source_observed_at == NOW
 
 
 @pytest.mark.postgres

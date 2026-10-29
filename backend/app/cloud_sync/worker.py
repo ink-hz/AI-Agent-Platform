@@ -13,6 +13,7 @@ from app.cloud_replica.sanitize import SanitizationPolicy, sanitize_session
 
 from .models import SOURCE_IDENTITIES, SourceProfile, SourceReadError
 from .sources import DatabaseAgentSource
+from .store import PublishResult
 
 
 class CloudSyncWorker:
@@ -34,36 +35,41 @@ class CloudSyncWorker:
 
     def run_once(self, profile: SourceProfile):
         attempted = self._clock()
-        stage = "source_unavailable"
+        stage = "publication_unavailable"
         try:
-            snapshot = self._source_factory(profile).read_snapshot()
-            stage = "snapshot_invalid"
-            expected = SOURCE_IDENTITIES[profile.kind]
-            if (snapshot.complete is not True or snapshot.agent_id != profile.agent_id
-                    or snapshot.source_kind != expected[1]):
-                raise ValueError
-            # Same rolling retention floor as the existing cloud exporter.
-            floor = snapshot.source_observed_at - timedelta(days=365)
-            snapshot = replace(snapshot, sessions=tuple(
-                raw for raw in snapshot.sessions if raw.last_active_at >= floor
-            ))
-            records = []
-            for raw in snapshot.sessions:
-                if raw.agent_id != profile.agent_id or raw.source_kind != expected[1]:
+            with self.store.observation_cycle(profile.agent_id) as lease:
+                if lease is None:
+                    self._emit({"event": "cloud_sync_busy", "agent_id": profile.agent_id})
+                    return PublishResult("busy", 0, 0, 0, 0)
+                stage = "source_unavailable"
+                snapshot = self._source_factory(profile).read_snapshot()
+                stage = "snapshot_invalid"
+                expected = SOURCE_IDENTITIES[profile.kind]
+                if (snapshot.complete is not True or snapshot.agent_id != profile.agent_id
+                        or snapshot.source_kind != expected[1]):
                     raise ValueError
-                records.append(build_session_record(
-                    raw, sanitize_session(raw, self.policy), self._identity_key,
-                    include_verified_subject=self.include_verified_subject,
+                # Same rolling retention floor as the existing cloud exporter.
+                floor = snapshot.source_observed_at - timedelta(days=365)
+                snapshot = replace(snapshot, sessions=tuple(
+                    raw for raw in snapshot.sessions if raw.last_active_at >= floor
                 ))
-            stage = "publication_unavailable"
-            result = self.store.publish_snapshot(snapshot, tuple(records))
-            counters = asdict(result) if is_dataclass(result) else {
-                key: getattr(result, key) for key in (
-                    "status", "changed_sessions", "deleted_sessions", "source_sessions", "source_turns")
-            }
-            self._emit({"event": "cloud_sync_complete", "agent_id": profile.agent_id,
-                        "source_elapsed_ms": snapshot.elapsed_ms, **counters})
-            return result
+                records = []
+                for raw in snapshot.sessions:
+                    if raw.agent_id != profile.agent_id or raw.source_kind != expected[1]:
+                        raise ValueError
+                    records.append(build_session_record(
+                        raw, sanitize_session(raw, self.policy), self._identity_key,
+                        include_verified_subject=self.include_verified_subject,
+                    ))
+                stage = "publication_unavailable"
+                result = self.store.publish_snapshot(snapshot, tuple(records), lease=lease)
+                counters = asdict(result) if is_dataclass(result) else {
+                    key: getattr(result, key) for key in (
+                        "status", "changed_sessions", "deleted_sessions", "source_sessions", "source_turns")
+                }
+                self._emit({"event": "cloud_sync_complete", "agent_id": profile.agent_id,
+                            "source_elapsed_ms": snapshot.elapsed_ms, **counters})
+                return result
         except Exception as error:  # noqa: BLE001 -- isolate a source and never log driver payloads
             code = stage
             if isinstance(error, SourceReadError):

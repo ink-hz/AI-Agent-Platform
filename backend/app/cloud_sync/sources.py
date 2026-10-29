@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import stat
 import time
 from collections.abc import Callable
@@ -12,7 +11,7 @@ import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 
-from .models import AgentSnapshot, SOURCE_IDENTITIES, SourceProfile, SourceReadError
+from .models import SOURCE_IDENTITIES, AgentSnapshot, SourceProfile, SourceReadError
 from .projection import project_rows, project_voc_snapshot
 
 # Only columns needed for the established business/identity projection are read.
@@ -155,6 +154,11 @@ class DatabaseAgentSource:
                                row_factory=dict_row) as connection, connection.transaction():
                 cursor = connection.cursor()
                 cursor.execute('set transaction isolation level repeatable read, read only')
+                # A repeatable-read snapshot describes the beginning of the read,
+                # not its completion. The store lease orders entire read/publish cycles.
+                observed_at = self._clock()
+                if not isinstance(observed_at, datetime) or observed_at.tzinfo is None:
+                    raise SourceReadError('source_timestamp_invalid')
 
                 def execute(query, params=None):
                     cursor.execute("select set_config('statement_timeout', %s, true)", (str(remaining()),))
@@ -211,15 +215,13 @@ class DatabaseAgentSource:
                             continue
                         query = _snapshot_query(self.profile, table_schema, table, columns)
                         tables[table] = fetch_bounded(query)
-                    if self.profile.kind == 'daq':
-                        if (any(not str(row['external_session_id']).startswith('daq:') for row in tables['chat_sessions'])
-                                or any(not isinstance(row['metadata'], dict) or row['metadata'].get('agent_id') != self.profile.agent_id for row in tables['chat_turns'])):
-                            raise SourceReadError('source_identity_unverified')
+                    if self.profile.kind == 'daq' and (
+                        any(not str(row['external_session_id']).startswith('daq:') for row in tables['chat_sessions'])
+                        or any(not isinstance(row['metadata'], dict) or row['metadata'].get('agent_id') != self.profile.agent_id for row in tables['chat_turns'])
+                    ):
+                        raise SourceReadError('source_identity_unverified')
                     sessions = project_rows(self.profile.kind, tables)
                 remaining()
-                observed_at = self._clock()
-                if not isinstance(observed_at, datetime) or observed_at.tzinfo is None:
-                    raise SourceReadError('source_timestamp_invalid')
             elapsed_ms = int((self._monotonic() - started) * 1000)
             if elapsed_ms >= self.budget_ms:
                 raise SourceReadError('source_time_limit')

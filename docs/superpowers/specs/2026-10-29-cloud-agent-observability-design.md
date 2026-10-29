@@ -30,7 +30,8 @@ current volume; a poll exceeding its10s budget blocks the latency acceptance
 claim and requires a source-side committed change ledger before scale-up.
 
 An isolated cloud sync worker polls each source every10s, with independent
-failure/backoff and a per-agent publication lock. It reuses the existing raw
+failure/backoff and a per-agent observation lease held from before source read
+through publication, in addition to the publication ownership lock. It reuses the existing raw
 session model, credential scrubber, stable-ID builder and encrypted replica
 payloads. A single consistent snapshot contains a session and all its turns;
 source failure never replaces good data with an empty snapshot. Publication and
@@ -41,7 +42,10 @@ Snapshot diff is an explicit first-release implementation, not a claim of WAL
 CDC. Source reads are bounded by time/body/record limits and fail visibly when
 incomplete. Missing records may be deleted only from a validated complete
 snapshot within the owned agent's scope. Independent workers cannot apply an
-older snapshot over a newer one.
+older snapshot over a newer one. Publication requires a live lease tied to the
+same Agent, worker store, backend lock and ownership epoch; lost/reused leases
+fail closed. Source observation time is captured before the first snapshot SELECT,
+not after the read completes. A busy observer skips before reading the source.
 
 ## Canonical and identity compatibility
 
