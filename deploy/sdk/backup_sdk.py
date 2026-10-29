@@ -72,7 +72,7 @@ INSPECT = (
     '"running":{{json .State.Running}},"status":{{json .State.Status}},"pid":{{json .State.Pid}},'
     '"exit_code":{{json .State.ExitCode}},"oom_killed":{{json .State.OOMKilled}},'
     '"finished_at":{{json .State.FinishedAt}},'
-    '"health":{{if .State.Health}}{"Status":{{json .State.Health.Status}}}{{else}}null{{end}},'
+    '"health":{{with index .State "Health"}}{"Status":{{json .Status}}}{{else}}null{{end}},'
     '"labels":{{json .Config.Labels}},"user":{{json .Config.User}},'
     '"log_driver":{{json .HostConfig.LogConfig.Type}},"host_config":{{json .HostConfig}},'
     '"mounts":{{json .Mounts}},"networks":{{json .NetworkSettings.Networks}}}'
