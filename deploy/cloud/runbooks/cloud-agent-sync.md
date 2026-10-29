@@ -51,7 +51,7 @@ attached networks. Verify the existing external networks are exactly
 
    ```sh
    docker exec -i orbbec-agent-platform-platform-postgres-1 \
-     psql -X -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform \
+     psql -X --single-transaction -v ON_ERROR_STOP=1 -U platform_owner -d agent_platform \
      < backend/migrations/cloud_agent_sync/001_agent_sources.sql
    ```
 
@@ -109,8 +109,12 @@ The generated `config-fae.json`, `config-daq.json`, `config-admin.json` and
 `config-voc.json` each select one source; `config.json` selects all four, at a
 10s interval with the existing FAE verified-subject behavior enabled. Save the
 previous office source instance and exact ownership fields before each switch.
-Use the actual existing cloud source instance identifier, recorded in the
-release receipt; the placeholder below is not a generated identity.
+Reuse the recorded cloud worker instance identifier on subsequent releases. On
+the first installation establish one stable identifier (this rollout uses
+`orbbec-platform-cloud-production`) and record it in the private receipt. This
+publisher identifier does not enter Session/Turn/user HMAC inputs. Keep the exact
+previous office instance (`orbbec-platform-local-production` here) for rollback;
+never substitute the cloud identifier when returning ownership to the office.
 
 For FAE first (repeat for `daq`, `admin`, `voc` only after each acceptance):
 
