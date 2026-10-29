@@ -27,6 +27,10 @@ from .models import (
     VerifiedSubject,
 )
 
+CLOUD_SESSION_AGENT_IDS = frozenset({
+    "ai-fae-agent", "ai-daq-fae-agent", "ai-admin-agent", "voc",
+})
+
 SESSION_SQL = """
 with candidate_sessions as (
   select
@@ -37,6 +41,7 @@ with candidate_sessions as (
       as replica_updated_at
   from platform_read.sessions
   where last_active_at >= %(retention_floor)s
+    and not (agent_id = any(%(excluded_agent_ids)s::text[]))
 )
 select
   session_key, agent_id, source_kind, channel, title, user_identity,
@@ -341,10 +346,19 @@ class ReplicaSource:
         *,
         connection_factory: Callable[..., Any] = psycopg.connect,
         operations_repository=None,
+        excluded_agent_ids: tuple[str, ...] | frozenset[str] = (),
     ):
+        if (
+            not isinstance(excluded_agent_ids, (tuple, frozenset))
+            or any(not isinstance(agent_id, str) or agent_id not in CLOUD_SESSION_AGENT_IDS
+                   for agent_id in excluded_agent_ids)
+            or len(set(excluded_agent_ids)) != len(excluded_agent_ids)
+        ):
+            raise ValueError("excluded_agent_ids_invalid")
         self._database_url = database_url
         self._connection_factory = connection_factory
         self._operations_repository = operations_repository
+        self._excluded_agent_ids = tuple(sorted(excluded_agent_ids))
 
     def fetch_management_projections(
         self, *, through: datetime
@@ -559,6 +573,7 @@ class ReplicaSource:
                     "after_key": after_key,
                     "retention_floor": through - timedelta(days=365),
                     "limit": limit,
+                    "excluded_agent_ids": list(self._excluded_agent_ids),
                 },
             )
             session_keys = [row["session_key"] for row in session_rows]

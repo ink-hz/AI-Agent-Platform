@@ -18,7 +18,7 @@ from .canary import create_synthetic_canary
 from .exporter import ReplicaExporter, rewind_export_state
 from .protocol import BatchLimits, decode_and_verify_batch
 from .sanitize import SanitizationPolicy
-from .source import ReplicaSource
+from .source import CLOUD_SESSION_AGENT_IDS, ReplicaSource
 from .store import ReplicaStore
 from app.operations.repository import OperationsRepository
 
@@ -51,17 +51,29 @@ def _starting_watermark(state_path: Path, fallback: datetime) -> datetime:
         raise RuntimeError("replica export state unavailable") from None
 
 
+def _excluded_agent_ids() -> tuple[str, ...]:
+    value = os.getenv("PLATFORM_REPLICA_EXCLUDED_AGENT_IDS")
+    if value is None or value == "":
+        return ()
+    agent_ids = tuple(value.split(","))
+    if (any(agent_id not in CLOUD_SESSION_AGENT_IDS for agent_id in agent_ids)
+            or len(set(agent_ids)) != len(agent_ids)):
+        raise RuntimeError("replica export exclusion configuration unavailable")
+    return agent_ids
+
+
 def _export(
     clock: Callable[[], datetime], *, include_verified_subject: bool = False
 ) -> int:
     through = clock().astimezone(UTC)
+    excluded_agent_ids = _excluded_agent_ids()
     database_url = read_secret_file(
         _required_environment("PLATFORM_REPLICA_SOURCE_DATABASE_URL_FILE")
     )
     state_path = Path(
         _required_environment("PLATFORM_REPLICA_EXPORT_STATE_PATH")
     )
-    source = ReplicaSource(database_url)
+    source = ReplicaSource(database_url, excluded_agent_ids=excluded_agent_ids)
     operations_path = os.getenv("PLATFORM_OPERATIONS_DATABASE_PATH")
     if operations_path and hasattr(source, "_operations_repository"):
         source._operations_repository = OperationsRepository(operations_path)

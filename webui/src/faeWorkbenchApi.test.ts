@@ -63,6 +63,21 @@ describe("FAE workbench API", () => {
     });
   });
 
+  it("preserves optional per-agent source metadata in session list and replay responses", async () => {
+    const source_status = {
+      mode: "cloud_direct", publisher: "cloud", source_kind: "fae", source_instance_id: "cloud-fae",
+      last_source_success_at: "2026-10-29T08:00:00Z", last_published_at: "2026-10-29T08:00:01Z",
+      last_failure_at: null, last_error: null, lag_seconds: 2,
+    };
+    const item = { session_key: "session-1", source_status, turns: [] };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      items: [item], total: 1, limit: 20, offset: 0,
+    }), { status: 200 })).mockResolvedValueOnce(new Response(JSON.stringify(item), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await faeWorkbenchApi.listSessions({})).items[0].source_status).toEqual(source_status);
+    expect((await faeWorkbenchApi.session("session-1")).source_status).toEqual(source_status);
+  });
+
   it("sends only server-accepted session filters", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       items: [], total: 0, limit: 20, offset: 0,

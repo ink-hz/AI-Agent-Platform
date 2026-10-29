@@ -45,7 +45,7 @@ def test_export_cli_uses_file_secrets_and_prints_only_aggregate_metadata(
         def fetch_sessions(self, **_kwargs):
             return ()
 
-    monkeypatch.setattr(cli, "ReplicaSource", lambda database_url: EmptySource())
+    monkeypatch.setattr(cli, "ReplicaSource", lambda database_url, **kwargs: EmptySource())
 
     assert cli.main(["export"], clock=lambda: now) == 0
     output = capsys.readouterr().out
