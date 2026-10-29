@@ -15,12 +15,16 @@ m = importlib.util.module_from_spec(spec)
 def load():
     assert MODULE.exists(), 'scoped API release helper has not been implemented'
     spec.loader.exec_module(m)
+    m.daemon_logging = lambda: {'Type':'json-file','Config':{'max-size':'50m','max-file':'3'}}
     return m
 
 
 def service(image='sha256:' + 'a' * 64, release='b' * 40):
     return {'name': 'orbbec-agent-platform', 'services': {
-        'platform-api': {'image': image, 'environment': {'TOKEN': 'do-not-print', 'PLATFORM_RELEASE_SHA': release},
+        'platform-api': {'image': image, 'container_name':'api', 'read_only':True,'cap_drop':['ALL'],
+                         'security_opt':['no-new-privileges:true'],'restart':'unless-stopped',
+                         'tmpfs':['/tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700'],
+                         'healthcheck':{'test':['CMD','health'],'interval':'10s','timeout':'3s','start_period':'15s','retries':12}, 'environment': {'TOKEN': 'do-not-print', 'PLATFORM_RELEASE_SHA': release},
                          'command': ['uvicorn', 'app.main:create_app'], 'networks': {'internal': {}},
                          'volumes': [{'type': 'bind', 'source': '/data/hr', 'target': '/hr', 'read_only': True}]},
         'platform-postgres': {'image': 'postgres:17', 'environment': {'PASSWORD': 'secret'}}},
@@ -51,10 +55,10 @@ def test_parity_rejects_unrelated_changes_without_secret_in_error(mutation):
 
 def test_live_contract_checks_image_defaults_and_named_mounts():
     h = load(); config = service(); api = config['services']['platform-api']
-    inspect = {'Config': {'Env': ['TOKEN=do-not-print', 'PLATFORM_RELEASE_SHA=' + 'b' * 40, 'PATH=/bin'],
+    inspect = {'Name':'/api','HostConfig':policy_host(), 'Config': {'Healthcheck':health_policy(),'Env': ['TOKEN=do-not-print', 'PLATFORM_RELEASE_SHA=' + 'b' * 40, 'PATH=/bin'],
                           'Cmd': api['command'], 'Entrypoint': None, 'User': '10001', 'WorkingDir': '/app/backend'},
                'Mounts': [{'Type': 'bind', 'Source': '/data/hr', 'Destination': '/hr', 'RW': False}],
-               'NetworkSettings': {'Networks': {'orbbec-agent-platform-internal': {}}}}
+               'NetworkSettings': {'Networks': {'orbbec-agent-platform-internal': {'Aliases':['api','platform-api']}}}}
     image = {'Config': {'Env': ['PATH=/bin'], 'User': '10001', 'WorkingDir': '/app/backend'}}
     h.assert_live_contract(config, inspect, image)
     inspect['Config']['Env'].append('SILENT_DRIFT=secret-value')
@@ -199,8 +203,8 @@ def test_stage_rejects_added_context_file(tmp_path):
     with pytest.raises(h.ReleaseError,match='context_extra_files'):h.validate_stage(tmp_path)
 
 
-@pytest.mark.parametrize('rollback,fail,missing', [(False,False,False),(True,False,False),(False,True,False),(True,False,True)])
-def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_path,monkeypatch,rollback,fail,missing):
+@pytest.mark.parametrize('rollback,fail,missing,drift', [(False,False,False,None),(True,False,False,None),(False,True,False,None),(True,False,True,None),(False,False,False,'before'),(False,False,False,'after')])
+def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_path,monkeypatch,rollback,fail,missing,drift):
     h=load();private=tmp_path/'private';private.mkdir(mode=0o700);monkeypatch.setattr(h,'PRIVATE',private)
     root=tmp_path/'transaction';root.mkdir(mode=0o700)
     old=service();new=service('sha256:'+'c'*64,'d'*40)
@@ -209,12 +213,15 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
         return {'Name':'/api','Id':cid,'Image':image,'RestartCount':0,
                 'Config':{'Labels':{'com.docker.compose.project':h.PROJECT,'com.docker.compose.service':h.SERVICE},
                           'Env':['PATH=/bin']+[k+'='+v for k,v in config['services']['platform-api']['environment'].items()],
-                          'Cmd':config['services']['platform-api']['command'],'Entrypoint':None,'User':'10001','WorkingDir':'/app/backend'},
+                          'Cmd':config['services']['platform-api']['command'],'Entrypoint':None,'User':'10001','WorkingDir':'/app/backend','Healthcheck':health_policy()},
+                'HostConfig':policy_host(),
                 'State':{'Running':True,'Health':{'Status':'healthy'}},
                 'Mounts':[{'Type':'bind','Source':'/data/hr','Destination':'/hr','RW':False}],
-                'NetworkSettings':{'Networks':{'orbbec-agent-platform-internal':{}}}}
+                'NetworkSettings':{'Networks':{'orbbec-agent-platform-internal':{'Aliases':['api','platform-api']}}}}
     initial=live(new,newimage,'new') if rollback else live(old,oldimage,'old')
     final=live(old,oldimage,'rollback') if rollback else live(new,newimage,'new')
+    if drift=='before':initial['HostConfig']['ReadonlyRootfs']=False
+    if drift=='after':final['HostConfig']['PortBindings']={'8080/tcp':[{'HostIp':'0.0.0.0','HostPort':'8080'}]}
     baseline={'/api':{'id':'old'},'/fae':{'id':'untouched','pid':20}}
     start={**baseline,'/api':{'id':initial['Id']}};after={**baseline,'/api':{'id':final['Id']}}
     if missing:start={k:v for k,v in start.items() if k!='/api'}
@@ -231,7 +238,7 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
         return b''
     monkeypatch.setattr(h,'command',execute)
     state={'files':['/one','/two'],'working_dir':'/release','project':h.PROJECT,'env_file':'/private/platform.env',
-           'inputs':{},'guardrails':{},'baseline_containers':baseline,'api_name':'/api','old_id':'old',
+           'inputs':{},'guardrails':{},'old_hostconfig':h.digest(h.canonical(policy_host())),'baseline_containers':baseline,'api_name':'/api','old_id':'old',
            'old_image':oldimage,'new_image':newimage,'old_release':'b'*40,'release':'d'*40,
            'before_config':h.digest(h.canonical(old)),'after_config':h.digest(h.canonical(new)),
            'owner':'unique-owner','deployment_id':'e'*32}
@@ -239,7 +246,11 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
     if missing:
         h.save(root/'apply.started.json',{'action':'apply','image_id':newimage,'release_sha':'d'*40})
         h.locks(state,True)
-    if fail:
+    if drift:
+        with pytest.raises(h.ReleaseError,match='live_security' if drift=='before' else 'live_ports'):h.transact(root,rollback)
+        assert not (root/'apply.complete.json').exists()
+        assert (private/'agent-brain-action.lock').exists() == (drift=='after')
+    elif fail:
         with pytest.raises(h.ReleaseError,match='command_failed'):h.transact(root,rollback)
         assert (private/'agent-brain-action.lock').is_dir()
         assert (private/'deploy-input.lock').is_dir()
@@ -250,7 +261,8 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
         receipt=json.loads((root/('rollback.complete.json' if rollback else 'apply.complete.json')).read_text())
         assert receipt['image_id']==(oldimage if rollback else newimage)
         assert receipt['release_sha']==('b'*40 if rollback else 'd'*40)
-    assert len(calls)==1
+    assert len(calls)==(0 if drift=='before' else 1)
+    if drift=='before':return
     assert calls[0][-8:]==['up','-d','--no-deps','--no-build','--pull','never','--force-recreate','platform-api']
     assert 'do-not-print' not in repr(calls)
 
@@ -268,3 +280,91 @@ def test_admin_unit_receipt_requires_its_configuration_supplement(monkeypatch):
     h=load();raw=b'MainPID=123\n';monkeypatch.setattr(h,'command',lambda args:raw)
     receipt={'nginx_config_files':[],'systemd_units':[{'unit':'ai-admin-agent.service','properties_sha256':h.digest(raw),'unit_files':[]}]}
     with pytest.raises(h.ReleaseError,match='admin_config_baseline_missing'):h.guardrails(receipt)
+
+
+def policy_host():
+    return {'ReadonlyRootfs':True,'Privileged':False,'CapAdd':None,'CapDrop':['ALL'],
+            'SecurityOpt':['no-new-privileges:true'],'PortBindings':{},'PublishAllPorts':False,
+            'Memory':0,'MemorySwap':0,'MemoryReservation':0,'NanoCpus':0,'CpuShares':0,'CpuQuota':0,'CpuPeriod':0,'CpusetCpus':'','PidsLimit':None,
+            'RestartPolicy':{'Name':'unless-stopped','MaximumRetryCount':0},
+            'LogConfig':{'Type':'json-file','Config':{'max-size':'50m','max-file':'3'}},
+            'Tmpfs':{'/tmp':'rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700'},
+            'NetworkMode':'orbbec-agent-platform-internal','IpcMode':'private','PidMode':'','UTSMode':'','CgroupnsMode':'private',
+            'ShmSize':67108864,'Ulimits':None,'OomKillDisable':None,'OomScoreAdj':0,'AutoRemove':False,
+            'Devices':None,'DeviceRequests':None,'Dns':None,'ExtraHosts':[]}
+
+
+def health_policy():
+    return {'Test':['CMD','health'],'Interval':10000000000,'Timeout':3000000000,'StartPeriod':15000000000,'Retries':12}
+
+
+def policy_fixture():
+    config=service();api=config['services']['platform-api']
+    api.update({'read_only':True,'cap_drop':['ALL'],'security_opt':['no-new-privileges:true'],'restart':'unless-stopped',
+                'tmpfs':['/tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001,mode=0700'],
+                'healthcheck':{'test':['CMD','health'],'interval':'10s','timeout':'3s','start_period':'15s','retries':12}})
+    live={'Name':'/api','HostConfig':policy_host(),'Config':{'Healthcheck':health_policy()},
+          'NetworkSettings':{'Networks':{'orbbec-agent-platform-internal':{'Aliases':['api','platform-api'],'IPAMConfig':None,'Links':None,'DriverOpts':None,'GwPriority':0}},'Ports':{'8080/tcp':None}}}
+    image={'Config':{'Healthcheck':{'Test':['CMD','health'],'Interval':15000000000,'Timeout':3000000000,'StartPeriod':20000000000,'Retries':4}}}
+    return config,live,image
+
+
+@pytest.mark.parametrize('field,value', [('read_only',False),('cap_drop',[]),('security_opt',[]),('ports',[{'target':8080,'published':'8080','host_ip':'0.0.0.0','protocol':'tcp'}])])
+def test_actual_runtime_policy_rejects_demonstrated_preflight_drift(field,value):
+    h=load();config,live,image=policy_fixture();config['services']['platform-api'][field]=value
+    with pytest.raises(h.ReleaseError,match='live_'):
+        h.assert_runtime_policy(config,live,image,live['HostConfig']['LogConfig'])
+
+
+@pytest.mark.parametrize('section,field,value', [('HostConfig','Memory',1024),('HostConfig','PidsLimit',64),('HostConfig','ReadonlyRootfs',False),('HostConfig','LogConfig',{'Type':'json-file','Config':{}}),('HostConfig','RestartPolicy',{'Name':'no','MaximumRetryCount':0}),('HostConfig','Tmpfs',{}),('HostConfig','NetworkMode','host'),('HostConfig','Privileged',True),('HostConfig','MaskedPaths',[]),('HostConfig','ReadonlyPaths',[])])
+def test_actual_runtime_policy_rejects_postcreate_drift(section,field,value):
+    h=load();config,live,image=policy_fixture();live[section][field]=value
+    with pytest.raises(h.ReleaseError,match='live_'):
+        h.assert_runtime_policy(config,live,image,{'Type':'json-file','Config':{'max-size':'50m','max-file':'3'}})
+
+
+def test_actual_runtime_policy_matches_current_defaults_and_health_overrides():
+    h=load();config,live,image=policy_fixture();h.assert_runtime_policy(config,live,image,live['HostConfig']['LogConfig'])
+    live['Config']['Healthcheck']['Retries']=4
+    with pytest.raises(h.ReleaseError,match='live_healthcheck'):h.assert_runtime_policy(config,live,image,live['HostConfig']['LogConfig'])
+
+
+def test_actual_runtime_endpoint_contract_rejects_static_ip_alias_and_gateway_drift():
+    h=load();config,live,image=policy_fixture();ep=config['services']['platform-api']['networks']['internal'];ep.update({'ipv4_address':'172.30.0.4','gw_priority':1})
+    actual=live['NetworkSettings']['Networks']['orbbec-agent-platform-internal'];actual.update({'IPAMConfig':{'IPv4Address':'172.30.0.4','IPv6Address':''},'GwPriority':1})
+    h.assert_runtime_policy(config,live,image,live['HostConfig']['LogConfig'])
+    for key,value in [('IPAMConfig',{'IPv4Address':'172.30.0.99','IPv6Address':''}),('Aliases',['api','wrong']),('GwPriority',0)]:
+        changed=copy.deepcopy(live);changed['NetworkSettings']['Networks']['orbbec-agent-platform-internal'][key]=value
+        with pytest.raises(h.ReleaseError,match='live_network_endpoint'):h.assert_runtime_policy(config,changed,image,live['HostConfig']['LogConfig'])
+
+
+def test_actual_runtime_policy_fails_closed_for_unhandled_rendered_policy():
+    h=load();config,live,image=policy_fixture();config['services']['platform-api']['device_cgroup_rules']=['c 1:3 rwm']
+    with pytest.raises(h.ReleaseError,match='unsupported_runtime_setting'):h.assert_runtime_policy(config,live,image,live['HostConfig']['LogConfig'])
+
+
+def test_staged_payload_uses_one_copy_layer_and_runtime_readable_modes(tmp_path):
+    h=load();repo=tmp_path/'repo';repo.mkdir();git(repo,'init','-q');git(repo,'config','user.email','a@b');git(repo,'config','user.name','test')
+    p=repo/'backend/app/a.py';p.parent.mkdir(parents=True);p.write_text('old')
+    git(repo,'add','.');git(repo,'commit','-qm','base');base=git(repo,'rev-parse','HEAD');oldhash=h.digest(p.read_bytes());p.write_text('new')
+    mig=repo/h.MIGRATION;mig.parent.mkdir(parents=True);mig.write_text('migration')
+    git(repo,'add','.');git(repo,'commit','-qm','release');release=git(repo,'rev-parse','HEAD');git(repo,'update-ref','refs/remotes/origin/master',release)
+    dist=tmp_path/'dist';dist.mkdir();(dist/'index.html').write_text('built');(dist/'assets').mkdir()
+    for i in range(90):(dist/'assets'/('chunk-'+str(i)+'.js')).write_text('asset')
+    receipt={'containers':[{'compose_labels':{'com.docker.compose.service':'platform-api'},'image_id':'sha256:'+'a'*64}]}
+    proof=[{'path':'backend/app/a.py','same_baseline':True,'actual':oldhash,'baseline':oldhash}]
+    output=tmp_path/'stage';manifest=h.stage(repo,base,release,receipt,proof,dist,output,static_proof(receipt,base))
+    assert (output/'Dockerfile').read_text().count('COPY ')==1
+    assert len(manifest['files'])==93
+    for f in manifest['files']:
+        assert f['source']=='payload/'+f['destination'].removeprefix('/app/backend/')
+        assert (output/f['source']).stat().st_mode & 0o777==0o644
+    assert all(p.stat().st_mode&0o777==0o755 for p in (output/'payload').rglob('*') if p.is_dir())
+    assert output.stat().st_mode&0o777==0o700
+    h.validate_stage(output)
+
+
+def test_derived_image_layer_budget_rejects_overlay2_overflow():
+    h=load();base={'RootFS':{'Layers':['base']*128},'Config':{'Env':[]}}
+    derived=copy.deepcopy(base);derived['RootFS']['Layers'].append('new');derived['Config']['Env']=['PLATFORM_RELEASE_SHA='+'a'*40]
+    with pytest.raises(h.ReleaseError,match='image_layers'):h.assert_derived_image(base,derived,'a'*40)

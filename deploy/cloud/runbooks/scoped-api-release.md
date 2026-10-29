@@ -41,7 +41,10 @@ Both hashes must match, covering the active index and complete emitted public
 asset graph; retain the detailed file evidence separately. Historical unreferenced
 hashed assets are excluded. The supplied new dist is copied additively: its index
 and current assets replace matching paths while old hashed assets remain for
-cached browser chunks. There is no `RUN` instruction in the generated Dockerfile.
+cached browser chunks. Preserve the old public asset allowlist in the staged
+`.vite/manifest.json`: review a merged manifest whose `load_public_asset_manifest`
+result includes every old and new public asset. Retained files alone are insufficient
+when the SPA serves only manifest-listed hashed assets. There is no `RUN` instruction in the generated Dockerfile.
 
 The readiness receipt must include `containers`, `systemd_units`,
 `nginx_config_files` and `supplement.admin` from the read-only inventory. The
@@ -88,15 +91,18 @@ python3 deploy/cloud/scoped-api-release.py stage \
 ```
 
 Staging creates a private minimal build context, Dockerfile and SHA-256 COPY
-manifest. Only changed committed `backend/app/*.py` files (recursively), the new
+manifest. One rooted payload COPY adds one filesystem layer (the observed base
+has63 layers); the helper rejects a derived image exceeding128 layers. The
+context root stays0700, metadata receipts0600, and payload directories/files
+0755/0644 so the inherited runtime user can read them. Only changed committed `backend/app/*.py` files (recursively), the new
 `backend/migrations/cloud_agent_sync/001_agent_sources.sql` and dist files enter
 the payload. Existing modified Python files require matching live-code proof;
 deletions, renames, symlinks and additional context files are rejected. Review
 manifest destinations and hashes before transport. Staging does not run Docker.
 
 Transport the helper, context, and recipe to a new root-private host operations
-directory by the existing authorized SSH/SCP path. Preserve 0700 directories and
-0600 files, with root ownership; tar extraction must use `--no-same-owner`.
+directory by the existing authorized SSH/SCP path. Preserve the0700 context/operations root,0600 metadata and0755/0644
+payload directories/files, with root ownership; tar extraction must use `--no-same-owner`.
 Do not place output receipts inside the build context. Example host layout:
 `$ops/scoped-api-release.py`, `$ops/context`, `$ops/recipe.json`; `$ops` is an
 absolute root-owned 0700 directory chosen for this accepted release.
@@ -124,13 +130,26 @@ Plan revalidates the original API identity/config, every ordered input hash, the
 Admin process/unit/config hashes and shared Nginx file hashes. It renders the
 original chain twice with explicit old/candidate image and release overrides.
 The old render must reproduce actual effective environment, command, entrypoint,
-user, working directory, mount sources/targets/access and attached networks.
+user, working directory, mount sources/targets/access and attached networks. It
+also compares read-only/privilege/capability/security/port policy, zero resource/PID
+limits, restart/log/tmpfs/namespace defaults, image-plus-Compose healthcheck and
+endpoint static IPs/aliases/driver options/gateway priority. Unhandled rendered
+policy fails closed. Logging defaults are read from the host daemon configuration
+and checked against its active logging driver. The original full HostConfig hash
+is checked against the captured runtime and must be identical after recreation.
 The entire candidate render must differ only in API image and release SHA;
 unrelated services and all remaining Compose fields must compare equal. A
 parity failure stops here and requires investigation; do not weaken the gate or
 recreate services to make the baseline match.
 
 ## Controlled API transaction and explicit rollback
+
+Apply the atomic no-takeover migration first, then plan/apply the API before
+creating any worker container. The helper intentionally rejects new unrelated
+containers. For later API rollback, stop and remove only this rollout's worker
+container, preserving private keys/data and external networks, to restore that
+container baseline; publisher ownership must be separately rolled back through
+its controlled procedure before API recovery.
 
 Before apply, require the fresh verified encrypted backup, separate encrypted
 source ACL/config receipts, accepted migration/office-path ordering and coordination

@@ -171,15 +171,19 @@ def stage(repo, baseline, release, receipt, code_proof, dist, output, static_pro
         if path.is_file():
             payload.append((path.read_bytes(), '/app/backend/app/static/' + path.relative_to(dist).as_posix()))
     private_dir(output, create=True)
-    (output/'payload').mkdir(mode=0o700)
+    (output/'payload').mkdir(mode=0o755)
+    (output/'payload').chmod(0o755)
     files = []
     lines = ['FROM ' + api['image_id'], 'ENV PLATFORM_RELEASE_SHA=' + release]
-    for i, (raw, destination) in enumerate(payload):
-        name = 'payload/' + str(i)
+    for raw, destination in payload:
+        name = 'payload/' + destination.removeprefix('/app/backend/')
+        (output/name).parent.mkdir(parents=True, exist_ok=True)
         save(output/name, raw)
-        # Build payload must be runtime-readable after COPY, while the context remains private.
-        lines.append('COPY --chown=10001:10001 ' + json.dumps([name, destination]))
+        (output/name).chmod(0o644)
         files.append({'source': name, 'destination': destination, 'sha256': digest(raw), 'size': len(raw)})
+    for directory in (output/'payload').rglob('*'):
+        if directory.is_dir(): directory.chmod(0o755)
+    lines.append('COPY --chown=10001:10001 ["payload/", "/app/backend/"]')
     dockerfile = ('\n'.join(lines) + '\n').encode()
     save(output/'Dockerfile', dockerfile)
     manifest = {'version': 1, 'baseline_commit': baseline, 'release_sha': release,
@@ -200,18 +204,39 @@ def validate_stage(root):
     expected = {'Dockerfile', 'manifest.json', 'readiness.json', 'static-baseline.json'}
     assert_static_baseline(read_json(root/'static-baseline.json'), manifest['base_image_id'], manifest['baseline_commit'])
     for item in manifest['files']:
-        require(re.fullmatch(r'payload/[0-9]+', item['source']) is not None, 'artifact_path')
-        raw = private_read(root/item['source'])
+        relative = PurePosixPath(item['source'])
+        destination = item['destination']
+        require(not relative.is_absolute() and '..' not in relative.parts
+                and item['source'] == 'payload/' + destination.removeprefix('/app/backend/')
+                and (destination == '/app/backend/' + MIGRATION.removeprefix('backend/')
+                     or destination.startswith('/app/backend/app/static/')
+                     or (destination.startswith('/app/backend/app/') and destination.endswith('.py'))), 'artifact_path')
+        path = regular(root/item['source'])
+        metadata = path.stat()
+        require(stat.S_IMODE(metadata.st_mode) == 0o644 and metadata.st_uid == os.geteuid(), 'artifact_mode')
+        raw = path.read_bytes()
         require(digest(raw) == item['sha256'] and len(raw) == item['size'], 'artifact_hash')
         expected.add(item['source'])
+    expected_dirs = set()
+    for item in manifest['files']:
+        expected_dirs.update(str(parent) for parent in PurePosixPath(item['source']).parents if str(parent) != '.')
+    actual_dirs = set()
+    for path in root.rglob('*'):
+        require(not path.is_symlink(), 'artifact_type')
+        if path.is_dir():
+            metadata = path.stat()
+            require(stat.S_IMODE(metadata.st_mode) == 0o755 and metadata.st_uid == os.geteuid(), 'artifact_mode')
+            actual_dirs.add(path.relative_to(root).as_posix())
     actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if not p.is_dir()}
-    require(actual == expected, 'context_extra_files')
+    require(actual == expected and actual_dirs == expected_dirs, 'context_extra_files')
     return manifest
 
 
 def assert_derived_image(base, derived, release):
     layers = base['RootFS']['Layers']
-    require(derived['RootFS']['Layers'][:len(layers)] == layers, 'image_layers')
+    require(derived['RootFS']['Layers'][:len(layers)] == layers
+            and len(derived['RootFS']['Layers']) == len(layers) + 1
+            and len(derived['RootFS']['Layers']) <= 128, 'image_layers')
     before, after = copy.deepcopy(base['Config']), copy.deepcopy(derived['Config'])
     env = dict(v.split('=', 1) for v in before.get('Env', []))
     env['PLATFORM_RELEASE_SHA'] = release
@@ -228,10 +253,106 @@ def assert_parity(before, after, image, release):
     require(expected == after, 'compose_parity')
 
 
+def daemon_logging():
+    path = Path('/etc/docker/daemon.json')
+    settings = json.loads(path.read_bytes()) if path.is_file() else {}
+    expected = {'Type': settings.get('log-driver', 'json-file'), 'Config': settings.get('log-opts', {})}
+    active = json.loads(docker('info', '--format', '{{json .LoggingDriver}}'))
+    require(active == expected['Type'], 'daemon_logging')
+    return expected
+
+
+def duration_ns(value):
+    match = re.fullmatch(r'(\d+)(ns|us|ms|s|m|h)', value)
+    require(match is not None, 'unsupported_runtime_setting')
+    return int(match[1]) * {'ns':1, 'us':1000, 'ms':1000000, 's':1000000000, 'm':60000000000, 'h':3600000000000}[match[2]]
+
+
+def assert_runtime_policy(config, live, image, logging_default):
+    """Bounded contract for this API. Unmapped Compose policy fails before mutation."""
+    service = config['services'][SERVICE]
+    allowed = {'image','environment','command','entrypoint','user','working_dir','volumes','networks',
+               'depends_on','container_name','read_only','privileged','cap_add','cap_drop','security_opt',
+               'ports','restart','logging','tmpfs','healthcheck'}
+    require(set(service) <= allowed, 'unsupported_runtime_setting')
+    host = live['HostConfig']
+    expected_security = {'ReadonlyRootfs': bool(service.get('read_only', False)),
+                         'Privileged': bool(service.get('privileged', False))}
+    require(all(host.get(k) == v for k,v in expected_security.items()), 'live_security')
+    for source, target in [('cap_add','CapAdd'),('cap_drop','CapDrop'),('security_opt','SecurityOpt')]:
+        require(sorted(service.get(source) or []) == sorted(host.get(target) or []), 'live_security')
+    masks = ['/proc/acpi','/proc/asound','/proc/interrupts','/proc/kcore','/proc/keys',
+             '/proc/latency_stats','/proc/sched_debug','/proc/scsi','/proc/timer_list','/proc/timer_stats',
+             '/sys/devices/virtual/powercap','/sys/firmware']
+    readonly = ['/proc/bus','/proc/fs','/proc/irq','/proc/sys','/proc/sysrq-trigger']
+    require(sorted(host.get('MaskedPaths', masks)) == sorted(masks)
+            and sorted(host.get('ReadonlyPaths', readonly)) == sorted(readonly), 'live_security_defaults')
+    require(not service.get('ports') and not host.get('PortBindings') and not host.get('PublishAllPorts')
+            and all(not bindings for bindings in live['NetworkSettings'].get('Ports', {}).values()), 'live_ports')
+    zeros = ['Memory','MemorySwap','MemoryReservation','NanoCpus','CpuShares','CpuQuota','CpuPeriod','OomScoreAdj',
+             'BlkioWeight','CpuRealtimePeriod','CpuRealtimeRuntime','CpuCount','CpuPercent','IOMaximumIOps','IOMaximumBandwidth']
+    require(all(host.get(k, 0) == 0 for k in zeros) and host.get('CpusetCpus') == ''
+            and host.get('PidsLimit') is None, 'live_resources')
+    defaults = {'IpcMode':'private','PidMode':'','UTSMode':'','CgroupnsMode':'private','ShmSize':67108864,
+                'OomKillDisable':None,'AutoRemove':False,'Runtime':'runc','Isolation':'','Cgroup':'',
+                'CpusetMems':'','MemorySwappiness':None,'ContainerIDFile':'','VolumeDriver':'','ConsoleSize':[0,0]}
+    require(all(host.get(k, v) == v for k,v in defaults.items()), 'live_namespaces')
+    for key in ['Ulimits','Devices','DeviceRequests','Dns','ExtraHosts','DnsOptions','DnsSearch',
+                'DeviceCgroupRules','GroupAdd','Sysctls','Links','VolumesFrom','UsernsMode','CgroupParent',
+                'BlkioWeightDevice','BlkioDeviceReadBps','BlkioDeviceWriteBps','BlkioDeviceReadIOps','BlkioDeviceWriteIOps']:
+        require(not host.get(key), 'live_unsupported_policy')
+    restart = service.get('restart', 'no')
+    require(restart in ('no','always','unless-stopped'), 'unsupported_runtime_setting')
+    require(host.get('RestartPolicy') == {'Name':restart, 'MaximumRetryCount':0}, 'live_restart')
+    log = service.get('logging')
+    expected_log = {'Type':log['driver'], 'Config':log.get('options', {})} if log else logging_default
+    require(host.get('LogConfig') == expected_log, 'live_logging')
+    tmpfs = {}
+    for value in service.get('tmpfs', []):
+        require(isinstance(value, str) and ':' in value, 'unsupported_runtime_setting')
+        target, options = value.split(':', 1)
+        require(target not in tmpfs, 'unsupported_runtime_setting')
+        tmpfs[target] = sorted(options.split(','))
+    actual_tmpfs = {target:sorted(options.split(',')) for target,options in (host.get('Tmpfs') or {}).items()}
+    require(tmpfs == actual_tmpfs, 'live_tmpfs')
+    health = dict(image['Config'].get('Healthcheck') or {})
+    health_keys = {'test':'Test','interval':'Interval','timeout':'Timeout','start_period':'StartPeriod','start_interval':'StartInterval','retries':'Retries'}
+    rendered_health = service.get('healthcheck') or {}
+    require(set(rendered_health) <= set(health_keys), 'unsupported_runtime_setting')
+    for key,value in rendered_health.items():
+        health[health_keys[key]] = duration_ns(value) if key in ('interval','timeout','start_period','start_interval') else value
+    actual_health = live['Config'].get('Healthcheck') or {}
+    require(set(health) <= set(health_keys.values()) and set(actual_health) <= set(health_keys.values()), 'live_healthcheck')
+    require(all(health.get(k, [] if k == 'Test' else 0) == actual_health.get(k, [] if k == 'Test' else 0)
+                for k in health_keys.values()), 'live_healthcheck')
+    name = service.get('container_name', config.get('name', PROJECT) + '-' + SERVICE + '-1')
+    require(live['Name'].lstrip('/') == name, 'live_container_name')
+    endpoints = service.get('networks') or {}
+    require(bool(endpoints), 'unsupported_runtime_setting')
+    priorities = []
+    for key, endpoint in endpoints.items():
+        endpoint = endpoint or {}
+        require(set(endpoint) <= {'aliases','ipv4_address','ipv6_address','link_local_ips','driver_opts','gw_priority','priority'}, 'unsupported_runtime_setting')
+        network_name = config['networks'][key]['name']
+        actual = live['NetworkSettings']['Networks'].get(network_name, {})
+        ipam = actual.get('IPAMConfig') or {}
+        require(set(ipam) <= {'IPv4Address','IPv6Address','LinkLocalIPs'}, 'live_network_endpoint')
+        require(ipam.get('IPv4Address', '') == endpoint.get('ipv4_address', '')
+                and ipam.get('IPv6Address', '') == endpoint.get('ipv6_address', '')
+                and sorted(ipam.get('LinkLocalIPs') or []) == sorted(endpoint.get('link_local_ips') or [])
+                and sorted(actual.get('Aliases') or []) == sorted({name, SERVICE, *(endpoint.get('aliases') or [])})
+                and (actual.get('DriverOpts') or {}) == (endpoint.get('driver_opts') or {})
+                and not actual.get('Links') and actual.get('GwPriority', 0) == endpoint.get('gw_priority', 0), 'live_network_endpoint')
+        priorities.append((-endpoint.get('priority', 0), key, network_name))
+    require(set(live['NetworkSettings']['Networks']) == {v[2] for v in priorities}, 'live_network_endpoint')
+    require(host.get('NetworkMode') == sorted(priorities)[0][2], 'live_network_mode')
+
+
 def assert_live_contract(config, live, image):
     """Reject stale env-file interpolation or mounted code before comparing candidates."""
     service = config['services'][SERVICE]
     require(not service.get('build'), 'compose_build')
+    assert_runtime_policy(config, live, image, daemon_logging())
     env = dict(v.split('=', 1) for v in image['Config'].get('Env', []))
     env.update({k: str(v) for k, v in service.get('environment', {}).items()})
     require(env == dict(v.split('=', 1) for v in live['Config'].get('Env', [])), 'live_environment')
@@ -312,6 +433,7 @@ def live_api(values):
 def build(stage_root, output):
     manifest = validate_stage(stage_root)
     base = inspect_image(manifest['base_image_id'])
+    require(len(base['RootFS']['Layers']) < 128, 'image_layer_budget')
     private_dir(output, create=True)
     tag = 'orbbec-agent-platform:scoped-api-' + manifest['release_sha']
     # No RUN instructions, package install, network or remote base pull.
@@ -333,7 +455,8 @@ def plan(stage_root, build_receipt, recipe, output):
     readiness = read_json(Path(stage_root)/'readiness.json'); api = api_from_receipt(readiness)
     guardrails(readiness)
     require(live['Id'] == api['id'] and live['Image'] == api['image_id']
-            and digest(canonical(live['Config'])) == api['config_sha256'], 'runtime_changed')
+            and digest(canonical(live['Config'])) == api['config_sha256']
+            and digest(canonical(live['HostConfig'])) == api['hostconfig_sha256'], 'runtime_changed')
     labels = live['Config']['Labels']
     require(recipe['project'] == PROJECT and recipe['files'] == labels['com.docker.compose.project.config_files'].split(',')
             and recipe['working_dir'] == labels['com.docker.compose.project.working_dir']
@@ -353,6 +476,7 @@ def plan(stage_root, build_receipt, recipe, output):
     assert_parity(before, after, built['image_id'], manifest['release_sha'])
     state = {**recipe, 'version': 1, 'old_image': live['Image'], 'old_release': old_sha, 'old_id': live['Id'],
              'new_image': built['image_id'], 'release': manifest['release_sha'], 'api_name': live['Name'],
+             'old_hostconfig': digest(canonical(live['HostConfig'])),
              'inputs': input_hashes(recipe), 'before_config': digest(canonical(before)), 'after_config': digest(canonical(after)),
              'baseline_containers': baseline, 'guardrails': readiness, 'owner': str(uuid.uuid4()), 'deployment_id': uuid.uuid4().hex}
     save(root/'state.json', state)
@@ -425,6 +549,7 @@ def transact(root, rollback=False):
         env = dict(v.split('=', 1) for v in current['Config']['Env'])
         require(current['Image'] == image and env.get('PLATFORM_RELEASE_SHA') == release, 'post_runtime')
         assert_live_contract(old if rollback else new, current, inspect_image(image))
+        require(digest(canonical(current['HostConfig'])) == state['old_hostconfig'], 'api_hostconfig_changed')
         health = current['State'].get('Health', {}).get('Status')
         if health == 'healthy':
             save(root/(action+'.complete.json'), {'action': action, 'image_id': image, 'release_sha': release,
