@@ -16,6 +16,8 @@
 
 Docker 固定显式 `--host unix:///Users/neo/.colima/default/docker.sock`，忽略默认 context/DOCKER_HOST；拒绝其他 endpoint。精确来源镜像为 `sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0`（父 agent 只读 image save/gzip 导入，无 pull）。目标 `--pull=never --network none`、无发布端口、只读根、uid/gid10001、cap-drop ALL/no-new-privileges、log-driver none；`/data` 2GiB、`/tmp`32MiB 均为 tmpfs，内存768MiB。创建后 selective inspect 核验实际边界，不读取 Config.Env。仅使用唯一 attempt label/name/full ID，清理不触碰其他容器。
 
+根预审要求补齐明文资源保密边界：`--memory-swap=768m` 与 memory 完全相等以禁用 swap，`--ulimit core=0` 禁 core dump，`--cpus=1` 限制CPU，两个 tmpfs 均 noexec/nosuid/nodev。创建后必须实际 inspect `Memory=MemorySwap=805306368`、`NanoCpus=1000000000`、core Soft/Hard均0，及两个 Tmpfs均noexec且无exec；仅声明CLI参数不算通过。原d921未创建实际目标，无已有明文/资源需迁移。新增5个资源边界 RED 后实现，独立复审前仍不运行真实目标。
+
 随机本机临时 root 用户/密码只经 stdin 写到目标 0600 tmpfs 文件，由容器内 shell 读取并 export；凭据值不进入 host argv、Docker Config.Env、日志或报告，私钥从不进容器。使用临时 root **不验收原生产 IAM/权限**。准备期目标只运行等待 shell，逐文件提取不依赖镜像 tar。镜像须有 sh/cat/mkdir/curl/sha256sum；缺少依赖明确失败，不换镜像/协议。随后 MinIO 仅监听自身 loopback；30 秒有界健康轮询仅用于启动就绪，签名 S3 请求无重试。一次错误 secret 的签名 GET 必须403，正确临时身份 ListBuckets 必须200。
 
 本机请求经 botocore SigV4 签名后用 `docker exec curl --config -` 的 stdin 发送到同一容器 loopback，无端口转发或共享网络。清单范围为全部可见桶，包含版本配置、current objects、全部 versions、delete markers 和 unfinished multipart uploads；每类最多128页，总记录最多100000，整体120秒限额。输出只含桶名、数量、字节与排序元数据 SHA-256，不输出 keys、version IDs、upload IDs、内容或服务端错误正文。分页重复游标、权限不足和协议错误均首错失败，不修改 IAM。
@@ -25,6 +27,8 @@ Docker 固定显式 `--host unix:///Users/neo/.colima/default/docker.sock`，忽
 ## 已完成的工程验证
 
 首轮 **19 RED**（工具不存在），实现后19通过；自查新增 **3 RED**（两处 SIGTERM 被阶段包装、桶分页字段丢失），修正后新22项与原恢复38项合计 **60通过、0失败，0.51秒**。测试使用真实合成 AEAD、tar、真实本进程 SIGTERM，Docker/MinIO边界为合成；不是实际服务恢复或生产验证。
+
+根预审资源边界新增 **5 RED**（swap/core/CPU/两个可执行tmpfs未拒绝），修正后新27项与原38项合计 **65通过、0失败**；实际资源值仍须真实创建后的 inspect 验证。
 
 ```bash
 /Users/neo/Developer/work/AI-Agent-Platform/backend/.venv/bin/python -m pytest \

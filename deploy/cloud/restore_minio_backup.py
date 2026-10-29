@@ -125,6 +125,10 @@ def boundary(value, *, identity, image, name, attempt):
             or any((value.get('port_bindings') or {}).values())
             or any(item.get('Type') != 'tmpfs' for item in value.get('mounts',[]))
             or set(value.get('tmpfs') or {}) != {'/data','/tmp'}
+            or any('noexec' not in options.split(',') or 'exec' in options.split(',') for options in (value.get('tmpfs') or {}).values())
+            or value.get('memory') != 768*1024*1024 or value.get('memory_swap') != value.get('memory')
+            or value.get('nano_cpus') != 1000000000
+            or [item for item in (value.get('ulimits') or []) if item.get('Name') == 'core'] != [{'Name':'core','Soft':0,'Hard':0}]
             or value.get('log_driver') != 'none' or value.get('read_only') is not True
             or value.get('privileged') is not False or value.get('user') != '10001:10001'
             or value.get('cap_add') or 'ALL' not in (value.get('cap_drop') or [])
@@ -195,6 +199,7 @@ class Target:
                   'exit_code':'.State.ExitCode','status':'.State.Status','network_mode':'.HostConfig.NetworkMode',
                   'ports':'.NetworkSettings.Ports','port_bindings':'.HostConfig.PortBindings','mounts':'.Mounts',
                   'tmpfs':'.HostConfig.Tmpfs','log_driver':'.HostConfig.LogConfig.Type','read_only':'.HostConfig.ReadonlyRootfs',
+                  'memory':'.HostConfig.Memory','memory_swap':'.HostConfig.MemorySwap','nano_cpus':'.HostConfig.NanoCpus','ulimits':'.HostConfig.Ulimits',
                   'privileged':'.HostConfig.Privileged','user':'.Config.User','cap_add':'.HostConfig.CapAdd',
                   'cap_drop':'.HostConfig.CapDrop','security_opt':'.HostConfig.SecurityOpt'}
         template = '{'+','.join(json.dumps(key)+':{{json '+value+'}}' for key,value in fields.items())+'}'
@@ -206,8 +211,9 @@ class Target:
         output = self.docker.capture(['create','--pull=never','--restart=no','--name',self.name,
             '--label','io.orbbec.minio-restore.attempt='+self.attempt,'--network','none','--log-driver','none',
             '--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges:true',
-            '--memory','768m','--pids-limit','128','--tmpfs','/data:rw,nosuid,nodev,size=2g,uid=10001,gid=10001,mode=0700',
-            '--tmpfs','/tmp:rw,nosuid,nodev,size=32m,uid=10001,gid=10001,mode=0700',
+            '--memory','768m','--memory-swap','768m','--cpus','1','--ulimit','core=0','--pids-limit','128',
+            '--tmpfs','/data:rw,noexec,nosuid,nodev,size=2g,uid=10001,gid=10001,mode=0700',
+            '--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=32m,uid=10001,gid=10001,mode=0700',
             '--env','HOME=/tmp','--entrypoint','/bin/sh',self.image,'-ec',START])
         self.identity = output.decode().strip()
         if not CONTAINER_ID.fullmatch(self.identity): raise MinioRestoreError('container_boundary')

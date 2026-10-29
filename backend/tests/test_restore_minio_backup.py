@@ -151,7 +151,8 @@ def test_inventory_denial_or_repeated_cursor_is_failure_without_iam_changes():
 
 def boundary_value():
     return {'id':'a'*64,'image':IMAGE,'name':'/restore-test','labels':{'io.orbbec.minio-restore.attempt':'c'*32},
-            'network_mode':'none','ports':{},'port_bindings':{},'mounts':[], 'tmpfs':{'/data':'rw,uid=10001,gid=10001','/tmp':'rw,uid=10001,gid=10001'},
+            'network_mode':'none','ports':{},'port_bindings':{},'mounts':[], 'tmpfs':{'/data':'rw,noexec,uid=10001,gid=10001','/tmp':'rw,noexec,uid=10001,gid=10001'},
+            'memory':768*1024*1024,'memory_swap':768*1024*1024,'nano_cpus':1000000000,'ulimits':[{'Name':'core','Soft':0,'Hard':0}],
             'log_driver':'none','read_only':True,'privileged':False,'user':'10001:10001','cap_add':[], 'cap_drop':['ALL'],'security_opt':['no-new-privileges:true']}
 
 
@@ -169,6 +170,18 @@ def test_container_boundary_rejects_host_network_storage_root_logging_or_foreign
     else: value['labels'] = {}
     with pytest.raises(mod.MinioRestoreError, match='container_boundary'):
         mod.boundary(value, identity='a'*64, image=IMAGE, name='restore-test', attempt='c'*32)
+
+
+@pytest.mark.parametrize('change', ['swap','core','cpu','data_exec','tmp_exec'])
+def test_actual_boundary_rejects_swap_core_unlimited_cpu_or_executable_tmpfs(change):
+    mod = module(); value = boundary_value()
+    if change == 'swap': value['memory_swap'] = -1
+    elif change == 'core': value['ulimits'] = [{'Name':'core','Soft':-1,'Hard':-1}]
+    elif change == 'cpu': value['nano_cpus'] = 0
+    elif change == 'data_exec': value['tmpfs']['/data'] = 'rw,uid=10001,gid=10001'
+    else: value['tmpfs']['/tmp'] = 'rw,uid=10001,gid=10001'
+    with pytest.raises(mod.MinioRestoreError,match='container_boundary'):
+        mod.boundary(value,identity='a'*64,image=IMAGE,name='restore-test',attempt='c'*32)
 
 
 def test_explicit_colima_endpoint_and_no_default_or_remote_docker():
