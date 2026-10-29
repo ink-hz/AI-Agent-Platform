@@ -10,6 +10,7 @@
 - 打开密文文件后固定使用同一文件描述符，并核对 inode/大小/mtime/ctime。所有三件完成真实 AEAD 解密认证后，才允许角色与数据库创建。数据库预检解密写入丢弃 sink，随后重新流式解密到 pg_restore stdin；不会保存明文 dump。此两遍解密用于防止末尾认证失败发生在数据库写入之后。
 - Docker 只使用 local Unix socket endpoint，拒绝 SSH/TCP daemon；完整 expected container ID 与 image ID 必须精确匹配、容器 running、network=none、无发布端口，无非 tmpfs 挂载。强制 log-driver=none、只读根、非 privileged、cap-drop ALL/无 cap-add、no-new-privileges、UID 999，以及 PGDATA 路径 `/var/lib/postgresql/data` 为 tmpfs。不会按模糊名字或短 ID 选择目标。
 - 仅创建 `restore_agent_platform`、`restore_agent_platform_control`。任一个已存在则全部拒绝，绝不 DROP/clean/覆盖。pg_restore 使用 `--no-owner --no-privileges --exit-on-error --single-transaction`。失败可能留下该次新建的隔离 DB，后续由负责人明确处置或重新创建隔离容器，工具不自动删除。
+- 终止或超时杀掉本机 `docker exec` 客户端，不保证容器内的 pg_restore/数据库会话已经停止，也不能据此认定未提交。失败后由负责人核对唯一自有恢复容器的完整 ID/image，再确认或移除该隔离容器；重新验证必须使用新的空容器和新 expected ID，不重入旧恢复 DB。工具没有自动清理其他容器或回滚已提交数据的承诺。
 - 可通过 `--roles` 提供纯角色名 JSON 数组。缺失角色使用安全 SQL identifier 引用创建为 NOLOGIN；已有角色不改。拒绝包含密码/属性的对象，不复制生产口令、成员授权或登录能力。此步骤仅满足 RLS 等对象对角色名的结构依赖，不证明权限恢复正确。
 
 ## schema 与附件验收
