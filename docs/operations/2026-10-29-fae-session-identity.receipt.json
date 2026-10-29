@@ -1,0 +1,72 @@
+{
+  "anonymous_http_status": {
+    "/admin/sessions": 401,
+    "/api/health": 200,
+    "/api/sessions?agent_id=ai-fae-agent": 401
+  },
+  "artifact_sha256": "98e39bda39da42b66936fd00903401b7cf4d86a9d126b56912d0753d4afe3b5e",
+  "authenticated_browser_acceptance": "assigned_to_user_per_AGENTS.md",
+  "backup": {
+    "backup": "/opt/orbbec-agent-platform/private/fae-session-identity-28272ec4/control-before.dump",
+    "backup_bytes": 382970919,
+    "backup_sha256": "2f39469db39c67af960a93d4a871d8dbbffdb542735187170706d9f8ca606d64",
+    "status": "applied",
+    "temporary_owner_membership_revoked": true,
+    "version": 126
+  },
+  "base_image": "sha256:9a190e14613678110cccd7e291f6a65860737112f3eab854aeedd332235d5ad8",
+  "identity": {
+    "authenticated_browser_test": false,
+    "authorization": "existing_active_management_session_db_projection",
+    "expected_sessions": 90,
+    "legacy_samples_still_unknown": 3,
+    "production_model_calls": 0,
+    "session_details_checked": 90,
+    "status": "verified",
+    "subject_types": {
+      "enterprise_member": 61,
+      "partner_operator": 29
+    },
+    "trusted_names_resolved": 90,
+    "verified_reference_matches": 90
+  },
+  "image_id": "sha256:195465f0e0a740f6a343b5db8f9c52c29422f0125b0377206e7d99927f8ef290",
+  "independent_review": "GO; code and release-script important issues resolved",
+  "production_model_calls": 0,
+  "runtime": {
+    "control": {
+      "migrator_has_owner": false,
+      "version": 126
+    },
+    "identity_code_hashes_match": true,
+    "image_id": "sha256:195465f0e0a740f6a343b5db8f9c52c29422f0125b0377206e7d99927f8ef290",
+    "startup_error_count": 0,
+    "status": "healthy"
+  },
+  "scheduled_identity_export_enabled": true,
+  "scheduled_job_restored_and_exit_code": 0,
+  "schema_version": 126,
+  "signed_backfill_acknowledgements": [
+    16047,
+    16048,
+    16049,
+    16050
+  ],
+  "source_baseline": "a2f15ce8",
+  "source_commit": "28272ec4cd1c15ae165a11ecaaed28e166e70405",
+  "source_legacy_headers_mutated": 0,
+  "source_legacy_unowned_headers": 1527,
+  "static_http_content_checks": 126,
+  "status": "published_and_identity_verified",
+  "tests": {
+    "frontend_build": "passed",
+    "full_frontend_passed": 1451,
+    "full_frontend_preexisting_failures": 8,
+    "full_frontend_skipped": 15,
+    "preexisting_failure_reproduced_on_unmodified_baseline": true,
+    "targeted_backend_passed": 371,
+    "targeted_frontend_passed": 21
+  },
+  "unchanged_other_containers_during_cutover": 24,
+  "unchanged_runtime_configuration": true
+}
