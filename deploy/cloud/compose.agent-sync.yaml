@@ -1,0 +1,48 @@
+name: orbbec-agent-cloud-sync
+
+services:
+  cloud-agent-sync:
+    image: ${PLATFORM_CLOUD_SYNC_IMAGE:?set an immutable release tag or digest}
+    profiles: [cloud-sync]
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: [python, -m, app.cloud_sync.cli, run, --config, /run/cloud-sync/config.json]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+    volumes:
+      - type: bind
+        source: ${PLATFORM_CLOUD_SYNC_PRIVATE_DIR:-/opt/orbbec-agent-platform/private/cloud-agent-sync}
+        target: /run/cloud-sync
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [fae-source, voc-source, replica]
+    healthcheck:
+      test: [CMD, python, -m, app.cloud_sync.cli, health, --config, /run/cloud-sync/config.json]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
+networks:
+  fae-source:
+    name: deploy_default
+    external: true
+  voc-source:
+    name: orbbec-voc_voc_private
+    external: true
+  replica:
+    name: orbbec-agent-platform-internal
+    external: true

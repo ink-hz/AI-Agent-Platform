@@ -801,3 +801,75 @@ def test_publication_waits_for_existing_takeover_before_rechecking_authority(
         operator.rollback()
         operator.close()
         pool.shutdown(wait=True)
+
+
+def test_replica_connections_have_bounded_default_timeouts():
+    from app.cloud_sync.store import CloudSyncStore
+
+    calls = []
+    connection = object()
+
+    def connect(dsn, **kwargs):
+        calls.append((dsn, kwargs))
+        return connection
+
+    store = CloudSyncStore(
+        "unused-test-dsn", cipher=FieldCipher(b"e" * 32), connect=connect
+    )
+    assert store._connect() is connection
+    assert calls[0][1]["connect_timeout"] == 3
+    assert "-c statement_timeout=10000" in calls[0][1]["options"]
+    assert "-c lock_timeout=5000" in calls[0][1]["options"]
+
+
+@pytest.mark.postgres
+def test_publication_lock_timeout_rolls_back_without_blocking_other_agents(environment):
+    from time import monotonic
+
+    from app.cloud_sync.store import CloudSyncStore, CloudSyncStoreError
+
+    env = environment
+    env.cloud.publish_snapshot(snapshot(), (record(),))
+    previous = session_row(env)
+    state = env.cloud.source_statuses()[AGENT]
+    bounded = CloudSyncStore(
+        role_dsn(env.dsn, "cloud_fae_test"),
+        cipher=env.cipher,
+        lock_timeout_ms=100,
+        statement_timeout_ms=1000,
+    )
+    with psycopg.connect(env.dsn) as blocker:
+        blocker.execute("select platform_replica.lock_agent_writer(%s,true)", (AGENT,))
+        started = monotonic()
+        with pytest.raises(CloudSyncStoreError, match="^publish_failed$"):
+            bounded.publish_snapshot(
+                snapshot(NOW + timedelta(seconds=10)), (record(turns=7),)
+            )
+        assert monotonic() - started < 3
+        assert (
+            env.other.publish_snapshot(
+                snapshot(agent="ai-daq-fae-agent"),
+                (record(key="c", agent="ai-daq-fae-agent"),),
+            ).changed_sessions
+            == 1
+        )
+        assert session_row(env) == previous
+        assert env.cloud.source_statuses()[AGENT] == state
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"connect_timeout": 0},
+        {"connect_timeout": 4},
+        {"statement_timeout_ms": 0},
+        {"statement_timeout_ms": 10001},
+        {"lock_timeout_ms": 0},
+        {"lock_timeout_ms": 5001},
+    ],
+)
+def test_replica_connection_timeouts_cannot_disable_or_exceed_worker_budget(kwargs):
+    from app.cloud_sync.store import CloudSyncStore, CloudSyncStoreError
+
+    with pytest.raises(CloudSyncStoreError, match="timeout_config_invalid"):
+        CloudSyncStore("unused-test-dsn", cipher=FieldCipher(b"e" * 32), **kwargs)

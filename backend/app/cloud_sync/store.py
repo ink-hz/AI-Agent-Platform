@@ -37,14 +37,35 @@ class CloudSyncStore:
         *,
         cipher: FieldCipher,
         connect: Callable[..., Any] = psycopg.connect,
+        connect_timeout: int = 3,
+        statement_timeout_ms: int = 10_000,
+        lock_timeout_ms: int = 5_000,
     ):
+        for value, maximum in (
+            (connect_timeout, 3),
+            (statement_timeout_ms, 10_000),
+            (lock_timeout_ms, 5_000),
+        ):
+            if type(value) is not int or not 0 < value <= maximum:
+                raise CloudSyncStoreError("timeout_config_invalid")
+        self._connect_timeout = connect_timeout
+        self._statement_timeout_ms = statement_timeout_ms
+        self._lock_timeout_ms = lock_timeout_ms
         self._database_url = database_url
         self._cipher = cipher
         self._connect_factory = connect
         self._replica = ReplicaStore(database_url, cipher=cipher)
 
     def _connect(self):
-        return self._connect_factory(self._database_url, row_factory=dict_row)
+        return self._connect_factory(
+            self._database_url,
+            row_factory=dict_row,
+            connect_timeout=self._connect_timeout,
+            options=(
+                f"-c statement_timeout={self._statement_timeout_ms} "
+                f"-c lock_timeout={self._lock_timeout_ms}"
+            ),
+        )
 
     def publish_snapshot(
         self, snapshot: AgentSnapshot, records: tuple[dict, ...]

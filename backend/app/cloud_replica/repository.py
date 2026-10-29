@@ -177,9 +177,10 @@ class ReplicaObservabilityRepository:
 
     def _source_freshness(self, status: AgentSourceStatus) -> str:
         success = status.last_source_success_at
+        stale_after = min(self._stale_after, timedelta(seconds=60)) if status.mode == "cloud_direct" else self._stale_after
         if (
             success is None
-            or self._now() - success > self._stale_after
+            or self._now() - success > stale_after
             or (status.last_failure_at is not None and status.last_failure_at >= success)
         ):
             return "stale"

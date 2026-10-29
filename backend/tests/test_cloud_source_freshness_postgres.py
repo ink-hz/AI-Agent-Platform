@@ -29,10 +29,10 @@ def test_encrypted_publication_reader_role_and_http_preserve_independent_source_
         connection.execute("create role freshness_fae login in role platform_cloud_sync")
         connection.execute("create role freshness_admin login in role platform_cloud_sync")
         connection.execute("create role freshness_reader login in role platform_replica_read")
-        connection.execute("""insert into platform_replica.agent_sources
-            (agent_id,source_kind,mode,publisher,writer_role) values
-            ('ai-fae-agent','fae','cloud_direct','cloud','freshness_fae'),
-            ('ai-admin-agent','admin','cloud_direct','cloud','freshness_admin')""")
+        for agent, kind, role in (("ai-fae-agent", "fae", "freshness_fae"),
+                                  ("ai-admin-agent", "admin", "freshness_admin")):
+            connection.execute("select platform_replica.set_agent_publisher(%s,%s,%s,%s,%s,%s)",
+                               (agent, kind, "cloud_direct", "cloud", role, "fixture-cloud"))
 
     def role_dsn(role):
         parts = urlsplit(dsn)

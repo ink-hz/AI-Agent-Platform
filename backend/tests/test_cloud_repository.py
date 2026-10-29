@@ -761,6 +761,21 @@ def test_agent_source_failure_is_not_hidden_by_another_agents_recent_batch():
     assert repository.fae_operational_aggregate(now - timedelta(days=1), now + timedelta(seconds=1))["data_as_of"] == success
 
 
+def test_cloud_direct_observation_expires_after_one_minute_without_worker_progress():
+    from app.observability.models import AgentSourceStatus
+
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    repository, _ = _repository(now, ())
+    status = AgentSourceStatus(
+        mode="cloud_direct", publisher="cloud", source_kind="fae",
+        last_source_success_at=now - timedelta(seconds=61),
+    )
+    assert repository._source_freshness(status) == "stale"
+    assert repository._source_freshness(status.model_copy(update={
+        "mode": "office", "publisher": "office",
+    })) == "fresh"
+
+
 def test_recent_failure_makes_source_stale_even_inside_freshness_window():
     now = datetime(2026, 10, 29, 8, tzinfo=UTC)
     record = _record(now, agent_id="ai-fae-agent")
