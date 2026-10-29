@@ -3,6 +3,8 @@
 日期：2026-10-23。用途：为[整体安全设计](../superpowers/specs/2026-10-23-platform-security-architecture-design.md)提供事实依据。
 这是限定范围的架构盘点，不是完整安全审计、漏洞利用报告或生产安全认证。
 
+**2026-10-29 校正**：下文保留10-23工作树和运行观察的历史口径。第二批重新逐字核对生产后，ADMIN 的 routes/session/orchestrator/data_flywheel/postgres_data_flywheel 已是 `048d0c89a92fae1ec56623b134bedb883f8549a9` 主体绑定实现，server 含后续 `095a0da` 改动；旧 master/current checkout 尚未包含该安全修复，不能把旧工作树缺口当作当前线上缺口。首批备份、PHP、续期也已有新结果。最新版本和验证范围见[首批执行](../operations/2026-10-29-security-first-batch-results.md)及[第二批执行](../operations/2026-10-29-security-second-batch.md)，其余旧观察不自动更新为当前事实。
+
 ## 1. 方法和版本口径
 
 - 平台起始工作基线 `0f636359`，其父版本为本次问题调查时的 `d0956a3a`；远端主线核对为 `d0956a3a`。
