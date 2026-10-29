@@ -13,6 +13,10 @@
 
 ## 执行状态与失败恢复
 
+同一生命周期契约同时约束证据与恢复：preflight 的活源检查只决定能否开始，不能代替停机后实际捕获字节的验证；CLI 返回/异常也不能代替 daemon 的最终状态。三个 rootfs 配置须在实际 docker cp→加密管道中透明转发并校验 tar：恰好一个准确 basename 的普通文件、文件最多16MiB且归档最多17MiB、实际内容 SHA 与固定清单一致；拒绝链接、稀疏文件、额外成员与非零尾部。任何成员/摘要/截断/producer 退出异常均使整集失败，即使加密器成功。捕获前后仍保留完整 cold fence。内部 copy-config 子进程仅输出原 tar 字节、不打印诊断，docker cp 留在 producer 进程组供原有清理器管理，不落宿主明文。
+
+写入 stop_call_started 后，若 stop 的观察被异常或 TERM 打断，finally 只观察同完整 ID 的 daemon，不能再次 stop，也不能因单次仍 running 就认定终局。对尚未确认停止的源，恢复阶段额外最多观察原优雅停止时限加35秒（Web65秒、DB155秒），包含瞬时 inspect 失败；观察到 exited/PID0 才恢复同 ID。超时仍未知则保留 blocked journal，DB 未确认 ready 绝不启动 Web。此窗口明确接受等待正在进行的原 stop，避免协调器先退出、daemon 随后才停而遗留停机。
+
 1. 独立 work-root 及 private 子目录必须当前 root 拥有且模式0700；ciphertext 子目录必须 UID10001、0700。private 内独立 sdk-cold.lock，0600普通文件。锁前后均复查 source-inflight.json / backup-inflight.json；残留/符号链接均拒绝新 attempt。
 2. 只读 preflight 核对源最初 running/健康、准确身份、完整挂载/HostConfig、目录 inode/权限、私有 sdk.env/sdk-compose.yaml 的0600/属主及 stat身份、三个配置的现场 hash、磁盘峰值空间、公钥、加密 image。source 环境变量和值不做宿主 inspect/export。发现任何额外 RW 挂载、宿主 writable FD，或任何额外 DB 私网 peer，均拒绝。检查只能证明所观察范围；不允许并行其他运维绕开此窗口。
 3. 先写 Web stop intent 并 fsync，再仅对原 Web 执行30秒优雅 stop；核对 daemon stopped/PID0、原进程 start-time 与 cgroup.procs 全部退出。CLI超时不代表没有执行，使用随后实际 daemon 事实；无法确认则不捕获。
