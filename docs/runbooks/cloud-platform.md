@@ -751,6 +751,47 @@ checked before and after captures; any change stops this set without advancing
 the old success marker. Failed or incomplete encrypted artifacts are retained for
 diagnosis; there is no blanket cleanup or automatic retry.
 
+The 2026-10-29 independent review of `e6082080` blocked installation for a shared
+lifecycle error: killing the Docker CLI on timeout, or terminating the helper,
+does not prove that copy/encryption/retention or an exec-side pg_dump stopped.
+The revised candidate implements one attempt owner under flock: durable
+private in-flight identities, unique labels/names and validated container IDs,
+explicit create/start, and cleanup plus terminal-absence confirmation on normal
+exit, error, timeout, SIGINT and SIGTERM. Host process groups must be reaped too.
+If cleanup cannot be confirmed, the in-flight journal remains and the next job
+must fail admission; a CLI error is not evidence that DB effects ceased. SIGKILL
+cannot run Python cleanup, so its persisted journal requires explicit operator
+reconciliation. Never remove a journal simply to make the timer green.
+
+To make the PG producer ownable, its approved replacement is a dedicated client
+container from the running PostgreSQL image ID, uid 999, read-only root,
+cap-drop ALL/no-new-privileges and `--network container:<exact PG container ID>`.
+It connects to that PG's verified internal IP inside the shared namespace. The
+parent's 2026-10-29 read-only route check for `172.30.0.2` returned a local route
+via `dev lo`: this preserves the old local-socket transport responsibility
+without sending backup plaintext across a shared bridge. Current 127/::1 HBA
+rules are trust, so a loopback connection with a password file would not prove
+password authentication. The self-IP follows the existing SCRAM host rule;
+`PGREQUIREAUTH=scram-sha-256` requires the real exchange. Failures do not change
+HBA, fall back to trust, switch to a bridge, or rebuild business networking.
+Only the exact existing `postgres-owner-password` file is bound read-only; the
+host verifies volume/file metadata without reading its content. The client
+creates a 0600 libpq-escaped PGPASSFILE only in private tmpfs and sets a read-only
+transaction default. No whole secret volume, password argument or host-side
+password value is permitted. The shared PG service container is never stopped
+or used for an unowned exec. These lifecycle changes have local RED/GREEN
+timeout/signal tests and still require the same independent review and real
+Docker/PG authentication before production use. The helper validates each
+daemon-side State.ExitCode before declaring a capture successful; start/attach
+CLI return codes alone are insufficient. AutoRemove is disabled. Copy, each PG
+client, each encryptor and retention have separate attempt labels/IDs and their
+actual exit codes remain in the lifecycle receipt before removal. Helper
+containers never use the three business Compose service labels. Cleanup confirms
+absence before releasing flock; failure leaves `private/backup-inflight.json`
+and denies a second job. All host CLI/native producer process groups are also
+killed/reaped on failure or signal. Only owned helper IDs are stopped; never
+the shared PostgreSQL service.
+
 The host recovery public key remains root-owned 0600, exactly 32 bytes. Only that
 public file is mounted read-only into a networkless, immutable-image preparation
 process, which atomically copies it into the dedicated backup-secrets volume as
@@ -768,7 +809,10 @@ runs separately using the same immutable API image and existing import-secrets
 volume/network; its status and counts are atomically recorded in the set's
 `.retention.json` and `private/last-backup-retention.json`. A retention failure
 returns nonzero and records the failure, while the valid backup/marker remain
-available. Only successful backup **and** retention produce `CLOUD_BACKUP_OK`.
+available. Retention interruption records `operation_completion=unknown` rather
+than inventing a rollback; cleanup records its actual exit and whether execution
+has stopped. Only successful backup, retention **and confirmed owned-work cleanup**
+produce `CLOUD_BACKUP_OK`.
 `private/last-backup-failure.json` records stable stages and available exit codes,
 without stderr, configuration contents, keys or database text. Retention here is
 replica data expiry; it is not an encrypted-archive deletion policy.
@@ -781,11 +825,20 @@ The installed helper has a read-only integrity/freshness command:
 
 It reads the marker and complete manifest and rehashes all three ciphertext files,
 without Docker calls, retention or writes. It emits bounded safe JSON. Missing,
-corrupt, future-dated or older evidence exits nonzero; failed/pending retention
-is reported independently and also makes the CLI exit nonzero. The 26-hour value
+corrupt, future-dated or older evidence exits nonzero. The checker opens the
+existing lock O_RDONLY and probes a nonblocking shared flock; it never creates
+or writes a lock. A journal with no active exclusive owner is `unresolved_work`
+and nonzero. With an active owner it still verifies the last complete set and
+reports `active_job=true`, without hiding stale evidence or known retention
+failure. JSON `status=fresh, backup_status=fresh, retention_status=completed` is
+healthy; `status=in_progress, backup_status=fresh, retention_status=pending`
+with an active owner is also exit zero, explicitly awaiting current retention.
+Failed retention or pending retention without an active owner remains nonzero.
+The 26-hour value
 is an operational threshold, **not an agreed business RPO**. This command performs
 a full ciphertext read and is intended for deliberate checks; an external alert
-receiver or periodic monitor has not been connected by this change.
+receiver is not connected by the helper. Health timer/service configuration and
+its actual deployment are a separate operational delivery.
 
 Copy all three `.orb` files and the private manifest to an approved recovery host,
 verify ciphertext SHA-256/size, and restore with the local recovery private key.

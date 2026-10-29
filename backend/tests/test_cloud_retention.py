@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from test_cloud_backup_runtime import fixture_runtime
+from test_cloud_backup_runtime import fixture_runtime, container_command
 
 
 ROOT = Path(__file__).parents[2]
@@ -30,9 +30,9 @@ def test_backup_and_restore_scripts_never_create_plaintext_dump_files(tmp_path):
         assert "10001:10001" in encryptor and "--read-only" in encryptor
         assert "no-new-privileges:true" in encryptor and "none" in encryptor
         assert "TMPDIR=/backups" in encryptor
-    assert "pg_dump" in runner.pipelines[0][0]
-    assert "pg_dump" in runner.pipelines[1][0]
-    retention = next(command for command, stage in runner.commands if stage == "retention")
+    assert any('exec pg_dump' in part for part in runner.pipelines[0][0])
+    assert any('exec pg_dump' in part for part in runner.pipelines[1][0])
+    retention = container_command(runner, 'retention')
     assert "orbbec-agent-platform-internal" in retention
 
 

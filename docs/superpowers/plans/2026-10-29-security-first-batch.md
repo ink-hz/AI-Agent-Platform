@@ -32,6 +32,72 @@ Consumes: running `platform-api`, `platform-postgres` and `platform-minio` Docke
 
 Commands: `backend/.venv/bin/python -m pytest backend/tests/test_cloud_backup_runtime.py backend/tests/test_cloud_backup.py backend/tests/test_cloud_retention.py backend/tests/test_cloud_deployment.py backend/tests/test_cloud_transport.py -q`; `git diff --check`.
 
+### Task 1 execution-lifecycle review (2026-10-29, implementation gate)
+
+Independent review of `e6082080` identified one common contract failure across
+public-key copy, encryption, retention and `docker exec pg_dump`: the host
+Docker CLI process was treated as the owner of daemon-side work. A CLI timeout
+or helper SIGTERM does not establish that container/exec work stopped. Therefore
+the old finally/flock boundary could release while retention still changed the
+database, or while an encryptor or PG dump still ran. Adding another local
+`docker rm` call to one branch would leave the same failure in adjacent stages.
+
+The orchestrator owns each attempt's complete lifecycle while holding flock:
+persist its unique operation/container identities before creation; create and
+validate only this attempt's labelled containers; attach/start; on normal exit,
+failure, timeout, SIGINT or SIGTERM stop/remove only these owned containers and
+confirm their terminal absence before releasing the lock. Host processes and
+their process groups are also reaped. If daemon reachability or cleanup cannot
+be established, persist an unresolved-operation journal and deny a subsequent
+backup rather than infer success or silently retry the business operation. A
+hard SIGKILL cannot run Python cleanup; the durable journal is the admission
+boundary for the next run and requires explicit operator reconciliation.
+
+The parent approved PG producer adjustment uses an independently owned, named client
+container from the running PostgreSQL immutable image, sharing the exact PG
+container network namespace (`--network container:<PGID>`) and targeting its
+verified internal IP. The parent verified `ip route get 172.30.0.2` in that
+namespace routes locally via `dev lo`, preserving the old local-only dump
+transport responsibility without a shared-bridge plaintext path. It mounts only the existing owner-password
+file read-only, materializes a protected PGPASSFILE in its private tmpfs, and runs
+pg_dump with a read-only transaction default. Values never enter host memory,
+Docker environment arguments or logs. The shared PG container is never stopped
+or used for an unowned exec. Actual secret-volume/file metadata and this change
+were confirmed by the parent before implementation: named volume
+`orbbec-agent-platform-postgres-secrets`, exact regular file
+`/var/lib/docker/volumes/orbbec-agent-platform-postgres-secrets/_data/postgres-owner-password`,
+uid/gid 999, mode 0400, 65 bytes; internal PG IP `172.30.0.2`. The host may
+inspect metadata but must not open/read the password file. Real production
+authentication/backup remains a separate parent-controlled validation. Loopback
+127/::1 presently uses trust, so using 127 would not prove password authentication.
+The self-IP matches the existing SCRAM host rule; `PGREQUIREAUTH=scram-sha-256`
+requires that exchange and fails explicitly without changing HBA or network path.
+
+Already complete backup manifests/markers remain complete if retention is
+interrupted; retention records failure or unknown completion separately, never
+inventing rollback. If cleanup is unresolved, neither a failure receipt nor an
+expired CLI deadline proves execution has ended.
+
+- [x] RED: simulate daemon-owned workers with real child processes; show CLI
+  timeout and helper SIGTERM leave no live owned workload before flock is
+  reusable, while shared PG/unrelated workers survive. Cover copy, both pipeline
+  roles and retention, cleanup failure journal, and next-run admission denial.
+- [x] GREEN: unify lifecycle owner and signal handling; local process, PGPass
+  escaping, metadata and exact-secret-file-scope tests validate the revised PG
+  client contract without reading production values. Real Docker/PG authentication
+  remains a separate gate before the full production backup.
+- [ ] Repeat the affected regression and independent review; production backup
+  remains blocked until this gate passes. Real daemon/DB/scheduler evidence and
+  off-host restoration remain the parent's separate responsibility.
+
+The readonly health contract distinguishes a live flock owner from orphaned
+in-flight intent using O_RDONLY + nonblocking shared flock on the existing file.
+An active owner does not suppress stale/corrupt backup or known retention failure.
+After a new complete set commits, active pending retention is explicit
+`status=in_progress, backup_status=fresh, retention_status=pending` (exit zero),
+not a false completed/failed state. A journal with no owner is `unresolved_work`
+(nonzero); a checker never creates/writes the lock or performs cleanup.
+
 ## Task 2: ZenTao PHP security candidate and controlled cutover
 
 Files: `deploy/sdk/` PHP-specific candidate/verification assets, `backend/tests/test_sdk_php_security.py`, `docs/operations/2026-10-29-sdk-php-security.md`.

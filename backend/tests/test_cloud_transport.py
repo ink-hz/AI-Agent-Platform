@@ -47,14 +47,14 @@ def test_forced_import_rejects_commands_and_prints_bounded_acknowledgement():
 
 
 def test_import_secret_volume_contains_every_key_required_by_import_and_retention(tmp_path):
-    from test_cloud_backup_runtime import fixture_runtime
+    from test_cloud_backup_runtime import fixture_runtime, container_command
 
     stage = (ROOT / "deploy" / "cloud" / "remote-stage.sh").read_text(
         encoding="utf-8"
     )
     _, runtime, runner, _ = fixture_runtime(tmp_path)
     runtime.run()
-    retention = next(command for command, stage in runner.commands if stage == "retention")
+    retention = container_command(runner, 'retention')
 
     import_copy = next(
         line for line in stage.splitlines()
