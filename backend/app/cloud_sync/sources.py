@@ -62,6 +62,46 @@ def _tables(profile: SourceProfile) -> dict[tuple[str, str], tuple[str, ...]]:
     return result
 
 
+def _snapshot_query(profile: SourceProfile, schema: str, table: str,
+                    columns: tuple[str, ...]) -> sql.Composed:
+    """Transfer only business/identity fields consumed by the replica encoder.
+
+    Session metadata stays intact for ownership and verified Admin display.
+    Turn metadata only establishes its JSON object shape, plus DAQ agent scope.
+    Citations are not serialized by SanitizedTurnRecord; validate their complete
+    array-of-objects shape before returning an empty array. Malformed values
+    pass through unchanged so projection still fails visibly, never repairs them.
+    """
+    fields = []
+    is_turn = table in {'chat_turns', 'admin_chat_turns'}
+    for column in columns:
+        identifier = sql.Identifier(column)
+        if is_turn and column == 'done':
+            consumed = ('status', 'engine', 'backend', 'actual_provider_model', 'error_type')
+            pairs = []
+            for key in consumed:
+                pairs.extend((sql.Literal(key), sql.SQL('{}::jsonb -> {}').format(identifier, sql.Literal(key))))
+            fields.append(sql.SQL("case when jsonb_typeof({}::jsonb)='object' then jsonb_build_object({}) else {}::jsonb end as {}").format(
+                identifier, sql.SQL(',').join(pairs), identifier, identifier))
+        elif is_turn and column == 'metadata':
+            kept = (sql.SQL("jsonb_build_object('agent_id', {}::jsonb -> 'agent_id')").format(identifier)
+                    if profile.kind == 'daq' else sql.SQL("'{}'::jsonb"))
+            fields.append(sql.SQL("case when jsonb_typeof({}::jsonb)='object' then {} else {}::jsonb end as {}").format(
+                identifier, kept, identifier, identifier))
+        elif is_turn and column == 'sources':
+            fields.append(sql.SQL("""case when jsonb_typeof({}::jsonb)='array' then
+                case when not exists (
+                    select 1 from jsonb_array_elements({}::jsonb) element(value)
+                    where jsonb_typeof(element.value) is distinct from 'object'
+                ) then '[]'::jsonb else {}::jsonb end
+                else {}::jsonb end as {}""").format(
+                    identifier, identifier, identifier, identifier, identifier))
+        else:
+            fields.append(identifier)
+    return sql.SQL('select {} from {}.{} order by id').format(
+        sql.SQL(',').join(fields), sql.Identifier(schema), sql.Identifier(table))
+
+
 def _read_dsn(path_value: str) -> str:
     descriptor = None
     try:
@@ -169,8 +209,7 @@ class DatabaseAgentSource:
                     for (table_schema, table), columns in required.items():
                         if table == 'daq_installation_identity':
                             continue
-                        query = sql.SQL('select {} from {}.{} order by id').format(
-                            sql.SQL(',').join(map(sql.Identifier, columns)), sql.Identifier(table_schema), sql.Identifier(table))
+                        query = _snapshot_query(self.profile, table_schema, table, columns)
                         tables[table] = fetch_bounded(query)
                     if self.profile.kind == 'daq':
                         if (any(not str(row['external_session_id']).startswith('daq:') for row in tables['chat_sessions'])
