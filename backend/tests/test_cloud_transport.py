@@ -1,11 +1,44 @@
 from pathlib import Path
 import re
+import json
+import os
+import shlex
+import subprocess
+import sys
+
+import pytest
 
 
 ROOT = Path(__file__).parents[2]
 PUSH = ROOT / "deploy" / "cloud" / "push-replica.sh"
 FORCED = ROOT / "deploy" / "cloud" / "forced-import.sh"
 BOOTSTRAP = ROOT / "deploy" / "cloud" / "bootstrap-keys.sh"
+
+
+@pytest.mark.parametrize('setting,expected', [(None, []), ('false', []), ('true', ['--include-verified-subject']), ('invalid', None)])
+def test_scheduled_export_requires_explicit_valid_identity_opt_in(tmp_path, setting, expected):
+    key = tmp_path / 'key'
+    key.write_text('test key'); key.chmod(0o600)
+    queue = tmp_path / 'queue'; queue.mkdir()
+    log = tmp_path / 'args.json'
+    exporter = tmp_path / 'python'
+    exporter.write_text(f'#!{sys.executable}\nimport json,sys\nfrom pathlib import Path\nPath({str(log)!r}).write_text(json.dumps(sys.argv[1:]))\n')
+    exporter.chmod(0o700)
+    values = dict(CLOUD_SYNC_SSH_HOST='test', CLOUD_SYNC_SSH_KEY=str(key),
+                  CLOUD_SYNC_QUEUE_DIR=str(queue), CLOUD_SYNC_BACKEND_DIR=str(tmp_path), CLOUD_SYNC_PYTHON=str(exporter))
+    if setting is not None:
+        values['CLOUD_SYNC_INCLUDE_VERIFIED_SUBJECT'] = setting
+    config = tmp_path / 'sync.env'
+    config.write_text(''.join(f'{key}={shlex.quote(value)}\n' for key, value in values.items()))
+    config.chmod(0o600)
+    environment = {k: v for k, v in os.environ.items() if k != 'CLOUD_SYNC_INCLUDE_VERIFIED_SUBJECT'}
+    result = subprocess.run(['/bin/bash', str(PUSH), str(config)], capture_output=True, text=True, env=environment)
+    if expected is None:
+        assert result.returncode != 0
+        assert not log.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert json.loads(log.read_text()) == ['-m', 'app.cloud_replica.cli', 'export', *expected]
 
 
 def test_push_is_noninteractive_stdin_only_and_deletes_after_exact_ack():

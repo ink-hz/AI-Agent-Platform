@@ -1,3 +1,14 @@
+import type { SessionSummary } from "./types";
+
+export function formatFaeSender(session: SessionSummary) {
+  const ref = session.verified_subject;
+  if (!ref) return "提问人未知";
+  const kind = ref.subject_type === "enterprise_member" ? "内部用户" : "外部用户";
+  return session.primary_sender_name?.trim()
+    ? `${session.primary_sender_name.trim()} · ${kind}`
+    : `${kind} · 姓名暂不可用 · ${ref.subject_id}`;
+}
+
 export function formatSenderIdentity(
   name: string | null,
   department: string | null,

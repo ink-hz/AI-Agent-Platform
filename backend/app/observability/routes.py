@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Literal
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from .models import FlywheelFilters, SessionFilters, SourceKind
 from .repository import ObservabilityReadError
+from .identity import FaeSessionIdentity
 
 
 router = APIRouter(prefix="/api", tags=["observability"])
@@ -18,6 +20,15 @@ def _service(request: Request):
 
 def _unavailable(error: ObservabilityReadError):
     raise HTTPException(status_code=503, detail="observability unavailable") from error
+
+
+async def _with_identity(request: Request, result):
+    reader = getattr(request.app.state, "fae_session_identity", None)
+    if reader is None:
+        return FaeSessionIdentity.project(result, {})
+    return await asyncio.to_thread(
+        reader.hydrate, result, getattr(request.state, "auth_context", None)
+    )
 
 
 @router.get("/agents")
@@ -63,7 +74,7 @@ async def list_sessions(
         date_from=date_from, date_to=date_to,
     )
     try:
-        return await _service(request).list_sessions(filters, limit, offset)
+        return await _with_identity(request, await _service(request).list_sessions(filters, limit, offset))
     except ObservabilityReadError as error:
         _unavailable(error)
 
@@ -71,7 +82,7 @@ async def list_sessions(
 @router.get("/sessions/{session_key}")
 async def get_session(session_key: str, request: Request):
     try:
-        result = await _service(request).get_session(session_key)
+        result = await _with_identity(request, await _service(request).get_session(session_key))
     except ObservabilityReadError as error:
         _unavailable(error)
     if result is None:

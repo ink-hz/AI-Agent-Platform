@@ -653,6 +653,21 @@ def build_office_recipient_directory(
     )
 
 
+def build_fae_session_identity(config: Config):
+    from .observability.identity import FaeSessionIdentity, FaeSubjectRepository
+
+    content_codec = None
+    if config.content_encryption_keyring_file:
+        content_codec = ContentCodec(IdentityKeyring.from_file(
+            config.content_encryption_keyring_file,
+            expected_purpose="platform-content-encryption", expected_key_length=32,
+        ))
+    return FaeSessionIdentity(
+        FaeSubjectRepository(read_secret_file(config.control_plane.control_database_url_file)),
+        content_codec=content_codec,
+    )
+
+
 def build_partner_service(config: Config) -> PartnerService:
     """Load the partner identity boundary independently of Agent Brain/relay."""
     from .control_plane.partner_identity_crypto import PartnerProviderIdentityCodec
@@ -904,6 +919,7 @@ def create_app(
     hr_position_scope=None,
     access_history_repository=None,
     organization_directory=None,
+    fae_session_identity=None,
 ) -> FastAPI:
     owns_review_service = review_service is None
     owns_identity_auth = identity_auth is None
@@ -1569,6 +1585,9 @@ def create_app(
     app.state.cluster_monitor = cluster_monitor
     app.state.fleet_service = fleet_service
     app.state.observability_service = observability_service
+    if identity_enabled and owns_identity_auth and fae_session_identity is None:
+        fae_session_identity = build_fae_session_identity(config)
+    app.state.fae_session_identity = fae_session_identity
     app.state.operations_service = operations_service
     app.state.operations_scheduler = operations_scheduler
     app.state.remote_health_monitor = remote_monitor

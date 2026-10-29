@@ -47,3 +47,30 @@ it("does not invent a questioner for an unresolved Admin session", () => {
   );
   expect(list).not.toContain("测试员工");
 });
+
+
+it.each([['enterprise_member', '内部用户'], ['partner_operator', '外部用户']] as const)("shows trusted FAE %s identity in list and replay", (subject_type, label) => {
+  const session = { ...adminSession, source_kind: 'fae', agent_id: 'ai-fae-agent',
+    verified_subject: {subject_id: '00000000-0000-4000-8000-000000000123', subject_type},
+  } as SessionSummary;
+  for (const html of [
+    renderToStaticMarkup(<SessionListItem session={session} detailHref="/admin/sessions/test" />),
+    renderToStaticMarkup(<SessionReplay session={{...session, turns: []}} closureSummaries={{}} />),
+  ]) {
+    expect(html).toContain('测试员工');
+    expect(html).toContain(label);
+  }
+});
+
+
+it("keeps legacy FAE identity unknown and verified missing names distinguishable", () => {
+  const session = {...adminSession, source_kind: 'fae', agent_id: 'ai-fae-agent', primary_sender_name: null} as SessionSummary;
+  const legacy = renderToStaticMarkup(<SessionListItem session={session} detailHref="/test" />);
+  expect(legacy).toContain('提问人未知');
+  expect(legacy).not.toContain('匿名');
+  const verified = {...session, verified_subject: {subject_id: '00000000-0000-4000-8000-000000000123', subject_type: 'partner_operator'}} as SessionSummary;
+  const html = renderToStaticMarkup(<SessionReplay session={{...verified, turns: []}} closureSummaries={{}} />);
+  expect(html).toContain('外部用户');
+  expect(html).toContain('姓名暂不可用');
+  expect(html).toContain('00000000-0000-4000-8000-000000000123');
+});

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { sourceFreshnessLabel } from "../../copy";
+import { formatFaeSender } from "../../senderIdentity";
 import type { SessionDetail, TurnClosureSummary, TurnDetail } from "../../types";
 import { PlatformLink } from "../PlatformLink";
 import { TurnCard } from "../TurnCard";
@@ -15,11 +16,14 @@ export interface SessionReplayProps {
 
 
 export function SessionReplay({ session, closureSummaries, governanceHref, betweenHeaderAndTurns }: SessionReplayProps) {
+  const sender = session.source_kind === "fae" && session.agent_id === "ai-fae-agent"
+    ? formatFaeSender(session)
+    : session.primary_sender_name && [session.primary_sender_name, session.primary_sender_department].filter(Boolean).join(" · ");
   return <>
     <section className="session-detail-head">
       <div><p>Session 回放</p><h1>{session.title || "未命名 Session"}</h1><code>{session.session_key}</code></div>
       <div className="session-detail-source"><span>{session.source_kind.toUpperCase()}</span><strong>{session.channel}</strong><small className={`freshness freshness-${session.freshness}`}>{sourceFreshnessLabel(session.freshness)}</small></div>
-      <dl><div><dt>Agent</dt><dd><PlatformLink href={`/admin/agents/${encodeURIComponent(session.agent_id)}`}>{session.agent_id}</PlatformLink></dd></div>{session.primary_sender_name && <div><dt>提问人</dt><dd>{[session.primary_sender_name, session.primary_sender_department].filter(Boolean).join(" · ")}</dd></div>}<div><dt>对话轮次</dt><dd>{session.turn_count}</dd></div><div><dt>反馈</dt><dd>{session.feedback_count ?? "暂不可用"}</dd></div><div><dt>复审</dt><dd>{session.review_count ?? "暂不可用"}</dd></div></dl>
+      <dl><div><dt>Agent</dt><dd><PlatformLink href={`/admin/agents/${encodeURIComponent(session.agent_id)}`}>{session.agent_id}</PlatformLink></dd></div>{sender && <div><dt>提问人</dt><dd>{sender}</dd></div>}<div><dt>对话轮次</dt><dd>{session.turn_count}</dd></div><div><dt>反馈</dt><dd>{session.feedback_count ?? "暂不可用"}</dd></div><div><dt>复审</dt><dd>{session.review_count ?? "暂不可用"}</dd></div></dl>
     </section>
     {betweenHeaderAndTurns}
     <section className="turn-stack">{session.turns.map((turn) => <TurnCard

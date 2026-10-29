@@ -45,10 +45,17 @@ if [[ "$key_mode" != "600" ]]; then
   exit 1
 fi
 
+export_args=(-m app.cloud_replica.cli export)
+case "${CLOUD_SYNC_INCLUDE_VERIFIED_SUBJECT:-false}" in
+  true) export_args+=(--include-verified-subject) ;;
+  false) ;;
+  *) stable_failure; exit 1 ;;
+esac
+
 export_failed=0
 if ! (
   cd "$CLOUD_SYNC_BACKEND_DIR"
-  "$CLOUD_SYNC_PYTHON" -m app.cloud_replica.cli export >/dev/null
+  "$CLOUD_SYNC_PYTHON" "${export_args[@]}" >/dev/null
 ); then
   export_failed=1
 fi

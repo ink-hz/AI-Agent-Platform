@@ -198,6 +198,11 @@ export interface AgentRuntimeView {
   evidence: RuntimeEvidence[];
 }
 
+export interface VerifiedSubjectReference {
+  subject_id: string;
+  subject_type: "enterprise_member" | "partner_operator";
+}
+
 export interface SessionSummary {
   session_key: string;
   agent_id: string;
@@ -217,6 +222,7 @@ export interface SessionSummary {
   participant_count: number | null;
   primary_sender_name: string | null;
   primary_sender_department: string | null;
+  verified_subject?: VerifiedSubjectReference | null;
   sender_identity_status: SenderIdentityStatus;
 }
 
@@ -323,6 +329,7 @@ export interface TurnDetail {
   details: Record<string, unknown>;
   sender_name: string | null;
   sender_department: string | null;
+  verified_subject?: VerifiedSubjectReference | null;
   sender_identity_status: SenderIdentityStatus;
 }
 
