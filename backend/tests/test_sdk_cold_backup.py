@@ -597,6 +597,37 @@ def test_shutdown_proof_requires_this_window_normal_mariadb_note(monkeypatch, li
     assert result["shutdown_complete"] is expected
 
 
+MARIADB_106_SHUTDOWN = "2026-10-29T04:36:40.040643105Z 2026-10-29  4:36:40 0 [Note] mariadbd: Shutdown complete\n"
+
+
+@pytest.mark.parametrize("line,expected", [
+    (MARIADB_106_SHUTDOWN, True),
+    (MARIADB_106_SHUTDOWN.replace("  4:", " 04:"), True),
+    (MARIADB_106_SHUTDOWN.replace("  4:", "\t4:"), True),
+    (MARIADB_106_SHUTDOWN.replace("mariadbd:", "mysqld:"), True),
+    (MARIADB_106_SHUTDOWN.replace("mariadbd:", "another-daemon:"), False),
+    (MARIADB_106_SHUTDOWN.replace("[Note]", "[ERROR]"), False),
+    (MARIADB_106_SHUTDOWN.replace("[Note]", "query text contains [Note]"), False),
+    (MARIADB_106_SHUTDOWN.replace("mariadbd: Shutdown complete", "InnoDB: Shutdown completed"), False),
+    (MARIADB_106_SHUTDOWN.replace("Shutdown complete\n", "Shutdown complete extra\n"), False),
+    (MARIADB_106_SHUTDOWN.replace("T04:36:40.040643105Z", "T04:35:40.040643105Z"), False),
+    (MARIADB_106_SHUTDOWN.replace("T04:36:40.040643105Z", "T04:36:50.040643105Z"), False),
+    (MARIADB_106_SHUTDOWN.replace(".040643105Z ", ".040643105 "), False),
+])
+def test_shutdown_proof_matches_vendor_106_format_but_keeps_exact_marker_and_outer_window(monkeypatch, line, expected):
+    module = sdk_module()
+    calls = []
+    def run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=line)
+    monkeypatch.setattr(module.subprocess, "run", run)
+    result = module.shutdown_proof(module.PINNED_SOURCES["db"]["id"],
+                                   "2026-10-29T04:36:32.540812Z", "2026-10-29T04:36:45Z")
+    assert result["shutdown_complete"] is expected
+    assert calls[0][1:3] == ["logs", "--timestamps"]
+    assert calls[0][-1] == module.PINNED_SOURCES["db"]["id"]
+
+
 def test_external_writer_or_live_process_tree_refuses_cold_capture(tmp_path):
     module, backup, runner, host = fixture_sdk(tmp_path)
     host.tree_gone = False
