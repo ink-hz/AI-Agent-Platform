@@ -7,9 +7,11 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
+import uuid
 
 import pytest
 
@@ -365,7 +367,56 @@ def test_readonly_native_cleanup_unknown_still_restores_services_but_blocks_succ
 def test_inspect_collects_health_status_without_healthcheck_logs():
     module = sdk_module()
     assert "{{json .State.Health}}" not in module.INSPECT
-    assert "{{json .State.Health.Status}}" in module.INSPECT
+    assert '{{with index .State "Health"}}' in module.INSPECT
+    assert '{"Status":{{json .Status}}}' in module.INSPECT
+    assert "Health.Log" not in module.INSPECT
+
+
+@pytest.mark.skipif(not os.environ.get("SDK_COLD_DOCKER_FORMATTER_IMAGE"),
+                    reason="explicit existing local image required for real Docker formatter contract")
+def test_real_local_docker_formatter_accepts_absent_health_without_starting_container():
+    module = sdk_module()
+    docker = shutil.which("docker")
+    assert docker, "Docker CLI required for explicit formatter test"
+    image = os.environ["SDK_COLD_DOCKER_FORMATTER_IMAGE"]
+    assert module.runtime.IMAGE_ID.fullmatch(image)
+    environment = dict(os.environ)
+    environment.pop("DOCKER_CONTEXT", None)
+    endpoint = subprocess.check_output([docker, "context", "inspect", "--format", "{{json .Endpoints.docker.Host}}"],
+                                       env=environment, text=True).strip()
+    endpoint = json.loads(endpoint)
+    assert endpoint.startswith("unix:///"), "formatter test refuses remote Docker endpoints"
+    command = [docker, "--host", endpoint]
+    owner, identity = uuid.uuid4().hex, None
+    def run(*args):
+        return subprocess.run([*command, *args], capture_output=True, text=True, env=environment, timeout=30)
+    try:
+        created = run("create", "--pull=never", "--name", "orbbec-sdk-formatter-test-" + owner,
+                      "--label", "io.orbbec.sdk-formatter-test=" + owner,
+                      "--network", "none", "--log-driver", "none", "--read-only", "--user", "999",
+                      "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--no-healthcheck",
+                      "--tmpfs", "/var/lib/mysql", "--tmpfs", "/run/mysqld", "--tmpfs", "/tmp",
+                      "--entrypoint", "/bin/true", image)
+        assert created.returncode == 0, created.stderr
+        identity = created.stdout.strip()
+        assert module.runtime.CONTAINER_ID.fullmatch(identity)
+        labels = run("inspect", "--format", "{{json .Config.Labels}}", identity)
+        assert labels.returncode == 0
+        assert json.loads(labels.stdout)["io.orbbec.sdk-formatter-test"] == owner
+        actual = run("inspect", "--format", module.INSPECT, identity)
+        assert actual.returncode == 0, actual.stderr
+        value = json.loads(actual.stdout)
+        assert value["id"] == identity and value["image_id"] == image
+        assert value["running"] is False and value["status"] == "created"
+        assert value["health"] is None
+        assert value["log_driver"] == "none" and value["host_config"]["NetworkMode"] == "none"
+        assert all(mount["Type"] == "tmpfs" for mount in value["mounts"])
+    finally:
+        if identity and module.runtime.CONTAINER_ID.fullmatch(identity):
+            owned = run("inspect", "--format", "{{json .Config.Labels}}", identity)
+            assert owned.returncode == 0 and json.loads(owned.stdout).get("io.orbbec.sdk-formatter-test") == owner
+            removed = run("rm", identity)
+            assert removed.returncode == 0, removed.stderr
 
 
 def test_existing_inflight_journal_refuses_new_attempt(tmp_path):

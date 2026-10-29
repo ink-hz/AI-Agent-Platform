@@ -64,6 +64,8 @@ objects 按 schema/table 排序，普通表与视图都 COUNT。单独证据文�
 
 容器 health 元数据仅保留 Status，不采集 Health.Log/Output。内部 probe 子命令stdout只供父进程私有捕获，不作为公开报告。
 
+首次生产 attempt sdk-cold-20261029T042431085647Z-328d1bf5 于2026-10-29 04:24:31 UTC启动，预检首错 source_identity 后停止；status=failed、source_actions.web/db 均为空、blocked=false，没有 stop/start 任何源，原服务无影响。负责人只读定位为 Web 没有 State.Health，旧 Docker Go 模板直接访问该缺失字段导致 formatter 失败，不能据此推断源 ID 变化。修正为 with index .State "Health" 的缺失字段安全访问，存在时仍仅输出 Status；用本机唯一自有、未启动、network none/log-driver none/tmpfs 容器的真实 Docker formatter 做 RED→GREEN 验证并移除该测试容器。原失败记录保留；修复不自动重跑整批，独立审查后由负责人另开新 batch。
+
 ## 准备与执行入口
 
 负责人先创建自己专属 work-root/private/ciphertext，按上面的属主/模式检查；复制已有只含技术元数据的 zentao-cold-backup-inventory.json 至受保护路径，保留307普通表完整集合。不要把工作根放在两个源卷内；不要并行更换源容器、修改配置/公钥或进行SDK业务写入。
@@ -94,3 +96,5 @@ backend/.venv/bin/python -m pytest backend/tests/test_sdk_cold_backup.py -q
 ~~~
 
 测试为合成 Docker 边界与固定时钟，加上共享 ProcessRunner/原加密CLI的真实本地合成管道；没有调用生产、模型或业务发送。
+
+真实 Docker formatter 契约测试需显式设置 SDK_COLD_DOCKER_FORMATTER_IMAGE 为本机已有完整 image ID；默认跳过。测试拒绝非 Unix Docker endpoint、使用 pull=never，只创建一个唯一标签且从未启动的隔离容器，最后只移除经标签核实的该完整 ID；不会操作现有容器。
