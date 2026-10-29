@@ -123,6 +123,18 @@ def test_hostconfig_hash_preserves_every_value_but_ignores_unique_mount_order():
         h.hostconfig_hash(changed)
 
 
+@pytest.mark.parametrize('rollback', [False, True])
+def test_legacy_hostconfig_state_is_blocked_before_any_recreate(tmp_path, monkeypatch, rollback):
+    h = load();root=tmp_path/'transaction';root.mkdir(mode=0o700)
+    h.save(root/'state.json',{'old_hostconfig':'legacy-raw-digest'})
+    def unexpected(*args, **kwargs):
+        pytest.fail('legacy state must not reach a runtime or mutation operation')
+    monkeypatch.setattr(h,'command',unexpected)
+    monkeypatch.setattr(h,'snapshots',unexpected)
+    with pytest.raises(h.ReleaseError, match='state_hostconfig_scheme'):
+        h.transact(root, rollback)
+
+
 def test_image_derivation_rejects_config_or_base_layer_change():
     h = load(); base = {'RootFS': {'Layers': ['sha256:base']}, 'Config': {'Env': ['PATH=/bin', 'PLATFORM_RELEASE_SHA=old'], 'Cmd': ['api'], 'User': '10001'}}
     derived = copy.deepcopy(base); derived['RootFS']['Layers'].append('sha256:code')
@@ -290,7 +302,7 @@ def test_transaction_only_recreates_api_and_retains_locks_on_uncertainty(tmp_pat
         return b''
     monkeypatch.setattr(h,'command',execute)
     state={'files':['/one','/two'],'working_dir':'/release','project':h.PROJECT,'env_file':'/private/platform.env',
-           'inputs':{},'guardrails':{},'old_hostconfig':h.digest(h.canonical(policy_host())),'baseline_containers':baseline,'api_name':'/api','old_id':'old',
+           'inputs':{},'guardrails':{},'old_hostconfig':h.hostconfig_hash(policy_host()),'hostconfig_hash_scheme':'unique-mount-lists-v1','baseline_containers':baseline,'api_name':'/api','old_id':'old',
            'old_image':oldimage,'new_image':newimage,'old_image_reference':oldref,'new_image_reference':newref,'manifest_sha256':mh,'old_release':'b'*40,'release':'d'*40,
            'before_config':h.digest(h.canonical(old)),'after_config':h.digest(h.canonical(new)),
            'owner':'unique-owner','deployment_id':'e'*32}

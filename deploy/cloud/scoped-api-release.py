@@ -537,6 +537,7 @@ def plan(stage_root, build_receipt, recipe, output):
              'new_image': built['image_id'], 'release': manifest['release_sha'], 'api_name': live['Name'],
              'new_image_reference': built['image_reference'], 'old_image_reference': old_reference, 'manifest_sha256': built['manifest_sha256'],
              'old_hostconfig': hostconfig_hash(live['HostConfig']),
+             'hostconfig_hash_scheme': 'unique-mount-lists-v1',
              'inputs': input_hashes(recipe), 'before_config': digest(canonical(before)), 'after_config': digest(canonical(after)),
              'baseline_containers': baseline, 'guardrails': readiness, 'owner': str(uuid.uuid4()), 'deployment_id': uuid.uuid4().hex}
     save(root/'state.json', state)
@@ -564,6 +565,7 @@ def release_locks(state):
 
 def transact(root, rollback=False):
     root = private_dir(root); state = read_json(root/'state.json')
+    require(state.get('hostconfig_hash_scheme') == 'unique-mount-lists-v1', 'state_hostconfig_scheme')
     assert_reference_bindings(state)
     require(input_hashes(state) == state['inputs'], 'compose_input_changed')
     guardrails(state['guardrails'])
