@@ -808,6 +808,22 @@ no such write with the corrected policy and reject falsely claimed `none`.
 These are local substitutes; installation still requires independent review and
 the actual daemon/PG verification gates.
 
+The first production attempt subsequently stopped at `runtime_changed` before
+PG start/dump, with helper cleanup confirmed. A locked create-only diagnostic
+retained raw before/after snapshots and isolated the difference to Docker's
+Mounts array order; the complete mount items and all other metadata were equal.
+Resolve must represent that unordered collection deterministically while
+preserving all item fields/counts. Only Mounts is sorted; ordered Compose inputs
+and all actual identity changes retain their previous fail-closed meaning.
+Each attempt now requires a root-private atomic original runtime snapshot at
+`private/backup-attempts/<attempt-id>.runtime.json` before creating any helper.
+It includes attempt ID, timestamp, scope and metadata-only resolve, and failure
+receipts link to it. If evidence cannot be saved, no helper may start. Retain the
+original and failure together when diagnosing `runtime_changed`; current IDs or
+hashes alone cannot reconstruct a missing baseline. This correction requires
+permutation/actual-change and persistence-order RED/GREEN tests plus independent
+review before a new full production batch.
+
 The host recovery public key remains root-owned 0600, exactly 32 bytes. Only that
 public file is mounted read-only into a networkless, immutable-image preparation
 process, which atomically copies it into the dedicated backup-secrets volume as

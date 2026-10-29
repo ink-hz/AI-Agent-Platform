@@ -117,6 +117,36 @@ After a new complete set commits, active pending retention is explicit
 not a false completed/failed state. A journal with no owner is `unresolved_work`
 (nonzero); a checker never creates/writes the lock or performs cleanup.
 
+### Task 1 runtime-identity representation review (2026-10-29)
+
+The first production attempt stopped at `runtime_changed` before any PG client
+start or dump. Its public-copy helper and created-only PG client were confirmed
+removed. A separately locked create-only diagnostic preserved raw before/after
+resolves: IDs, image IDs, all 45 ordered Compose inputs and every mount field/value
+were equal; only Docker inspect Mounts array order changed (API 15, MinIO 2).
+The cause is comparing an unordered resource collection as an ordered list.
+Resolve owns stable identity representation: sort **only** each container's
+Mounts collection by a deterministic key over its complete item, retaining every
+field/value, duplicate and count. Other identity fields remain exact, and Compose
+inputs remain ordered. A permutation is equivalent; Source, RW, missing/extra
+mounts and every other actual identity change must still stop the attempt.
+
+The failure receipt also lacked its original resolve, preventing a retrospective
+exact diff. The same attempt owner must atomically persist a private, unique
+`backup-attempts/<attempt-id>.runtime.json` immediately after initial resolve and
+before any helper. It records attempt ID, capture time, scope and the complete
+metadata-only snapshot; failure receipts link that attempt and snapshot. An
+evidence write failure stops before resource creation, never silently continuing.
+No environment values, password contents or plaintext material are collected.
+
+- [x] RED/GREEN: permuted complete mount items pass; Source/RW/missing/extra item
+  changes fail while ordered Compose permutation remains a failure. Verify the
+  private original snapshot precedes every helper and is linked by failure;
+  snapshot persistence failure starts no helper.
+- [ ] Repeat targeted regression and independent review before a new full batch.
+  The failed first attempt and create-only diagnostic are not successful dumps
+  or repeat full backup attempts; the parent controls production validation.
+
 ## Task 2: ZenTao PHP security candidate and controlled cutover
 
 Files: `deploy/sdk/` PHP-specific candidate/verification assets, `backend/tests/test_sdk_php_security.py`, `docs/operations/2026-10-29-sdk-php-security.md`.

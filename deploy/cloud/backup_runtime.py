@@ -42,7 +42,7 @@ STAGES = {
     "retention_resources", "manifest", "marker", "unexpected", "check_marker",
     "check_manifest", "check_artifact", "check_stale", "check_age", "artifact_sync",
     "interrupted", "unresolved_work", "lifecycle_create", "lifecycle_identity",
-    "lifecycle_cleanup", "postgres_credential",
+    "lifecycle_cleanup", "postgres_credential", "runtime_evidence",
 }
 # Do not collect Config.Env or credential contents.
 INSPECT_FORMAT = (
@@ -442,6 +442,9 @@ class RuntimeBackup:
                     or not item.get("started_at") or not isinstance(item.get("mounts"), list)
                     or INTERNAL_NETWORK not in item.get("networks", {})):
                 raise BackupError("runtime_identity")
+            # Docker returns an unordered mount collection. Preserve complete
+            # items and multiplicity while making only this list deterministic.
+            item["mounts"] = sorted(item["mounts"], key=canonical)
             containers[service] = item
         api = containers["platform-api"]
         reference = api.get("image_reference", "")
@@ -611,6 +614,7 @@ class RuntimeBackup:
                 raise BackupError("lock") from None
             self.lifecycle = ContainerLifecycle(self.paths.private_dir, self.runner, self.docker, self.clock)
             self.retention_receipt = None
+            self.runtime_snapshot = None
             result = primary = cleanup_error = None
             old_handlers = {number: signal.getsignal(number) for number in (signal.SIGTERM, signal.SIGINT)}
 
@@ -654,6 +658,8 @@ class RuntimeBackup:
                     error = cleanup_error or primary
                     if error:
                         failure = {"status": "failed", "failed_at": timestamp(self.clock()), "stage": error.stage,
+                                   "attempt_id": self.lifecycle.attempt_id,
+                                   "runtime_snapshot": self.runtime_snapshot,
                                    "primary_stage": primary.stage if primary else None,
                                    "producer_returncode": primary.producer_returncode if primary else None,
                                    "encryptor_returncode": primary.encryptor_returncode if primary else None,
@@ -681,6 +687,16 @@ class RuntimeBackup:
 
     def _run_locked(self):
         snapshot = self.resolve()
+        try:
+            directory = self.paths.private_dir / "backup-attempts"
+            private_directory(directory, create=True)
+            path = directory / (self.lifecycle.attempt_id + ".runtime.json")
+            record = {"attempt_id": self.lifecycle.attempt_id, "captured_at": timestamp(self.clock()),
+                      "scope": "runtime_identity", "runtime": snapshot}
+            atomic_write(path, canonical(record))
+            self.runtime_snapshot = str(path.relative_to(self.paths.private_dir))
+        except (OSError, BackupError):
+            raise BackupError("runtime_evidence") from None
         self._prepare_public_key(snapshot)
         created = self.clock()
         set_id = created.astimezone(UTC).strftime("%Y%m%dT%H%M%S%fZ-") + uuid.uuid4().hex[:8]
@@ -704,6 +720,7 @@ class RuntimeBackup:
             raise BackupError("artifact_sync") from None
         self._unchanged(snapshot)
         manifest = {"version": 1, "status": "complete", "set_id": set_id,
+                    "attempt_id": self.lifecycle.attempt_id, "runtime_snapshot": self.runtime_snapshot,
                     "created_at": timestamp(created), "completed_at": timestamp(self.clock()),
                     "snapshot_consistency": "individual_captures_not_cross_resource_atomic",
                     "runtime": snapshot, "artifacts": artifacts,

@@ -255,6 +255,83 @@ def test_deployment_change_stops_after_first_capture_preserving_previous_marker(
     assert marker.read_text() == "previous valid backup\n"
 
 
+def test_permuted_mount_collections_preserve_complete_identity_and_allow_backup(tmp_path):
+    _, runtime, runner, _ = fixture_runtime(tmp_path)
+    mounts = [
+        {'Type':'bind', 'Source':'/synthetic/a', 'Destination':'/a', 'RW':False, 'Mode':'ro', 'Propagation':'rprivate'},
+        {'Type':'volume', 'Name':'synthetic-b', 'Source':'/synthetic/b', 'Destination':'/b', 'RW':True, 'Driver':'local'},
+    ]
+    runner.containers['platform-api']['mounts'] = deepcopy(mounts)
+    def permute():
+        for container in runner.containers.values():
+            container['mounts'].reverse()
+    runner.after_pipeline = permute
+    manifest = runtime.run()
+    assert manifest['status'] == 'complete' and len(runner.pipelines) == 3
+    assert sorted(manifest['runtime']['containers']['platform-api']['mounts'], key=lambda item:item['Destination']) == mounts
+
+
+@pytest.mark.parametrize('change', ['source', 'rw', 'missing', 'extra'])
+def test_mount_identity_changes_still_stop_capture_and_preserve_marker(tmp_path, change):
+    module, runtime, runner, _ = fixture_runtime(tmp_path)
+    runner.containers['platform-api']['mounts'] = [
+        {'Type':'bind', 'Source':'/synthetic/a', 'Destination':'/a', 'RW':False},
+        {'Type':'bind', 'Source':'/synthetic/b', 'Destination':'/b', 'RW':True},
+    ]
+    marker = runtime.paths.private_dir / 'last-backup-success'; marker.write_text('previous valid set\n')
+    def mutate():
+        mounts = runner.containers['platform-api']['mounts']
+        if change == 'source': mounts[0]['Source'] = '/other-source'
+        elif change == 'rw': mounts[0]['RW'] = True
+        elif change == 'missing': mounts.pop()
+        else: mounts.append({'Type':'bind', 'Source':'/extra', 'Destination':'/extra', 'RW':False})
+    runner.after_pipeline = mutate
+    with pytest.raises(module.BackupError, match='runtime_changed'):
+        runtime.run()
+    assert len(runner.pipelines) == 1
+    assert marker.read_text() == 'previous valid set\n'
+
+
+def test_original_runtime_evidence_is_private_precedes_helpers_and_links_failure(tmp_path):
+    module, runtime, runner, _ = fixture_runtime(tmp_path)
+    original = runtime.resolve()
+    capture = runner.capture
+    observed = []
+    def check_before_create(command, *, stage, timeout=60):
+        if command[1] == 'create' or list(command[1:3]) == ['volume', 'create']:
+            path = runtime.paths.private_dir / 'backup-attempts' / (runtime.lifecycle.attempt_id + '.runtime.json')
+            observed.append(path.exists())
+        return capture(command, stage=stage, timeout=timeout)
+    runner.capture = check_before_create
+    runner.producer_fails = True
+    with pytest.raises(module.BackupError, match='replica_producer'):
+        runtime.run()
+    assert observed and all(observed), 'a helper resource was created before original evidence persisted'
+    failure = json.loads((runtime.paths.private_dir / 'last-backup-failure.json').read_text())
+    path = runtime.paths.private_dir / failure['runtime_snapshot']
+    record = json.loads(path.read_text())
+    assert failure['attempt_id'] == failure['lifecycle']['attempt_id'] == record['attempt_id']
+    assert path.name == record['attempt_id'] + '.runtime.json'
+    assert record['runtime'] == original
+    assert record['scope'] == 'runtime_identity' and record['captured_at'].endswith('Z')
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_runtime_evidence_persistence_failure_stops_before_any_helper(tmp_path, monkeypatch):
+    module, runtime, runner, _ = fixture_runtime(tmp_path)
+    write = module.atomic_write
+    def unavailable(path, value):
+        if path.parent.name == 'backup-attempts': raise OSError('synthetic disk failure')
+        return write(path, value)
+    monkeypatch.setattr(module, 'atomic_write', unavailable)
+    with pytest.raises(module.BackupError, match='runtime_evidence'):
+        runtime.run()
+    assert not runner.pipelines
+    assert not any(command[1] == 'create' or list(command[1:3]) == ['volume', 'create']
+                   for command, _ in runner.commands)
+
+
 @pytest.mark.parametrize("side", ["producer", "encryptor"])
 def test_incomplete_pipeline_never_advances_marker_or_commits_complete_manifest(tmp_path, side):
     module, runtime, runner, _ = fixture_runtime(tmp_path)
