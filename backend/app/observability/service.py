@@ -10,6 +10,9 @@ class ObservabilityService:
     def __init__(self, repository: ObservabilityRepository) -> None:
         self._repository = repository
 
+    async def data_sources(self):
+        return await asyncio.to_thread(self._repository.data_sources)
+
     async def list_agents(self):
         return await asyncio.to_thread(self._repository.list_agents)
 

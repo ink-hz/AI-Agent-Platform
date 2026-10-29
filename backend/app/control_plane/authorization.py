@@ -427,6 +427,7 @@ _OWNER_ROUTES = frozenset({
     ("GET", "/api/registry/{agent_id}"),
     ("GET", "/api/agents"),
     ("GET", "/api/agents/{agent_id}"),
+    ("GET", "/api/data-sources"),
     ("GET", "/api/sessions"),
     ("GET", "/api/sessions/{session_key}"),
     ("GET", "/api/turns/{turn_key}/trace"),

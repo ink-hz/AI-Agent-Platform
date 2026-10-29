@@ -37,6 +37,7 @@ class ObservabilityReadError(RuntimeError):
 
 
 class ObservabilityRepository(Protocol):
+    def data_sources(self): ...
     def list_agents(self) -> tuple[AgentSummary, ...]: ...
     def get_agent(self, agent_id: str) -> AgentSummary | None: ...
     def list_sessions(self, filters: SessionFilters, limit: int, offset: int) -> Page[SessionSummary]: ...
@@ -87,6 +88,12 @@ class PsycopgObservabilityRepository:
             options="-c statement_timeout=10000",
             row_factory=dict_row,
         )
+
+    def data_sources(self):
+        from .source_catalog import public_source_registry
+
+        # Local import status is not a proven per-agent source watermark.
+        return public_source_registry({}, catalog=self._catalog)
 
     def list_agents(self) -> tuple[AgentSummary, ...]:
         statement = """

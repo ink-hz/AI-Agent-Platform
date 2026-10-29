@@ -160,6 +160,11 @@ class ReplicaObservabilityRepository:
         except Exception:
             raise ObservabilityReadError("replica source status unavailable") from None
 
+    def data_sources(self):
+        from app.observability.source_catalog import public_source_registry
+
+        return public_source_registry(self._source_states(), catalog=self._catalog)
+
     def _source_status(
         self, agent_id: str, states: dict[str, AgentSourceStatus],
         *, source_kind: str = "metabot",

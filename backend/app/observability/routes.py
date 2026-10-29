@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from .models import FlywheelFilters, SessionFilters, SourceKind
 from .repository import ObservabilityReadError
@@ -29,6 +29,15 @@ async def _with_identity(request: Request, result):
     return await asyncio.to_thread(
         reader.hydrate, result, getattr(request.state, "auth_context", None)
     )
+
+
+@router.get("/data-sources")
+async def data_sources(request: Request, response: Response):
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        return await _service(request).data_sources()
+    except ObservabilityReadError as error:
+        _unavailable(error)
 
 
 @router.get("/agents")
