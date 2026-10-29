@@ -57,6 +57,7 @@ class ReplicaImportResult:
     sequence: int
     record_count: int
     digest: str
+    skipped_session_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,7 +394,28 @@ class ReplicaStore:
                             raise ReplicaStoreError("predecessor_mismatch")
                     if generation is None and batch.header.previous_digest is not None:
                         raise ReplicaStoreError("predecessor_mismatch")
-                    for prepared in prepared_records:
+                    # Missing registry is an explicit pre-migration compatibility mode.
+                    cursor.execute("select to_regclass('platform_replica.agent_sources') as relation")
+                    registry = cursor.fetchone()
+                    ownership_enabled = bool(registry and registry["relation"])
+                    skipped_session_count = 0
+                    accepted_records = prepared_records
+                    if ownership_enabled:
+                        accepted = []
+                        # Share-lock every registered authority before writing so a
+                        # root-controlled takeover cannot race an old office batch.
+                        cursor.execute("select agent_id, publisher from platform_replica.agent_sources order by agent_id for share")
+                        authorities = {row["agent_id"]: row["publisher"] for row in cursor.fetchall()}
+                        for item in prepared_records:
+                            cursor.execute("select agent_id from platform_replica.sessions where session_key=%s", (item.session_key,))
+                            existing_session = cursor.fetchone()
+                            existing_agent = existing_session["agent_id"] if existing_session else item.agent_id
+                            if any(authorities.get(agent) in {"cloud", "native"} for agent in (item.agent_id, existing_agent)):
+                                skipped_session_count += 1
+                            else:
+                                accepted.append(item)
+                        accepted_records = tuple(accepted)
+                    for prepared in accepted_records:
                         agent_plaintext = _canonical({"agent_id": prepared.agent_id})
                         agent_encrypted = self._cipher.encrypt(
                             agent_plaintext, f"1:agent:{prepared.agent_id}"
@@ -504,6 +526,19 @@ class ReplicaStore:
                             batch.header.upper_watermark,
                         ),
                     )
+                    if ownership_enabled:
+                        # Only a registered direct office source proves local source
+                        # freshness. Remote office mirrors never advance these fields.
+                        cursor.execute("""update platform_replica.agent_sources set
+                            last_attempt_at=greatest(last_attempt_at,%s),last_source_success_at=%s,
+                            last_published_at=now(),
+                            last_error=case when last_failure_at > %s then last_error else null end
+                            where publisher='office' and mode='office'
+                            and source_kind='metabot' and source_instance_id=%s
+                            and (last_source_success_at is null or last_source_success_at < %s)""",
+                            (batch.header.upper_watermark, batch.header.upper_watermark,
+                             batch.header.upper_watermark, batch.header.source_instance_id,
+                             batch.header.upper_watermark))
                     cursor.execute(
                         """
                         insert into platform_replica.import_audit
@@ -515,15 +550,19 @@ class ReplicaStore:
                             batch.header.source_instance_id,
                             batch.header.sequence,
                             batch.digest,
-                            len(prepared_records) + len(prepared_management),
+                            len(accepted_records) + len(prepared_management),
                             batch.header.upper_watermark,
                         ),
                     )
+                    if ownership_enabled:
+                        cursor.execute("update platform_replica.import_audit set skipped_session_count=%s where source_instance_id=%s and sequence=%s",
+                            (skipped_session_count, batch.header.source_instance_id, batch.header.sequence))
             return ReplicaImportResult(
                 status="imported",
                 sequence=batch.header.sequence,
-                record_count=len(prepared_records) + len(prepared_management),
+                record_count=len(accepted_records) + len(prepared_management),
                 digest=batch.digest,
+                skipped_session_count=skipped_session_count,
             )
         except ReplicaStoreError:
             raise
@@ -538,8 +577,24 @@ class ReplicaStore:
             with self._connect() as connection:
                 with connection.transaction():
                     cursor = connection.cursor()
+                    cursor.execute("select to_regclass('platform_replica.agent_sources') as relation")
+                    registry = cursor.fetchone()
+                    session_scope = ""
+                    agent_scope = ""
+                    if registry and registry["relation"]:
+                        # Retention remains an office-owned operation. Lock its
+                        # authorities so takeover cannot race counts/deletions.
+                        cursor.execute("select agent_id from platform_replica.agent_sources where publisher='office' order by agent_id for share")
+                        session_scope = """ and pg_has_role(session_user, 'platform_replica_import', 'member')
+                            and not exists (select 1 from platform_replica.agent_sources ownership
+                                where ownership.agent_id=platform_replica.sessions.agent_id
+                                and ownership.publisher <> 'office')"""
+                        agent_scope = """ and pg_has_role(session_user, 'platform_replica_import', 'member')
+                            and not exists (select 1 from platform_replica.agent_sources ownership
+                                where ownership.agent_id=a.agent_id
+                                and ownership.publisher <> 'office')"""
                     cursor.execute(
-                        "select count(*) as count from platform_replica.sessions where expires_at <= %s",
+                        "select count(*) as count from platform_replica.sessions where expires_at <= %s" + session_scope,
                         (cutoff,),
                     )
                     session_count = cursor.fetchone()["count"]
@@ -557,7 +612,7 @@ class ReplicaStore:
                             select 1 from platform_replica.sessions s
                             where s.agent_id = a.agent_id and s.expires_at > %s
                         )
-                        """,
+                        """ + agent_scope,
                         (cutoff,),
                     )
                     agent_count = cursor.fetchone()["count"]
@@ -568,7 +623,7 @@ class ReplicaStore:
                             (cutoff,),
                         )
                         cursor.execute(
-                            "delete from platform_replica.sessions where expires_at <= %s",
+                            "delete from platform_replica.sessions where expires_at <= %s" + session_scope,
                             (cutoff,),
                         )
                         cursor.execute(
@@ -578,7 +633,7 @@ class ReplicaStore:
                                 select 1 from platform_replica.sessions s
                                 where s.agent_id = a.agent_id
                             )
-                            """
+                            """ + agent_scope
                         )
                         cursor.execute(
                             """
