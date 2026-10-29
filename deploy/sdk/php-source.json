@@ -1,0 +1,8 @@
+{
+  "source_commit": "1d7dec178a094e6e75b229ce22754045f8c6070a",
+  "source_sha256": "dfedb39ecb7b6d51f11af460c1c8bacdff8b19a16aa9f6e4f00bf5827c93b958",
+  "php_version": "8.1.34",
+  "php_api": "20210902",
+  "zend_extension_build": "API420210902,NTS",
+  "base_image": "sha256:1deeb004b41a691ef45fd8670a4794ef446bb3c0362e402a2e87a705cf26d5ce"
+}

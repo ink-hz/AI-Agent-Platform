@@ -1,0 +1,2 @@
+Zend/tests/gh11189.phpt
+Zend/tests/gh11189_1.phpt

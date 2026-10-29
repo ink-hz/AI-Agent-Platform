@@ -10,11 +10,14 @@
 
 需求、评审、任务、Bug、测试、版本与发布继续保存在禅道员工账号下。`https://agent.orbbec.com.cn/sdk/` 直接展示禅道完整界面，不再运行平台自建 SDK 页面，也不把浏览器跳转到禅道 IP。旧平台需求、年度 CSV 和候选证据 API 在 `PLATFORM_SDK_NATIVE_ONLY=1` 时返回 410，历史数据留在数据库中。此模式尚无 GitLab 构建集成，不能据此声称 SDK 包或真机测试通过。
 
-在正式主机从本目录构建加固镜像：
+PHP 8.1 应急安全候选按 [2026-10-29 实施与验收记录](../../docs/operations/2026-10-29-sdk-php-security.md)先在受限容器构建，使用 `verify_php_artifacts.py` 核验完整源码身份、CLI、Web 模块、OPcache 和私有依赖库，再把产物放入专用打包上下文的 `php-runtime/`。该目录不进入 Git；缺少产物时构建必须失败。候选尚未通过文档规定的全部验收前，不得替换线上镜像。8.1 官方最小回补仅处理指定 CVE，不代表恢复长期支持。
+
+在专用打包上下文中构建加固镜像：
 
 ```bash
-docker build -f deploy/sdk/Dockerfile.hardened -t orbbec-sdk-zentao:22.6-cve-2026-111346-verified deploy/sdk
-docker image inspect orbbec-sdk-zentao:22.6-cve-2026-111346-verified --format '{{.Id}}'
+python3 deploy/sdk/verify_php_artifacts.py /data/security-build-20261029/php81/artifacts
+python3 deploy/sdk/verify_php_artifacts.py --build-package /data/security-build-20261029/php81/package
+docker image inspect orbbec-sdk-zentao:22.6-php81-security-20261029 --format '{{.Id}}'
 ```
 
 将已核验镜像的 `sha256:<image-id>` 填入权限 `0600` 的私有 `sdk.env` 的 `SDK_ZENTAO_IMAGE`，然后用生产私有 Compose 重新创建禅道。Compose 强制使用镜像内的启动校验脚本；控制器文件摘要不符时容器无法启动。核对容器实际镜像 ID 等于构建结果，登录后访问 `action::editComment` 必须返回 403。升级禅道时重新评估补丁及控制器摘要。
