@@ -11,6 +11,21 @@
 - 复用同 checkout 的 deploy/cloud/backup_runtime.py 中 ProcessRunner、ContainerLifecycle、私有目录检查和原子 fsync 写入。安装时保持 deploy/sdk 与 deploy/cloud 的相对布局，并固定两个文件的准确版本，不能随便从其他仓/发布目录导入同名模块。
 - 加密 image ID 由负责人显式传入并验证本机存在；不 pull。使用已准备好的 orbbec-agent-platform-backup-secrets 公钥卷，核对挂载公钥 SHA/32字节与受保护公钥文件一致，并在各次冷捕获前后复核。私钥始终留本机，不上云。
 
+## Docker 元数据合同的架构复核
+
+两次相邻预检失败的共同原因是把 Docker API 的可选/空值表示当成语义身份：首次 Go formatter 直接访问不存在的 Health；第二次 SDK 把 local 卷 Options=null 与测试中的 {} 做整 dict 比较。既有 deploy/cloud/backup_runtime.py 的 RuntimeBackup._volume 已将 null 按无 options 处理，而 SDK 重写比较时遗漏此约定；FakeRunner 固定返回 {} 又掩盖了真实接口差异。此次统一入口约定，不靠第三次完整冷备 job 逐字段试探。
+
+| 消费者/字段 | 表示到语义的明确映射与保持边界 |
+|---|---|
+| source/helper 的 INSPECT health | 用 index 安全读取可选 Health；缺失/null 输出 null，存在时只保留 Status。Web 可无 healthcheck；DB 仍须明确 healthy，不能把未知映射为健康。 |
+| 公钥卷、Web卷、DB卷的 VOLUME_FORMAT | 统一 SDK local_volume_identity，遵循共享 resolver 的 no-options 语义：仅 null 或空 dict 归一成 {}。四个字段 name/driver/options/mountpoint 必须齐全，拒绝额外字段、错误类型、非空 options；name/local driver 精确，源 mountpoint 精确，公钥卷实际 mountpoint 必须绝对路径并核验实际公钥 hash。不会把任意假值、缺字段或 bind/NFS 等选项当作无选项。 |
+| source Mounts | 仅列表顺序无关；每项全部字段、值与重复项都保留，再按 canonical JSON 排序比较。未知字段、RW/Mode/Propagation/Source/Name/Driver 差异仍拒绝，不丢字段、不只比目标路径。 |
+| networks/Compose labels | 网络名称按集合、标签按映射键读取；project/service 标签必须精确。网络内部 IP 等运行时数据及其余标签保留为证据，不作为固定身份。缺少或增加网络名称拒绝；不按网络 map 的序列顺序判断漂移。 |
+| source HostConfig/Compose 有序值 | 初检保留现有权限、模式、restart、loopback port 边界；完整 HostConfig 留存并在后续按全部值比较。JSON map 的键顺序无意义，但数组顺序不通用归一：SecurityOpt/CapDrop/PortBindings 列表、Compose 命令/entrypoint/env_file/覆盖文件顺序均保持原语义。工具不解析/重排 Compose 或读取宿主 env 值；私有 env/compose 只以 stat fence 和原始 tar 内容保存。DB 无 PortBindings 的 null/{} 仍只表示无发布端口。 |
+| image、状态与其他 preflight 消费者 | image 始终按完整 ID 比较，RepoTags 可 null且不作为身份；running/PID/exit/OOM 按 daemon 实际值判断，不归一未知。目录 inode/owner/mode、公钥32字节/hash、固定配置 hash、event_scheduler=OFF、进程树及外部 writer 各保留原检查；没有统一“or {}”放宽所有字段。 |
+
+下一次完整 job 的前置门是负责人在独立诊断 root/private/lock/metadata journal 下单独调用完整 SDKColdBackup._preflight，并保存真实只读结果：公钥/两源/两卷/三个本地 image/现场配置 hash/scheduler/process tree/writer/磁盘检查必须一次全部通过；只能使用只读 Docker inspect/ps、固定 sha256sum、容器内只读 scheduler SQL、私有 HTTP GET 和宿主 stat/FD 检查。不得调用 run、ContainerLifecycle、helper、stop/start 或捕获；诊断 journal 的 source_actions 必须始终为空。该真实 preflight 尚未通过时，不允许第三个完整 job，也不把本地合成测试当作生产门已通过。
+
 ## 执行状态与失败恢复
 
 同一生命周期契约同时约束证据与恢复：preflight 的活源检查只决定能否开始，不能代替停机后实际捕获字节的验证；CLI 返回/异常也不能代替 daemon 的最终状态。三个 rootfs 配置须在实际 docker cp→加密管道中透明转发并校验 tar：恰好一个准确 basename 的普通文件、文件最多16MiB且归档最多17MiB、实际内容 SHA 与固定清单一致；拒绝链接、稀疏文件、额外成员与非零尾部。任何成员/摘要/截断/producer 退出异常均使整集失败，即使加密器成功。捕获前后仍保留完整 cold fence。内部 copy-config 子进程仅输出原 tar 字节、不打印诊断，docker cp 留在 producer 进程组供原有清理器管理，不落宿主明文。
@@ -65,6 +80,8 @@ objects 按 schema/table 排序，普通表与视图都 COUNT。单独证据文�
 容器 health 元数据仅保留 Status，不采集 Health.Log/Output。内部 probe 子命令stdout只供父进程私有捕获，不作为公开报告。
 
 首次生产 attempt sdk-cold-20261029T042431085647Z-328d1bf5 于2026-10-29 04:24:31 UTC启动，预检首错 source_identity 后停止；status=failed、source_actions.web/db 均为空、blocked=false，没有 stop/start 任何源，原服务无影响。负责人只读定位为 Web 没有 State.Health，旧 Docker Go 模板直接访问该缺失字段导致 formatter 失败，不能据此推断源 ID 变化。修正为 with index .State "Health" 的缺失字段安全访问，存在时仍仅输出 Status；用本机唯一自有、未启动、network none/log-driver none/tmpfs 容器的真实 Docker formatter 做 RED→GREEN 验证并移除该测试容器。原失败记录保留；修复不自动重跑整批，独立审查后由负责人另开新 batch。
+
+第二次生产 attempt sdk-cold-20261029T042923410027Z-70b3fd6c 于2026-10-29 04:29:23 UTC预检首错 source_volume 后停止；source_actions 仍为空，原服务没有停启。负责人只读确认两个卷的 name/local driver/mountpoint 均精确匹配而 options 均为 null。此失败原样保留；后续依上述统一合同和完整只读 preflight 门处理，不宣称前两次成功。
 
 ## 准备与执行入口
 
