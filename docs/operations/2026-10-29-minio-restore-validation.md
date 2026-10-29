@@ -96,3 +96,19 @@ health与signed GET统一走原生桥，无vendor curl回退。每请求前后�
 health code7只有正常完成所记录的`stage=vm_client`连接未就绪可变000；`vm_timeout`、`interrupted`等即使同为code7也失败，不进入下一次health请求。签名S3请求仍没有重试。
 
 新增barrier并发、pidfd校验后替换/打开前复用/已消失、health code7三种stage：先 **6 RED、1控制通过**，修后新49项与既有38项合计 **87通过、0失败**。barrier验证读armed暂停→cleanup确认→迟到claim不得启动client，register/完成/失败均不能覆盖取消记录；pidfd模型显式把同一个数字PID换成替代进程，数字kill/killpg一旦被用即测试失败，稳定句柄只能指向原进程。原139、生产已过清单和第一次恢复失败均保留，当前没有新target或真实S3请求；本修订须独立复审后才执行授权的新local单批次。
+
+## 唯一新本机批次执行收据（attempt2，通过）
+
+50f6复审无Critical/Important，归并主线 `464b5e6c` 后获准执行一个新本机批次。实际来源 `50f6a6afd0a8af4f6d039f9eb1cb3d76611c5f06`，helper SHA-256 `d060bb6a60b33f7e66b922b770d68c6fad8bd12ae4d8791d0d15623af8f084cf`，与运行前主线文件一致。前置只读确认首轮目标已不存在，VM尚无HTTP request记录或incomplete；未再调用生产S3，未改archive、manifest、私钥、旧baseline、服务身份或客户端。
+
+2026-10-29 **04:30:40.305132–04:30:55.443694 UTC，15.139秒**，结果 `verified_minio_restore`。使用同set `20261029T032929866671Z-4b220d42`、原cipher SHA `06b58658f147286f5230662dde3624c888372517056a60e7fbcf6a302380ee47` 和精确d249镜像。AEAD认证、安全tar与实际提取后逐文件SHA聚合均通过：42文件/42277字节，聚合仍为 `33a55b5bec7bce2ed1f57ff6749d40cf1e0ff25a18c086f2f7739f0ff0c088e8`。
+
+实际目标 fullID `d1a03dc7fb549941da54167ff413da37942e74ca095d54326b1f1fe72d7f79d5`，attempt `087aa96f091f47e190316bf7d84b1b71`。启动前资源收据核验uid/gid10001、只读根、network none、无ports/持久mount、lognone、memory=swap=805306368、CPU1e9、core0/0及两个noexec/nosuid/nodev tmpfs。所有请求前后Docker fence、VM精确cgroup/Uid/NSpid/starttime/netns FD均通过；统一VM指纹为PID397054、NSpid[397054,1]、starttime85417974、net inode4026532656。
+
+MinIO真实启动就绪；临时本机root的错误secret签名GET被403拒绝，正确SigV4 ListBuckets及全部后续只读请求成功。共9个已登记客户端：3个health（2次正常连接未就绪exit7，之后exit0）、6个signed GET均exit0；没有失败signed重试或vendor curl fallback。逻辑清单为1桶 `orbbec-agent-attachments`，versioning=Enabled，current objects=0、versions=0、delete markers=0、unfinished multipart uploads=0、object_bytes=0，摘要 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`。此逻辑结果与既有03:56生产只读观察完全相同，未重跑该观察。
+
+VM一次scoped cleanup已确认9个client/controller均停止，9份cancelled/cancel_confirmed tombstone与稳定lock保留；追加独立只读审计确认原PID进程均不在运行、记录/锁均root:0600，且无config/header/body/password等字段。桥状态confirmed后删除唯一目标，独立成功scoped ps确认remaining0/absence=true。没有残留目标或incomplete请求，没有生产停启或对象写入。
+
+主树 `tmp/security-first-batch-20261029/` 下新增8份0600私有收据（不提交）：`minio-local-restore-preflight-attempt2.json`、`minio-local-restore-boundary-attempt2.json`、`minio-local-restore-attempt2.json`、`minio-local-restore-vm-identity-attempt2.json`、`minio-local-restore-vm-lifecycle-attempt2.json`、`minio-local-restore-logical-inventory-attempt2.json`、`minio-local-restore-cleanup-attempt2.json`、`minio-local-restore-vm-cleanup-audit-attempt2.json`。本次只追加执行收据，执行代码未改。
+
+该证据关闭上文待复审/待新本机批次步骤，证明当前捕获的空归档对象状态可在同MinIO服务中恢复、认证并完整枚举，结合恢复DB无已提交对象引用及已保留的生产只读清单，结论不再仅依据`.minio.sys`。原首轮139保持failed、根因未知；旧跨时点物理目录基线失败也保持原样。原生产IAM/权限、非空对象内容下载、同一时点跨资源原子性及完整业务灾备仍未验收。
