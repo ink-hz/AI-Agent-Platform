@@ -1,11 +1,11 @@
 # SDK PHP 切换前冷备协调器
 
-2026-10-29；只针对当前 ZenTao Web/DB 的现场回滚捕获。实现不会部署候选镜像、创建替代数据库、覆盖卷或声称离机 SDK 灾备完成。生产执行须由负责人审查本次实现及源身份后单独控制；本文中的命令是执行方案，不代表已经停启或备份。
+2026-10-29；只针对 PHP 切换前 ZenTao Web/DB 的现场回滚捕获。负责人已完成一致冷备、离机下载与隔离数据库恢复，实际结果见文末。协调器本身不会部署候选镜像、创建替代数据库或覆盖卷；完整 SDK 业务灾备尚未验收。下列固定 Web 身份是捕获时的旧源，PHP 发布后不能直接复用。
 
 ## 固定资源与依赖
 
-- 项目为 orbbec-sdk-workbench-trial。当前 Web 完整 ID 为 8f30af40ca3143ffbd1813262aff8d45a1f3d0a80c0b2d90ce3e22445c929162，image 为 sha256:1deeb004b41a691ef45fd8670a4794ef446bb3c0362e402a2e87a705cf26d5ce。
-- 当前 DB 完整 ID 为 8de67a9b98076ba7605285c90affa66acc0ee2fe76d2764b512a5ffd6015769b，image 为 sha256:88ac718dafee1e8fb415233c04f314f3c3866af99177ce25d436106c62090461。
+- 项目为 orbbec-sdk-workbench-trial。捕获时 Web 完整 ID 为 8f30af40ca3143ffbd1813262aff8d45a1f3d0a80c0b2d90ce3e22445c929162，image 为 sha256:1deeb004b41a691ef45fd8670a4794ef446bb3c0362e402a2e87a705cf26d5ce。
+- 捕获时 DB 完整 ID 为 8de67a9b98076ba7605285c90affa66acc0ee2fe76d2764b512a5ffd6015769b，image 为 sha256:88ac718dafee1e8fb415233c04f314f3c3866af99177ce25d436106c62090461。
 - Web 卷 orbbec-sdk-workbench-trial_zentao-data 挂载 /data；DB 卷 orbbec-sdk-workbench-trial_zentao-db 挂载 /var/lib/mysql。仅接受清单中的 local/no-options 实际 Mountpoint，完整 mount 记录保留每个字段，只有列表顺序不影响比较。
 - source 名称、project/service 标签、image、network 集合、loopback 18131 端口、unless-stopped 策略及 HostConfig 范围都要通过；不以短 ID、tag 或 Compose up 代替精确原容器。
 - 复用同 checkout 的 deploy/cloud/backup_runtime.py 中 ProcessRunner、ContainerLifecycle、私有目录检查和原子 fsync 写入。安装时保持 deploy/sdk 与 deploy/cloud 的相对布局，并固定两个文件的准确版本，不能随便从其他仓/发布目录导入同名模块。
@@ -119,3 +119,19 @@ backend/.venv/bin/python -m pytest backend/tests/test_sdk_cold_backup.py -q
 测试为合成 Docker 边界与固定时钟，加上共享 ProcessRunner/原加密CLI的真实本地合成管道；没有调用生产、模型或业务发送。
 
 真实 Docker formatter 契约测试需显式设置 SDK_COLD_DOCKER_FORMATTER_IMAGE 为本机已有完整 image ID；默认跳过。测试拒绝非 Unix Docker endpoint、使用 pull=never，只创建一个唯一标签且从未启动的隔离容器，最后只移除经标签核实的该完整 ID；不会操作现有容器。
+
+## 负责人实际执行与离机验收（2026-10-29）
+
+完整只读 preflight 实际通过，51 次观察无 helper/stop/start。第三批 `sdk-cold-20261029T043632540812Z-264c9f2d` 两源已 exit0/无 OOM，因解析器拒绝真实 `2026-10-29  4:36:40` 时间格式而失败；没有发布 complete，先恢复原 DB/健康、再恢复原 Web，helper 均清理。原失败、日志及新解析器对该历史日志的正面证明保留；修复后重新完成只读 preflight 才开始下一批。
+
+第四批由准确主线维护版本 `805f72eaa42916afd407ac238801981e1555b97e` 执行，成功集 **`sdk-cold-20261029T044253876938Z-412b35b2`**。Web 04:43:00 UTC、DB 04:43:01 UTC 均干净退出，DB 本次关闭 marker 与 daemon 状态一致。六件密文合计 **362,121,264 字节**：DB 283,401,033；Web 78,676,711；app-config 20,865；php-config 5,503；apache-config 6,527；deployment-config 10,625。两源同 ID 恢复、DB 健康、Web 登录入口可读、加密 helper 全部清理后才发布 complete。
+
+原六件密文及 manifest 已下载到本机私有恢复目录（目录0700/文件0600），大小/hash 与源一致；私钥始终留本机。消费端先实际完成六件 AEAD/tar 认证：DB 861 文件/282,814,227 内容字节、Web 74 文件/78,578,694 内容字节，三个原配置的内容 hash 与固定捕获值一致。deployment-config 仅在本机内存解密解析，不输出凭据。
+
+第一次本机目标创建因 Docker 缓存 image 的 config blob 缺失失败，未启动恢复目标或导入数据。保留失败和 unresolved intent；按唯一 owner/name/label 只读确认目标不存在后明确完成 reconcile。从源只读导入**同一准确 image**，没有换镜像、prune 或修改输入，再建立第二批。
+
+第二批 **35.098 秒通过**：准确 MariaDB image、无网络/端口、非 root/只读根、日志 none、限额 tmpfs 数据盘；保留 grants，使用从已认证 sdk.env 在本机 RAM 读取的原数据库凭据，通过 stdin 交给客户端。普通表 **307**、视图 **34**，完整对象集合与逐对象 COUNT 匹配停 Web 后的新 repeatable-read/read-only 基线，普通表合计 **51,417 行**。目标容器已确认删除。
+
+消费端的 create intent、丢失 CLI 输出后 owner reconcile、SIGTERM 和清理生命周期经独立审查；两个真实进程/真实合成加密的边界测试通过，不冒称生产测试。最后协调器定向工程测试85通过/1默认跳过；真实 Docker formatter 曾单独执行通过。
+
+本轮结论为一致冷备和离机数据库恢复通过；没有启动完整恢复 SDK Web，也未验收完整 SSO/业务权限、附件业务流程或整机 DR。源 manifest 的 `off_machine_sdk_dr_validated=false` 不回写，后续独立恢复另有收据。仅安装本次 one-shot unit，未建立 SDK 常态备份调度；发布后的新 Web 身份及以后数据必须另行纳入。原三次失败与两次本机恢复结果均保留，见[首批汇总](2026-10-29-security-first-batch-results.md)。

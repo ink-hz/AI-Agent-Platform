@@ -1,6 +1,6 @@
 # SDK 禅道 PHP 应急安全候选：Task 2
 
-状态：2026-10-29，候选构建、定向原生/Apache 与完整 entrypoint 验证已结束，提交正式审查；**没有切换生产**。
+状态：2026-10-29，候选与发布器独立审查通过，已建立一致冷备并完成离机数据库恢复；12:56 CST 仅切换生产 SDK Web，运行时、认证接口及静态内容验证通过。员工 SSO、业务附件和浏览器验收未执行；详见文末实际发布记录。
 
 目标：修复 R01 中 PHP 解释器的 CVE-2026-109618、CVE-2026-109619，保留禅道 22.6、员工 SSO、需求及附件能力和现有评论禁改防护。PHP 8.1 已结束上游维护，本次官方应急回补不代表恢复长期支持；迁移受支持版本须另行完成应用及扩展兼容验收。
 
@@ -30,8 +30,9 @@
 - [x] `Dockerfile.hardened` 在固定禅道上游 digest 上重现原评论补丁，替换 CLI/libphp/OPcache，保留 ionCube 等现有动态扩展；私有依赖位于独立 `/opt/zbox/php-security-lib`，不覆盖供应商 `/opt/zbox/lib`，不打包第二套 glibc/动态加载器。
 - [x] 候选运行前 `verify-and-start.sh` 同时核验全部解释器、保留的动态扩展与私有依赖字节摘要、版本/ABI、必要扩展及补充 ini，然后保留原评论控制器摘要门；任何不符都不进入原 entrypoint。这是启动完整性门，不代表供应商运行目录已全部改成只读；基镜部分 `/opt` 目录及模块仍由 nobody 持有，其所有权治理属于尚未完成的运行权限风险。
 - [x] 在无网络、无生产挂载、无公开端口的独立容器运行 `probe-php-apache.sh`：使用真实 Apache 2.4.62 加载新 libphp，检查全部原已加载扩展、8.1.34/NTS/API、OPcache 与补充 ini。固定单 worker，用有界 8-MiB POST 在 4-MiB PHP 限额下触发请求解析 OOM，正面证明该 worker exit=1/signal=0/core=0、父 PID/容器稳定和新 worker 状态为空；再验证切换 session serialize handler 后的普通 fatal 与同 worker 下一请求恢复。失败阶段和隔离错误日志输出到操作收据，不删除首错证据。此为状态/恢复回归，不能称为执行过任意代码利用验证。
-- [ ] 主 agent 复核新镜像摘要、真实 Apache 和启动门收据后，另行建立当前禅道一致 DB/data 恢复点。隔离副本须验证个人 SSO、无权账户、需求读写和附件上传/下载；未有真实附件样本不能记为通过。
-- [ ] 只有父任务授权切换后才只重建禅道 Web 容器；不得迁移数据库、修改业务数据或通过关闭入口代替解释器修复。
+- [x] 主 agent 复核新镜像摘要、真实 Apache 和启动门收据后，建立当前禅道一致 DB/data/现场配置恢复点，完成离机数据库恢复。
+- [ ] 隔离副本的个人 SSO、无权员工账户、需求写入和真实业务附件上传/下载验收；未有真实样本不能记为通过。既有服务账号登录/只读需求、匿名拒绝已单独验证。
+- [x] 已获本批生产授权，仅重建禅道 Web 容器；没有迁移数据库或覆盖持久卷。
 
 ## 隔离构建、资源与可复现打包
 
@@ -115,7 +116,7 @@ python3 deploy/sdk/run_php_entrypoint_probe.py sha256:<候选镜像完整ID>
 
 源码/产物摘要不符、ABI/必需扩展失配、动态库缺失、原生测试首错、Apache 探针失败、原评论门丢失、内存 OOM 或触及生产可写挂载，均停止该阶段并保留失败，不隐藏重试或降低要求。若固定 8.1 源码仍不能兼容，先复核共享构建/ABI 契约，不叠加业务兜底。生产切换需父任务复核，不自动执行。
 
-截至提交前：本地候选验证器、SDK 部署、代理、SSO 路由和个人客户端定向回归 **122 通过、0 失败**（PHP 专属 55，其余 67）；SSO 使用 ASGI/MockTransport 边界，不能充作真实禅道业务验收。Ruff、shell 语法和 diff 检查通过。隔离原生/Apache/完整 entrypoint 结果见下；真实 SSO、真实业务附件、生产切换、生产验收尚未执行，浏览器最终交互由用户负责。无模型调用、业务消息或生产数据写入。
+候选提交时：本地候选验证器、SDK 部署、代理、SSO 路由和个人客户端定向回归 **122 通过、0 失败**（PHP 专属 55，其余 67）；SSO 使用 ASGI/MockTransport 边界，不能充作真实禅道业务验收。Ruff、shell 语法和 diff 检查通过。隔离原生/Apache/完整 entrypoint 结果见下；此后生产切换与限定验证见文末。真实员工 SSO、真实业务附件及浏览器最终交互未执行。无模型调用或业务消息；生产验证仅正常认证状态及只读请求，无业务对象写入。
 
 ### 真实 SAPI 与正式启动链复核（打包前闭环）
 
@@ -148,9 +149,25 @@ OOM HTTP 接受结果在执行前固定为 curl=0/HTTP500，或在生成头前�
 - 适用原生：`logs/native-applicable/combined.log` 与 `native-applicable.exit=0`，10 PASS、0 FAIL/SKIP/WARN；兼容诊断 `logs/native-compatibility-diagnostic/`，1 已知 FAIL、1 按首错未执行。不得写成 12 全通过。
 - 真实 Apache HTTP：`apache-attempt-r4_luxtp/`、容器 `1e93f2eeac9db15616c90301a714f959de11b38fe6a7002be428706ff019bdcc`，04:05:37–04:05:41 UTC。原 worker 容器 PID30/宿主1334855，父 PID27/1334845；仅向已确认该 cgroup/namespace 的父进程附着 wait4/SIGCHLD。收据明确 exit1/signal0/corefalse、父稳定、RestartCount0、OOMKilledfalse、cgroup oom/oom_kill均0；curl52/HTTP000/空头空体，worker53恢复；普通 session fatal 后同 worker、早期 ini 诊断、1文件16字节合成 multipart SHA `69f5f955235d32ec03eda5ec36fb684d3e6b22120833a8787844b748fc9bd0d3` 均通过。
 - 上述 HTTP 批次使用 `43e41985…`；最终 `7470cf4d…` 只增加 guard 的成功标记。两 image 的实际 runtime.sha256 文件摘要均 `152d519ae858c2df4aabac328acb71a38a80066c4e53973be343bce19bf03a2f`，产物 manifest 文件摘要均 `f13704ddcd6d7599f0eb9c0de7a26a2fdf697f27878753e38c93a989bcf8a2f5`，核心与扩展字节未变。未为 marker 再跑无关原生/HTTP批次；最终 image 另跑完整正式入口及真实 Web 验证。
-- 完整 entrypoint：`entrypoint-attempt-gsetsfzk/evidence.json`、`apache.maps`、`startup.log`，04:09:23–04:09:27 UTC，status=ok；凭据 consumed、最终 guard 标记、真实 `/sdk/` Web51模块与旧 exact image差集为空，maps实际新 libphp/OPcache/ionCube 和运行摘要通过。该次原 maps显示5项 `/dev/zero (deleted)` 正常共享内存，核心/扩展文件映射无deleted。DB ID `778e6d91c7077ca29add22506e34eeba7cd626d275f6aecf6e11fbe1c416055b`；Web ID `26269cd24936dbf4a131dd7d3697b1b010de2cded90009e0248cf05234bb778f`；共同 net namespace `net:[4026534110]`，不等于宿主。两 target 已删除、复核不存在，匿名卷/tmpfs随之清理。最终生产入口验证仍待父任务。
+- 完整 entrypoint：`entrypoint-attempt-gsetsfzk/evidence.json`、`apache.maps`、`startup.log`，04:09:23–04:09:27 UTC，status=ok；凭据 consumed、最终 guard 标记、真实 `/sdk/` Web51模块与旧 exact image差集为空，maps实际新 libphp/OPcache/ionCube 和运行摘要通过。该次原 maps显示5项 `/dev/zero (deleted)` 正常共享内存，核心/扩展文件映射无deleted。DB ID `778e6d91c7077ca29add22506e34eeba7cd626d275f6aecf6e11fbe1c416055b`；Web ID `26269cd24936dbf4a131dd7d3697b1b010de2cded90009e0248cf05234bb778f`；共同 net namespace `net:[4026534110]`，不等于宿主。两 target 已删除、复核不存在，匿名卷/tmpfs随之清理。当时未执行生产入口验证；后续结果见文末。
 - 初始化后 config.php、php.ini 摘要分别与现场旧生产3文件中的前两项完全相同。隔离 httpd.conf为 `23cd95dc3540c9fcd66ab300371a938827a88f35679d7b6cbb8af574698679e1`，该测试显式禁用 Adminer，不能声称第三项与生产配置相同；不复制或覆盖生产文件。
 - 最终 public 树：私有 `public-static/candidate-final-www-manifest.json` 与旧 `old-www-manifest.json`，1436项全树、1414项非 `.php` 集合（明确定义用于聚合，包含相关静态/控制文件）、其中590项JS/CSS；差集为空。全树规范JSON SHA-256 `7f1cd43e632580163af27c3a30a0714463c354b5b7f62a60b5806b90574c635e`，非PHP聚合 `a47194b865ae5356f5a968deade1a78ac180d5925b3563c3541bd7f851f5ea40`。原评论控制器仍9c6710da…；没有丢失/替换 JS/CSS。父任务切换后须以这些私有清单验证实际完整内容与来源，而非仅HTTP200。
 - 成本：统一四连接预取912.980秒；只补libsasl2-dev2.871秒；原生make约310秒。最终 configure批次03:36:03UTC到完整入口通过04:09:27UTC的实测墙钟33分24秒，包含打包、保留的首错与受影响验证；此前活动源/依赖合同架构复核、串行下载成本另列，不能忽略或把它们算作成功缓存命中。全部失败批次和适配器差异保留。
 
-正式审查重点：唯一打包入口是否绑定实际 manifest/source lock/FROM；Web/CLI与扩展ABI、vendor渲染到Apache消费的最后门；OOM fail-stop边界及session普通fatal同worker；失败批次分类；回滚是否仅Web镜像且不会抹掉新写入。审查通过及一致恢复点就绪之前，不执行生产切换。PHP8.1/归档Debian依赖生命周期和广义OS漏洞、第三方扩展运行权限及受支持PHP迁移均仍是后续风险，未由本候选消除。
+正式审查覆盖唯一打包入口的实际 manifest/source lock/FROM、Web/CLI与扩展ABI、vendor渲染到Apache消费的最后门、OOM fail-stop与session普通fatal边界、失败批次分类和不覆盖新写入的Web镜像回滚；独立审查零 Critical/Important，一致恢复点验证通过后执行下述切换。PHP8.1/归档Debian依赖生命周期和广义OS漏洞、第三方扩展运行权限及受支持PHP迁移均仍是后续风险。
+
+## 生产发布与限定验收（2026-10-29 13:08 CST）
+
+已审实现 `babceda963…` 的相同字节归并主线，发布时主线为 `805f72eaa42916afd407ac238801981e1555b97e`。候选 image 为 **`sha256:7470cf4de0b483b753c380fac7dbfda7c98fe4badcda17109e85fe7f9fe50172`**，生产引用 `orbbec-sdk-zentao:22.6-php81-security-20261029-805f72ea`。准确源码仍为前述官方固定提交；tag 中主线 SHA 不是重新构建证明。
+
+负责人发布器经过独立审查，使用 SDK 冷备同一 flock，先持久化 root0600 原 env/Compose、源元数据及发布 intent，原字节只替换唯一 SDK_ZENTAO_IMAGE。准确项目、env_file、单个 Compose 调用 `up -d --no-deps --pull never zentao`；没有重建平台或共享 Nginx。发布器由一次性 systemd unit 执行，失败/中断不自动重试或覆盖数据。
+
+12:56:09 CST 新 Web `08d59d4b3ec93f307f6a6aff2f202bcc3fc6867358ad0b7314a2bc920782770d` 运行，restart_count=0。DB `8de67a9b…`/image `88ac718d…` 的 PID、StartedAt、完整挂载和网络在切换前后不变；13:08 再观察仍一致。旧 image、私有回滚 env/Compose 与一致冷备 `sdk-cold-20261029T044253876938Z-412b35b2` 保留，不用旧卷覆盖发布后写入。
+
+生产真实 CLI/Web 8.1.34、CLI52/Web51 模块、实际 libphp/OPcache/ionCube 映射、最终启动 guard 与补充 upload_progress=0 均通过；临时随机回环探针经内容摘要确认后移除。上/下线前后各一次服务账号正常登录及有界需求 GET 通过、匿名被拒绝，API `fb7bc97b…`/image `b0ac8611…` 各自前后身份稳定。它不证明员工个人 SSO 或附件写入。
+
+首次运行全树对账严格按初始化前路径比较失败：同一1,436文件中四处名称变为 `.htaccess.19`、`.ztaccess.19`、`install.php.tmp`、`upgrade.php.tmp`，内容摘要相同，其余路径/内容相同。原失败单独保留，改名原因未证实。后续新批次显式声明四处映射，核对每项类型/大小/hash及全部其他路径；1,436项通过，590项JS/CSS路径及内容未变，不能表述为原路径检查通过。
+
+新合同同时检查有效 Apache 控制和真实 HTTP：隐藏两项403，安装/升级原路径及改名路径均302到正常入口、没有源码和安装表单；目录 Options 仅 FollowSymLinks，无目录列表。实际最大JS 8,005,932字节、CSS 468,192字节，状态/类型/完整长度及SHA均相符；不以200代替资源完整。13:08时最近十分钟容器日志所查 PHP Fatal/Warning、Permission denied、segmentation fault 标记均0。
+
+最终范围：生产镜像切换1成功；原路径检查1失败；新运行路径/访问/静态合同1通过；服务账号接口2批通过。原生10适用通过、OOM兼容1已知失败/1未执行保持原结论。生产员工SSO、业务附件写入、浏览器及完整SDK/整个平台DR未验收。发布器原始 receipt 保持 `new_container_running_pending_validation`，后续验证独立收据为 `passed_php_production_validation`，不改写历史。

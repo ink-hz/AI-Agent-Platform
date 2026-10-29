@@ -24,11 +24,12 @@ Files: `deploy/cloud/backup.sh`, new `deploy/cloud/backup_runtime.py`, `backend/
 Consumes: running `platform-api`, `platform-postgres` and `platform-minio` Docker metadata. Produces a complete encrypted backup set plus root-private manifest/last-success receipt, retaining the current backup CLI format and retention responsibility.
 
 - [x] Capture the failing label contract: current API image uses a manufacturing tag; backup requires a bare 40-character SHA tag. Verify actual database/container/mount identities and all ordered Compose file references.
-- [ ] Write and run failing tests for runtime image ID selection despite non-SHA tags; unexpected project/service/mounts; ordered configuration identity; failed producer/encryptor; deployment change during backup; marker not advanced on incomplete set; safe diagnostic stages.
-- [ ] Implement an isolated standard-library resolver/orchestrator. Use immutable running IDs, never `compose up`; capture hashes for ordered input files, not their potentially secret content. Fail closed for unknown resources. Keep original encryption and no-plaintext pipelines; bind attachments to the observed MinIO data mount and explicit expected path.
-- [ ] Ensure each successful set records its scope and individual capture times. Do not claim a cross-database atomic snapshot. Retention must remain explicit and independently observable; do not silently remove it or equate retention failure with absent valid archives.
-- [ ] Run targeted tests, independent review, merge the verified changes to master, and install the exact reviewed helper/script with reversible systemd selection rather than rewriting stale release history.
-- [ ] Run the existing scheduled job once under the corrected selection, verify all artifact receipts and the marker, then decrypt and restore off-host into isolated PostgreSQL with no production mounts or published ports. Compare schema/table/row aggregates and attachment content identity; key remains on the local machine.
+- [x] Write and run failing tests for runtime image ID selection despite non-SHA tags; unexpected project/service/mounts; ordered configuration identity; failed producer/encryptor; deployment change during backup; marker not advanced on incomplete set; safe diagnostic stages.
+- [x] Implement an isolated standard-library resolver/orchestrator. Use immutable running IDs, never `compose up`; capture hashes for ordered input files, not their potentially secret content. Fail closed for unknown resources. Keep original encryption and no-plaintext pipelines; bind attachments to the observed MinIO data mount and explicit expected path.
+- [x] Ensure each successful set records its scope and individual capture times. Do not claim a cross-database atomic snapshot. Retention must remain explicit and independently observable; do not silently remove it or equate retention failure with absent valid archives.
+- [x] Run targeted tests, independent review, merge the verified changes to master, and install the exact reviewed helper/script with reversible systemd selection rather than rewriting stale release history.
+- [x] Run the scheduled service under the corrected selection, verify artifact receipts/marker, download unchanged ciphertext, and restore off-host to isolated PG/MinIO. Verify table sets, report row aggregates and exact authenticated archive/extracted content; key remains local. First failed backup and first failed attachment baseline comparison remain failed.
+- [ ] Original cross-time source directory equality was not achieved: 18/23,613 versus 42/42,277 internal metadata files/bytes. Preserve this failed criterion; later independent PG restoration and MinIO service/API checks do not turn it into a pass. Original role/IAM and full business DR remain unvalidated.
 
 Commands: `backend/.venv/bin/python -m pytest backend/tests/test_cloud_backup_runtime.py backend/tests/test_cloud_backup.py backend/tests/test_cloud_retention.py backend/tests/test_cloud_deployment.py backend/tests/test_cloud_transport.py -q`; `git diff --check`.
 
@@ -89,8 +90,8 @@ does not alter the dump, encryption, network or credential protocol.
   records plaintext producer stdout unless disabled. Verify all seven helper
   roles explicitly select `none`, no simulated plaintext log is written, and a
   requested `none` with non-none/missing daemon metadata is rejected before start.
-- [ ] Repeat independent review of the logging boundary before production use;
-  actual daemon inspection/authentication and restoration remain separate gates.
+- [x] Repeat independent review of the logging boundary before production use;
+  actual daemon none-driver inspection, SCRAM authentication and restoration also passed separately.
 
 Already complete backup manifests/markers remain complete if retention is
 interrupted; retention records failure or unknown completion separately, never
@@ -105,9 +106,8 @@ expired CLI deadline proves execution has ended.
   escaping, metadata and exact-secret-file-scope tests validate the revised PG
   client contract without reading production values. Real Docker/PG authentication
   remains a separate gate before the full production backup.
-- [ ] Repeat the affected regression and independent review; production backup
-  remains blocked until this gate passes. Real daemon/DB/scheduler evidence and
-  off-host restoration remain the parent's separate responsibility.
+- [x] Repeat the affected regression and independent review, then separately
+  pass the parent-controlled real daemon/DB/scheduler and off-host restoration gates.
 
 The readonly health contract distinguishes a live flock owner from orphaned
 in-flight intent using O_RDONLY + nonblocking shared flock on the existing file.
@@ -143,7 +143,7 @@ No environment values, password contents or plaintext material are collected.
   changes fail while ordered Compose permutation remains a failure. Verify the
   private original snapshot precedes every helper and is linked by failure;
   snapshot persistence failure starts no helper.
-- [ ] Repeat targeted regression and independent review before a new full batch.
+- [x] Repeat targeted regression and independent review before a new full batch.
   The failed first attempt and create-only diagnostic are not successful dumps
   or repeat full backup attempts; the parent controls production validation.
 
@@ -151,19 +151,23 @@ No environment values, password contents or plaintext material are collected.
 
 Files: `deploy/sdk/` PHP-specific candidate/verification assets, `backend/tests/test_sdk_php_security.py`, `docs/operations/2026-10-29-sdk-php-security.md`.
 
-- [ ] Verify the actual Web interpreter, patch provenance, present image ID and IP/SDK SSO dependencies using read-only commands.
-- [ ] Choose a vendor-supported patched runtime, or an exact official source backport with recorded scope and provenance if compatibility requires it. Test expected patch coverage before marking the candidate fixed.
-- [ ] Build/test with no production writable mounts or public ports. Preserve existing ZenTao hardening and PHP extension/application compatibility. Record source/build and immutable candidate image identity.
-- [ ] Have the main agent review the candidate, create a current consistent ZenTao DB/data backup, and switch only ZenTao with a captured rollback combination. Do not change the shared API or Nginx as a shortcut.
-- [ ] Verify Web PHP and all workers, startup guard, SDK SSO contract, authentication/permission interfaces and affected attachment behavior. User browser acceptance and absent signed-in coverage remain explicit.
+- [x] Verify the actual Web interpreter, patch provenance, present image ID and IP/SDK SSO dependencies using read-only commands.
+- [x] Choose the exact official 8.1 emergency source backport with recorded scope/provenance. Applicable native files: 10 pass; OOM compatibility diagnostics: one known failure, one unexecuted. This is not renewed upstream lifecycle support.
+- [x] Build/test with no production writable mounts or public ports. Preserve existing ZenTao hardening and PHP extension/application compatibility. Record source/build and immutable candidate image identity.
+- [x] Have the main agent review the candidate, create a current consistent ZenTao DB/data/config backup and verify off-host MariaDB restoration, then switch only ZenTao Web with captured rollback inputs. No shared API/Nginx or DB schema/data change.
+- [x] Verify production CLI/Web PHP, final startup guard/maps/modules, anonymous rejection and existing service login/readonly story interface; compare the full runtime tree under four explicitly documented renames and HTTP JS/CSS bytes. Preserve original preinit-path comparison failure. SSO route/client engineering regression is separate from real employee SSO.
+- [ ] Verify individual employee SSO, employee permission cases, real business attachment upload/download and user browser interactions. Synthetic multipart and service-identity GET are not these acceptance cases; full SDK business DR remains open.
 
 ## Task 3: IP certificate renewal and monitoring check
 
-- [ ] Inspect certbot timer, renewal lineage, hook, failure reason and current deployed certificate read-only.
-- [ ] Repair only the verified failed renewal dependency, validate in the provider's safe test mode where available, then renew/deploy under the existing lineage. Preserve IP/SDK SSO and shared Nginx rules.
-- [ ] Verify external certificate identity/expiration and unrelated HTTPS sites; record exact failure and repair evidence.
+- [x] Inspect certbot timer, renewal lineage, hook, failure reason and current deployed certificate read-only.
+- [x] Repair only the failed DNS dispatcher dependency; each DNS lineage staging passed once and normal service execution passed. The independent IP renewal already worked and was preserved, with no forced issuance or Nginx change.
+- [x] Verify external platform/FAE/IP certificates with trusted hostname/IP validation; record fingerprints/expiration. Hourly sandbox health checks passed natural 11:00/12:00/13:00 runs.
+- [ ] Bind an external alert destination and verify actual notification delivery; local JSON/journal/nonzero exit is not a notification channel.
 
 ## Task 4: Record outcomes and remaining security work
 
-- [ ] Commit operational evidence without keys or personal records. Record pass/fail/unexecuted checks, precise source and production versions, backup scope, remaining PHP/IP/whole-platform gaps.
-- [ ] Leave broader non-root/SSH/network/dependency work as separately versioned batches; this batch cannot claim complete platform security acceptance.
+- [x] Record operational evidence without keys or personal records, pass/fail/unexecuted checks, precise source and production versions, backup scope and remaining gaps in `docs/operations/2026-10-29-security-first-batch-results.md` and linked runbooks.
+- [x] Leave broader non-root/SSH/network/dependency work as separately versioned batches; no SSH/firewall/key changes. FAE application fixes remain a separate acceptance item. This batch cannot claim complete platform security acceptance.
+
+Execution record: platform backup 1 pass/1 fail; original cross-time attachment comparison 1 fail retained; independent PG 1 pass; local MinIO 1 pass/1 fail; SDK cold backup 1 pass/3 fail; local SDK DB restoration 1 pass/1 image-create fail; PHP cutover 1 pass; original runtime-path comparison 1 fail retained, explicit runtime/access/content contract 1 pass; real SDK service auth 2 pass. Engineering and native diagnostics are listed separately in the results, not summed across overlapping suites. Employee/browser/full-business-DR and alert delivery remain open.

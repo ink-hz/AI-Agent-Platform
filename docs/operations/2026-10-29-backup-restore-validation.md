@@ -1,6 +1,6 @@
 # 2026-10-29 备份集离机恢复验证
 
-范围限定为一份 complete manifest 与 replica/control/attachments 三个 `.orb`。工具不连接 SSH 或生产，不下载文件，不创建/重启 Docker 容器，不覆盖原数据库，不向外部发送消息。实际恢复由发布负责人在取得备份集并完成本地审查后控制执行。
+范围限定为一份 complete manifest 与 replica/control/attachments 三个 `.orb`。工具不连接 SSH 或生产，不下载文件，不创建/重启 Docker 容器，不覆盖原数据库，不向外部发送消息。负责人已独立控制执行下述原密文恢复；工具边界和实际验收分别记录。
 
 ## 数据与执行边界
 
@@ -44,7 +44,7 @@ ID 是负责人提供的本次隔离容器身份，不是工具默认值；容�
 
 ## 本机目标的额外留存边界
 
-最初提供的空容器使用 json-file，PostgreSQL 恢复失败时可能把 SQL/失败行写入宿主 Docker 日志；负责人已在任何真实恢复前移除它并创建上述新 ID。新目标要求 log-driver=none、UID999、只读根/cap-drop ALL/no-new-privileges、network none/无端口，PGDATA 4 GiB、运行目录16 MiB及 /tmp 64 MiB均为 tmpfs，CPU 2核、内存3 GiB、pids 256。工具强制核心隔离条件，拒绝旧日志驱动与可写非tmpfs数据路径；不自行调整权限、日志或资源上限。本子任务仍未执行真实恢复。
+最初提供的空容器使用 json-file，PostgreSQL 恢复失败时可能把 SQL/失败行写入宿主 Docker 日志；负责人已在任何真实恢复前移除它并另建准确新 ID。新目标要求 log-driver=none、UID999、只读根/cap-drop ALL/no-new-privileges、network none/无端口，PGDATA 4 GiB、运行目录16 MiB及 /tmp 64 MiB均为 tmpfs，CPU 2核、内存3 GiB、pids 256。工具强制核心隔离条件，拒绝旧日志驱动与可写非tmpfs数据路径；不自行调整权限、日志或资源上限。实际执行结果见下。
 
 ## 本地开发与验证
 
@@ -55,3 +55,15 @@ backend/.venv/bin/python -m pytest backend/tests/test_restore_backup_set.py -q
 ```
 
 必须分别报告工程测试、真实密文解密、真实隔离 PG 恢复、源对象基线对账和业务 DR；不存在后两项证据时保持未验收，不以测试数量替代完整闭环。
+
+## 负责人实际恢复记录（2026-10-29）
+
+使用生产 complete 集 `20261029T032929866671Z-4b220d42` 原 manifest 与三个密文（共407,010,565字节），离机下载逐件核对大小/SHA，文件0600/目录0700。恢复私钥仍在本机原受保护位置，从未放入云端或容器。
+
+第一批三件真实 AEAD 均通过，但在 SQL 前被 `attachments_baseline` 拒绝：源03:21:31整目录18文件/23,613字节，归档03:30:10为42文件/42,277字节，原基线不同。目标清理确认。原对账失败保留；未重采源或修改基线。原归档全部为MinIO内部元数据，37个文件晚于旧观察；此事实不能替代业务对象逻辑验证。
+
+第二批明确独立验证数据库，使用同一原密文、新隔离容器及相同准确PG17.6 image `sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3`。两库 **217普通表/1,866,570行**（replica8/19,818；control209/1,846,752），完整结构集合相符，192.359秒通过；该行数不冒充捕获同一时点的源COUNT对账。角色仅NOLOGIN、no-owner/no-privileges，原角色权限、生产认证及业务启动未验收。
+
+恢复库只读引用核对：2条附件及2条upload均uploading，共声明1,595,518字节，无已提交hash/locator；另1条abandoned write attempt，产物版本及derivative均0。核对后只删除自有恢复目标并确认不存在。
+
+同一附件原密文后续单独完成 MinIO 真实启动与逻辑接口验证：首批curl139失败、第二批使用明确适配的VM原生客户端15.139秒通过，原42文件大小/摘要未变。原IAM/非空业务对象和跨资源原子性未验收，详见[MinIO实际记录](2026-10-29-minio-restore-validation.md)。本次数据库和对象服务可恢复的限定证据不等于整个平台业务DR。全部首错与后续独立范围见[首批汇总](2026-10-29-security-first-batch-results.md)。
