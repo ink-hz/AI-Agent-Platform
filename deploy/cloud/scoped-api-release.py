@@ -39,6 +39,29 @@ def digest(value):
     return hashlib.sha256(value).hexdigest()
 
 
+def hostconfig_hash(value):
+    """Docker's unique mount lists are unordered; keep every other field exact."""
+    result = copy.deepcopy(value)
+    targets = []
+    if result.get('Binds') is not None:
+        require(isinstance(result['Binds'], list), 'hostconfig_mounts')
+        for bind in result['Binds']:
+            require(isinstance(bind, str), 'hostconfig_mounts')
+            parts = bind.split(':')
+            require(len(parts) in (2, 3) and parts[1].startswith('/'), 'hostconfig_mounts')
+            targets.append(parts[1])
+        result['Binds'].sort()
+    if result.get('Mounts') is not None:
+        require(isinstance(result['Mounts'], list), 'hostconfig_mounts')
+        for mount in result['Mounts']:
+            require(isinstance(mount, dict) and isinstance(mount.get('Target'), str)
+                    and mount['Target'].startswith('/'), 'hostconfig_mounts')
+            targets.append(mount['Target'])
+        result['Mounts'].sort(key=canonical)
+    require(len(targets) == len(set(targets)), 'duplicate_mount_target')
+    return digest(canonical(result))
+
+
 def regular(path):
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'regular_file')
@@ -513,7 +536,7 @@ def plan(stage_root, build_receipt, recipe, output):
     state = {**recipe, 'version': 1, 'old_image': live['Image'], 'old_release': old_sha, 'old_id': live['Id'],
              'new_image': built['image_id'], 'release': manifest['release_sha'], 'api_name': live['Name'],
              'new_image_reference': built['image_reference'], 'old_image_reference': old_reference, 'manifest_sha256': built['manifest_sha256'],
-             'old_hostconfig': digest(canonical(live['HostConfig'])),
+             'old_hostconfig': hostconfig_hash(live['HostConfig']),
              'inputs': input_hashes(recipe), 'before_config': digest(canonical(before)), 'after_config': digest(canonical(after)),
              'baseline_containers': baseline, 'guardrails': readiness, 'owner': str(uuid.uuid4()), 'deployment_id': uuid.uuid4().hex}
     save(root/'state.json', state)
@@ -592,7 +615,7 @@ def transact(root, rollback=False):
         require(current['Image'] == image and current['Config']['Image'] == reference
                 and env.get('PLATFORM_RELEASE_SHA') == release, 'post_runtime')
         assert_live_contract(old if rollback else new, current, inspect_image(image))
-        require(digest(canonical(current['HostConfig'])) == state['old_hostconfig'], 'api_hostconfig_changed')
+        require(hostconfig_hash(current['HostConfig']) == state['old_hostconfig'], 'api_hostconfig_changed')
         health = current['State'].get('Health', {}).get('Status')
         if health == 'healthy':
             save(root/(action+'.complete.json'), {'action': action, 'image_id': image, 'image_reference': reference, 'release_sha': release,

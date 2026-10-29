@@ -102,6 +102,27 @@ def test_command_uses_every_ordered_input_and_only_recreates_api():
     assert all('secret' not in arg for arg in cmd)
 
 
+def test_hostconfig_hash_preserves_every_value_but_ignores_unique_mount_order():
+    h = load()
+    original = {'Binds':['/a:/one:ro','volume:/two:rw'], 'Mounts':[
+        {'Type':'bind','Source':'/c','Target':'/three','ReadOnly':True,'BindOptions':{}},
+        {'Type':'bind','Source':'/d','Target':'/four','BindOptions':{}}],
+        'ReadonlyRootfs':True,'CapDrop':['ALL']}
+    reordered = copy.deepcopy(original)
+    reordered['Binds'].reverse();reordered['Mounts'].reverse()
+    assert h.hostconfig_hash(original) == h.hostconfig_hash(reordered)
+    assert original['Binds'][0] == '/a:/one:ro'
+    for field in ('Source','ReadOnly','BindOptions'):
+        changed = copy.deepcopy(reordered)
+        changed['Mounts'][0][field] = {'Propagation':'rshared'} if field == 'BindOptions' else ('/other' if field == 'Source' else True)
+        assert h.hostconfig_hash(original) != h.hostconfig_hash(changed)
+    changed = copy.deepcopy(reordered);changed['CapDrop']=[]
+    assert h.hostconfig_hash(original) != h.hostconfig_hash(changed)
+    changed = copy.deepcopy(reordered);changed['Binds'].append('/other:/one:ro')
+    with pytest.raises(h.ReleaseError, match='duplicate_mount_target'):
+        h.hostconfig_hash(changed)
+
+
 def test_image_derivation_rejects_config_or_base_layer_change():
     h = load(); base = {'RootFS': {'Layers': ['sha256:base']}, 'Config': {'Env': ['PATH=/bin', 'PLATFORM_RELEASE_SHA=old'], 'Cmd': ['api'], 'User': '10001'}}
     derived = copy.deepcopy(base); derived['RootFS']['Layers'].append('sha256:code')
