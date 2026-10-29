@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { agentsForSelector } from "../agentVisibility";
 import { fetchAgents, fetchSessions, type SessionQuery } from "../api";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
+import { startVisibleRefresh } from "../components/session/visibleRefresh";
 import { SessionListItem } from "../components/SessionListItem";
 import { useHistoryScrollRestoration } from "../navigationContext";
 import { currentLocationPath, navigate } from "../router";
@@ -83,26 +84,29 @@ export function SessionsView({
     };
   }, [basePath]);
   useEffect(() => {
-    const controller = new AbortController();
     setError(false); setPage(null);
     const { page: requestedPage, ...filters } = applied;
     const offset = (requestedPage - 1) * PAGE_SIZE;
-    load({
-      ...filters,
-      ...fixedScope,
-      limit: PAGE_SIZE,
-      ...(offset > 0 ? { offset } : {}),
-    }, controller.signal)
-      .then((nextPage) => {
-        if (controller.signal.aborted) return;
+    return startVisibleRefresh(async (signal) => {
+      try {
+        const nextPage = await load({
+          ...filters,
+          ...fixedScope,
+          limit: PAGE_SIZE,
+          ...(offset > 0 ? { offset } : {}),
+        }, signal);
+        if (signal.aborted) return;
         const lastPage = Math.max(1, Math.ceil(nextPage.total / PAGE_SIZE));
         if (requestedPage > lastPage) {
           navigate(sessionsPath({ ...applied, page: lastPage }, basePath), { replace: true });
           return;
         }
+        setError(false);
         setPage(nextPage);
-      }).catch(() => { if (!controller.signal.aborted) setError(true); });
-    return () => controller.abort();
+      } catch {
+        if (!signal.aborted) setError(true);
+      }
+    });
   }, [applied, basePath, fixedScope, load, version]);
   const selectableAgents = agentsForSelector(agents, draft.agent_id);
   useHistoryScrollRestoration(page !== null && !error);
@@ -161,10 +165,11 @@ export function SessionsView({
       </>}
       <button type="submit">搜索</button>
     </form>
-    {error ? <ErrorState onRetry={() => setVersion((value) => value + 1)} />
+    {error && page !== null && <p role="status">刷新失败，当前数据可能已过期。</p>}
+    {error && page === null ? <ErrorState onRetry={() => setVersion((value) => value + 1)} />
       : page === null ? <LoadingState label="正在加载 Session" />
       : page.items.length === 0 ? <EmptyState title="没有符合条件的会话" description="请调整筛选条件，或等待下一次数据同步。" />
-      : <div className="session-list">{page.items.map((session) => <SessionListItem key={session.session_key} session={session} detailHref={detailHref(session)} />)}</div>}
+      : <div className="session-list">{page.items.map((session) => <SessionListItem key={session.session_key} session={error ? { ...session, freshness: "stale" } : session} detailHref={detailHref(session)} />)}</div>}
     {page && page.items.length > 0 && <nav className="session-pagination" aria-label="Session 分页">
       <p>第 {visibleStart}–{visibleEnd} 条，共 {page.total} 条</p>
       <div>

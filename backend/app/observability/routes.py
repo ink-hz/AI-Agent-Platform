@@ -35,7 +35,9 @@ async def _with_identity(request: Request, result):
 async def list_agents(request: Request):
     try:
         return await _service(request).list_agents()
-    except ObservabilityReadError:
+    except ObservabilityReadError as error:
+        if getattr(request.app.state, "replica_repository", None) is not None:
+            _unavailable(error)
         return [agent.public_dict() for agent in request.app.state.repo.list_agents()]
 
 
@@ -43,7 +45,9 @@ async def list_agents(request: Request):
 async def get_agent(agent_id: str, request: Request):
     try:
         result = await _service(request).get_agent(agent_id)
-    except ObservabilityReadError:
+    except ObservabilityReadError as error:
+        if getattr(request.app.state, "replica_repository", None) is not None:
+            _unavailable(error)
         agent = request.app.state.repo.get_agent(agent_id)
         if agent is None:
             raise HTTPException(status_code=404, detail="agent not found")

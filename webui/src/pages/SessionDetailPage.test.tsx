@@ -73,11 +73,64 @@ describe("SessionDetailPage return navigation", () => {
     container.remove();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   async function renderPage() {
     await act(async () => root.render(<SessionDetailPage sessionKey={session.session_key} />));
   }
+
+  it("refreshes visible replay, retains data on failure, stops hidden and cancels stale responses", async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => hidden ? "hidden" : "visible");
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(session))
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(response({ ...session, title: "新标题" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderPage();
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain(session.title);
+    expect(container.textContent).toContain("刷新失败");
+    expect(container.querySelector(".freshness-stale")).not.toBeNull();
+    hidden = true;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(container.textContent).toContain("新标题");
+    expect(container.textContent).not.toContain("刷新失败");
+    const signal = fetchMock.mock.calls[2][1].signal as AbortSignal;
+    await act(async () => root.unmount());
+    expect(signal.aborted).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    root = createRoot(container);
+  });
+
+  it("ignores a late response after the page was hidden and resumed", async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    let finishOldRequest: (value: Response) => void = () => undefined;
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => hidden ? "hidden" : "visible");
+    const fetchMock = vi.fn().mockResolvedValueOnce(response(session))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { finishOldRequest = resolve; }))
+      .mockResolvedValueOnce(response({ ...session, title: "当前回放" }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderPage();
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    const oldSignal = fetchMock.mock.calls[1][1].signal as AbortSignal;
+    hidden = true;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(oldSignal.aborted).toBe(true);
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => finishOldRequest(response({ ...session, title: "迟到的旧回放" })));
+    expect(container.textContent).toContain("当前回放");
+    expect(container.textContent).not.toContain("迟到的旧回放");
+  });
 
   it("returns to the validated true source", async () => {
     window.history.replaceState({

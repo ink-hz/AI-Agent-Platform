@@ -16,6 +16,7 @@ from app.fleet.catalog import AgentCatalog
 from app.fleet.repository import DailyUsage, UsageRecord, UsageSnapshot
 from app.observability.models import (
     AgentSummary,
+    AgentSourceStatus,
     AttachmentSummary,
     FlywheelFilters,
     FlywheelOverview,
@@ -131,6 +132,53 @@ class ReplicaObservabilityRepository:
                 "select max(committed_at) as last_success_at from platform_replica.generations"
             ).fetchone()
         return row["last_success_at"] if row else None
+
+    def _source_states(self) -> dict[str, AgentSourceStatus]:
+        try:
+            with self._connection() as connection, connection.cursor() as cursor:
+                schema = cursor.execute(
+                    "select to_regclass('platform_replica.agent_sources') as agent_sources"
+                ).fetchone()
+                if schema and schema["agent_sources"] is None:
+                    return {}
+                rows = cursor.execute(
+                    """select agent_id, source_kind, mode, publisher, source_instance_id,
+                    last_source_success_at, last_published_at, last_failure_at, last_error,
+                    source_sessions, source_turns, last_duration_ms
+                    from platform_replica.agent_sources"""
+                ).fetchall()
+            return {
+                row["agent_id"]: AgentSourceStatus(
+                    **{key: value for key, value in row.items() if key != "agent_id"},
+                    lag_seconds=(
+                        max(0, int((self._now() - _time(row["last_source_success_at"])).total_seconds()))
+                        if row.get("last_source_success_at") else None
+                    ),
+                )
+                for row in rows
+            }
+        except Exception:
+            raise ObservabilityReadError("replica source status unavailable") from None
+
+    def _source_status(
+        self, agent_id: str, states: dict[str, AgentSourceStatus],
+        *, source_kind: str = "metabot",
+    ) -> AgentSourceStatus:
+        if agent_id in states:
+            return states[agent_id]
+        return AgentSourceStatus(
+            mode="office", publisher="office", source_kind=source_kind,
+        )
+
+    def _source_freshness(self, status: AgentSourceStatus) -> str:
+        success = status.last_source_success_at
+        if (
+            success is None
+            or self._now() - success > self._stale_after
+            or (status.last_failure_at is not None and status.last_failure_at >= success)
+        ):
+            return "stale"
+        return "fresh"
 
     def deployment_status(self) -> dict[str, Any]:
         try:
@@ -304,7 +352,9 @@ class ReplicaObservabilityRepository:
             )
         attention.sort(key=lambda item: (-item["last_active_at"].timestamp(), item["session_key"]))
         return {
-            "data_as_of": self._latest_success(),
+            "data_as_of": self._source_status(
+                "ai-fae-agent", self._source_states(), source_kind="fae"
+            ).last_source_success_at,
             "session_count": len(records),
             "active_subject_count": len(subject_ids),
             "abnormal_session_count": abnormal_session_count,
@@ -359,9 +409,6 @@ class ReplicaObservabilityRepository:
         except ObservabilityReadError:
             raise
 
-    def _status_freshness(self) -> str:
-        return "stale" if self.deployment_status()["freshness"] == "stale" else "fresh"
-
     @staticmethod
     def _latest_outcome(record: dict[str, Any]) -> str | None:
         for turn in reversed(record.get("turns", [])):
@@ -370,9 +417,12 @@ class ReplicaObservabilityRepository:
         return None
 
     def _summary(
-        self, record: dict[str, Any], deployment: dict[str, Any] | None = None
+        self, record: dict[str, Any], states: dict[str, AgentSourceStatus] | None = None
     ) -> SessionSummary:
-        deployment = deployment or self.deployment_status()
+        status = self._source_status(
+            record["agent_id"], states if states is not None else self._source_states(),
+            source_kind=record["source_kind"],
+        )
         title = record.get("title") or {}
         turns = list(record.get("turns") or [])
         feedback_available = record["source_kind"] != "voc" and all("feedback_sentiments" in turn for turn in turns)
@@ -401,7 +451,8 @@ class ReplicaObservabilityRepository:
                 "restricted" if review_available else "unavailable"
             ),
             latest_outcome=self._latest_outcome(record),
-            source_synced_at=deployment["last_success_at"],
+            source_synced_at=status.last_source_success_at,
+            source_status=status,
             participant_count=1,
             primary_sender_name=record.get("primary_sender_name"),
             primary_sender_department=record.get("primary_sender_department"),
@@ -409,7 +460,7 @@ class ReplicaObservabilityRepository:
             sender_identity_status=(
                 "resolved" if record.get("primary_sender_name") else "unavailable"
             ),
-            freshness="stale" if deployment["freshness"] == "stale" else "fresh",
+            freshness=self._source_freshness(status),
         )
 
     def list_sessions(
@@ -493,10 +544,10 @@ class ReplicaObservabilityRepository:
             key=lambda record: (_time(record["last_active_at"]), record["key"]),
             reverse=True,
         )
-        deployment = self.deployment_status()
+        states = self._source_states()
         return Page[SessionSummary](
             items=[
-                self._summary(record, deployment)
+                self._summary(record, states)
                 for record in filtered[offset : offset + limit]
             ],
             total=len(filtered),
@@ -632,9 +683,9 @@ class ReplicaObservabilityRepository:
         if not records:
             return None
         record = records[0]
-        deployment = self.deployment_status()
+        states = self._source_states()
         return SessionDetail(
-            **self._summary(record, deployment).model_dump(),
+            **self._summary(record, states).model_dump(),
             turns=[self._turn(record, turn) for turn in record.get("turns", [])],
         )
 
@@ -675,21 +726,23 @@ class ReplicaObservabilityRepository:
             error_class=trace.get("error_class"),
             error_message=None,
             detail_availability="unavailable",
-            source_synced_at=self._latest_success(),
+            source_synced_at=self._source_status(
+                record["agent_id"], self._source_states(), source_kind=record["source_kind"]
+            ).last_source_success_at,
             details={"tool_categories": trace.get("tool_categories", [])},
             steps=[],
         )
 
     def list_agents(self) -> tuple[AgentSummary, ...]:
         records = self._records()
-        latest_success = self._latest_success()
-        freshness = self._status_freshness()
+        states = self._source_states()
         result = []
         for profile in self._catalog.all_profiles():
             owned = [record for record in records if record["agent_id"] == profile.id]
             source = owned[0]["source_kind"] if owned else (
                 "voc" if profile.id == "voc" else "fae" if profile.id in {"ai-fae-agent", "ai-daq-fae-agent"} else "admin" if profile.id == "ai-admin-agent" else "metabot"
             )
+            status = self._source_status(profile.id, states, source_kind=source)
             result.append(
                 AgentSummary(
                     id=profile.id,
@@ -707,8 +760,9 @@ class ReplicaObservabilityRepository:
                         (_time(record["last_active_at"]) for record in owned),
                         default=None,
                     ),
-                    last_synced_at=latest_success,
-                    freshness=freshness,
+                    last_synced_at=status.last_source_success_at,
+                    freshness=self._source_freshness(status),
+                    source_status=status,
                 )
             )
         return tuple(sorted(result, key=lambda item: (-item.total_turns, item.id)))
@@ -766,7 +820,7 @@ class ReplicaObservabilityRepository:
                 daily[(record["agent_id"], day)] = daily.get((record["agent_id"], day), 0) + 1
         usage = []
         today = now.astimezone(_SHANGHAI).date()
-        last_success = self._latest_success()
+        states = self._source_states()
         for agent_id, sessions in by_agent.items():
             turns = [turn for session in sessions for turn in _counted_turns(session)]
             latest_session = max(sessions, key=lambda item: _time(item["last_active_at"]))
@@ -788,7 +842,9 @@ class ReplicaObservabilityRepository:
                     if recent_turn
                     else None,
                     session_count=len(sessions),
-                    last_synced_at=last_success,
+                    last_synced_at=self._source_status(
+                        agent_id, states, source_kind=latest_session["source_kind"]
+                    ).last_source_success_at,
                 )
             )
         trend = tuple(

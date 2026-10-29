@@ -38,6 +38,23 @@ class FlywheelFilters(BaseModel):
     status: str | None = None
 
 
+class AgentSourceStatus(BaseModel):
+    mode: Literal["cloud_direct", "office", "native"]
+    publisher: Literal["cloud", "office", "native"]
+    source_kind: str
+    source_instance_id: str | None = None
+    last_source_success_at: datetime | None = None
+    last_published_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    last_error: str | None = None
+    lag_seconds: int | None = Field(
+        default=None, description="Age of the last successful source observation, not measured commit-to-visible latency."
+    )
+    source_sessions: int | None = None
+    source_turns: int | None = None
+    last_duration_ms: int | None = None
+
+
 class AgentSummary(BaseModel):
     id: str
     name: str
@@ -53,6 +70,7 @@ class AgentSummary(BaseModel):
     last_activity_at: datetime | None = None
     last_synced_at: datetime | None = None
     freshness: Freshness
+    source_status: AgentSourceStatus | None = None
 
 
 class RuntimeObservation(BaseModel):
@@ -92,6 +110,7 @@ class SessionSummary(BaseModel):
     verified_subject: VerifiedSubjectReference | None = None
     sender_identity_status: SenderIdentityStatus = "unavailable"
     freshness: Freshness
+    source_status: AgentSourceStatus | None = None
 
 
 class EvidenceSummary(BaseModel):

@@ -87,6 +87,7 @@ describe("SessionsPage URL state", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     sessionPaths = [];
     sessionResult = () => sessionPage();
     window.history.replaceState({}, "", "/admin/sessions");
@@ -107,11 +108,36 @@ describe("SessionsPage URL state", () => {
     container.remove();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   async function renderPage() {
     await act(async () => root.render(<SessionsPage />));
   }
+
+  it("polls while visible and keeps previous rows with a stale warning when refresh fails", async () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => hidden ? "hidden" : "visible");
+    sessionResult = () => sessionPage(1, 0, 1);
+    await renderPage();
+    const initialCalls = sessionPaths.length;
+    sessionResult = () => { throw new Error("offline"); };
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(sessionPaths.length).toBe(initialCalls + 1);
+    expect(container.textContent).toContain("分页验证 Session");
+    expect(container.textContent).toContain("刷新失败");
+    expect(container.querySelector(".freshness-stale")).not.toBeNull();
+    hidden = true;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(sessionPaths.length).toBe(initialCalls + 1);
+    sessionResult = () => sessionPage(1, 0, 1);
+    hidden = false;
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(sessionPaths.length).toBe(initialCalls + 2);
+    expect(container.textContent).not.toContain("刷新失败");
+  });
 
   it("hydrates filters from the URL and requests the same result", async () => {
     window.history.replaceState({}, "", "/admin/sessions?agent_id=ai-fae-agent&source_kind=fae&q=Gemini");

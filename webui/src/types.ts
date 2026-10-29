@@ -142,6 +142,21 @@ export interface DeploymentInfo {
   last_success_at: string | null;
 }
 
+export interface AgentSourceStatus {
+  mode: "cloud_direct" | "office" | "native";
+  publisher: "cloud" | "office" | "native";
+  source_kind: string;
+  source_instance_id: string | null;
+  last_source_success_at: string | null;
+  last_published_at: string | null;
+  last_failure_at: string | null;
+  last_error: string | null;
+  lag_seconds: number | null;
+  source_sessions?: number | null;
+  source_turns?: number | null;
+  last_duration_ms?: number | null;
+}
+
 export interface AgentSummary {
   id: string;
   name: string;
@@ -157,6 +172,7 @@ export interface AgentSummary {
   last_activity_at: string | null;
   last_synced_at: string | null;
   freshness: Freshness;
+  source_status?: AgentSourceStatus | null;
 }
 
 export type ReadinessStatus = "Ready" | "Busy" | "Limited" | "Offline" | "Unknown";
@@ -219,6 +235,7 @@ export interface SessionSummary {
   latest_outcome: string | null;
   source_synced_at: string | null;
   freshness: Freshness;
+  source_status?: AgentSourceStatus | null;
   participant_count: number | null;
   primary_sender_name: string | null;
   primary_sender_department: string | null;

@@ -33,7 +33,9 @@ class _Cursor:
         normalized = " ".join(sql.lower().split())
         self.connection.statements.append((normalized, params))
         if "to_regclass" in normalized:
-            self.rows = [{"sessions": "platform_replica.sessions", "generations": "platform_replica.generations"}]
+            self.rows = [{"sessions": "platform_replica.sessions", "generations": "platform_replica.generations", "agent_sources": self.connection.agent_sources_table}]
+        elif "from platform_replica.agent_sources" in normalized:
+            self.rows = self.connection.agent_sources
         elif "max(committed_at)" in normalized:
             self.rows = [{"last_success_at": self.connection.last_success_at}]
         elif "from platform_replica.sessions" in normalized:
@@ -64,6 +66,8 @@ class _Connection:
     def __init__(self, rows, last_success_at):
         self.rows = rows
         self.last_success_at = last_success_at
+        self.agent_sources = []
+        self.agent_sources_table = "platform_replica.agent_sources"
         self.statements = []
 
     def __enter__(self):
@@ -471,7 +475,10 @@ def test_fae_operational_aggregate_uses_only_bounded_sanitized_records():
     assert aggregate["trend"][0]["sessions"] == 1
     assert aggregate["trend"][0]["negative_turns"] == 0
     assert aggregate["attention"][0]["session_key"] == "f" * 52
-    statement, params = connection.statements[-2]
+    statement, params = next(
+        (sql, params) for sql, params in connection.statements
+        if "from platform_replica.sessions" in sql
+    )
     assert "agent_id = %s" in statement
     assert "source_kind = %s" in statement
     assert params == ("ai-fae-agent", "fae", now - timedelta(days=1), now + timedelta(seconds=1))
@@ -721,3 +728,138 @@ def test_cloud_repository_rejects_nonproduction_environment():
         )
 
     assert FAE_SOURCE_ENVIRONMENT == "production"
+
+
+def test_agent_source_failure_is_not_hidden_by_another_agents_recent_batch():
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    record = _record(now, agent_id="ai-fae-agent")
+    record["source_kind"] = "fae"
+    repository, connection = _repository(now, [record])
+    success = now - timedelta(hours=1)
+    connection.agent_sources = [{
+        "agent_id": "ai-fae-agent", "source_kind": "fae", "mode": "cloud_direct",
+        "publisher": "cloud", "source_instance_id": "cloud-fae",
+        "last_source_success_at": success, "last_published_at": success,
+        "last_failure_at": now - timedelta(seconds=1), "last_error": "source_unavailable",
+        "source_sessions": 1, "source_turns": 1, "last_duration_ms": 9,
+    }, {
+        "agent_id": "ai-admin-agent", "source_kind": "admin", "mode": "cloud_direct",
+        "publisher": "cloud", "source_instance_id": "cloud-admin",
+        "last_source_success_at": now, "last_published_at": now,
+        "last_failure_at": None, "last_error": None,
+        "source_sessions": 0, "source_turns": 0, "last_duration_ms": 1,
+    }]
+    detail = repository.get_session(record["key"])
+    agent = repository.get_agent("ai-fae-agent")
+    assert detail.freshness == agent.freshness == "stale"
+    assert detail.source_synced_at == agent.last_synced_at == success
+    assert detail.source_status.last_error == "source_unavailable"
+    assert detail.source_status.lag_seconds == 3600
+    assert detail.source_status.mode == "cloud_direct"
+    assert repository.get_agent("ai-admin-agent").freshness == "fresh"
+    assert repository.usage_snapshot().records[0].last_synced_at == success
+    assert repository.fae_operational_aggregate(now - timedelta(days=1), now + timedelta(seconds=1))["data_as_of"] == success
+
+
+def test_recent_failure_makes_source_stale_even_inside_freshness_window():
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    record = _record(now, agent_id="ai-fae-agent")
+    repository, connection = _repository(now, [record])
+    connection.agent_sources = [{
+        "agent_id": "ai-fae-agent", "source_kind": "fae", "mode": "cloud_direct",
+        "publisher": "cloud", "source_instance_id": "cloud-fae",
+        "last_source_success_at": now - timedelta(seconds=5), "last_published_at": now,
+        "last_failure_at": now, "last_error": "source_timeout",
+    }]
+    assert repository.get_session(record["key"]).freshness == "stale"
+
+
+def test_legacy_activity_and_empty_catalog_are_not_successful_source_observations():
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    record = _record(now, agent_id="ai-fae-agent")
+    repository, _ = _repository(now, [record])
+    detail = repository.get_session(record["key"])
+    assert detail.freshness == "stale"
+    assert detail.source_status.last_source_success_at is None
+    assert repository.get_agent("ai-admin-agent").freshness == "stale"
+    assert repository.get_agent("ai-admin-agent").last_synced_at is None
+
+
+def test_idle_agent_can_be_current_after_successful_own_source_observation():
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    repository, connection = _repository(now, [])
+    connection.agent_sources = [{
+        "agent_id": "ai-fae-agent", "source_kind": "fae", "mode": "cloud_direct",
+        "publisher": "cloud", "source_instance_id": "cloud-fae",
+        "last_source_success_at": now, "last_published_at": now - timedelta(days=1),
+        "last_failure_at": now - timedelta(days=1), "last_error": None,
+    }]
+    agent = repository.get_agent("ai-fae-agent")
+    assert agent.freshness == "fresh"
+    assert agent.last_synced_at == now
+    assert agent.source_status.lag_seconds == 0
+
+
+def test_source_status_survives_repository_service_http_projection():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.observability.routes import router
+    from app.observability.service import ObservabilityService
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    record = _record(now, agent_id="ai-fae-agent")
+    record["source_kind"] = "fae"
+    repository, connection = _repository(now, [record])
+    connection.agent_sources = [{
+        "agent_id": "ai-fae-agent", "source_kind": "fae", "mode": "cloud_direct",
+        "publisher": "cloud", "last_source_success_at": now - timedelta(seconds=2),
+        "last_failure_at": now, "last_error": "source_unavailable",
+        "last_published_at": now - timedelta(seconds=1),
+    }]
+    app = FastAPI()
+    app.include_router(router)
+    app.state.observability_service = ObservabilityService(repository)
+    app.state.replica_repository = repository
+    with TestClient(app) as client:
+        for path in ["/api/sessions?agent_id=ai-fae-agent", f"/api/sessions/{record['key']}", "/api/agents/ai-fae-agent"]:
+            result = client.get(path)
+            assert result.status_code == 200
+            body = result.json()
+            if "items" in body:
+                body = body["items"][0]
+            assert body["source_status"]["last_error"] == "source_unavailable"
+            assert body["source_status"]["lag_seconds"] == 2
+            assert body["freshness"] == "stale"
+
+
+def test_cloud_agent_status_read_failure_does_not_fall_back_to_catalog():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.observability.routes import router
+    from app.observability.service import ObservabilityService
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    repository, _ = _repository(now, [])
+    def unavailable():
+        raise ObservabilityReadError("replica source status unavailable")
+    repository._source_states = unavailable
+    class Catalog:
+        def list_agents(self):
+            return []
+        def get_agent(self, _agent_id):
+            return None
+    app = FastAPI()
+    app.include_router(router)
+    app.state.observability_service = ObservabilityService(repository)
+    app.state.replica_repository = repository
+    app.state.repo = Catalog()
+    with TestClient(app) as client:
+        assert client.get("/api/agents").status_code == 503
+        assert client.get("/api/agents/ai-fae-agent").status_code == 503
+
+
+def test_legacy_schema_without_agent_sources_stays_readable_and_stale():
+    now = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    record = _record(now, agent_id="ai-fae-agent")
+    repository, connection = _repository(now, [record])
+    connection.agent_sources_table = None
+    assert repository.get_session(record["key"]).freshness == "stale"
+    assert not any("from platform_replica.agent_sources" in sql for sql, _ in connection.statements)

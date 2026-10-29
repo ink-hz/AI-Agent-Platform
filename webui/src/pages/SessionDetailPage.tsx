@@ -8,7 +8,7 @@ import { sessionReturnTarget } from "../navigationContext";
 
 export function SessionDetailPage({ sessionKey }: { sessionKey: string }) {
   const { session, closureSummaries, error } = useSessionDetail(fetchSession, sessionKey, "negative-only");
-  if (error) return <ErrorState />;
+  if (error && !session) return <ErrorState />;
   if (!session) return <LoadingState label="正在加载 Session" />;
   const returnTarget = sessionReturnTarget(window.history.state);
   return <>
@@ -17,6 +17,7 @@ export function SessionDetailPage({ sessionKey }: { sessionKey: string }) {
       event.preventDefault();
       window.history.back();
     }}>{returnTarget ? "← 返回" : "← 返回 Session 列表"}</PlatformLink>
+    {error && <p role="status">刷新失败，当前数据可能已过期。</p>}
     <SessionReplay session={session} closureSummaries={closureSummaries} />
   </>;
 }

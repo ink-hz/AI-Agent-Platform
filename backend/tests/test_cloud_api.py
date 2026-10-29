@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.observability.models import Page, SessionSummary
 
 
 def _private(path: Path) -> Path:
@@ -35,7 +36,7 @@ def test_cloud_deployment_endpoint_and_mutating_routes_are_read_only(
     class EmptyObservability:
         async def list_agents(self): return []
         async def list_sessions(self, *_args):
-            return {"items": [], "total": 0, "limit": 50, "offset": 0}
+            return Page[SessionSummary](items=[], total=0, limit=50, offset=0)
 
     monkeypatch.setattr(
         "app.main.build_cloud_replica_services",

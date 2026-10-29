@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { startVisibleRefresh } from "./visibleRefresh";
+
 import { fetchReviewTurnSummaries } from "../../api";
 import type { SessionDetail, TurnClosureSummary } from "../../types";
 
@@ -39,7 +41,6 @@ export function useSessionDetail(
   }));
 
   useEffect(() => {
-    const controller = new AbortController();
     setState({
       loader,
       sessionKey,
@@ -48,43 +49,38 @@ export function useSessionDetail(
       closureSummaries: EMPTY_CLOSURE_SUMMARIES,
       error: false,
     });
-    void loader(sessionKey, controller.signal).then(async (value) => {
-      if (controller.signal.aborted) return;
-      const turnKeys = value.turns
-        .filter((turn) => closureMode === "all-turns"
-          || turn.feedback.some((item) => item.sentiment === "negative"))
-        .map((turn) => turn.turn_key);
-      const batches: string[][] = [];
-      for (let index = 0; index < turnKeys.length; index += SUMMARY_BATCH_SIZE) {
-        batches.push(turnKeys.slice(index, index + SUMMARY_BATCH_SIZE));
+    return startVisibleRefresh(async (signal) => {
+      try {
+        const value = await loader(sessionKey, signal);
+        if (signal.aborted) return;
+        const turnKeys = value.turns
+          .filter((turn) => closureMode === "all-turns"
+            || turn.feedback.some((item) => item.sentiment === "negative"))
+          .map((turn) => turn.turn_key);
+        const batches: string[][] = [];
+        for (let index = 0; index < turnKeys.length; index += SUMMARY_BATCH_SIZE) {
+          batches.push(turnKeys.slice(index, index + SUMMARY_BATCH_SIZE));
+        }
+        const summaries = (await Promise.all(
+          batches.map((turnKeyBatch) => fetchReviewTurnSummaries(turnKeyBatch, signal)),
+        )).flat();
+        if (signal.aborted) return;
+        setState({
+          loader,
+          sessionKey,
+          closureMode,
+          session: value,
+          closureSummaries: Object.fromEntries(summaries.map((item) => [item.turn_key, item])),
+          error: false,
+        });
+      } catch {
+        if (!signal.aborted) setState((previous) => ({ ...previous, error: true }));
       }
-      const summaries = (await Promise.all(
-        batches.map((turnKeyBatch) => fetchReviewTurnSummaries(turnKeyBatch, controller.signal)),
-      )).flat();
-      if (controller.signal.aborted) return;
-      setState({
-        loader,
-        sessionKey,
-        closureMode,
-        session: value,
-        closureSummaries: Object.fromEntries(summaries.map((item) => [item.turn_key, item])),
-        error: false,
-      });
-    }).catch(() => {
-      if (!controller.signal.aborted) setState({
-        loader,
-        sessionKey,
-        closureMode,
-        session: null,
-        closureSummaries: EMPTY_CLOSURE_SUMMARIES,
-        error: true,
-      });
     });
-    return () => controller.abort();
   }, [closureMode, loader, sessionKey]);
 
   if (state.loader !== loader || state.sessionKey !== sessionKey || state.closureMode !== closureMode) {
     return { session: null, closureSummaries: EMPTY_CLOSURE_SUMMARIES, error: false };
   }
-  return state;
+  return { ...state, session: state.session && state.error ? { ...state.session, freshness: "stale" } : state.session };
 }
