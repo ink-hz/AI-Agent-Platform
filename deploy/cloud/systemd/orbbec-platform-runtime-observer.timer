@@ -1,0 +1,11 @@
+[Unit]
+Description=Collect platform runtime observations every 30 seconds
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=30s
+AccuracySec=1s
+Unit=orbbec-platform-runtime-observer.service
+
+[Install]
+WantedBy=timers.target
