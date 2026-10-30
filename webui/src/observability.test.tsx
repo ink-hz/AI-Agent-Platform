@@ -75,7 +75,6 @@ describe("observability directory components", () => {
     expect(html).toContain("累计 Session");
     expect(html).toContain("累计对话");
     expect(html).toContain("Production engineering Agent");
-    expect(html).toContain("最新");
     expect(html).toContain("/agents/ai-fae-agent");
   });
 

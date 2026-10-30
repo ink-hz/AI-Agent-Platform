@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchAgent, fetchAgentRuntime, fetchOperationalEvents, fetchSessions } from "../api";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
-import { channelStatusLabel, readinessLabel, sourceFreshnessLabel } from "../copy";
+import { channelStatusLabel, readinessLabel } from "../copy";
 import { OperationalEventItem } from "../components/OperationalEventItem";
 import { PlatformLink } from "../components/PlatformLink";
 import { SessionListItem } from "../components/SessionListItem";
@@ -83,7 +83,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
     <PlatformLink className="back-link" href="/admin/agents">← 返回 Agent 列表</PlatformLink>
     <section className={`agent-profile agent-${agent.accent}`}>
       <div className="profile-identity"><span className="fleet-avatar">{agent.glyph}</span><div><p>{agent.domain}</p><h1>{agent.name}</h1><span>{agent.description}</span></div></div>
-      <div className="profile-badges"><span>{agent.source_kind.toUpperCase()}</span><span>{agent.deployment}</span><span className={`freshness freshness-${agent.freshness}`}>{sourceFreshnessLabel(agent.freshness)}</span></div>
+      <div className="profile-badges"><span>{agent.source_kind.toUpperCase()}</span><span>{agent.deployment}</span></div>
     </section>
     <section className="agent-runtime-summary" aria-labelledby="runtime-heading">
       <div className="runtime-summary-head">
