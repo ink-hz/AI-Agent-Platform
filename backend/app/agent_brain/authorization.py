@@ -45,6 +45,11 @@ class AgentUseAuthorization:
         self._cards = load_capability_cards(capability_path)
 
     @property
+    def catalog_cards(self) -> tuple[AgentCatalogCard, ...]:
+        """Safe configured metadata; this projection does not grant Agent use."""
+        return self._catalog_cards
+
+    @property
     def capability_cards(self) -> tuple[AgentCapabilityCard, ...]:
         return self._cards
 

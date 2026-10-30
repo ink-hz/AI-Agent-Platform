@@ -1,0 +1,1551 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30T02:00:00Z",
+  "window": {
+    "start": "2026-10-23T16:00:00Z",
+    "end": "2026-10-30T02:00:00Z",
+    "timezone": "Asia/Shanghai",
+    "days": 7
+  },
+  "rolling_24h": {
+    "start": "2026-10-29T02:00:00Z",
+    "end": "2026-10-30T02:00:00Z",
+    "timezone": "Asia/Shanghai",
+    "days": null
+  },
+  "active_window_minutes": 15,
+  "inventory": {
+    "applications": 7,
+    "agent_services": 5,
+    "business_workspaces": 2,
+    "configured_agents": 10,
+    "channel_agents": 5,
+    "legacy_streams": 1
+  },
+  "summary": {
+    "healthy": 2,
+    "abnormal": 0,
+    "unknown": 3,
+    "observed_runtime": 2,
+    "expected_runtime": 5,
+    "covered_sources": 1,
+    "expected_sources": 5,
+    "status": "partial",
+    "usage": {
+      "sessions": {
+        "value": 1,
+        "status": "partial",
+        "unit": "session",
+        "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+        "reason": "source_coverage_partial"
+      },
+      "turns": {
+        "value": 2,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 2,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 1,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    }
+  },
+  "applications": [
+    {
+      "id": "hr-bot",
+      "name": "HR Agent",
+      "kind": "agent",
+      "entry_path": "/hr/",
+      "can_use": true,
+      "runtime": {
+        "coverage": "observed",
+        "state": "healthy",
+        "observed_at": "2026-10-30T02:00:00Z",
+        "checked_at": "2026-10-30T02:00:00Z",
+        "stale": false,
+        "method": "host_loopback",
+        "error": null
+      },
+      "source": {
+        "source_id": "hr-bot",
+        "source_kind": "hr",
+        "channel": null,
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "business_metrics": {},
+      "business_sources": {},
+      "deployment": {
+        "version": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "observed_at": "2026-10-30T02:00:00Z",
+        "evidence": "ready_release_sha"
+      },
+      "dataset": null
+    },
+    {
+      "id": "voc",
+      "name": "VOC 洞察助手",
+      "kind": "agent",
+      "entry_path": "/voc/",
+      "can_use": true,
+      "runtime": {
+        "coverage": "observed",
+        "state": "healthy",
+        "observed_at": "2026-10-30T02:00:00Z",
+        "checked_at": "2026-10-30T02:00:00Z",
+        "stale": false,
+        "method": "safe_http",
+        "error": null
+      },
+      "source": {
+        "source_id": "voc",
+        "source_kind": "voc",
+        "channel": "dingtalk",
+        "status": "fresh",
+        "observed_at": "2026-10-30T02:00:00Z",
+        "published_at": "2026-10-30T02:00:00Z",
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": true,
+        "error": null,
+        "channels": [
+          "dingtalk"
+        ],
+        "permission_scope": "platform_management",
+        "reader_role": "platform_replica_read"
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": 1,
+            "status": "observed",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": null
+          },
+          "turns": {
+            "value": 2,
+            "status": "observed",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": null
+          },
+          "answered_turns": {
+            "value": 2,
+            "status": "observed",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": null
+          },
+          "deliveries": {
+            "value": 1,
+            "status": "observed",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": null
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": 1,
+            "status": "observed",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": null
+          },
+          "turns": {
+            "value": 2,
+            "status": "observed",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": null
+          },
+          "answered_turns": {
+            "value": 2,
+            "status": "observed",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": null
+          },
+          "deliveries": {
+            "value": 1,
+            "status": "observed",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": null
+          }
+        },
+        "last_activity_at": "2026-10-30T01:55:00Z",
+        "outcome_counts": {
+          "sent": 1,
+          "delivery_pending": 1
+        }
+      },
+      "business_metrics": {
+        "registered_vocs": {
+          "value": 2,
+          "status": "observed",
+          "unit": "result",
+          "definition": "当前账号可见的已入库VOC条目数；不代表用户轮次或成功任务",
+          "reason": null
+        }
+      },
+      "business_sources": {
+        "registered_vocs": {
+          "source_id": "voc-authorized-records",
+          "source_kind": "voc",
+          "channel": null,
+          "status": "fresh",
+          "observed_at": "2026-10-30T02:00:00Z",
+          "published_at": null,
+          "checked_at": "2026-10-30T02:00:00Z",
+          "complete": true,
+          "error": null,
+          "channels": [],
+          "permission_scope": "current_actor_voc_management",
+          "reader_role": null
+        }
+      },
+      "deployment": {
+        "version": null,
+        "observed_at": null,
+        "evidence": null
+      },
+      "dataset": null
+    },
+    {
+      "id": "ai-admin-agent",
+      "name": "AI 行政 Agent",
+      "kind": "agent",
+      "entry_path": "/office/?view=services",
+      "can_use": true,
+      "runtime": {
+        "coverage": "not_observed",
+        "state": "unknown",
+        "observed_at": null,
+        "checked_at": null,
+        "stale": false,
+        "method": null,
+        "error": null
+      },
+      "source": {
+        "source_id": "ai-admin-agent",
+        "source_kind": "admin",
+        "channel": null,
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "business_metrics": {},
+      "business_sources": {},
+      "deployment": {
+        "version": null,
+        "observed_at": null,
+        "evidence": null
+      },
+      "dataset": null
+    },
+    {
+      "id": "ai-fae-agent",
+      "name": "AI FAE Agent",
+      "kind": "agent",
+      "entry_path": "/fae/",
+      "can_use": true,
+      "runtime": {
+        "coverage": "not_observed",
+        "state": "unknown",
+        "observed_at": null,
+        "checked_at": null,
+        "stale": false,
+        "method": null,
+        "error": null
+      },
+      "source": {
+        "source_id": "ai-fae-agent",
+        "source_kind": "fae",
+        "channel": "fae",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "business_metrics": {},
+      "business_sources": {},
+      "deployment": {
+        "version": null,
+        "observed_at": null,
+        "evidence": null
+      },
+      "dataset": null
+    },
+    {
+      "id": "ai-daq-fae-agent",
+      "name": "AI 数采 FAE Agent",
+      "kind": "agent",
+      "entry_path": "/daq/",
+      "can_use": true,
+      "runtime": {
+        "coverage": "not_observed",
+        "state": "unknown",
+        "observed_at": null,
+        "checked_at": null,
+        "stale": false,
+        "method": null,
+        "error": null
+      },
+      "source": {
+        "source_id": "ai-daq-fae-agent",
+        "source_kind": "fae",
+        "channel": "fae",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "business_metrics": {},
+      "business_sources": {},
+      "deployment": {
+        "version": null,
+        "observed_at": null,
+        "evidence": null
+      },
+      "dataset": null
+    },
+    {
+      "id": "sdk",
+      "name": "SDK 工作台",
+      "kind": "workspace",
+      "entry_path": "/sdk/",
+      "can_use": true,
+      "runtime": {
+        "coverage": "not_applicable",
+        "state": "unknown",
+        "observed_at": null,
+        "checked_at": null,
+        "stale": false,
+        "method": null,
+        "error": "embedded_workspace"
+      },
+      "source": {
+        "source_id": "sdk-catalog",
+        "source_kind": "sdk",
+        "channel": null,
+        "status": "fresh",
+        "observed_at": "2026-10-30T02:00:00Z",
+        "published_at": "2026-10-30T02:00:00Z",
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": true,
+        "error": null,
+        "channels": [],
+        "permission_scope": "business_scope",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "workspace_not_conversational"
+          },
+          "turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "workspace_not_conversational"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "workspace_not_conversational"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "workspace_not_conversational"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "workspace_not_conversational"
+          },
+          "turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "workspace_not_conversational"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "workspace_not_conversational"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "workspace_not_conversational"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "business_metrics": {
+        "documents": {
+          "value": 3,
+          "status": "observed",
+          "unit": "document",
+          "definition": "已发布文档总数",
+          "reason": null
+        }
+      },
+      "business_sources": {},
+      "deployment": {
+        "version": null,
+        "observed_at": null,
+        "evidence": null
+      },
+      "dataset": null
+    },
+    {
+      "id": "manufacturing",
+      "name": "大制造工作台",
+      "kind": "workspace",
+      "entry_path": null,
+      "can_use": false,
+      "runtime": {
+        "coverage": "not_applicable",
+        "state": "unknown",
+        "observed_at": null,
+        "checked_at": null,
+        "stale": false,
+        "method": null,
+        "error": "embedded_workspace"
+      },
+      "source": {
+        "source_id": "manufacturing",
+        "source_kind": "manufacturing",
+        "channel": null,
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "business_permission_denied",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "workspace_not_conversational"
+          },
+          "turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "workspace_not_conversational"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "workspace_not_conversational"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "workspace_not_conversational"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "workspace_not_conversational"
+          },
+          "turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "workspace_not_conversational"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "workspace_not_conversational"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "not_applicable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "workspace_not_conversational"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "business_metrics": {
+        "visible_projects": {
+          "value": null,
+          "status": "unavailable",
+          "unit": "project",
+          "definition": "当前身份经项目授权可见的项目数",
+          "reason": "business_permission_denied"
+        }
+      },
+      "business_sources": {},
+      "deployment": {
+        "version": null,
+        "observed_at": null,
+        "evidence": null
+      },
+      "dataset": null
+    }
+  ],
+  "channel_agents": [
+    {
+      "id": "marketing-prospecting-bot",
+      "agent_id": "marketing-prospecting-bot",
+      "name": "Marketing Prospecting",
+      "source": {
+        "source_id": "marketing-prospecting-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "configured": true,
+      "records_path": "/admin/sessions?agent_id=marketing-prospecting-bot&source_kind=metabot&channel=feishu"
+    },
+    {
+      "id": "marketing-inbound-bot",
+      "agent_id": "marketing-inbound-bot",
+      "name": "Marketing Inbound",
+      "source": {
+        "source_id": "marketing-inbound-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "configured": true,
+      "records_path": "/admin/sessions?agent_id=marketing-inbound-bot&source_kind=metabot&channel=feishu"
+    },
+    {
+      "id": "marketing-voice-bot",
+      "agent_id": "marketing-voice-bot",
+      "name": "Marketing Voice",
+      "source": {
+        "source_id": "marketing-voice-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "configured": true,
+      "records_path": "/admin/sessions?agent_id=marketing-voice-bot&source_kind=metabot&channel=feishu"
+    },
+    {
+      "id": "marketing-intelligence-bot",
+      "agent_id": "marketing-intelligence-bot",
+      "name": "Marketing Intelligence",
+      "source": {
+        "source_id": "marketing-intelligence-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "configured": true,
+      "records_path": "/admin/sessions?agent_id=marketing-intelligence-bot&source_kind=metabot&channel=feishu"
+    },
+    {
+      "id": "marketing-gtm-bot",
+      "agent_id": "marketing-gtm-bot",
+      "name": "Marketing GTM",
+      "source": {
+        "source_id": "marketing-gtm-bot",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "configured": true,
+      "records_path": "/admin/sessions?agent_id=marketing-gtm-bot&source_kind=metabot&channel=feishu"
+    }
+  ],
+  "legacy_streams": [
+    {
+      "id": "legacy-hr-feishu",
+      "agent_id": "hr-bot",
+      "name": "HR 旧飞书来源",
+      "source": {
+        "source_id": "legacy-hr-feishu",
+        "source_kind": "metabot",
+        "channel": "feishu",
+        "status": "unavailable",
+        "observed_at": null,
+        "published_at": null,
+        "checked_at": "2026-10-30T02:00:00Z",
+        "complete": false,
+        "error": "source_not_configured",
+        "channels": [],
+        "permission_scope": "platform_management",
+        "reader_role": null
+      },
+      "usage": {
+        "retained": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "window": {
+          "sessions": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "session",
+            "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+            "reason": "source_not_configured"
+          },
+          "turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "reason": "source_not_configured"
+          },
+          "answered_turns": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "turn",
+            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "reason": "source_not_configured"
+          },
+          "deliveries": {
+            "value": null,
+            "status": "unavailable",
+            "unit": "delivery",
+            "definition": "有来源明确成功回执的输入轮次",
+            "reason": "source_not_configured"
+          }
+        },
+        "last_activity_at": null,
+        "outcome_counts": {}
+      },
+      "configured": false,
+      "records_path": "/admin/sessions?agent_id=hr-bot&source_kind=metabot&channel=feishu"
+    }
+  ],
+  "trend": [
+    {
+      "date": "2026-10-24",
+      "turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 0,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    },
+    {
+      "date": "2026-10-25",
+      "turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 0,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    },
+    {
+      "date": "2026-10-26",
+      "turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 0,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    },
+    {
+      "date": "2026-10-27",
+      "turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 0,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    },
+    {
+      "date": "2026-10-28",
+      "turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 0,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    },
+    {
+      "date": "2026-10-29",
+      "turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 0,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 0,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    },
+    {
+      "date": "2026-10-30",
+      "turns": {
+        "value": 2,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": "source_coverage_partial"
+      },
+      "answered_turns": {
+        "value": 2,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "reason": "source_coverage_partial"
+      },
+      "deliveries": {
+        "value": 1,
+        "status": "partial",
+        "unit": "delivery",
+        "definition": "有来源明确成功回执的输入轮次",
+        "reason": "source_coverage_partial"
+      }
+    }
+  ],
+  "last_24h": {
+    "sessions": {
+      "value": 1,
+      "status": "partial",
+      "unit": "session",
+      "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
+      "reason": "source_coverage_partial"
+    },
+    "turns": {
+      "value": 2,
+      "status": "partial",
+      "unit": "turn",
+      "definition": "原始用户输入轮次，包含失败与未回复输入",
+      "reason": "source_coverage_partial"
+    },
+    "answered_turns": {
+      "value": 2,
+      "status": "partial",
+      "unit": "turn",
+      "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+      "reason": "source_coverage_partial"
+    },
+    "deliveries": {
+      "value": 1,
+      "status": "partial",
+      "unit": "delivery",
+      "definition": "有来源明确成功回执的输入轮次",
+      "reason": "source_coverage_partial"
+    }
+  },
+  "ranking": [
+    {
+      "application_id": "voc",
+      "turns": {
+        "value": 2,
+        "status": "observed",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "reason": null
+      }
+    }
+  ]
+}

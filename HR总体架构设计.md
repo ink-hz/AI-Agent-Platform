@@ -1,5 +1,11 @@
 # HR 总体架构设计
 
+## 运行看板只读观测（2026-10-30，本地实现，尚未发布）
+
+平台管理看板 `/api/dashboard/overview` 以当前控制库 `platform_hr_agent` 元数据为 HR 来源：线程作为来源会话，`inputs` 唯一输入作为用户轮次，按 `(work_id,input_revision)` 去重的 assistant 记录仅表示出现回复；question 记录、工作 state/answer_state 与已保存成果分别计量，不宣称完整答案、送达或业务成功。固定 SQL 使用 repeatable-read/read-only 与 5 秒语句超时，30 秒单次刷新缓存，只读取元数据；不获取 HR 内容密钥、sealed 字段、objects、员工正文或输出 owner 标识。旧 HR MetaBot/飞书来源单列历史，不补当前 HR 缺数；Marketing 五项仍按已配置渠道 Agent 展示。
+
+仅真实平台 owner/admin 可读全局管理统计，目录 `can_use` 每次沿用原 Agent 使用授权，管理观测不扩大任何用户的岗位、材料、成果或制造项目访问。HR 健康独立读取 `/run/platform-runtime/snapshot.json` 中逐对象的宿主回环观测，90 秒过期或缺失显示未知，版本只采用 ready 实际报告；数据库读取成功不代表进程健康。此次不修改 Loop、模型、工具、记忆或成果执行合同，不调用真实模型。接口/临时 PostgreSQL 验证与生产发布、业务及用户页面验收分开记录，完整契约见[运行看板设计](docs/superpowers/specs/2026-10-30-complete-runtime-dashboard-design.md)。
+
 ## 平台Web目录与旧执行配置分离（2026-10-30，平台已发布，页面待验收）
 
 平台入口收敛以正式独立 `/hr/` 为HR使用入口。旧Brain catalog中 `hr-bot` 的MetaBot适配字段保留原执行合同，平台在既有真实账号授权过滤之后单独投影 `web_entry`；该旧字段不再用于判断HR是否应显示Web入口。目录展示不改变HR云端执行通道、数据库/对象权限、共享附件票据、岗位或成果归属，也不增加Agent使用授权。平台助手与历史任务界面收起不影响独立HR工作区及其历史。契约见[平台入口收敛设计](docs/superpowers/specs/2026-10-30-platform-navigation-consolidation-design.md)；平台代码08c16fd8已于本日发布，只读生产检查通过，真实员工SSO、受认证目录HTTP和用户页面验收未执行，准确镜像与证据见[发布记录](docs/operations/2026-10-30-platform-navigation-consolidation.md)。此次未重新发布或重新验收HR业务Loop。

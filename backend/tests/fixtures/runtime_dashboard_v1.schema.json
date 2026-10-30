@@ -1,0 +1,789 @@
+{
+  "$defs": {
+    "Application": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "agent",
+            "workspace"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "entry_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entry Path"
+        },
+        "can_use": {
+          "default": false,
+          "title": "Can Use",
+          "type": "boolean"
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeEvidence"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceEvidence"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "business_metrics": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Metric"
+          },
+          "title": "Business Metrics",
+          "type": "object"
+        },
+        "business_sources": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SourceEvidence"
+          },
+          "title": "Business Sources",
+          "type": "object"
+        },
+        "deployment": {
+          "$ref": "#/$defs/Deployment"
+        },
+        "dataset": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "source",
+        "usage"
+      ],
+      "title": "Application",
+      "type": "object"
+    },
+    "Channel": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "agent_id": {
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/SourceEvidence"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        },
+        "configured": {
+          "default": true,
+          "title": "Configured",
+          "type": "boolean"
+        },
+        "records_path": {
+          "title": "Records Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "agent_id",
+        "name",
+        "source",
+        "usage",
+        "records_path"
+      ],
+      "title": "Channel",
+      "type": "object"
+    },
+    "Counts": {
+      "additionalProperties": false,
+      "properties": {
+        "sessions": {
+          "$ref": "#/$defs/Metric"
+        },
+        "turns": {
+          "$ref": "#/$defs/Metric"
+        },
+        "answered_turns": {
+          "$ref": "#/$defs/Metric"
+        },
+        "deliveries": {
+          "$ref": "#/$defs/Metric"
+        }
+      },
+      "required": [
+        "sessions",
+        "turns",
+        "answered_turns",
+        "deliveries"
+      ],
+      "title": "Counts",
+      "type": "object"
+    },
+    "Deployment": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        }
+      },
+      "title": "Deployment",
+      "type": "object"
+    },
+    "Inventory": {
+      "additionalProperties": false,
+      "properties": {
+        "applications": {
+          "title": "Applications",
+          "type": "integer"
+        },
+        "agent_services": {
+          "title": "Agent Services",
+          "type": "integer"
+        },
+        "business_workspaces": {
+          "title": "Business Workspaces",
+          "type": "integer"
+        },
+        "configured_agents": {
+          "title": "Configured Agents",
+          "type": "integer"
+        },
+        "channel_agents": {
+          "title": "Channel Agents",
+          "type": "integer"
+        },
+        "legacy_streams": {
+          "title": "Legacy Streams",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "applications",
+        "agent_services",
+        "business_workspaces",
+        "configured_agents",
+        "channel_agents",
+        "legacy_streams"
+      ],
+      "title": "Inventory",
+      "type": "object"
+    },
+    "Metric": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "status": {
+          "default": "unavailable",
+          "enum": [
+            "observed",
+            "partial",
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "session",
+            "turn",
+            "delivery",
+            "work",
+            "result",
+            "document",
+            "project",
+            "task",
+            "application",
+            "agent"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "definition": {
+          "title": "Definition",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "unit",
+        "definition"
+      ],
+      "title": "Metric",
+      "type": "object"
+    },
+    "Ranking": {
+      "additionalProperties": false,
+      "properties": {
+        "application_id": {
+          "title": "Application Id",
+          "type": "string"
+        },
+        "turns": {
+          "$ref": "#/$defs/Metric"
+        }
+      },
+      "required": [
+        "application_id",
+        "turns"
+      ],
+      "title": "Ranking",
+      "type": "object"
+    },
+    "RuntimeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "default": "not_observed",
+          "enum": [
+            "observed",
+            "not_configured",
+            "not_observed",
+            "not_applicable"
+          ],
+          "title": "Coverage",
+          "type": "string"
+        },
+        "state": {
+          "default": "unknown",
+          "enum": [
+            "healthy",
+            "degraded",
+            "offline",
+            "unknown"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "checked_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checked At"
+        },
+        "stale": {
+          "default": false,
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "title": "RuntimeEvidence",
+      "type": "object"
+    },
+    "SourceEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "channel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel"
+        },
+        "status": {
+          "default": "unavailable",
+          "enum": [
+            "fresh",
+            "stale",
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Published At"
+        },
+        "checked_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checked At"
+        },
+        "complete": {
+          "default": false,
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "channels": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Channels",
+          "type": "array"
+        },
+        "permission_scope": {
+          "default": "platform_management",
+          "title": "Permission Scope",
+          "type": "string"
+        },
+        "reader_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reader Role"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_kind"
+      ],
+      "title": "SourceEvidence",
+      "type": "object"
+    },
+    "Summary": {
+      "additionalProperties": false,
+      "properties": {
+        "healthy": {
+          "default": 0,
+          "title": "Healthy",
+          "type": "integer"
+        },
+        "abnormal": {
+          "default": 0,
+          "title": "Abnormal",
+          "type": "integer"
+        },
+        "unknown": {
+          "default": 0,
+          "title": "Unknown",
+          "type": "integer"
+        },
+        "observed_runtime": {
+          "default": 0,
+          "title": "Observed Runtime",
+          "type": "integer"
+        },
+        "expected_runtime": {
+          "default": 5,
+          "title": "Expected Runtime",
+          "type": "integer"
+        },
+        "covered_sources": {
+          "default": 0,
+          "title": "Covered Sources",
+          "type": "integer"
+        },
+        "expected_sources": {
+          "default": 5,
+          "title": "Expected Sources",
+          "type": "integer"
+        },
+        "status": {
+          "default": "unavailable",
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/$defs/Counts"
+        }
+      },
+      "required": [
+        "usage"
+      ],
+      "title": "Summary",
+      "type": "object"
+    },
+    "Trend": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "turns": {
+          "$ref": "#/$defs/Metric"
+        },
+        "answered_turns": {
+          "$ref": "#/$defs/Metric"
+        },
+        "deliveries": {
+          "$ref": "#/$defs/Metric"
+        }
+      },
+      "required": [
+        "date",
+        "turns",
+        "answered_turns",
+        "deliveries"
+      ],
+      "title": "Trend",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "retained": {
+          "$ref": "#/$defs/Counts"
+        },
+        "window": {
+          "$ref": "#/$defs/Counts"
+        },
+        "last_activity_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Activity At"
+        },
+        "outcome_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Outcome Counts",
+          "type": "object"
+        }
+      },
+      "required": [
+        "retained",
+        "window"
+      ],
+      "title": "Usage",
+      "type": "object"
+    },
+    "Window": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "timezone": {
+          "const": "Asia/Shanghai",
+          "default": "Asia/Shanghai",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "days": {
+          "anyOf": [
+            {
+              "enum": [
+                7,
+                30
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Days"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Window",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "window": {
+      "$ref": "#/$defs/Window"
+    },
+    "rolling_24h": {
+      "$ref": "#/$defs/Window"
+    },
+    "active_window_minutes": {
+      "const": 15,
+      "default": 15,
+      "title": "Active Window Minutes",
+      "type": "integer"
+    },
+    "inventory": {
+      "$ref": "#/$defs/Inventory"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "applications": {
+      "items": {
+        "$ref": "#/$defs/Application"
+      },
+      "title": "Applications",
+      "type": "array"
+    },
+    "channel_agents": {
+      "items": {
+        "$ref": "#/$defs/Channel"
+      },
+      "title": "Channel Agents",
+      "type": "array"
+    },
+    "legacy_streams": {
+      "items": {
+        "$ref": "#/$defs/Channel"
+      },
+      "title": "Legacy Streams",
+      "type": "array"
+    },
+    "trend": {
+      "items": {
+        "$ref": "#/$defs/Trend"
+      },
+      "title": "Trend",
+      "type": "array"
+    },
+    "last_24h": {
+      "$ref": "#/$defs/Counts"
+    },
+    "ranking": {
+      "items": {
+        "$ref": "#/$defs/Ranking"
+      },
+      "title": "Ranking",
+      "type": "array"
+    }
+  },
+  "required": [
+    "generated_at",
+    "window",
+    "rolling_24h",
+    "inventory",
+    "summary",
+    "applications",
+    "channel_agents",
+    "legacy_streams",
+    "trend",
+    "last_24h",
+    "ranking"
+  ],
+  "title": "DashboardOverview",
+  "type": "object"
+}

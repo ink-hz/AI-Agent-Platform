@@ -1,5 +1,11 @@
 # HR Agent 工作流
 
+## 运行看板只读观测（2026-10-30，本地实现，尚未发布）
+
+平台管理看板 `/api/dashboard/overview` 以当前控制库 `platform_hr_agent` 元数据为 HR 来源：线程作为来源会话，`inputs` 唯一输入作为用户轮次，按 `(work_id,input_revision)` 去重的 assistant 记录仅表示出现回复；question 记录、工作 state/answer_state 与已保存成果分别计量，不宣称完整答案、送达或业务成功。固定 SQL 使用 repeatable-read/read-only 与 5 秒语句超时，30 秒单次刷新缓存，只读取元数据；不获取 HR 内容密钥、sealed 字段、objects、员工正文或输出 owner 标识。旧 HR MetaBot/飞书来源单列历史，不补当前 HR 缺数；Marketing 五项仍按已配置渠道 Agent 展示。
+
+仅真实平台 owner/admin 可读全局管理统计，目录 `can_use` 每次沿用原 Agent 使用授权，管理观测不扩大任何用户的岗位、材料、成果或制造项目访问。HR 健康独立读取 `/run/platform-runtime/snapshot.json` 中逐对象的宿主回环观测，90 秒过期或缺失显示未知，版本只采用 ready 实际报告；数据库读取成功不代表进程健康。此次不修改 Loop、模型、工具、记忆或成果执行合同，不调用真实模型。接口/临时 PostgreSQL 验证与生产发布、业务及用户页面验收分开记录，完整契约见[运行看板设计](docs/superpowers/specs/2026-10-30-complete-runtime-dashboard-design.md)。
+
 平台 Brain 的旧候选解析 lane 在 HR 切到 `cloud` 后保持空闲：每轮检查切换状态，明确拒绝旧通道认领时记录健康心跳；真实数据库或解析故障仍记录降级。它不恢复旧 HR 执行，也不参与独立 HR 服务的新工作认领。角色读权限和异常分类见[总体架构设计](HR总体架构设计.md)。
 
 平台 owner 和管理员的 HR 工作流入口按[默认使用权限契约](HR总体架构设计.md)由平台控制库统一判定。默认使用权限只允许以本人身份发起 HR 工作；岗位与材料范围仍由 HR 服务按本人身份校验，停用和只读状态保持原语义。迁移通过和页面可用须分别核对。

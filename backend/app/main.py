@@ -2006,6 +2006,31 @@ def create_app(
     ):
         app.include_router(build_conversation_attachment_router())
 
+    # Dashboard is a separate readonly projection; legacy fleet/brief keep their consumers.
+    from .runtime_dashboard.health import HealthReader
+    from .runtime_dashboard.native import HrMetadataReader
+    from .runtime_dashboard.repository import ReplicaDashboardReader
+    from .runtime_dashboard.routes import build_dashboard_router
+    from .runtime_dashboard.service import DashboardService
+
+    configured_dashboard_catalog = getattr(agent_use_authorization, "catalog_cards", None)
+    dashboard_service = DashboardService(
+        catalog=configured_dashboard_catalog if isinstance(configured_dashboard_catalog, tuple) else None,
+        replica=ReplicaDashboardReader(replica_repository) if replica_repository is not None else None,
+        hr=HrMetadataReader(hr_database_url or control_database_url) if (hr_database_url or control_database_url) else None,
+    )
+    health_urls = {}
+    if os.environ.get("PLATFORM_FAE_HEALTH_URL"):
+        health_urls["ai-fae-agent"] = os.environ["PLATFORM_FAE_HEALTH_URL"]
+    if config.daq_health_url:
+        health_urls["ai-daq-fae-agent"] = config.daq_health_url
+    app.state.runtime_dashboard_service = dashboard_service
+    app.include_router(build_dashboard_router(
+        dashboard_service, agent_use_authorization,
+        health=HealthReader(urls=health_urls, voc_client=voc_extension_client),
+        route_prefix=identity_auth.route_prefix.rstrip("/") if identity_enabled else "",
+    ))
+
     if os.path.isdir(config.static_dir) and not identity_enabled:
         app.mount("/", SpaStaticFiles(directory=config.static_dir, html=True), name="portal")
 
