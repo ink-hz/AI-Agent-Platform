@@ -11,7 +11,7 @@
 ## 目标与明确边界
 
 - 正式业务应用库存7项：FAE、DAQ、HR、VOC、行政5个Agent，加SDK、大制造2个工作台。应用数、Agent数和渠道数分别表达；不是对全公司未知服务作全量证明。
-- 正式Agent的当前数据与旧渠道分开。HR当前数据仅来自platform_hr_agent；旧hr-bot/metabot/feishu与5个Marketing条目归历史渠道，保留历史及原权限。
+- 正式Agent的当前数据与旧渠道分开。HR当前数据仅来自platform_hr_agent；旧hr-bot/metabot/feishu单列历史来源；5个Marketing仍是已配置的MetaBot/飞书渠道Agent，不凭缺少实时监控宣布停用。渠道用量与独立服务用量分区，保留原权限。
 - 会话、用户轮次、出现回复、已确认送达、业务成果各有单位与定义。不把工具调用/流式消息/失败尝试当用户输入，不把保存成果当用户确认或任务整体成功。无法证明完整回答/送达时为null或不适用。
 - 每块暴露来源、范围、观测/同步时间、可见性完整性、新鲜度与原因。缺源/未观测用未知；只有完整成功读取的空集才为0。
 - 本批不修改Agent Loop、模型/工具/记忆/成果执行协议，不调用真实模型、不生产测试消息、不扩大HR正文权限、不改Nginx/SSH/其他会话工作。
@@ -26,7 +26,7 @@
 
 返回DashboardOverview，schema_version=1，generated_at为带时区ISO，window含start/end/timezone=Asia/Shanghai/days，另有rolling_24h和active_window_minutes=15。所有时间窗UTC半开区间[start,end)，日趋势按上海自然日。一个快照共享同一now，不让各模块自己算窗口。
 
-顶层inventory含applications/agent_services/business_workspaces/history_channels的数量；summary含可观测健康/异常/未知、数据源覆盖和当前Agent使用指标，标明完整/部分。applications始终含7项，按kind=agent|workspace分组；history_channels独立且不得加入正式总数。trend与last_24h来自同一聚合，禁止混用旧brief口径。
+顶层inventory含applications/agent_services/business_workspaces/configured_agents/channel_agents/legacy_streams的数量；configured_agents为去重真实目录10（当前基线），其中5独立服务与5渠道配置，不能把独立服务5标成所有Agent总数；legacy_streams保留旧HR来源而不重复Agent。summary含可观测健康/异常/未知、数据源覆盖和当前Agent使用指标，标明完整/部分。applications始终含7项，按kind=agent|workspace分组；channel_agents和legacy_streams独立，不加入“独立服务用量”总数，渠道Agent的已配置事实不因没有Web入口而消失。trend与last_24h来自同一聚合，禁止混用旧brief口径。
 
 每个应用含稳定id、中文name、kind、正式entry_path、runtime、source、usage、business_metrics、deployment；链接保留原业务入口与管理深链权限，不提供旧MetaBot Web使用入口。SDK/制造的会话指标为not_applicable；业务指标不加入统一用户轮次。
 
@@ -40,7 +40,7 @@ SourceEvidence含source_id/source_kind/channel、status=fresh|stale|unavailable|
 
 修正平台provision-agent-sync.py所拥有的专用consumer角色，在同一事务幂等协调outbox FOR SELECT TO platform_sync_voc_read USING(source_inbound_message_id IS NOT NULL)，只保留既有4列授权。禁止BYPASSRLS、关RLS、public授权、读取recipient标识或改员工业务策略。不需要发布VOC业务服务。
 
-源读取在同一只读快照中核对角色/列权限、适用RLS策略、关联UNIQUE/FK及可读契约；有阻止完整可见性的restrictive策略或缺策略必须失败并保留旧副本/记录source failure，不能发布空回复当正常。未关联回执不伪造对话；delivery pending/failed和job done等原始状态如实保留。暂未实现全平台数据仓，不能写造成功数据。
+VOC使用专用READ COMMITTED只读事务，先以已授予列的零行读取持有全部ACCESS SHARE，再用新鲜目录核对角色/列权限、适用RLS策略、关联UNIQUE/FK；单条MATERIALIZED SQL同时测量count/bytes并读取同一MVCC业务快照；其他源保留原RR合同。有阻止完整可见性的restrictive策略或缺策略必须失败并保留旧副本/记录source failure，不能发布空回复当正常。未关联回执不伪造对话；delivery pending/failed和job done等原始状态如实保留。暂未实现全平台数据仓，不能写造成功数据。
 
 ### 正式使用、历史渠道与增量读取
 
@@ -50,7 +50,7 @@ SourceEvidence含source_id/source_kind/channel、status=fresh|stale|unavailable|
 
 ### 现行HR
 
-平台已持有同一control app DSN；新固定SQL reader强制repeatable-read/read-only/5秒statement timeout，只读threads/works/inputs/entries/result元数据，不读sealed_*、objects或密钥。用户轮次以inputs唯一键计；多assistant流片按(work_id,input_revision)去重，question另明确归类；state/answer_state/results分别给业务指标。完整答案判定没有元数据证据时不伪造。不要把当前work状态覆盖历史每轮结果。旧飞书369留历史，正式HR不回落旧链。
+平台已持有同一control app DSN；新固定SQL reader强制repeatable-read/read-only/5秒statement timeout，只读threads/works/inputs/entries/result元数据，不读sealed_*、objects或密钥。用户轮次以inputs唯一键计；多assistant流片按(work_id,input_revision)去重，question另明确归类；state/answer_state/results分别给业务指标。完整答案判定没有元数据证据时不伪造。不要把当前work状态覆盖历史每轮结果。旧HR飞书369留历史，当前HR不回落旧链；Marketing渠道为真实已配置Agent，单独展示可追溯用量与观测状态。
 
 ### 七应用健康、版本与业务指标
 
@@ -72,7 +72,7 @@ SDK复用已校验的SdkAdminRepository catalog与manifest，显示知识文档�
 
 ## 页面
 
-运行中心保留现有路由，顶部为正式应用/Agent数量、实际健康覆盖、当前用户轮次及数据覆盖；提供7/30天切换。近24小时活动、趋势和排名采用同一窗口定义；排名只基于当前Agent，缺数据不参加排序为0。应用区域区分Agent与业务工作台，卡片展示健康/数据状态、源时间、会话/输入/回复/送达单位、业务成果与实际版本证据。历史渠道单独折叠区，明确不计当前总数。数据故障在本源卡片明确呈现，移除未经证据的“暂无严重问题/所有检查正常”。不展示HR原始输入/个人材料。保留现有工程笔记、账号权限、安全记录及会话详情入口。
+运行中心保留现有路由，顶部为正式应用/Agent数量、实际健康覆盖、当前用户轮次及数据覆盖；提供7/30天切换。近24小时活动、趋势和排名采用同一窗口定义；排名只基于当前Agent，缺数据不参加排序为0。应用区域区分Agent与业务工作台，卡片展示健康/数据状态、源时间、会话/输入/回复/送达单位、业务成果与实际版本证据。MetaBot/飞书渠道Agent单独分区，旧HR来源另标历史；明确两者不计独立服务使用总数，不把已配置渠道误标停用。数据故障在本源卡片明确呈现，移除未经证据的“暂无严重问题/所有检查正常”。不展示HR原始输入/个人材料。保留现有工程笔记、账号权限、安全记录及会话详情入口。
 
 ## Task1独立审查发现的快照边界（实施前纠正）
 
@@ -85,3 +85,13 @@ SDK复用已校验的SdkAdminRepository catalog与manifest，显示知识文档�
 缓存验收证明重复快照不重新解密、变化仅重算对应session、删除生效、上限显式拒绝、并发single-flight、单源失败不把其他源清零；报告耗时和读取/解密次数。HTTP验证匿名/member/viewer/管理角色、撤权、no-store、无正文/凭证泄漏。浏览器由用户；生产只读核对与开发替身清楚分开，首次失败保留，不重试到通过。
 
 本批发布仅从审查后已归并主线的准确提交构建，保留实际线上基底和所有其他会话层。涉及VOC角色策略的受控DDL单独记录，先备份目录权限/策略定义与检查，不改业务数据。最终报告必须分别给工程、接口、真实PG、前端、生产及用户验收通过/失败/未执行数量和仍未解决项。
+
+### 最新目录裁定下的命名校正
+
+“渠道Agent”与“历史来源”不能混同。Marketing五项是现有配置，用户要展示开发/配置成果；没有Web按钮不代表停用。只有旧HR飞书统计明确是现行独立HR之前/并行的旧链来源。后端应使用channels与legacy_streams分别表达；页面可以折叠次要区域，但不能省略真实配置数量。
+
+### 宿主观测文件跨任务准确合同
+
+Task2在runtime_dashboard/health.py实现HostObservationReader，Task3实现collector并复用该reader做端到端测试，避免双实现。文件JSON为{schema_version:1,generated_at:ISO8601,observations:[{application_id:"hr-bot"|"ai-admin-agent",state:"healthy"|"degraded"|"offline"|"unknown",observed_at:ISO8601,error:null|稳定码,version:null|40位hex}]}。仅这两项ID，重复ID/非法结构拒绝，单条过期/未来时间不能污染其他条。App只读/run/platform-runtime/snapshot.json，TTL90秒，源码不写健康文件。collector固定两回环目标，不接收用户URL。
+
+Task1修正落地fdace0ed：前置竞态红测、单语句内真实并发写、锁后DDL/大小/超时及失败保旧回归220通过（53真实PG），独立复审C0/I0/M0。原214测试通过但I1阻断的记录保留，不把旧版本改记成功；生产验证/DDL尚未执行。

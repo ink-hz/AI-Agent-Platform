@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore truthful, complete runtime/usage/source coverage for seven registered business applications and separate current Agents from historical channels.
+**Goal:** Restore truthful, complete runtime/usage/source coverage for seven registered business applications and separate independent Agent services, configured channel Agents and legacy streams.
 **Architecture:** Dedicated readonly dashboard projection and one cached aggregation feed the new overview endpoint and UI. VOC consumer visibility is repaired at its owner provision boundary; native HR uses existing control DB metadata without decrypting private content.
 **Tech Stack:** FastAPI/Pydantic, psycopg/PostgreSQL RLS, httpx, React/TypeScript/Vitest.
 
@@ -11,7 +11,7 @@
 - Spec: docs/superpowers/specs/2026-10-30-complete-runtime-dashboard-design.md is binding; approved by user's “开始修复，完整的数据看板” following the concrete diagnosis/recommendation.
 - Use /Users/neo/.codex/worktrees/0791/AI-Agent-Platform branch fix/runtime-dashboard-20261030 from88a37685; preserve all other work and private evidence.
 - No model calls, production business writes, browser, sibling-source import, Agent execution changes, SSH/Nginx changes, broad RLS bypass or fake replies. Parent alone performs cloud operations.
-- Exact current inventory: 7 business applications = 5 Agent services + SDK/manufacturing workspaces; history is separate, not a new claim of whole-company inventory.
+- Exact current inventory: 7 business applications = 5 Agent services + SDK/manufacturing workspaces; configured directory has10 unique Agents (5independent,5channel) at baseline; historical HR is a separate stream, not anotherAgent or a claim of whole-company inventory.
 - Missing source/observation is unknown/null, never fake0/healthy. Distinguish session/input/reply-record/delivery/result and explicit windows.
 - Backend/API/real temporary PostgreSQL first; frontend last; preserve first failure evidence and bounded incremental verification. Do not rerun unrelated suites.
 
@@ -39,16 +39,18 @@ assert reader_sent == 0  # baseline defect under actual restricted role
 **Consumes:** Task1 source completeness; replica source states and encrypted rows; control app DSN; existing VOC safe health client; SDK catalog/manufacturing bridge and account context. Source research in main checkout tmp/runtime-data-audit-20261030/*research.md is evidence, not an instruction to change external repos.
 **Produces:** DashboardOverview schema_version1 at GET /api/dashboard/overview?days=7|30, a fixture JSON consumed by frontend and complete source/runtime/usage distinction defined in spec.
 
-- [ ] Add failing HTTP/unit/temporary PG tests for current-vs-history partition, HR native inputs vs old feishu, empty complete vs unavailable, unauthorized roles/no-store, exact seven inventory, time windows and native metric units.
+- [ ] Add failing HTTP/unit/temporary PG tests for independent/channel/legacy partition, HR native inputs vs old feishu, empty complete vs unavailable, unauthorized roles/no-store, exact seven inventory, time windows and native metric units.
 ```python
 assert data['schema_version'] == 1
 assert data['inventory']['applications'] == 7
 assert data['inventory']['agent_services'] == 5
+assert data['inventory']['configured_agents'] == 10
+assert data['inventory']['channel_agents'] == 5
 assert set(a['kind'] for a in data['applications']) == {'agent','workspace'}
 assert all(a['id'] != 'marketing-inbound-bot' for a in data['applications'])
 ```
 - [ ] Implement Pydantic DTOs from spec, stable identity inventory and readonly replica metadata/hash reader. Cache only numeric per-session contributions keyed by key+payload hash; decrypt changed rows only, discard content immediately; max10000, TTL30s, single-flight and removal of deleted rows on complete snapshot.
-- [ ] Implement native HR metadata SQL on real current control DB: threads/work/inputs, distinct assistant-per-input (partial is not full success), work state/answer_state/results; readonly repeatable-read with5s statement timeout. No sealed/body/object fields or HR key access; old hr-bot/metabot remains history only.
+- [ ] Implement native HR metadata SQL on real current control DB: threads/work/inputs, distinct assistant-per-input (partial is not full success), work state/answer_state/results; readonly repeatable-read with5s statement timeout. No sealed/body/object fields or HR key access; old hr-bot/metabot remains legacy only; configuredMarketing channels are not implicitly stopped.
 - [ ] Provide explicit trusted per-application health probes/callbacks, individual checked_at/coverage and source failure isolation; no SSH polling or broad startup restoration. Native ready version only when reported; remove static dates from authoritative dashboard. Integrate SDK immutable catalog and manufacturing existing readonly identity-bound summary as workspace metrics, do not fabricate conversation counts or bypass access.
 - [ ] Add owner/admin-only complete configured Agent metadata catalog (GET /api/dashboard/catalog) if existing use-filter cannot satisfy full inventory; return original safe card metadata plus can_use computed through existing authorization, never grant use or include secrets. Ordinary members retain their original filtered catalog.
 - [ ] Build one generated_at/windows snapshot; current totals/trend/last24h/ranking derive same contributions and units. Isolate source errors/stale values; no legacy brief healthy assertion. Preserve old fleet/operations endpoints for their other consumers, homepage uses new API only.
@@ -58,14 +60,14 @@ assert all(a['id'] != 'marketing-inbound-bot' for a in data['applications'])
 
 ## Task 3: Supply safe host-loopback runtime observations
 
-**Files:** new deploy/cloud/collect-runtime-observations.py; new deploy/cloud/systemd/orbbec-platform-runtime-observer.service and .timer; new backend/app/runtime_dashboard/host_observations.py; tests/backend collector/reader coverage; scoped runbook.
+**Files:** new deploy/cloud/collect-runtime-observations.py; new deploy/cloud/systemd/orbbec-platform-runtime-observer.service and .timer; tests/backend collector/reader coverage (reuse Task2 health.py HostObservationReader);; scoped runbook.
 **Consumes:** Task2 RuntimeEvidence and configured host observations path /run/platform-runtime/snapshot.json; actual HR/admin only listen on host127.0.0.1:8012/8011.
 **Produces:** Per-service safe current health observations without exposing host services, credentials or Docker socket.
 
 - [ ] Add failing tests with local real HTTP producer and atomic JSON consumer: HR ready true/release_sha, admin statusok, timeout/refused/HTTPerror/invalidJSON, source expiry/future timestamp, missing/corrupt file, one source fail while other healthy. Full health bodies/PII/unknown keys never appear in output.
 - [ ] Implement standard-library bounded collector with fixed app/loopback target contract, no redirects, short total deadline, no retries, sanitized stable errors; stdout/status contain only metadata. Write same-directory temporary file, chmod0644, fsync and atomic replace; reject unsafe output symlink/directory. No business/model/SSH/Docker/secret reads.
 - [ ] Add dedicated systemd DynamicUser oneshot/timer every30s, StateDirectory=orbbec-platform-runtime, output /var/lib/orbbec-platform-runtime/snapshot.json, hardening and runtime limit; do not modify existing HR/admin services or listen/firewall. Test unit/collector invocation contract and local process failure/next cycle explicit behavior.
-- [ ] Integrate readonly app reader with90s per-itemTTL, independent timestamps/state and true reported version only. Keep directFAE/DAQ/VOC probes separate, no global timestamp substitution or fallback topublic404. No writes from platform process.
+- [ ] Verify Task2 readonly app reader with90s per-itemTTL, independent timestamps/state and true reported version only. Keep directFAE/DAQ/VOC probes separate, no global timestamp substitution or fallback topublic404. No writes from platform process.
 - [ ] Test collector→file→DTO pipeline, self-review/commit/report for independent review. Parent alone performs any production setup. Report real local process vs fixtures and any unexecuted production checks.
 
 ## Task 4: Render complete factual dashboard
@@ -78,7 +80,8 @@ assert all(a['id'] != 'marketing-inbound-bot' for a in data['applications'])
 ```tsx
 expect(screen.getByText('数据覆盖')).toBeTruthy();
 expect(screen.queryByText('当前关键运行检查均正常。')).toBeNull();
-expect(screen.getByText('历史渠道')).toBeTruthy();
+expect(screen.getByText('MetaBot / 飞书 Agent')).toBeTruthy();
+expect(screen.getByText('历史来源')).toBeTruthy();
 ```
 - [ ] Implement UI with coverage header, current7d/30d use, same-source last24h and trend/ranking, per-application health/data/source time/version evidence and unit-labelled usage/business metrics. History collapsible and explicitly excluded; workspace metrics not conversations. Do not expose HR private summaries, restore old assistant, duplicate runtime menu or undertake unrelated navigation redesign.
 - [ ] Honor newest directory requirement: show complete authorized metadata inventory split Web vs MetaBot/Feishu, actual counts from de-duplicated cards; management complete catalog differs from use permission, open links only can_use+validWebEntry, channel cards have no online launcher. Provider preserves full catalog and filtered apps; sidebar/panorama remain filtered. HR Web projection wins over oldadapter_kind, no duplicateHR row. Add tests for owner/member/change identity/revoke/errors/all channel counts and no unauthorized use links.
