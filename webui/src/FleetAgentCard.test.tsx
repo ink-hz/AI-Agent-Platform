@@ -32,6 +32,7 @@ describe("FleetAgentCard", () => {
       <FleetAgentCard agent={AGENT} now={new Date("2026-07-21T02:00:00Z")} />,
     );
 
+    expect(html).toContain('href="/admin/agents/hr-bot"');
     for (const text of [
       "HR",
       "Handles recruiting and employee services.",
@@ -58,7 +59,7 @@ describe("FleetAgentCard", () => {
       <FleetAgentCard agent={AGENT} now={new Date("2026-07-21T02:00:00Z")} />,
     );
 
-    for (const forbidden of ["Live Since", "Running Days", "Uptime", "Current Runtime", "端口", "延迟", "pm2", "<button", "href="]) {
+    for (const forbidden of ["Live Since", "Running Days", "Uptime", "Current Runtime", "端口", "延迟", "pm2", "<button"]) {
       expect(html).not.toContain(forbidden);
     }
   });

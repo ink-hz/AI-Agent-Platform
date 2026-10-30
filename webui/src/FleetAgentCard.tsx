@@ -1,3 +1,4 @@
+import { PlatformLink } from "./components/PlatformLink";
 import {
   FLEET_STATE_META,
   formatCount,
@@ -27,7 +28,7 @@ export function FleetAgentCard({ agent, now }: FleetAgentCardProps) {
         <span className="fleet-avatar" aria-hidden="true">{agent.glyph}</span>
         <div className="fleet-agent-identity">
           <p>{agent.domain}</p>
-          <h3>{agent.name}</h3>
+          <h3><PlatformLink href={`/admin/agents/${encodeURIComponent(agent.id)}`}>{agent.name}</PlatformLink></h3>
         </div>
         <span className={`fleet-state ${state.tone}`}>
           <i aria-hidden="true" />{state.label}

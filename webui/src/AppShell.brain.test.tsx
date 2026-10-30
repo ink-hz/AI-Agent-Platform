@@ -28,14 +28,14 @@ describe("usage navigation", () => {
 
   it("gives members a use-first navigation and always sends the brand home", async () => {
     await act(async () => root.render(<AppShell route={{ name: "brain" }} account={member}><p>内容</p></AppShell>));
-    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("AI 助手");
-    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/brain"]')).not.toBeNull();
+    expect(container.querySelector(".platform-sidebar")?.textContent).not.toContain("AI 助手");
+    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/brain"]')).toBeNull();
     expect(container.querySelector(".platform-sidebar")?.textContent).not.toContain("企业账号");
     const accountEntry = container.querySelector<HTMLAnchorElement>("a.account-chip");
     expect(accountEntry?.textContent).toBe("成员");
     expect(accountEntry?.getAttribute("href")).toBe("/account");
     expect(container.querySelector<HTMLAnchorElement>(".brand")?.getAttribute("href")).toBe("/");
-    expect(container.textContent).not.toContain("运行概览");
+    expect(container.textContent).not.toContain("运行中心");
     expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
     expect(container.querySelector("main.page")?.className).not.toContain("is-fae-workbench");
     expect(container.querySelector(".app.is-brain-workspace-shell")).not.toBeNull();
@@ -62,16 +62,16 @@ describe("usage navigation", () => {
       route={{ name: "admin-overview" }} account={{ ...member, role: "platform_owner" }}
     ><p>内容</p></AppShell>));
     const navigation = container.querySelector(".platform-sidebar")?.textContent || "";
-    expect(navigation).toContain("AI 助手");
+    expect(navigation).not.toContain("AI 助手");
     expect(navigation).toContain("Agent 目录");
     expect(navigation).toContain("工程笔记");
     expect(navigation).not.toContain("历史对话");
     expect(navigation).not.toContain("企业账号");
     expect(navigation).toContain("技术支持");
-    expect(navigation).toContain("运行概览");
+    expect(navigation).toContain("运行中心");
     expect(container.querySelector<HTMLAnchorElement>('a[href="/admin"]')).not.toBeNull();
     expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/fae/manage/"]')).not.toBeNull();
-    expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/voc"]')?.textContent).toBe("客户洞察");
+    expect(container.querySelector<HTMLAnchorElement>('a[href="/admin/voc"]')?.textContent).toBe("客户洞察管理");
     expect(container.querySelector('.platform-sidebar a[href^="/fae/manage"]')).not.toBeNull();
     expect(container.querySelector('.platform-sidebar a[href^="/admin/fae"]')).toBeNull();
     expect(container.querySelector('.platform-sidebar a[href="/admin/operations"]')).toBeNull();
@@ -93,9 +93,9 @@ describe("usage navigation", () => {
     await act(async () => root.render(<AppShell
       route={{ name: "fae-manage-overview" }} account={{ ...member, role: "platform_owner" }}
     ><p>内容</p></AppShell>));
-    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/fae/manage/"]')?.textContent).toBe("技术支持");
+    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/fae/manage/"]')?.textContent).toBe("技术支持管理");
     expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/fae/manage/"]')?.className).toContain("is-current");
-    expect(container.querySelector('.platform-sidebar a[href="/admin/agents"]')).not.toBeNull();
+    expect(container.querySelector('.platform-sidebar a[href="/admin/agents"]')).toBeNull();
 
     window.history.replaceState({}, "", "/fae/manage/sessions/fae%3Asession-1");
     await act(async () => root.render(<AppShell
@@ -142,14 +142,14 @@ describe("usage navigation", () => {
     await act(async () => root.render(<AppShell
       route={{ name: "fae-manage-overview" }} account={scoped}
     ><p>FAE 内容</p></AppShell>));
-    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/fae/manage/"]')?.textContent).toBe("技术支持");
+    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/fae/manage/"]')?.textContent).toBe("技术支持管理");
     expect(container.querySelector('.platform-sidebar a[href="/admin"]')).toBeNull();
 
     await act(async () => root.render(<AppShell
       route={{ name: "admin-overview" }} account={{ ...member, role: "platform_admin" }}
     ><p>管理内容</p></AppShell>));
     expect(container.querySelector('.platform-sidebar a[href="/fae/manage/"]')).toBeNull();
-    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin"]')?.textContent).toBe("运行概览");
+    expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin"]')?.textContent).toBe("运行中心");
   });
 
   it("uses one main landmark and the reachable 1440 workspace wrapper for every FAE route", async () => {
@@ -180,7 +180,7 @@ describe("usage navigation", () => {
     ><p>VOC 内容</p></AppShell>));
 
     const product = container.querySelector(".platform-sidebar")?.textContent || "";
-    expect(product).not.toContain("运行概览");
+    expect(product).not.toContain("运行中心");
     expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/voc"]')).not.toBeNull();
     expect(container.querySelector(".platform-sidebar")?.textContent).toContain("客户洞察");
     expect(container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/voc"]')?.getAttribute("aria-current")).toBe("page");
@@ -208,7 +208,7 @@ describe("usage navigation", () => {
       route={{ name: "conversation", conversationId: "conversation-1" }} account={member}
     ><p>持续对话</p></AppShell>));
     expect(container.querySelector("main.page.is-brain-workspace")).not.toBeNull();
-    expect(container.querySelector('a[aria-current="page"]')?.textContent).toBe("AI 助手");
+    expect(container.querySelector('.platform-sidebar a[href="/brain"]')).toBeNull();
     expect(container.querySelector("footer.site-foot")).toBeNull();
   });
 

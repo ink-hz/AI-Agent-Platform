@@ -35,6 +35,7 @@ const card: AgentCapabilityCard = {
   adapter_kind: "metabot_local", adapter_config_version: 1,
   output_contract: "normalized_task_result_v1",
   interaction_modes: ["direct_chat", "brain_delegation"], workspace_url: null,
+  web_entry: { kind: "independent_service", path: "/hr/" },
 };
 const marketingCards: AgentCapabilityCard[] = [
   ["marketing-prospecting-bot", "Marketing Prospecting"],
@@ -43,21 +44,21 @@ const marketingCards: AgentCapabilityCard[] = [
   ["marketing-intelligence-bot", "Marketing Intelligence"],
   ["marketing-gtm-bot", "Marketing GTM"],
 ].map(([agentId, displayName]) => ({
-  ...card, agent_id: agentId, display_name: displayName, domain_group: "Marketing",
+  ...card, agent_id: agentId, display_name: displayName, domain_group: "Marketing", web_entry: null,
 }));
 const marketingCard = marketingCards[4];
 const adminCard: AgentCapabilityCard = {
   ...card, agent_id: "ai-admin-agent", display_name: "AI 行政 Agent", domain_group: "行政服务",
   interaction_modes: ["external_workspace"], workspace_url: "/office/?view=services",
-  adapter_id: null, adapter_kind: null,
+  adapter_id: null, adapter_kind: null, web_entry: { kind: "independent_service", path: "/office/?view=services" },
 };
 const faeCard: AgentCapabilityCard = {
   ...adminCard, agent_id: "ai-fae-agent", display_name: "AI FAE Agent", domain_group: "技术支持",
-  workspace_url: "/fae/",
+  workspace_url: "/fae/", web_entry: { kind: "independent_service", path: "/fae/" },
 };
 const vocCard: AgentCapabilityCard = {
   ...adminCard, agent_id: "voc", display_name: "VOC 洞察助手", domain_group: "客户洞察",
-  workspace_url: "/voc/",
+  workspace_url: "/voc/", web_entry: { kind: "independent_service", path: "/voc/" },
 };
 const result: ConversationSubmissionResult = {
   conversation: {
@@ -91,67 +92,30 @@ describe("professional Agent use pages", () => {
   });
   afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
 
-  it("renders the complete nine-Agent launch matrix in product order", async () => {
-    const loadCatalog = vi.fn().mockResolvedValue([
-      adminCard, marketingCards[4], vocCard, marketingCards[1], card,
-      marketingCards[3], faeCard, marketingCards[0], marketingCards[2],
-    ]);
-    await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={loadCatalog} />));
-    expect(container.textContent).toContain("HR Agent");
-    expect(container.textContent).toContain(card.mission);
-    expect(container.textContent).toContain("梳理岗位需求与候选人画像");
-    expect(container.textContent).not.toContain("累计 Session");
-    expect(container.querySelector("a[href='/hr/']")).not.toBeNull();
-    expect(container.querySelectorAll(".agent-use-groups h2")).toHaveLength(0);
-    const cards = [...container.querySelectorAll<HTMLElement>(".agent-use-card")];
-    expect(cards[0].textContent).toContain("AI FAE Agent");
-    expect(cards[cards.length - 1].textContent).toContain("AI 行政 Agent");
-    const expectedLaunches = [
-      "/fae/",
-      "/hr/",
-      "/voc/",
-      "/marketing/prospecting",
-      "/marketing/inbound",
-      "/marketing/voice",
-      "/marketing/intelligence",
-      "/marketing/gtm",
-      "/office/?view=services",
-    ];
-    expect(cards).toHaveLength(9);
-    expect(cards.map((node) => node.getAttribute("href"))).toEqual(expectedLaunches);
-    expect(cards.every((node) => !node.getAttribute("href")?.startsWith("/agents/"))).toBe(true);
-    expect(container.querySelector("a[href='/office/?view=services']")?.textContent).toContain("AI 行政 Agent");
-    expect(container.querySelector("a[href='/fae/']")?.textContent).toContain("AI FAE Agent");
-    expect(container.querySelector("a[href='/fae/']")?.getAttribute("data-agent-kind")).toBe("fae");
-    expect(container.querySelector("a[href='/hr/']")?.getAttribute("data-agent-kind")).toBe("hr");
-    expect(container.querySelector("a[href='/voc/']")?.getAttribute("data-agent-kind")).toBe("voc");
-    expect(container.querySelector("a[href='/marketing/gtm']")?.getAttribute("data-agent-kind")).toBe("marketing");
-    expect(container.querySelector("a[href='/office/?view=services']")?.getAttribute("data-agent-kind")).toBe("admin");
-    expect(container.querySelectorAll(".agent-use-card-action")).toHaveLength(9);
-    expect(container.querySelectorAll(".agent-use-card-arrow")).toHaveLength(9);
-    expect([...container.querySelectorAll(".agent-use-card-action")]
-      .every((node) => node.textContent?.includes("打开"))).toBe(true);
-    expect([...container.querySelectorAll(".agent-use-card-availability")]
-      .every((node) => node.textContent === "可用")).toBe(true);
-    expect(container.querySelector("a[href='/hr/']")?.getAttribute("aria-label")).toBe("打开 AI HR Agent 工作区");
-    expect(container.querySelector("a[href='/fae/']")?.getAttribute("aria-label")).toBe("打开 AI FAE Agent 工作区");
+  it("renders only five authorized Web applications including legacy-adapter HR and DAQ", async () => {
+    const daq = { ...faeCard, agent_id: "ai-daq-fae-agent", web_entry: { kind: "independent_service" as const, path: "/daq/" } };
+    await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([adminCard, ...marketingCards, vocCard, card, daq, faeCard])} />));
+    const links = [...container.querySelectorAll<HTMLAnchorElement>(".agent-use-card")];
+    expect(links.map(node => node.getAttribute("href"))).toEqual(["/fae/", "/daq/", "/hr/", "/voc/", "/office/?view=services"]);
+    expect(container.querySelector("a[href='/daq/']")?.textContent).toContain("DAQ");
+    expect(container.querySelector("a[href='/daq/']")?.getAttribute("data-agent-kind")).toBe("fae");
+    expect(container.querySelector("a[href='/hr/']")?.textContent).toContain(card.mission);
+    expect(container.textContent).not.toContain("Marketing");
   });
 
-  it("never renders an unallowlisted external workspace URL", async () => {
-    const poisoned = { ...vocCard, workspace_url: "https://evil.example/" };
-    await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([poisoned])} />));
-
-    expect(container.querySelector("a[href='https://evil.example/']")).toBeNull();
-    expect(container.textContent).toContain("入口暂不可用");
-  });
-
-  it("does not invent a workspace link for an unknown catalog Agent", async () => {
-    const unknown = { ...card, agent_id: "unknown-agent", display_name: "Unknown Agent" };
-    await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([unknown])} />));
-
-    expect(container.querySelector("a[href='/agents/unknown-agent']")).toBeNull();
+  it.each([undefined, null, {kind:"independent_service",path:"https://evil.example/"}, {kind:"independent_service",path:"//evil.example/hr/"}, {kind:"independent_service",path:"/hr/?redirect=/brain"}, {kind:"independent_service",path:"/%68r/"}, {kind:"independent_service",path:"/hr/\\evil"}, {kind:"other",path:"/hr/"}])("does not infer or repair unavailable Web metadata: %j", async web_entry => {
+    await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([{...card, web_entry}])} />));
     expect(container.querySelectorAll(".agent-use-card")).toHaveLength(0);
     expect(container.textContent).toContain("暂时没有可用的专业 Agent");
+    expect(container.textContent).not.toContain("AI 助手");
+  });
+
+  it("preserves native modified clicks for HR independently of its old adapter", async () => {
+    await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([card])} />));
+    const anchor = container.querySelector<HTMLAnchorElement>("a[href='/hr/']")!;
+    const event = new MouseEvent("click", {bubbles:true,cancelable:true,ctrlKey:true});
+    anchor.addEventListener("click", event => { expect(event.defaultPrevented).toBe(false); event.preventDefault(); }, {once:true});
+    await act(async () => anchor.dispatchEvent(event));
   });
 
   it("starts a direct Agent Conversation through the platform API contract", async () => {

@@ -24,12 +24,12 @@ it('places classified navigation outside main and keeps the topbar to brand and 
  await render();
  expect(box.querySelector('main .platform-sidebar')).toBeNull();
  expect(box.querySelector('.topbar nav')).toBeNull();
- expect(link('/brain')?.textContent).toBe('AI 助手');
+ expect(link('/brain')).toBeNull();
  expect(link('/agents')?.textContent).toBe('Agent 目录');
- expect(link('/fae/manage/')?.textContent).toBe('技术支持');
- expect(link('/hr/')?.textContent).toBe('人力资源');
- expect(link('/office/')?.textContent).toBe('行政服务');
- expect(link('/admin/voc')?.textContent).toBe('客户洞察');
+ expect(link('/fae/manage/')?.textContent).toBe('技术支持管理');
+ expect(link('/hr/')).toBeNull();
+ expect(link('/office/?view=services')).toBeNull();
+ expect(link('/admin/voc')?.textContent).toBe('客户洞察管理');
  expect(link('/')?.textContent).toBe('业务布局');
  expect(link('/organization')?.textContent).toBe('组织架构');
  expect(link('/')?.closest('section')?.getAttribute('aria-label')).toBe('公司全景');
@@ -37,8 +37,8 @@ it('places classified navigation outside main and keeps the topbar to brand and 
  expect(link('/agents')?.closest('section')?.getAttribute('aria-label')).toBe('AI 工作');
  expect(link('/fae/manage/')?.closest('section')?.getAttribute('aria-label')).toBe('业务工作台');
  expect(link('/')?.closest('section')).not.toBe(link('/brain')?.closest('section'));
- expect(link('/admin/activity')?.textContent).toBe('运行事件');
- expect(link('/missions')).not.toBeNull();expect(link('/ai-notes')).not.toBeNull();
+ expect(link('/admin/activity')).toBeNull();expect(link('/admin/governance')).toBeNull();expect(link('/admin/agents')).toBeNull();expect(link('/admin')?.textContent).toBe('运行中心');
+ expect(link('/missions')).toBeNull();expect(link('/ai-notes')).not.toBeNull();
  expect(link('/ai-notes')?.getAttribute('target')).toBe('_blank');
  expect(link('/ai-notes')?.getAttribute('rel')).toBe('noopener noreferrer');
  expect(link('/admin/access')).not.toBeNull();
@@ -77,7 +77,7 @@ it('opens AI notes without a top navigation bar or platform sidebar',async()=>{
  expect(box.querySelector('main')?.textContent).toContain('文章正文');
 });
 it('keeps management and scoped workbench permissions distinct',async()=>{
- await render('member');expect(link('/admin')).toBeNull();expect(link('/admin/identity')).toBeNull();expect(link('/fae/manage/')).toBeNull();expect(link('/fae/')).not.toBeNull();
+ await render('member');expect(link('/admin')).toBeNull();expect(link('/admin/identity')).toBeNull();expect(link('/fae/manage/')).toBeNull();expect(link('/fae/')).toBeNull();
  await render('management_viewer');expect(link('/admin')).toBeNull();expect(link('/admin/voc')).not.toBeNull();
  await render('platform_admin');expect(link('/admin')).not.toBeNull();expect(link('/admin/access')).toBeNull();expect(link('/fae/manage/')).toBeNull();
  await act(async()=>root.render(<AppShell route={{name:'fae-manage-overview'}} account={{...member,workspace_scopes:['fae_workbench']}}><p>FAE</p></AppShell>));
@@ -89,7 +89,7 @@ it('does not invent management access while account is unavailable',async()=>{
 });
 it('selects the containing destination on deep links without also selecting the overview',async()=>{
  await render('platform_owner',{name:'admin-agent-runtime',agentId:'a'});
- expect(link('/admin/agents')?.getAttribute('aria-current')).toBe('page');
+ expect(link('/admin')?.getAttribute('aria-current')).toBe('page');
  expect(box.querySelectorAll('.platform-sidebar [aria-current="page"]')).toHaveLength(1);
  await render('platform_owner',{name:'marketing-conversation',agentSlug:'voice',conversationId:'c'});
  expect(link('/agents')?.getAttribute('aria-current')).toBe('page');
@@ -179,4 +179,19 @@ it('does not expose SDK navigation after an access denial',async()=>{
  await render('member',{name:'sdk-admin',section:'knowledge'});
  expect(box.querySelector('#sdk-workspace-navigation')).toBeNull();
  expect(link('/sdk-admin')).toBeNull();
+});
+
+it('keeps diagnostics contextual and marks their containing runtime destination',async()=>{
+ await render('platform_owner',{name:'admin-activity'});expect(link('/admin/activity')).toBeNull();expect(link('/admin')?.getAttribute('aria-current')).toBe('page');
+ await render('platform_owner',{name:'admin-governance'});expect(link('/admin/governance')).toBeNull();expect(link('/admin/identity')?.getAttribute('aria-current')).toBe('page');
+});
+
+it('preserves ordinary navigation outside the panorama and modified clicks inside it',async()=>{
+ await act(async()=>root.render(<AppShell route={{name:'admin-overview'}} account={{...member,role:'platform_owner'}}><p>普通工作区</p></AppShell>));
+ await act(async()=>link('/admin/identity')!.click());expect(window.history.state?.panorama).not.toBe(true);
+ window.history.replaceState({},'', '/');await render('platform_owner');
+ const destination=link('/admin/identity')!;
+ destination.addEventListener('click',event=>{expect(event.defaultPrevented).toBe(false);event.preventDefault();},{once:true});
+ await act(async()=>destination.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,ctrlKey:true})));expect(window.location.pathname).toBe('/');
+ await act(async()=>destination.click());expect(window.history.state?.panorama).toBe(true);
 });

@@ -54,13 +54,15 @@ describe("cloud replica mode", () => {
     });
   });
 
-  it("drops queries from redirect families without an explicit allowlist", async () => {
+  it("keeps the old conversations URL on its paused page without redirecting into execution", async () => {
     window.history.replaceState({}, "", "/conversations?tab=recent");
 
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(`${window.location.pathname}${window.location.search}`).toBe("/brain");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/conversations?tab=recent");
+    expect(container.textContent).toContain("功能暂未开放");
+    expect(container.querySelector('main a[href="/agents"]')).not.toBeNull();
   });
 
   it("assigns legacy VOC management to its canonical external document", () => {
@@ -128,7 +130,7 @@ describe("cloud replica mode", () => {
     expect(container.textContent).not.toContain("无权访问");
   });
 
-  it("opens the real Brain composer without a release availability gate", async () => {
+  it("pauses the authenticated Brain route without constructing the composer", async () => {
     window.history.replaceState({}, "", "/brain");
     const identityMeta = document.createElement("meta");
     identityMeta.name = "platform-identity-mode";
@@ -143,8 +145,9 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(<App />));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.querySelector("#brain-heading")?.textContent).toBe("AI 助手");
-    expect(container.querySelector("#brain-request")).not.toBeNull();
+    expect(container.textContent).toContain("功能暂未开放");
+    expect(container.querySelector("#brain-request")).toBeNull();
+    expect(container.querySelector('main a[href="/agents"]')).not.toBeNull();
   });
 
   it("opens the authenticated admin root as the panorama homepage", async () => {
@@ -177,19 +180,21 @@ describe("cloud replica mode", () => {
     expect(container.querySelector(".ai-engineering-markdown")).toBeNull();
     expect(container.querySelector("#brain-request")).toBeNull();
     await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="digital"] button')!.click());
-    expect(container.querySelector('[data-action-id="brain"]')).not.toBeNull();
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
-    expect(window.location.pathname).toBe("/brain");
+    expect(container.querySelector('[data-action-id="brain"]')).toBeNull();
+    expect(container.querySelector('[data-action-id="notes"]')).toBeNull();
+    await act(async () => container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/agents"]')!.click());
+    expect(window.location.pathname).toBe("/agents");
     expect(window.history.state.panorama).toBe(true);
-    expect(container.querySelector("#brain-request")).not.toBeNull();
+    expect(container.querySelector("#brain-request")).toBeNull();
     expect(container.textContent).toContain("回到全景");
-    const composer = container.querySelector("#brain-request");
+    const directory = container.querySelector(".agent-use-directory");
+    expect(directory).not.toBeNull();
     await act(async () => [...container.querySelectorAll("button")].find(button => button.textContent === "回到全景")!.click());
     expect(window.location.pathname).toBe("/");
-    expect(container.querySelector("#brain-request")).toBe(composer);
+    expect(container.querySelector(".agent-use-directory")).toBe(directory);
     expect(container.querySelector<HTMLElement>(".panorama-work-area")?.hidden).toBe(true);
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
-    expect(container.querySelector("#brain-request")).toBe(composer);
+    await act(async () => container.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/agents"]')!.click());
+    expect(container.querySelector(".agent-use-directory")).toBe(directory);
   });
 
   it("returns an expired usage route to login with its safe Mission path", async () => {
@@ -420,7 +425,7 @@ describe("cloud replica mode", () => {
     await act(async () => root.render(
       <AppShell route={{ name: "account" }} account={member}><p>内容</p></AppShell>,
     ));
-    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("AI 助手");
+    expect(container.querySelector(".platform-sidebar")?.textContent).not.toContain("AI 助手");
     expect(container.querySelector<HTMLAnchorElement>("a.account-chip")?.getAttribute("href")).toBe("/account");
 
     const viewer: Account = {
@@ -468,8 +473,8 @@ describe("cloud replica mode", () => {
     await act(async () => await Promise.resolve());
 
     const navigation = container.querySelector(".platform-sidebar")?.textContent || "";
-    expect(navigation).toContain("AI 助手");
-    expect(navigation).toContain("运行概览");
+    expect(navigation).not.toContain("AI 助手");
+    expect(navigation).toContain("运行中心");
     expect(container.querySelector(".platform-sidebar")?.textContent).toContain("账号与权限");
     expect(fetchMock).toHaveBeenCalled();
   });

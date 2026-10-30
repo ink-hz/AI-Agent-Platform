@@ -1,3 +1,4 @@
+import { validWebEntry } from "./platform/webEntryPolicy";
 import { platformPath } from "./auth";
 import type {
   AgentAttachmentLimits,
@@ -158,6 +159,7 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
     || (value.persona_subtitle !== null
       && (typeof value.persona_subtitle !== "string" || !value.persona_subtitle))
     || typeof value.domain_group !== "string" || !value.domain_group
+    || (value.web_entry !== undefined && value.web_entry !== null && !validWebEntry(value.web_entry))
     || typeof value.mission !== "string" || !value.mission
     || !isStringArray(value.capabilities) || !isStringArray(value.exclusions)
     || !isStringArray(value.example_tasks) || !isStringArray(value.required_inputs)

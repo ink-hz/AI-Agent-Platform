@@ -1,3 +1,4 @@
+import { WebCatalogProvider } from "./platform/WebCatalog";
 import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 
 import { fetchDeployment } from "./api";
@@ -26,6 +27,7 @@ function follow(event: MouseEvent<HTMLAnchorElement>, path: string) {
 
 
 export function AppShell({ route, children, account, panorama = false }: { route: Route; children: ReactNode; account?: Account | null; panorama?: boolean }) {
+  const catalogIdentity = account ? JSON.stringify([account.internal_user_id, account.role, account.workspace_scopes, account.observation_agent_ids, account.directory_freshness, account.hard_stale_read_only, account.csrf_token]) : null;
   const current = routeSection(route);
   const brainWorkspace = !panorama && (route.name === "home" || route.name === "brain" || route.name === "conversation"
     || route.name === "marketing" || route.name === "marketing-conversation");
@@ -74,7 +76,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
       return next;
     });
   };
-  if (aiNotesWorkspace) return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
+  if (aiNotesWorkspace) return <WebCatalogProvider identityKey={catalogIdentity}><DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className="ai-notes-standalone-shell">
       <main className="page is-ai-notes-workspace ai-notes-standalone-main">
         {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
@@ -83,8 +85,8 @@ export function AppShell({ route, children, account, panorama = false }: { route
         {children}
       </main>
     </div>
-  </DeploymentProvider>;
-  return <DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
+  </DeploymentProvider></WebCatalogProvider>;
+  return <WebCatalogProvider identityKey={catalogIdentity}><DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${sdkWorkspace ? " is-sdk-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">
@@ -106,7 +108,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
         </div>
       </header>
       <div className="platform-body">
-        {!hrWorkspace && !sdkWorkspace && <PlatformSidebar route={route} account={account} readOnly={!deploymentResolved || !deployment || Boolean(cloudReplica)} collapsed={navigationCollapsed}/>}
+        {!hrWorkspace && !sdkWorkspace && <PlatformSidebar panorama={panorama} route={route} account={account} readOnly={!deploymentResolved || !deployment || Boolean(cloudReplica)} collapsed={navigationCollapsed}/>}
         <div className="platform-content">
       <main data-platform-layout={platformPageLayout(route, panorama)} className={`page${panorama ? " is-panorama-page" : ""}${brainWorkspace ? " is-brain-workspace" : ""}${hrWorkspace ? " is-hr-workspace" : ""}${aiNotesWorkspace ? " is-ai-notes-workspace" : ""}${sdkWorkspace ? " is-sdk-workspace" : ""}${faeWorkspace ? " is-fae-workbench" : ""}${agentDesignWorkspace ? " is-agent-design-workspace" : ""}`}>
       {account?.hard_stale_read_only && !faeWorkspace && !hrWorkspace && <aside className="hard-stale-banner" role="status">
@@ -117,5 +119,5 @@ export function AppShell({ route, children, account, panorama = false }: { route
         </div>
       </div>
     </div>
-  </DeploymentProvider>;
+  </DeploymentProvider></WebCatalogProvider>;
 }

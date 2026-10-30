@@ -33,6 +33,8 @@ vi.mock('./pages/SessionDetailPage', () => ({SessionDetailPage:()=> <p>会话工
 vi.mock('./pages/AccessHistoryPage', () => ({AccessHistoryPage:()=> <p>访问记录页面</p>}));
 vi.mock('./pages/GovernancePage', () => ({GovernancePage:()=> <p>审计页面</p>}));
 vi.mock('./pages/AgentRuntimePage', () => ({AgentRuntimePage:()=> <p>运行详情页面</p>}));
+vi.mock('./pages/OverviewPage', () => ({OverviewPage:()=> <p>统一运行中心</p>}));
+vi.mock('./pages/AgentDetailPage', () => ({AgentDetailPage:()=> <p>Agent详情页面</p>}));
 vi.mock('./pages/ReviewPage', () => ({ReviewPage:()=> <p>任务复审页面</p>}));
 vi.mock('./workspaces/fae/FaeManagementWorkspace', () => ({FaeManagementWorkspace:()=> <p>技术支持页面</p>}));
 
@@ -130,4 +132,34 @@ it('preserves the legacy-mode and absent-account boundary of the route authoriza
  expect(box.querySelector('main')?.textContent).toContain('访问记录页面');
  expect(box.querySelector('.permission-state')).toBeNull();
  expect(document.title).toBe(`访问记录 · ${PLATFORM_TITLE}`);
+});
+
+it.each(['/brain','/conversations','/conversations/c1','/missions','/missions/m1','/marketing/inbound','/marketing/voice/conversations/c1'])('pauses old platform execution at %s without execution API calls', async path => {
+ window.history.replaceState({},'',path);
+ await act(async()=>root.render(<App/>));
+ expect(box.querySelector('main')?.textContent).toContain('功能暂未开放');
+ expect(box.querySelector('main a[href="/agents"]')).not.toBeNull();
+ expect(box.querySelector('textarea')).toBeNull();
+ expect(vi.mocked(fetch).mock.calls.map(call=>String(call[0])).filter(url=>/api\/v1\/(conversations|brain)/.test(url))).toEqual([]);
+});
+it.each(['member','management_viewer'] as const)('rejects %s from the identity safety section', async role=>{
+ window.history.replaceState({},'','/admin/identity/security');loadAccount.mockResolvedValue({...account,role});
+ await act(async()=>root.render(<App/>));expect(box.querySelector('main')?.textContent).toContain('无权访问');expect(box.textContent).not.toContain('审计页面');
+});
+
+it('redirects the old fleet list to the canonical center while retaining detail and runtime routes', async()=>{
+ window.history.replaceState({},'','/admin/agents');await act(async()=>root.render(<App/>));
+ expect(window.location.pathname).toBe('/admin');expect(box.querySelector('main')?.textContent).toContain('统一运行中心');
+ expect(box.querySelectorAll('.platform-sidebar [aria-current="page"]')).toHaveLength(1);
+ expect(box.querySelector('.platform-sidebar [aria-current="page"]')?.getAttribute('href')).toBe('/admin');
+ await act(async()=>navigate('/admin/agents/visible'));expect(box.querySelector('main')?.textContent).toContain('Agent详情页面');
+ await act(async()=>navigate('/admin/agents/visible/runtime'));expect(box.querySelector('main')?.textContent).toContain('运行详情页面');
+ expect(box.querySelectorAll('.platform-sidebar [aria-current="page"]')).toHaveLength(1);
+ expect(box.querySelector('.platform-sidebar [aria-current="page"]')?.getAttribute('href')).toBe('/admin');
+});
+it('opens the manager safety deep link directly without fetching unrelated identity panels', async()=>{
+ window.history.replaceState({},'','/admin/identity/security');await act(async()=>root.render(<App/>));
+ expect(box.querySelector('main')?.textContent).toContain('审计页面');expect(box.querySelector('button[data-section="security"]')?.getAttribute('aria-pressed')).toBe('true');
+ expect(vi.mocked(fetch).mock.calls.some(call=>String(call[0]).includes('/manage/users'))).toBe(false);
+ expect(box.querySelector('.platform-sidebar [aria-current="page"]')?.getAttribute('href')).toBe('/admin/identity');
 });

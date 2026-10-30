@@ -1,7 +1,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { AiEngineeringDocumentSlug } from "../aiEngineeringApi";
-import { platformPath } from "../auth";
+import { useWebCatalog } from "../platform/WebCatalog";
+import { contextualWebPath } from "../platform/webEntryPolicy";
 import type { PanoramaActionId, PanoramaData, PanoramaGroup, PanoramaNode } from "../panoramaTypes";
 import { routePanoramaEdge, type PanoramaRect } from "../panoramaRouting";
 import { ExplorationPanel } from "./PanoramaExploration";
@@ -15,7 +16,6 @@ const ACTION_LABELS: Record<PanoramaActionId, string> = {
   account: "账号", "agent-admin": "Agent 状态", notes: "工程笔记", hr: "人力资源 · 独立入口",
   office: "行政服务 · 独立入口", voc: "客户洞察 · 独立入口", fae: "技术支持 · 独立入口",
 };
-const EXTERNAL_ACTIONS = new Set<PanoramaActionId>(["notes", "hr", "office", "voc", "fae"]);
 
 interface CanvasProps {
   data: PanoramaData;
@@ -74,22 +74,22 @@ function NodeCard({ node, selected, related, match, company, explored, onSelect 
   </article>;
 }
 
-function ActionButton({ id, onAction }: { id: PanoramaActionId; onAction: CanvasProps["onAction"] }) {
-  if (id === "notes") return <a className="panorama-action panorama-action--external" data-action-id={id}
-    href={platformPath("/ai-notes")} target="_blank" rel="noopener noreferrer">
+function ActionButton({ id }: { id: PanoramaActionId; onAction: CanvasProps["onAction"] }) {
+  const catalog = useWebCatalog();
+  const path = contextualWebPath(id, catalog?.applications ?? []);
+  if (!path) return null;
+  return <a className="panorama-action panorama-action--external" data-action-id={id} href={path}>
     {ACTION_LABELS[id]}<span aria-hidden="true"> ↗</span>
   </a>;
-  return <button type="button" className={`panorama-action${EXTERNAL_ACTIONS.has(id) ? " panorama-action--external" : ""}`} data-action-id={id} onClick={() => onAction(id)}>
-    {ACTION_LABELS[id]}{EXTERNAL_ACTIONS.has(id) && <span aria-hidden="true"> ↗</span>}
-  </button>;
 }
 
-function DetailPanel({ node, data, isOwner, onAction, onEvidence, onClose, onReturnExploration }: {
+function DetailPanel({ node, data, onAction, onEvidence, onClose, onReturnExploration }: {
   node: PanoramaNode; data: PanoramaData; isOwner: boolean; onAction: CanvasProps["onAction"];
   onEvidence: CanvasProps["onEvidence"]; onClose: () => void;
   onReturnExploration?: () => void;
 }) {
-  const actions = node.actions.filter((id) => id !== "access" || isOwner);
+  const catalog = useWebCatalog();
+  const actions = node.actions.filter(id => contextualWebPath(id, catalog?.applications ?? []) !== null);
   const relationships = data.edges.filter((edge) => edge.from === node.id || edge.to === node.id);
   return <aside className="panorama-detail" aria-label={`${node.title}详情`}>
     <header><div><span>节点详情</span><h2>{node.title}</h2>{node.subtitle && <p>{node.subtitle}</p>}</div><button type="button" onClick={onClose}>关闭</button></header>

@@ -1136,4 +1136,18 @@ it("exposes business permissions alongside the administrator list without loadin
     expect(container.querySelector("nav button[aria-pressed='true']")?.textContent).toBe("平台管理员");
   });
 
+  it("loads safety records only when opened and keeps them manager-only", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => Promise.resolve(String(input).includes("governance") ? new Response(JSON.stringify({events:[]})) : usersResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => root.render(<IdentityManagementPage account={administrator} />));
+    expect(fetchMock.mock.calls.map(call=>String(call[0])).some(path=>path.includes("governance"))).toBe(false);
+    const safety = container.querySelector<HTMLButtonElement>("button[data-section='security']");
+    expect(safety?.textContent).toBe("安全记录");
+    await act(async () => safety!.click());
+    expect(fetchMock.mock.calls.map(call=>String(call[0])).filter(path=>path.includes("governance"))).toHaveLength(1);
+    expect(container.querySelector(".governance-page")?.closest("[hidden]")).toBeNull();
+    await act(async () => root.render(<IdentityManagementPage account={{...administrator,role:"management_viewer"}} initialSection="security" />));
+    expect(container.textContent).toContain("无权访问");expect(container.querySelector(".governance-page")).toBeNull();
+  });
+
 });

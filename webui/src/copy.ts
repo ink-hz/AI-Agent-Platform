@@ -7,10 +7,10 @@ import type {
 
 
 export const UI_COPY = {
-  navigation: ["运行概览", "Agent 状态", "会话记录", "运行事件"],
+  navigation: ["运行中心", "会话记录"],
   navigationLabel: "主导航",
   hero: {
-    title: "运行概览",
+    title: "运行中心",
     description: "查看已接入 Agent 的运行状态、真实使用情况和最近运行记录。",
     running: (count: number) => `${count} 个 Agent 正常运行`,
     attention: (count: number) => `${count} 个 Agent 需要关注`,

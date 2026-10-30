@@ -80,7 +80,7 @@ export function AgentDetailPage({ agentId }: { agentId: string }) {
     return <LoadingState label="正在加载 Agent 详情" />;
   }
   return <>
-    <PlatformLink className="back-link" href="/admin/agents">← 返回 Agent 列表</PlatformLink>
+    <PlatformLink className="back-link" href="/admin">← 返回运行中心</PlatformLink>
     <section className={`agent-profile agent-${agent.accent}`}>
       <div className="profile-identity"><span className="fleet-avatar">{agent.glyph}</span><div><p>{agent.domain}</p><h1>{agent.name}</h1><span>{agent.description}</span></div></div>
       <div className="profile-badges"><span>{agent.source_kind.toUpperCase()}</span><span>{agent.deployment}</span></div>

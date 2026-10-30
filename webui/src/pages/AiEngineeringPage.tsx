@@ -1,3 +1,5 @@
+import { useWebCatalog } from "../platform/WebCatalog";
+import { contextualWebPath } from "../platform/webEntryPolicy";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,7 +19,7 @@ import { PanoramaView } from "../panorama/PanoramaView";
 import { OrganizationLayout } from "../organization/OrganizationLayout";
 import { fetchPanorama } from "../panorama/panoramaApi";
 import type { PanoramaData, PanoramaActionId } from "../panoramaTypes";
-import { actionPath, workspaceGroup, registerPanoramaLeaveGuard } from "../panoramaNavigation";
+import { workspaceGroup, registerPanoramaLeaveGuard } from "../panoramaNavigation";
 import { PanoramaWorkArea } from "../PanoramaWorkArea";
 import "../panoramaWorkspace.css";
 
@@ -229,7 +231,6 @@ function AiEngineeringSession({ account, client, direct = false, fallback, selec
         <span>版本 {index.version} · 更新于 <time dateTime={index.updated_at}>{new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" }).format(new Date(index.updated_at))}</time></span>
       </div>
       <nav aria-label="AI 工程快捷入口">
-        <a href={platformPath("/brain")} onClick={(event) => follow(event, "/brain")}>AI 助手</a>
         <a href={platformPath("/agents")} onClick={(event) => follow(event, "/agents")}>Agent 目录</a>
       </nav>
     </header>
@@ -272,6 +273,7 @@ function RetainedScrollView({ active, view, children }: { active: boolean; view:
 }
 
 function PanoramaSession({ account, client, direct = false, fallback, onNavigate, onAccessDenied, view = "business", workspaceRoute, renderWorkspace }: SessionProps) {
+  const catalog = useWebCatalog();
   const [access, setAccess] = useState<"checking" | "allowed" | "denied">("checking");
   useEffect(() => { if (access === "denied") onAccessDenied?.(); }, [access, onAccessDenied]);
   const [data, setData] = useState<PanoramaData | null>(null);
@@ -367,21 +369,11 @@ function PanoramaSession({ account, client, direct = false, fallback, onNavigate
   }), []);
   const closeWorkspace = useCallback(() => { onNavigate("/"); window.requestAnimationFrame(() => graph.current?.focus()); }, [onNavigate]);
   const openAction = (action: PanoramaActionId) => {
-    if (action === "access" && account.role !== "platform_owner") return;
-    const target = actionPath(action);
-    if ('newTab' in target && target.newTab) {
-      window.open(platformPath(target.path), '_blank', 'noopener,noreferrer'); return;
-    }
-    const previous = lastWorkspace.current;
-    if (dirty.current && (target.external || (previous && previous.group !== action))) {
-      if (!window.confirm("当前工作区可能有未保存的输入。确定放弃并切换？选择取消可保留当前工作。")) return;
-      dirty.current = false;
-    }
-    if (target.external) {
-      if (layoutDirty.current && !window.confirm("全景布局有未保存修改。确定离开？")) return;
-      window.location.assign(platformPath(target.path)); return;
-    }
-    onNavigate(previous?.group === action ? previous.path : target.path);
+    const path = contextualWebPath(action, catalog?.applications ?? []);
+    if (!path) return;
+    if (dirty.current && !window.confirm("当前工作区可能有未保存的输入。确定放弃并切换？选择取消可保留当前工作。")) return;
+    if (layoutDirty.current && !window.confirm("全景布局有未保存修改。确定离开？")) return;
+    window.location.assign(path);
   };
   if (access === "denied") return direct ? pageState("无权限", "请联系苍渊。", "alert") : <>{fallback}</>;
   if (access === "checking") return pageState("正在确认访问权限", "正在确认企业账号。");

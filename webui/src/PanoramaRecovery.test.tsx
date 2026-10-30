@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
+vi.mock('./pages/IdentityManagementPage',()=>({IdentityManagementPage:()=> <textarea id="design-draft" aria-label="设计草稿"/>}));
 import { panoramaTestData } from './panoramaTestData';
 let box:HTMLDivElement;let root:ReturnType<typeof createRoot>;
 let permitted=true;
@@ -30,52 +31,41 @@ afterEach(async()=>{await act(async()=>root.unmount());box.remove();document.que
 async function openDraft(){
  await act(async()=>root.render(<App/>));
  expect(box.textContent).toContain("测试全景");
- await act(async()=>box.querySelector<HTMLButtonElement>('[data-node-id="digital"] button')!.click());
- await act(async()=>box.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
- const input=box.querySelector<HTMLTextAreaElement>('#brain-request')!;
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/identity"]')!.click());
+ const input=box.querySelector<HTMLTextAreaElement>('#design-draft')!;
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(input,'保留这条请求');input.dispatchEvent(new Event('input',{bubbles:true}));});
  return input;
 }
-it('protects native links and history; failed submission survives collapse and keeps its idempotency key',async()=>{
+it('protects native history and retains an authorized design draft while old execution remains paused',async()=>{
  const input=await openDraft();const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
- const notesLink=box.querySelector<HTMLAnchorElement>('.brain-ai-notes-entry')!;
- expect(notesLink.target).toBe('_blank');
- notesLink.addEventListener('click',event=>event.preventDefault(),{once:true});
- await act(async()=>notesLink.click());
- expect(confirm).not.toHaveBeenCalled();expect(window.location.pathname).toBe('/brain');expect(box.querySelector('#brain-request')).toBe(input);
+ const notesLink=box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/ai-notes"]')!;
+ expect(notesLink.target).toBe('_blank');notesLink.addEventListener('click',event=>event.preventDefault(),{once:true});
+ await act(async()=>notesLink.click());expect(confirm).not.toHaveBeenCalled();
  await act(async()=>{window.history.replaceState({panorama:true},'', '/ai-notes');window.dispatchEvent(new PopStateEvent('popstate'));});
- expect(confirm).toHaveBeenCalledOnce();
- expect(window.location.pathname).toBe('/brain');expect(input.value).toBe('保留这条请求');
- await act(async()=>box.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
- expect(requests).toHaveLength(1);
+ expect(confirm).toHaveBeenCalledOnce();expect(window.location.pathname).toBe('/admin/identity');expect(input.value).toBe('保留这条请求');
  await act(async()=>[...box.querySelectorAll('button')].find(b=>b.textContent==='回到全景')!.click());
- expect(window.location.pathname).toBe('/');
- const panoramaNotes=box.querySelector<HTMLAnchorElement>('[data-action-id="notes"]')!;
- expect(panoramaNotes.target).toBe('_blank');
- panoramaNotes.addEventListener('click',event=>event.preventDefault(),{once:true});
- await act(async()=>panoramaNotes.click());
- expect(window.location.pathname).toBe('/');expect(box.querySelector('#brain-request')).toBe(input);
- await act(async()=>box.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
- await act(async()=>box.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
- expect(requests).toHaveLength(2);expect(new Headers(requests[0].headers).get('Idempotency-Key')).toBe(new Headers(requests[1].headers).get('Idempotency-Key'));
+ expect(window.location.pathname).toBe('/');expect(box.querySelector('#design-draft')).toBe(input);
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/identity"]')!.click());
+ expect(box.querySelector('#design-draft')).toBe(input);expect(requests).toHaveLength(0);
+ expect(box.querySelector('.platform-sidebar a[href="/brain"]')).toBeNull();
 });
 it('revocation on focus removes both the panorama and retained private workspace',async()=>{
  await openDraft();
  await act(async()=>[...box.querySelectorAll('button')].find(b=>b.textContent==='回到全景')!.click());
- expect(box.querySelector('#brain-request')).not.toBeNull();permitted=false;
+ expect(box.querySelector('#design-draft')).not.toBeNull();permitted=false;
  await act(async()=>window.dispatchEvent(new Event('focus')));
- expect(box.querySelector('#brain-request')).toBeNull();expect(box.textContent).not.toContain('测试全景');expect(box.textContent).toContain('无权限');expect(box.textContent).toContain('请联系苍渊');
+ expect(box.querySelector('#design-draft')).toBeNull();expect(box.textContent).not.toContain('测试全景');expect(box.textContent).toContain('无权限');expect(box.textContent).toContain('请联系苍渊');
  expect(box.querySelector('.platform-sidebar')).toBeNull();expect(box.querySelector('.topbar')).toBeNull();
  // The denied panorama must not poison independently authorized member pages.
- await act(async()=>{window.history.replaceState({},'', '/brain');window.dispatchEvent(new PopStateEvent('popstate'));});
- expect(box.querySelector('#brain-request')).not.toBeNull();expect(box.textContent).not.toContain('请联系苍渊');
+ await act(async()=>{window.history.replaceState({},'', '/admin/identity');window.dispatchEvent(new PopStateEvent('popstate'));});
+ expect(box.querySelector('#design-draft')).not.toBeNull();expect(box.textContent).not.toContain('请联系苍渊');
 });
 it('keeps an unsaved workspace mounted while switching between company canvases',async()=>{
  const input=await openDraft();const confirm=vi.spyOn(window,'confirm').mockReturnValue(false);
  await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/organization"]')!.click());
- expect(window.location.pathname).toBe('/organization');expect(confirm).not.toHaveBeenCalled();expect(box.querySelector('#brain-request')).toBe(input);expect(input.value).toBe('保留这条请求');
+ expect(window.location.pathname).toBe('/organization');expect(confirm).not.toHaveBeenCalled();expect(box.querySelector('#design-draft')).toBe(input);expect(input.value).toBe('保留这条请求');
  await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/"]')!.click());
- expect(window.location.pathname).toBe('/');expect(box.querySelector('#brain-request')).toBe(input);
- await act(async()=>box.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
- expect(window.location.pathname).toBe('/brain');expect(box.querySelector('#brain-request')).toBe(input);expect(input.value).toBe('保留这条请求');
+ expect(window.location.pathname).toBe('/');expect(box.querySelector('#design-draft')).toBe(input);
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/admin/identity"]')!.click());
+ expect(window.location.pathname).toBe('/admin/identity');expect(box.querySelector('#design-draft')).toBe(input);expect(input.value).toBe('保留这条请求');
 });

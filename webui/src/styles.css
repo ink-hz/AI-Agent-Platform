@@ -610,6 +610,8 @@ body {
 .fleet-agent-identity { min-width: 0; flex: 1; }
 .fleet-agent-identity p { overflow: hidden; margin: 0 0 4px; color: var(--agent-text); font-size: 11.5px; font-weight: 800; letter-spacing: .045em; text-overflow: ellipsis; white-space: nowrap; }
 .fleet-agent-identity h3 { overflow: visible; margin: 0; overflow-wrap: anywhere; font-size: 19px; line-height: 1.3; letter-spacing: -.015em; white-space: normal; }
+.fleet-agent-identity h3 a { color: inherit; text-decoration: none; }
+.fleet-agent-identity h3 a:hover, .fleet-agent-identity h3 a:focus-visible { text-decoration: underline; }
 .fleet-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 750; }
 .fleet-state i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .fleet-state.active { background: var(--ok-wash); color: var(--ok); }

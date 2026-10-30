@@ -1,43 +1,23 @@
 import { PlatformPageHeader } from "../platform/PlatformPageHeader";
-import { useEffect, useMemo, useState } from "react";
+
 
 import { BUSINESS_AGENT_LABELS } from "../platform/agentLabels";
-import { fetchAgentCatalog } from "../brainApi";
+import { WebCatalogProvider, useWebCatalog, type CatalogLoader } from "../platform/WebCatalog";
+import { webEntryPath } from "../platform/webEntryPolicy";
 import type { AgentCapabilityCard } from "../brainTypes";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
-import { PlatformLink } from "../components/PlatformLink";
-import { workspaceLaunchPath } from "../platform/workspaces";
-const AGENT_ORDER = Object.freeze([
-  "ai-fae-agent",
-  "hr-bot",
-  "voc",
-  "marketing-prospecting-bot",
-  "marketing-inbound-bot",
-  "marketing-voice-bot",
-  "marketing-intelligence-bot",
-  "marketing-gtm-bot",
-  "ai-admin-agent",
-]);
 
-type AgentKind = "fae" | "hr" | "voc" | "marketing" | "admin";
-
+type AgentKind = "fae" | "hr" | "voc" | "admin" | "service";
 function agentKind(card: AgentCapabilityCard): AgentKind {
-  if (card.agent_id === "ai-fae-agent") return "fae";
+  if (["ai-fae-agent", "ai-daq-fae-agent"].includes(card.agent_id)) return "fae";
+  if (card.agent_id === "hr-bot") return "hr";
   if (card.agent_id === "ai-admin-agent") return "admin";
-  if (card.agent_id === "voc") return "voc";
-  return card.domain_group === "Marketing" ? "marketing" : "hr";
-}
-
-function safeWorkspaceUrl(card: AgentCapabilityCard): string | null {
-  const expected = workspaceLaunchPath(card.agent_id);
-  return expected && card.workspace_url === expected ? expected : null;
+  return card.agent_id === "voc" ? "voc" : "service";
 }
 
 function AgentCard({ card }: { card: AgentCapabilityCard }) {
   const displayName = BUSINESS_AGENT_LABELS[card.agent_id] ?? card.display_name;
-  const external = card.interaction_modes.includes("external_workspace");
   const kind = agentKind(card);
-  const launchPath = workspaceLaunchPath(card.agent_id);
   const content = <>
     <header className="agent-use-card-head">
       <span>{card.domain_group}</span>
@@ -53,48 +33,26 @@ function AgentCard({ card }: { card: AgentCapabilityCard }) {
     <span className="agent-use-card-availability">可用</span>
     <span className="agent-use-card-open">打开 <span aria-hidden="true">→</span></span>
   </span>;
-  const href = external ? safeWorkspaceUrl(card) : launchPath;
+  const href = webEntryPath(card);
   if (!href) return <article className="agent-use-card agent-use-card-disabled" data-agent-kind={kind}>
     {content}<span className="agent-use-card-unavailable">入口暂不可用</span>
   </article>;
-  if (external) return <a aria-label={`打开 ${displayName} 工作区`} className="agent-use-card"
+  return <a aria-label={`打开 ${displayName} 工作区`} className="agent-use-card"
     data-agent-kind={kind} href={href}>{content}{footer}</a>;
-  return <PlatformLink aria-label={`打开 ${displayName} 工作区`} className="agent-use-card"
-    data-agent-kind={kind} href={href}>{content}{footer}</PlatformLink>;
 }
 
 
-export function AgentUseDirectoryPage({
-  loadCatalog = fetchAgentCatalog,
-}: {
-  loadCatalog?: (signal?: AbortSignal) => Promise<AgentCapabilityCard[]>;
-}) {
-  const [agents, setAgents] = useState<AgentCapabilityCard[] | null>(null);
-  const [error, setError] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    setError(false);
-    loadCatalog(controller.signal).then(setAgents).catch(() => {
-      if (!controller.signal.aborted) setError(true);
-    });
-    return () => controller.abort();
-  }, [attempt, loadCatalog]);
-  const orderedAgents = useMemo(() => [...(agents ?? [])]
-    .filter((card) => AGENT_ORDER.includes(card.agent_id))
-    .sort((left, right) => {
-    const leftIndex = AGENT_ORDER.indexOf(left.agent_id);
-    const rightIndex = AGENT_ORDER.indexOf(right.agent_id);
-    return leftIndex - rightIndex || left.display_name.localeCompare(right.display_name, "zh-CN");
-  }), [agents]);
-
+export function AgentUseDirectoryPage({ loadCatalog }: { loadCatalog?: CatalogLoader }) {
+  const catalog = useWebCatalog();
+  if (!catalog) return <WebCatalogProvider identityKey="standalone-directory" loadCatalog={loadCatalog}><AgentUseDirectoryPage /></WebCatalogProvider>;
+  const {applications, status, retry} = catalog;
   return <div className="agent-use-directory">
-    <PlatformPageHeader className="use-page-intro" title="Agent 目录" description="选择一个 Agent 开始工作。" />
-    {error ? <ErrorState onRetry={() => setAttempt((value) => value + 1)} />
-      : agents === null ? <LoadingState label="正在读取可用 Agent" />
-      : orderedAgents.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="你仍可从 AI 助手完成通用对话和需求澄清。" />
+    <PlatformPageHeader className="use-page-intro" title="Agent 目录" description="选择正式 Web 应用开始工作。" />
+    {status === "error" ? <ErrorState onRetry={retry} />
+      : status === "loading" ? <LoadingState label="正在读取可用 Agent" />
+      : applications.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="当前账号暂无已授权的正式 Web 应用。" />
       : <div className="agent-use-grid agent-use-directory-grid">
-        {orderedAgents.map((card) => <AgentCard card={card} key={card.agent_id} />)}
+        {applications.map(card => <AgentCard card={card} key={card.agent_id} />)}
       </div>}
   </div>;
 }

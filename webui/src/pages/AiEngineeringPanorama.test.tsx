@@ -13,11 +13,11 @@ const box=document.createElement('div');document.body.append(box);const root=cre
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;
 afterEach(async()=>{await act(async()=>root.render(null));vi.resetAllMocks();window.history.replaceState({},'', '/');});
 describe('panorama is the homepage',()=>{
- it('loads authorized structured overview without forcing a document, and opens a real workspace route',async()=>{
+ it('loads authorized structured overview without forcing a document, and refuses a stale generic action',async()=>{
   client.fetchAccess.mockResolvedValue({allowed:true});fetchPanorama.mockResolvedValue({title:'受保护总览'});const go=vi.fn();
   await act(async()=>root.render(<AiEngineeringLanding account={account} client={client} direct fallback={null} onNavigate={go}/>));
   expect(box.textContent).toContain('受保护总览');expect(client.fetchDocument).not.toHaveBeenCalled();expect(client.fetchIndex).not.toHaveBeenCalled();
-  await act(async()=>box.querySelector('button')!.click());expect(go).toHaveBeenCalledWith('/brain');
+  await act(async()=>box.querySelector('button')!.click());expect(go).not.toHaveBeenCalled();
  });
  it('clears the entire panorama on permission loss from an evidence request',async()=>{
   client.fetchAccess.mockResolvedValue({allowed:true});fetchPanorama.mockResolvedValue({title:'受保护总览'});client.fetchDocument.mockRejectedValue(new AiEngineeringApiError(403));

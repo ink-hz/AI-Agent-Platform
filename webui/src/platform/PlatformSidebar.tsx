@@ -1,5 +1,9 @@
+import { useWebCatalog } from "./WebCatalog";
+import { webEntryPath } from "./webEntryPolicy";
+import { BUSINESS_AGENT_LABELS } from "./agentLabels";
+import type { AgentCapabilityCard } from "../brainTypes";
 import { useEffect, useState, type MouseEvent } from 'react';
-import { Activity, ChevronDown, ChevronRight, BookOpen, Bot, Boxes, ClipboardList, Code2, ExternalLink, Headset, Home, ListChecks, MessageSquare, MessagesSquare, ScanEye, ShieldCheck, UsersRound, Building2, type LucideIcon } from 'lucide-react';
+import { Activity, ChevronDown, ChevronRight, BookOpen, Boxes, Code2, ExternalLink, Headset, Home, MessagesSquare, ScanEye, UsersRound, Building2, type LucideIcon } from 'lucide-react';
 import { platformPath, type Account } from '../auth';
 import { navigate, type Route } from '../router';
 import { SDK_ADMIN_SECTIONS } from '../sdk-admin/sdkAdminNavigation';
@@ -9,18 +13,14 @@ import { sdkAdminClient } from '../sdk-admin/sdkAdminApi';
 interface Item { label: string; path: string; icon: LucideIcon; external?: boolean; newTab?: boolean; routes: readonly string[] }
 interface Group { label: string; items: Item[]; hideHeading?: boolean }
 const aiWork: Item[] = [
-  { label:'AI 助手', path:'/brain', icon:MessageSquare, routes:['brain','conversation','conversations'] },
   { label:'Agent 目录', path:'/agents', icon:Boxes, routes:['agents','marketing','marketing-conversation'] },
-  { label:'历史任务', path:'/missions', icon:ClipboardList, routes:['missions','mission'] },
 ];
 const runtime: Item[] = [
-  { label:'运行概览', path:'/admin', icon:Activity, routes:['admin-overview'] },
-  { label:'Agent 状态', path:'/admin/agents', icon:Bot, routes:['admin-agents','admin-agent','admin-agent-runtime'] },
+  { label:'运行中心', path:'/admin', icon:Activity, routes:['admin-overview','admin-agents','admin-agent','admin-agent-runtime','admin-activity'] },
   { label:'会话记录', path:'/admin/sessions', icon:MessagesSquare, routes:['admin-sessions','admin-session'] },
-  { label:'运行事件', path:'/admin/activity', icon:ListChecks, routes:['admin-activity'] },
   { label:'任务复审', path:'/admin/review', icon:ScanEye, routes:['admin-review'] },
 ];
-function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = false, manufacturingAvailable = false): Group[] {
+function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = false, manufacturingAvailable = false, applications: AgentCapabilityCard[] = []): Group[] {
   const manager = account?.role === 'platform_owner' || account?.role === 'platform_admin';
   const faeManager = account?.role === 'platform_owner' || account?.workspace_scopes.includes('fae_workbench');
   const vocManager = manager || account?.role === 'management_viewer';
@@ -29,35 +29,35 @@ function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = fa
       {label:'业务布局',path:'/',icon:Home,routes:['home','ai-engineering']},
       {label:'组织架构',path:'/organization',icon:Building2,routes:['organization']},
     ] },
-    { label:'AI 工作', items:manager ? [...aiWork.slice(0,2), {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}, ...aiWork.slice(2)] : aiWork },
+    { label:'AI 工作', items:manager ? [...aiWork, {label:'Agent 设计',path:'/admin/agent-designs',icon:BookOpen,routes:['admin-agent-designs']}] : aiWork },
     { label:'业务工作台', items:[
       ...(manufacturingAvailable ? [{label:'大制造',path:'/manufacturing',icon:Boxes,routes:['manufacturing']}] : []),
       ...(sdkAvailable ? [{ label:'SDK 开发管理', path:'/sdk-admin', icon:Code2, routes:['sdk-admin'] }] : []),
-      { label:'技术支持', path:faeManager ? '/fae/manage/' : '/fae/', icon:Headset, external:!faeManager, routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report'] },
-      { label:'人力资源', path:'/hr/', icon:UsersRound, external:true, routes:[] },
-      { label:'行政服务', path:'/office/', icon:Building2, external:true, routes:[] },
-      { label:'客户洞察', path:vocManager ? '/admin/voc' : '/voc/', icon:MessagesSquare, external:!vocManager, routes:['admin-voc'] },
+      ...applications.map(card => ({label: card.agent_id === 'ai-fae-agent' ? '技术支持咨询' : card.agent_id === 'ai-daq-fae-agent' ? 'DAQ 技术支持咨询' : card.agent_id === 'hr-bot' ? '人力资源' : card.agent_id === 'ai-admin-agent' ? '行政服务' : BUSINESS_AGENT_LABELS[card.agent_id] ?? card.display_name,
+        path:webEntryPath(card)!,icon:card.agent_id.includes('fae') ? Headset : Building2,external:true,routes:[]})),
+      ...(faeManager ? [{label:'技术支持管理',path:'/fae/manage/',icon:Headset,routes:['fae-manage-overview','fae-manage-sessions','fae-manage-session','fae-manage-issues','fae-manage-issue','fae-manage-reports','fae-manage-report']}] : []),
+      ...(vocManager ? [{label:'客户洞察管理',path:'/admin/voc',icon:MessagesSquare,routes:['admin-voc']}] : []),
     ] },
   ];
   if (manager) {
     groups.push({label:'运行中心', items:runtime.filter(item => !readOnly || item.path !== '/admin/review')});
     groups.push({label:'平台管理', items:[
-      {label:'账号与权限',path:'/admin/identity',icon:UsersRound,routes:['admin-identity']},
-      {label:'审计日志',path:'/admin/governance',icon:ShieldCheck,routes:['admin-governance']},
+      {label:'账号与权限',path:'/admin/identity',icon:UsersRound,routes:['admin-identity','admin-governance']},
       ...(account?.role === 'platform_owner' ? [{label:'访问记录',path:'/admin/access',icon:ScanEye,routes:['admin-access']}] : []),
     ]});
   }
   groups.push({label:'辅助入口',hideHeading:true,items:[{label:'工程笔记',path:'/ai-notes',icon:BookOpen,external:true,newTab:true,routes:['ai-notes','ai-note']}]});
   return groups;
 }
-function follow(event: MouseEvent<HTMLAnchorElement>, item: Item) {
+function follow(event: MouseEvent<HTMLAnchorElement>, item: Item, panorama = false) {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   // Native document links use the existing beforeunload protection exactly once.
   if (item.external) return;
   event.preventDefault();
-  navigate(item.path);
+  navigate(item.path, panorama ? {state: {panorama: true}} : {});
 }
-export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route;account?:Account|null;readOnly:boolean;collapsed:boolean}) {
+export function PlatformSidebar({route,account,readOnly,collapsed,panorama = false}: {route:Route;account?:Account|null;readOnly:boolean;collapsed:boolean;panorama?:boolean}) {
+  const catalog = useWebCatalog();
   const [manufacturingAvailable, setManufacturingAvailable] = useState(false);
   useEffect(() => {
     setManufacturingAvailable(false);
@@ -83,12 +83,12 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
   }, [account?.internal_user_id]);
   return <aside id="platform-navigation" className="platform-sidebar" hidden={collapsed}>
     <nav aria-label="主导航">
-      {groupsFor(account,readOnly,sdkAvailable,manufacturingAvailable).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
+      {groupsFor(account,readOnly,sdkAvailable,manufacturingAvailable,catalog?.applications).map(group => <section className="platform-nav-group" key={group.label} aria-label={group.label}>
         {!group.hideHeading && <h2>{group.label}</h2>}
         {group.items.map(item => {
           if (item.path === '/sdk-admin') return <div className="platform-sdk-navigation" key={item.path}>
             <div className="platform-sdk-heading">
-              <a href={platformPath(item.path)} className={route.name === 'sdk-admin' ? 'is-workspace-current' : undefined} onClick={event => follow(event,item)}>
+              <a href={platformPath(item.path)} className={route.name === 'sdk-admin' ? 'is-workspace-current' : undefined} onClick={event => follow(event,item,panorama)}>
                 <Code2 size={17} aria-hidden="true"/><span>{item.label}</span>
               </a>
               <button type="button" aria-controls="sdk-workspace-navigation" aria-expanded={sdkExpanded}
@@ -100,7 +100,7 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
               {SDK_ADMIN_SECTIONS.map(({id,path,title,icon:Icon}) => {
                 const current = route.name === 'sdk-admin' && route.section === id;
                 return <a key={id} href={platformPath(path)} className={current ? 'is-current' : undefined} aria-current={current ? 'page' : undefined}
-                  onClick={event => follow(event,{path,label:title,icon:Icon,routes:[]})}>
+                  onClick={event => follow(event,{path,label:title,icon:Icon,routes:[]},panorama)}>
                   <Icon size={15} aria-hidden="true"/><span>{title}</span>
                 </a>;
               })}
@@ -112,7 +112,7 @@ export function PlatformSidebar({route,account,readOnly,collapsed}: {route:Route
           return <a key={item.path} href={item.newTab ? platformPath(item.path) : item.external ? item.path : platformPath(item.path)}
             target={item.newTab ? '_blank' : undefined} rel={item.newTab ? 'noopener noreferrer' : undefined}
             className={current ? 'is-current' : undefined} aria-current={current ? 'page' : undefined}
-            onClick={event => follow(event,item)}>
+            onClick={event => follow(event,item,panorama)}>
             <Icon size={17} aria-hidden="true"/><span>{item.label}</span>
             {item.external && <ExternalLink className="platform-nav-external" size={12} aria-hidden="true"/>}
           </a>;

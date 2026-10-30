@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { FleetAgentCard } from "../FleetAgentCard";
 import { UsageTrend } from "../UsageTrend";
-import { businessAgents } from "../agentVisibility";
+import { businessAgents, partitionAgents } from "../agentVisibility";
 import { fetchFleetOverview, fetchOperationsBrief } from "../api";
 import { DailyBrief } from "../components/DailyBrief";
 import { UI_COPY } from "../copy";
@@ -116,6 +116,7 @@ export function OverviewPage() {
 
   const { overview, degraded } = state;
   const visibleAgents = overview ? businessAgents(overview.agents) : [];
+  const systemAgents = overview ? partitionAgents(overview.agents).system : [];
   const hasIncident = Boolean(overview && (overview.summary.degraded_agents > 0 || overview.summary.offline_agents > 0));
   const usageReadable = Boolean(overview && usageIsReadable(overview.usage_source));
 
@@ -147,6 +148,10 @@ export function OverviewPage() {
         <div className="section-heading"><div><h2>{UI_COPY.agent.sectionTitle}</h2></div><span>{UI_COPY.agent.refresh(visibleAgents.length)}</span></div>
         <div className="fleet-agent-grid">{visibleAgents.map((agent) => <FleetAgentCard agent={agent} key={agent.id} now={now} />)}</div>
       </section>
+      {systemAgents.length > 0 && <section className="agents-section" aria-label="系统监控对象">
+        <div className="section-heading"><h2>系统监控对象</h2><span>独立于业务 Agent 统计</span></div>
+        <div className="fleet-agent-grid">{systemAgents.map(agent => <FleetAgentCard agent={agent} key={agent.id} now={now} />)}</div>
+      </section>}
     </> : <section className="empty-state" aria-live="polite"><span className="empty-pulse" aria-hidden="true" /><h2>{degraded ? UI_COPY.loading.failedTitle : UI_COPY.loading.title}</h2><p>{degraded ? UI_COPY.loading.retry : UI_COPY.loading.description}</p></section>}
   </>;
 }

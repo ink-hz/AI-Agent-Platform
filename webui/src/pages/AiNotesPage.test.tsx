@@ -76,7 +76,7 @@ describe("AiNotesPage", () => {
 
   it("keeps the return link inside the article directory", async () => {
     await act(async () => root.render(<AiNotesPage client={clientWith(index)} onNavigate={vi.fn()} />));
-    expect(container.querySelector<HTMLAnchorElement>(".ai-notes-sidebar a[href='/brain']")).not.toBeNull();
+    expect(container.querySelector<HTMLAnchorElement>(".ai-notes-sidebar a[href='/agents']")).not.toBeNull();
   });
 
   it("opens the first article when navigation returns from a deep link to the index without redirecting", async () => {

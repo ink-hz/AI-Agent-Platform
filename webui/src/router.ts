@@ -344,6 +344,7 @@ export function parseRoute(pathname: string, search = ""): Route {
   if (clean === "/admin/review") return { name: "admin-review" };
   if (clean === "/admin/activity") return { name: "admin-activity" };
   if (clean === "/admin/operations") return { name: "legacy-redirect", to: "/admin", navigation: "spa" };
+  if (clean === "/admin/identity/security") return { name: "admin-permissions", section: "security" };
   if (clean === "/admin/identity/observers") return { name: "admin-permissions", section: "observers" };
   if (clean === "/admin/identity/partners") return { name: "admin-permissions", section: "partners" };
   if (clean === "/fae/manage/access") return { name: "admin-permissions", section: "fae" };

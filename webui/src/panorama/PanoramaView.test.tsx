@@ -154,27 +154,22 @@ describe("PanoramaView", () => {
     expect(container.querySelector(".is-explored")).toBeNull();
   });
 
-  it("preserves actual node actions and can return from node details to the exploration", async () => {
+  it("keeps evidence and can return from node details to the exploration", async () => {
     const onAction = vi.fn();
     await act(async () => root.render(<PanoramaView data={data} onAction={onAction} onEvidence={vi.fn()} />));
     await act(async () => button(container, "AI 探索").click());
     await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="integration"] button')!.click());
-    expect(container.querySelector('[data-action-id="fae"]')).not.toBeNull();
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="fae"]')!.click());
-    expect(onAction).toHaveBeenCalledWith("fae");
+    expect(container.querySelector('[data-action-id="fae"]')).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
     await act(async () => button(container, "返回探索思考").click());
     expect(container.querySelector(".panorama-exploration")?.textContent).toContain("客户场景");
     expect(container.querySelector('[data-action-id="fae"]')).toBeNull();
   });
-  it("opens the engineering notes action as an independent tab", async () => {
-    const onAction = vi.fn();
-    await act(async () => root.render(<PanoramaView data={data} onAction={onAction} onEvidence={vi.fn()} />));
+  it("suppresses generic and notes actions without mutating persisted node actions", async () => {
+    await act(async () => root.render(<PanoramaView data={data} onAction={vi.fn()} onEvidence={vi.fn()} isOwner />));
     await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="digital"] button')!.click());
-    const notes = container.querySelector<HTMLAnchorElement>('a[data-action-id="notes"]');
-    expect(notes?.getAttribute("href")).toBe("/ai-notes");
-    expect(notes?.getAttribute("target")).toBe("_blank");
-    expect(notes?.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(onAction).not.toHaveBeenCalled();
+    expect(container.querySelectorAll('[data-action-id]')).toHaveLength(0);
+    expect(data.nodes.find(node => node.id === "digital")?.actions).toEqual(["brain", "access", "notes"]);
   });
 
   it("uses current node names and skips absent themes without recreating deleted nodes", async () => {
@@ -297,16 +292,12 @@ describe("PanoramaView", () => {
     expect(container.querySelector('[data-group-id="marketing"] .panorama-group__nodes')?.classList.contains("panorama-columns-1")).toBe(true);
   });
 
-  it("keeps actions in details and filters owner-only access", async () => {
+  it("fails closed for contextual actions without authenticated catalog grants", async () => {
     const onAction = vi.fn();
-    await act(async () => root.render(<PanoramaView data={data} onAction={onAction} onEvidence={vi.fn()} />));
-    expect(container.querySelector('[data-action-id="brain"]')).toBeNull();
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="digital"] button')!.click());
-    expect(container.querySelector('[data-action-id="brain"]')).not.toBeNull(); expect(container.querySelector('[data-action-id="access"]')).toBeNull();
-    await act(async () => container.querySelector<HTMLButtonElement>('[data-action-id="brain"]')!.click());
-    expect(onAction).toHaveBeenCalledWith("brain");
     await act(async () => root.render(<PanoramaView data={data} onAction={onAction} onEvidence={vi.fn()} isOwner />));
-    expect(container.querySelector('[data-action-id="access"]')).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-node-id="integration"] button')!.click());
+    expect(container.querySelectorAll('[data-action-id]')).toHaveLength(0);
+    expect(onAction).not.toHaveBeenCalled();
   });
 
   it("does not capture graph shortcuts while inactive or while an editor owns focus", async () => {

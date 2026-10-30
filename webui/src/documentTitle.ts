@@ -48,7 +48,7 @@ export function routeDocumentTitle(route: Route): string {
     case "fae-manage-report": return `技术支持工作台 · ${PLATFORM_TITLE}`;
     case "ai-notes": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
     case "ai-note": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
-    case "admin-overview": return `运行概览 · ${PLATFORM_TITLE}`;
+    case "admin-overview": return `运行中心 · ${PLATFORM_TITLE}`;
     case "admin-agents": return `Agent 状态 · ${PLATFORM_TITLE}`;
     case "admin-agent": return `Agent 详情 · ${PLATFORM_TITLE}`;
     case "admin-agent-runtime": return `运行详情 · ${PLATFORM_TITLE}`;
@@ -58,7 +58,7 @@ export function routeDocumentTitle(route: Route): string {
     case "admin-activity": return `运行事件 · ${PLATFORM_TITLE}`;
     case "login": return `登录 · ${PLATFORM_TITLE}`;
     case "account": return `企业账号 · ${PLATFORM_TITLE}`;
-    case "admin-permissions": return `${({ observers: "观察者权限", partners: "合作方权限", fae: "技术支持权限", voc: "客户洞察权限" })[route.section]} · ${PLATFORM_TITLE}`;
+    case "admin-permissions": return `${({ security: "安全记录", observers: "观察者权限", partners: "合作方权限", fae: "技术支持权限", voc: "客户洞察权限" })[route.section]} · ${PLATFORM_TITLE}`;
     case "admin-agent-designs": return `Agent 设计 · ${PLATFORM_TITLE}`;
     case "admin-identity": return `账号与权限 · ${PLATFORM_TITLE}`;
     case "admin-governance": return `审计日志 · ${PLATFORM_TITLE}`;

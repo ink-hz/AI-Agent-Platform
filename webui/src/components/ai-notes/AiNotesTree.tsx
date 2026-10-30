@@ -50,7 +50,7 @@ export function AiNotesTree({ index, selectedPath, onSelect }: AiNotesTreeProps)
         <h1>AI 工程笔记</h1>
         <span>{total} 篇文章</span>
       </header>
-      <a className="ai-notes-tree-return" href={platformPath("/brain")}>返回平台</a>
+      <a className="ai-notes-tree-return" href={platformPath("/agents")}>返回平台</a>
       <label className="ai-notes-search">
         <span className="sr-only">搜索文章</span>
         <input

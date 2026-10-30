@@ -647,7 +647,8 @@ describe("ActivityPage", () => {
 
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".readonly-tag")).toBeNull();
-    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("AI 助手");
+    expect(container.querySelector(".platform-sidebar")?.textContent).toContain("Agent 目录");
+    expect(container.querySelector('.platform-sidebar a[href="/brain"]')).toBeNull();
     expect(container.querySelector("[role=alert]")?.textContent).toContain("运行记录暂不可用");
     expect(container.querySelector(".platform-sidebar [aria-current=page]")).toBeNull();
     expect(container.querySelector('.platform-sidebar a[href="/admin/activity"]')).toBeNull();

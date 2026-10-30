@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { PlatformLink } from "./components/PlatformLink";
 import { AppShell } from "./AppShell";
 import { isPanoramaLocation, workspaceGroup } from "./panoramaNavigation";
 import { routeDocumentTitle, useDocumentTitle } from "./documentTitle";
 import { OverviewPage } from "./pages/OverviewPage";
-import { AgentsPage } from "./pages/AgentsPage";
 import { AgentDetailPage } from "./pages/AgentDetailPage";
 import { AgentRuntimePage } from "./pages/AgentRuntimePage";
 import { SessionsPage } from "./pages/SessionsPage";
@@ -30,15 +30,11 @@ import { PermissionAccessPage } from "./pages/PermissionAccessPage";
 import { AgentDesignsPage } from "./pages/AgentDesignsPage";
 import { IdentityManagementPage } from "./pages/IdentityManagementPage";
 import { GovernancePage } from "./pages/GovernancePage";
-import { BrainWorkspacePage } from "./pages/BrainWorkspacePage";
-import { MissionPage } from "./pages/MissionPage";
-import { MissionsPage } from "./pages/MissionsPage";
 import { AgentUseDirectoryPage } from "./pages/AgentUseDirectoryPage";
 import { AiNotesPage } from "./pages/AiNotesPage";
 import { ManufacturingPage } from "./pages/ManufacturingPage";
 import { AiEngineeringLanding } from "./pages/AiEngineeringPage";
 import { SdkAdminPage } from "./sdk-admin/SdkAdminPage";
-import { MarketingWorkspacePage } from "./workspaces/marketing/MarketingWorkspacePage";
 import { FaeManagementWorkspace } from "./workspaces/fae/FaeManagementWorkspace";
 import { AccessEventReporter } from "./accessEventReporter";
 import { AccessHistoryPage } from "./pages/AccessHistoryPage";
@@ -112,35 +108,33 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
     }} /> : <PendingPage title="企业账号" description="身份模式未启用。" />;
     case "home": return account
       ? <AiEngineeringLanding account={account} direct fallback={null} />
-      : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
+      : <PendingPage title="业务布局" description="请启用企业身份后使用。" />;
     case "manufacturing": return account ? <ManufacturingPage account={account} /> : <PendingPage title="大制造" description="请登录后使用。" />;
     case "organization": return account
       ? <AiEngineeringLanding account={account} direct fallback={null} view="organization" />
       : <PendingPage title="组织架构" description="请启用企业身份后使用。" />;
-    case "brain": return account
-      ? <BrainWorkspacePage account={account} />
-      : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
+    case "brain":
+    case "conversations":
+    case "conversation":
+    case "missions":
+    case "mission":
+    case "marketing":
+    case "marketing-conversation": return <section className="empty-state"><h1>功能暂未开放</h1><p>平台助手与历史任务入口已暂停，请使用正式 Agent 应用。</p><PlatformLink href="/agents">前往 Agent 目录</PlatformLink></section>;
     case "ai-engineering": return account
       ? <AiEngineeringLanding account={account} direct selectedDocument={route.documentSlug} fallback={null} />
       : <PendingPage title="AI 工程全景" description="请启用企业身份后阅读。" />;
-    case "conversations": return <LegacyRedirect to="/brain" navigation="spa" />;
-    case "conversation": return account ? <BrainWorkspacePage account={account} conversationId={route.conversationId} /> : <PendingPage title="AI 助手" description="请启用企业身份后使用。" />;
-    case "missions": return account ? <MissionsPage key={`${account.internal_user_id}:${account.role}`} /> : <PendingPage title="历史任务" description="请登录后查看。" />;
-    case "mission": return account ? <MissionPage account={account} key={route.missionId} missionId={route.missionId} /> : <PendingPage title="历史任务" description="请启用企业身份后查看。" />;
     case "agents": return <AgentUseDirectoryPage />;
     case "sdk": return <PendingPage title="SDK 入口切换中" description="请稍后刷新页面。" />;
     case "sdk-admin": return account
       ? <SdkAdminPage section={route.section} documentId={route.documentId} account={account} />
       : <PendingPage title="正在确认 SDK 访问权限" description="请先登录企业账号。" />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
-    case "marketing": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
-    case "marketing-conversation": return account ? <MarketingWorkspacePage account={account} agentSlug={route.agentSlug} conversationId={route.conversationId} /> : <PendingPage title="Marketing Agent" description="请启用企业身份后使用。" />;
     case "ai-notes": return account ? <AiNotesPage /> : <PendingPage title="AI 工程笔记" description="请启用企业身份后阅读。" />;
     case "ai-note": return account
       ? <AiNotesPage categorySlug={route.categorySlug} articleSlug={route.articleSlug} />
       : <PendingPage title="AI 工程笔记" description="请启用企业身份后阅读。" />;
     case "admin-overview": return <OverviewPage />;
-    case "admin-agents": return <AgentsPage />;
+    case "admin-agents": return <LegacyRedirect to="/admin" navigation="spa" />;
     case "admin-agent": return <AgentDetailPage agentId={route.agentId} />;
     case "admin-agent-runtime": return <AgentRuntimePage agentId={route.agentId} />;
     case "admin-sessions": return <SessionsPage />;
@@ -163,7 +157,7 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       ? <FaeManagementWorkspace account={account} route={route} />
       : <PendingPage title="技术支持工作台" description="请启用企业身份后使用。" />;
     case "legacy-redirect": return <LegacyRedirect to={route.to} navigation={route.navigation} />;
-    default: return <PendingPage title="页面不存在" description="请返回 AI 助手。" />;
+    default: return <PendingPage title="页面不存在" description="请返回 Agent 目录。" />;
   }
 }
 

@@ -1,3 +1,4 @@
+import { GovernancePage } from "./GovernancePage";
 import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 import { useEffect, useState } from "react";
 
@@ -64,7 +65,7 @@ function leavesAdministratorMutationOutcomeUncertain(error: unknown): boolean {
 
 function canViewSection(account: Account, section: PermissionSection): boolean {
   return account.role === "platform_owner"
-    || (account.role === "platform_admin" && (section === "administrators" || section === "observers"));
+    || (account.role === "platform_admin" && (section === "administrators" || section === "observers" || section === "security"));
 }
 
 export function IdentityManagementPage({ account, initialSection = "administrators" }: {
@@ -89,6 +90,7 @@ function PermissionsWorkspace({ account, initialSection }: { account: Account; i
     <PlatformPageHeader title="账号与权限" />
     <PermissionNavigation account={account} section={section} onSelect={select} />
     {visited.map(key => <div key={key} className="permission-panel" hidden={section !== key}>
+      {key === "security" && <GovernancePage />}
       {key === "administrators" && <AdministratorManagement account={account} />}
       {key === "fae" && <FaeAccessPanel account={account} />}
       {key === "voc" && <VocAccessPanel account={account} />}

@@ -72,6 +72,7 @@ export interface AgentCapabilityCard {
   data_classification: "internal";
   interaction_modes: ("direct_chat" | "brain_delegation" | "external_workspace")[];
   workspace_url: string | null;
+  web_entry?: { kind: "independent_service"; path: string } | null;
   adapter_id: string | null;
   adapter_kind: string | null;
   adapter_config_version: number;

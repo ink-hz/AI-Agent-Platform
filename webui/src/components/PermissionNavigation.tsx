@@ -1,6 +1,6 @@
 import type { Account } from "../auth";
 
-export type PermissionSection = "administrators" | "fae" | "voc" | "observers" | "partners";
+export type PermissionSection = "administrators" | "fae" | "voc" | "observers" | "partners" | "security";
 
 export function PermissionNavigation({ account, section, onSelect }: {
   account: Account;
@@ -18,6 +18,7 @@ export function PermissionNavigation({ account, section, onSelect }: {
     {button("administrators", "平台管理员")}
     {owner && button("fae", "FAE 权限")}
     {owner && button("voc", "VOC 权限")}
+    {(account.role === "platform_owner" || account.role === "platform_admin") && button("security", "安全记录")}
     <details className={section === "observers" || section === "partners" ? "is-current" : undefined}>
       <summary>其他授权</summary>
       <div className="permission-navigation-menu">

@@ -105,8 +105,8 @@ it('keeps SDK search, article and return links in the shared host without draft 
  await act(async()=>box.querySelector<HTMLAnchorElement>('.sdk-back')!.click());
  expect(window.location.pathname).toBe('/sdk-admin/knowledge');
  expect(window.history.state?.panorama).toBe(true);expect(box.querySelector('.panorama-work-area')).toBe(workarea);
- await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/brain"]')!.click());
- expect(window.location.pathname).toBe('/brain');expect(box.textContent).toContain('其他工作区');
+ await act(async()=>box.querySelector<HTMLAnchorElement>('.platform-sidebar a[href="/agents"]')!.click());
+ expect(window.location.pathname).toBe('/agents');expect(box.textContent).toContain('其他工作区');
  const unload=new Event('beforeunload',{cancelable:true});window.dispatchEvent(unload);
  expect(unload.defaultPrevented).toBe(false);expect(confirm).not.toHaveBeenCalled();
 });
