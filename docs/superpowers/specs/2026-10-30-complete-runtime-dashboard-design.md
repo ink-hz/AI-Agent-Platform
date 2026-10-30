@@ -95,3 +95,9 @@ SDK复用已校验的SdkAdminRepository catalog与manifest，显示知识文档�
 Task2在runtime_dashboard/health.py实现HostObservationReader，Task3实现collector并复用该reader做端到端测试，避免双实现。文件JSON为{schema_version:1,generated_at:ISO8601,observations:[{application_id:"hr-bot"|"ai-admin-agent",state:"healthy"|"degraded"|"offline"|"unknown",observed_at:ISO8601,error:null|稳定码,version:null|40位hex}]}。仅这两项ID，重复ID/非法结构拒绝，单条过期/未来时间不能污染其他条。App只读/run/platform-runtime/snapshot.json，TTL90秒，源码不写健康文件。collector固定两回环目标，不接收用户URL。
 
 Task1修正落地fdace0ed：前置竞态红测、单语句内真实并发写、锁后DDL/大小/超时及失败保旧回归220通过（53真实PG），独立复审C0/I0/M0。原214测试通过但I1阻断的记录保留，不把旧版本改记成功；生产验证/DDL尚未执行。
+
+## Task2独立审查的完整性与资源边界复核
+
+2fb44d6c本地56项通过后，独立真实PG/隔离进程诊断发现两项Important，未部署：I1热缓存仅按session_key+payload_sha256复用，明文channel/agent/family/时间等身份元数据改变但hash不变时绕过原decryptor一致性证明；冷读拒绝、热读却fresh complete。I2宿主观测path.open可在FIFO坏源上无界阻塞，热/冷分支都会持全局health锁等待读取。原复现和失败不能改记成功。
+
+共同原因是缓存的表示依赖和文件消费的执行边界没有完整继承源契约。修复须将原decryptor用于比对的明文身份/时间元数据指纹也纳入复用判定，变化则仅重读对应行并使用既有验证，不能全量重解密或扩大缓存/时限；错误来源保旧数字并标stale，不将损坏元数据改写为正常。宿主reader要在打开和读取之前证明是有界regular file（nonblocking/nofollow+fstat等），缺失/不安全类型/符号链接返回逐源unknown，描述符正确关闭，不可卡住共用锁；不能仅用外层to_thread声称IO有超时。精确PG暖/冷对照、未变/变化解密次数和隔离FIFO/普通/损坏/符号链接/过期/描述符与并发读取用例必须覆盖；其他域授权和API合同保持。
