@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import stat
 from pathlib import Path
 import signal
 import subprocess
@@ -172,12 +173,31 @@ def test_refused_is_offline_with_no_retry(collector, tmp_path):
     {'path': '/admin'}, {'path': '/health?token=secret'}, {'port': 0},
     {'application_id': 'unknown'}, {'application_id': 'hr-bot', 'path': '/health'},
 ])
-def test_unsafe_target_rejected_before_transport(collector, tmp_path, changes):
+def test_unsafe_target_rejected_before_transport(collector, tmp_path, changes, monkeypatch):
     values = dict(application_id='hr-bot', host='127.0.0.1', port=8012, path='/health/ready')
     values.update(changes)
+    def unexpected_transport(*args, **kwargs):
+        pytest.fail('unsafe target reached transport')
+    monkeypatch.setattr(collector, 'observe', unexpected_transport)
+    admin = collector.Target('ai-admin-agent', '127.0.0.1', 8011, '/health')
     with pytest.raises(ValueError, match='trusted_target_invalid'):
-        collector.run_cycle(tmp_path / 'snapshot.json', targets=(collector.Target(**values),))
+        collector.run_cycle(tmp_path / 'snapshot.json', targets=(collector.Target(**values), admin))
     assert not (tmp_path / 'snapshot.json').exists()
+
+
+def test_directory_fsync_after_replace_leaves_new_complete_snapshot(collector, tmp_path, monkeypatch):
+    path = tmp_path / 'snapshot.json'
+    path.write_text(json.dumps({'generation': 'old'}))
+    real_fsync = os.fsync
+    def fail_directory_fsync(descriptor):
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError('injected directory fsync failure')
+        return real_fsync(descriptor)
+    monkeypatch.setattr(collector.os, 'fsync', fail_directory_fsync)
+    with pytest.raises(OSError, match='injected directory fsync failure'):
+        collector.atomic_write(path, {'generation': 'new'})
+    assert json.loads(path.read_text()) == {'generation': 'new'}
+    assert not list(tmp_path.glob('.snapshot.json.*'))
 
 
 def test_duplicate_or_incomplete_target_set_rejected(collector, tmp_path):

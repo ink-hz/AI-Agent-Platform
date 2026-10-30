@@ -27,8 +27,10 @@ never copied to the snapshot or journal.
 Probe failure is a successful *observation* cycle (exit 0), not a claim of
 business availability. Successful publication logs only
 `runtime_observations_written`. Publication failure exits 1 and logs only
-`runtime_observations_write_failed`; the previous complete file remains until a
-later explicit timer cycle. A killed process never implicitly retries. The
+`runtime_observations_write_failed`. Failure before replacement preserves the
+previous complete file. Failure of directory fsync after replacement can leave
+the new complete file visible, with crash durability unconfirmed; inspect the
+actual file instead of retrying or rolling it back. A killed process never implicitly retries. The
 consumer makes any old snapshot unknown after 90 seconds. Invalid CLI arguments
 exit 2 with a fixed error code, without echoing their contents.
 
