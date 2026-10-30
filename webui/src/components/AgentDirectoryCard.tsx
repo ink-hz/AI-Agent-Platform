@@ -1,4 +1,3 @@
-import { SourceFreshness } from "./SourceFreshness";
 import { formatCount } from "../fleet";
 import type { AgentSummary } from "../types";
 import { PlatformLink } from "./PlatformLink";
@@ -11,7 +10,6 @@ export function AgentDirectoryCard({ agent }: { agent: AgentSummary }) {
       <div className="directory-agent-head">
         <span className="fleet-avatar">{agent.glyph}</span>
         <div><p>{agent.domain}</p><h2>{agent.name}</h2></div>
-        <SourceFreshness freshness={agent.freshness} status={agent.source_status} />
       </div>
       <p className="directory-description">{agent.description}</p>
       <dl className="directory-metrics">
