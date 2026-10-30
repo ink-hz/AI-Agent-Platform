@@ -21,7 +21,7 @@ class CatalogPermission:
         return tuple(c for c in load_agent_catalog() if c.agent_id in self.allowed)
 
 
-def client_for(role=Role.PLATFORM_OWNER, *, service=None):
+def client_for(role=Role.PLATFORM_OWNER, *, service=None, workspace_summaries=True):
     from app.runtime_dashboard.routes import build_dashboard_router
     from app.runtime_dashboard.service import DashboardService
     actor = AuthContext(uuid4(),role,uuid4(),False)
@@ -36,7 +36,8 @@ def client_for(role=Role.PLATFORM_OWNER, *, service=None):
             return (actor,b'csrf') if token == 'valid' else None
     app = FastAPI()
     permissions = CatalogPermission()
-    app.include_router(build_dashboard_router(service or DashboardService(clock=lambda:datetime(2026,10,30,2,tzinfo=UTC)),permissions))
+    app.include_router(build_dashboard_router(service or DashboardService(clock=lambda:datetime(2026,10,30,2,tzinfo=UTC)),permissions,
+        workspace_summaries=workspace_summaries))
     app.add_middleware(IdentitySecurityMiddleware,auth=Auth(),public_assets=frozenset(),
         authorization=AuthorizationService(Grants()),routes=tuple(app.router.routes))
     client = TestClient(app,base_url='https://agent.example.test')
