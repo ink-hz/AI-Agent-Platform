@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { fetchTrace } from "../api";
 import { formatMessageTime } from "../messageTime";
-import { formatSenderIdentity } from "../senderIdentity";
+import { formatSenderIdentity, formatFaeSender, hasFaeSubjectIdentity } from "../senderIdentity";
 import { turnAnswerPresentation } from "../turnAnswerPresentation";
 import type { TraceDetail, TurnClosureSummary, TurnDetail } from "../types";
 import { AttachmentList } from "./AttachmentList";
@@ -74,9 +74,12 @@ export function TurnCard({ turn, closureSummary, governanceHref }: {
   };
   const governedClosureSummary = closureSummary && closureSummary.issue_id !== null ? closureSummary : undefined;
   const answerPresentation = turnAnswerPresentation(turn);
+  const questioner = hasFaeSubjectIdentity(turn)
+    ? formatFaeSender({ verified_subject: turn.verified_subject, primary_sender_name: turn.sender_name })
+    : turn.source_kind === "metabot" ? formatSenderIdentity(turn.sender_name, turn.sender_department) : null;
   return <article className="turn-card">
     <header className="turn-head"><span>第 {String(turn.turn_index).padStart(2, "0")} 轮</span><div>{turn.outcome && <b>{turn.outcome}</b>}{turn.fallback_used && <b className="turn-fallback">fallback</b>}{duration(turn.duration_ms) && <time>{duration(turn.duration_ms)}</time>}</div></header>
-    <section className="message-block question-block"><div className="message-label"><span>用户提问</span><time className="message-time" {...(questionTime.dateTime ? { dateTime: questionTime.dateTime } : {})}>{questionTime.label}</time></div><div>{turn.source_kind === "metabot" && <small className="question-sender">{formatSenderIdentity(turn.sender_name, turn.sender_department)}</small>}{turn.question ? <MessageMarkdown content={turn.question} /> : <p>未记录用户提问</p>}</div></section>
+    <section className="message-block question-block"><div className="message-label"><span>用户提问</span><time className="message-time" {...(questionTime.dateTime ? { dateTime: questionTime.dateTime } : {})}>{questionTime.label}</time></div><div>{questioner && <small className="question-sender">{questioner}</small>}{turn.question ? <MessageMarkdown content={turn.question} /> : <p>未记录用户提问</p>}</div></section>
     <AttachmentList attachments={turn.input_attachments} label="用户输入附件" />
     <section className="message-block answer-block"><div className="message-label"><span>Agent 回答</span><time className="message-time" {...(answerTime.dateTime ? { dateTime: answerTime.dateTime } : {})}>{answerTime.label}</time></div>{answerPresentation.kind === "answer"
       ? <MessageMarkdown content={answerPresentation.content} />

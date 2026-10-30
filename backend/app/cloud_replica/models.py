@@ -32,7 +32,9 @@ class VerifiedSubject:
         return cls(**value)
 
     def require_fae_scope(self, agent_id: str, source_kind: str) -> None:
-        if agent_id != "ai-fae-agent" or source_kind != "fae":
+        allowed = {"ai-fae-agent": {"enterprise_member", "partner_operator"},
+                   "ai-daq-fae-agent": {"enterprise_member"}}
+        if source_kind != "fae" or self.subject_type not in allowed.get(agent_id, set()):
             raise ValueError("verified_subject_scope_invalid")
 
 

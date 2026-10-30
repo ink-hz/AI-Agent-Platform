@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { SourceFreshness } from "../SourceFreshness";
-import { formatFaeSender } from "../../senderIdentity";
+import { formatFaeSender, hasFaeSubjectIdentity } from "../../senderIdentity";
 import type { SessionDetail, TurnClosureSummary, TurnDetail } from "../../types";
 import { PlatformLink } from "../PlatformLink";
 import { TurnCard } from "../TurnCard";
@@ -16,7 +16,7 @@ export interface SessionReplayProps {
 
 
 export function SessionReplay({ session, closureSummaries, governanceHref, betweenHeaderAndTurns }: SessionReplayProps) {
-  const sender = session.source_kind === "fae" && session.agent_id === "ai-fae-agent"
+  const sender = hasFaeSubjectIdentity(session)
     ? formatFaeSender(session)
     : session.primary_sender_name && [session.primary_sender_name, session.primary_sender_department].filter(Boolean).join(" · ");
   return <>

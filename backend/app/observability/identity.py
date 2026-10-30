@@ -1,4 +1,4 @@
-"""Resolve signed FAE ownership references inside authorized session reads."""
+"""Resolve trusted FAE/DAQ references inside separately authorized Agent reads."""
 from __future__ import annotations
 
 from uuid import UUID
@@ -21,7 +21,7 @@ class FaeSubjectRepository:
     def __repr__(self):
         return "FaeSubjectRepository(database_url=<redacted>)"
 
-    def read(self, session_id: UUID, subject_ids: tuple[UUID, ...]):
+    def read(self, session_id: UUID, subject_ids: tuple[UUID, ...], *, agent_id="ai-fae-agent"):
         try:
             with self._connect(
                 self._database_url, connect_timeout=3,
@@ -29,8 +29,8 @@ class FaeSubjectRepository:
                 row_factory=dict_row,
             ) as connection:
                 return connection.execute(
-                    "select * from platform_control.read_fae_session_subjects_v126(%s,%s::uuid[])",
-                    (session_id, list(subject_ids)),
+                    "select * from platform_control.read_agent_session_subjects_v127(%s,%s,%s::uuid[])",
+                    (session_id, agent_id, list(subject_ids)),
                 ).fetchall()
         except psycopg.Error:
             raise ObservabilityReadError("session identity unavailable") from None
@@ -42,27 +42,44 @@ class FaeSessionIdentity:
 
     @staticmethod
     def _fae(item):
-        return item.source_kind == "fae" and item.agent_id == "ai-fae-agent"
+        return item.source_kind == "fae" and item.agent_id in {"ai-fae-agent", "ai-daq-fae-agent"}
+
+    @staticmethod
+    def _reference(item):
+        ref = item.verified_subject
+        if ref and item.agent_id == "ai-daq-fae-agent" and ref.subject_type != "enterprise_member":
+            return None
+        return ref
 
     def hydrate(self, result, context):
         if result is None:
             return None
         items = result.items if isinstance(result, Page) else [result]
         fae = [item for item in items if self._fae(item)]
-        refs = {(item.verified_subject.subject_id, item.verified_subject.subject_type)
-                for item in fae if item.verified_subject}
-        ids = tuple(sorted({subject_id for subject_id, _ in refs}))
         names = {}
-        if ids:
+        for agent_id in sorted({item.agent_id for item in fae}):
+            refs = {(ref.subject_id, ref.subject_type) for item in fae
+                    if item.agent_id == agent_id and (ref := self._reference(item))}
+            ids = tuple(sorted({subject_id for subject_id, _ in refs}))
+            if not ids:
+                continue
             if context is None or not isinstance(context.session_id, UUID):
                 raise ObservabilityReadError("session identity unavailable")
-            for row in self.repository.read(context.session_id, ids):
+            # Each Agent requires its own DB scope check, including in mixed lists.
+            rows = (self.repository.read(context.session_id, ids) if agent_id == "ai-fae-agent"
+                    else self.repository.read(context.session_id, ids, agent_id=agent_id))
+            for row in rows:
                 subject_id, subject_type = row["subject_id"], row["subject_type"]
                 if subject_id not in ids:
                     raise ObservabilityReadError("session identity unavailable")
                 if (subject_id, subject_type) not in refs:
                     continue
                 name = row["display_name"]
+                # A known enterprise subject can outlive its directory profile.
+                # Retain the trusted reference without turning a missing name
+                # into a failure of every session on the page.
+                if subject_type == "enterprise_member" and name is None:
+                    continue
                 if subject_type == "partner_operator":
                     if self.content_codec is None:
                         raise ObservabilityReadError("session identity unavailable")
@@ -78,7 +95,7 @@ class FaeSessionIdentity:
                         raise ObservabilityReadError("session identity unavailable") from None
                 if not isinstance(name, str) or not name.strip() or len(name) > 512 or any(ord(c) < 32 or ord(c) == 127 for c in name):
                     raise ObservabilityReadError("session identity unavailable")
-                names[(subject_id, subject_type)] = name.strip()
+                names[(agent_id, subject_id, subject_type)] = name.strip()
 
         return self.project(result, names)
 
@@ -91,9 +108,9 @@ class FaeSessionIdentity:
         def project(item):
             if not cls._fae(item):
                 return item
-            ref = item.verified_subject
-            name = names.get((ref.subject_id, ref.subject_type)) if ref else None
-            updates = {"primary_sender_name": name, "primary_sender_department": None,
+            ref = cls._reference(item)
+            name = names.get((item.agent_id, ref.subject_id, ref.subject_type)) if ref else None
+            updates = {"verified_subject": ref, "primary_sender_name": name, "primary_sender_department": None,
                        "sender_identity_status": "name_only" if name else "unavailable"}
             if isinstance(item, SessionDetail):
                 updates["turns"] = [turn.model_copy(update={

@@ -256,11 +256,12 @@ def normalize_row(
                 raise ImportValidationError("source_identity_unverified")
             # The replica's verified_subject contract is FAE-scoped. Keep VOC's
             # canonical owner in its private mirror, not in that wire claim.
-    if source_kind == "fae" and source_table == "chat_sessions":
+    if source_kind in {"fae", "daq"} and source_table == "chat_sessions":
         # Metadata claims never establish ownership. Only server owner columns
         # plus their persisted authentication mode can mint this projection.
         details.pop("verified_subject", None)
-        verified_subject = _fae_verified_subject(row)
+        verified_subject = (_daq_verified_subject(row) if source_kind == "daq"
+                            else _fae_verified_subject(row))
         if verified_subject is not None:
             details["verified_subject"] = verified_subject
     values["details"] = details
@@ -308,6 +309,16 @@ def _fae_verified_subject(row: dict[str, Any]) -> dict[str, str] | None:
     except (TypeError, ValueError):
         raise ImportValidationError("fae_session_owner_invalid") from None
     return {"subject_id": subject_id, "subject_type": owner_type}
+
+
+def _daq_verified_subject(row: dict[str, Any]) -> dict[str, str] | None:
+    """DAQ accepts enterprise login only; unconfirmed history stays unknown."""
+    if row.get("owner_subject_type") != "enterprise_member":
+        return None
+    try:
+        return _fae_verified_subject(row)
+    except ImportValidationError:
+        return None
 
 
 def normalize_trace_span(row: dict, synced_at: datetime, *, source_kind: str = "fae") -> NormalizedRow:

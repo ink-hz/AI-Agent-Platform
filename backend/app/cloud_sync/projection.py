@@ -16,6 +16,7 @@ from app.cloud_replica.models import (
 from app.sync_remote.importer import (
     ImportValidationError,
     _fae_verified_subject,
+    _daq_verified_subject,
     normalize_session_subject_link,
 )
 from app.sync_remote.voc_export import project_voc_rows
@@ -131,11 +132,10 @@ def _identity(kind: str, row: dict, observed_at: datetime) -> tuple[str | None, 
         return _legacy_user(row), None, details
     owner = row.get('owner_subject_id')
     if kind == 'daq':
-        # Exactly the SQL view's enterprise-owner predicate; unknown owners stay anonymous.
-        valid = (owner is not None and row.get('owner_subject_type') == 'enterprise_member'
-            and str(row.get('user_id')) == str(owner)
-            and (row.get('metadata') or {}).get('authentication_mode') == 'platform_enterprise')
-        return ('daq:' + hashlib.md5(_uuid(owner).encode()).hexdigest() if valid else None), None, details
+        subject = _daq_verified_subject(row)
+        # Preserve the established HMAC input; adding attribution never rekeys history.
+        return (('daq:' + hashlib.md5(subject['subject_id'].encode()).hexdigest()
+                 if subject else None), VerifiedSubject.from_value(subject) if subject else None, details)
     return ('voc:' + hashlib.md5(_uuid(owner).encode()).hexdigest() if owner else None), None, details
 
 

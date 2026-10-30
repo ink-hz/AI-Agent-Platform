@@ -150,13 +150,17 @@ def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args]).decode().strip()
 
 
-def test_stage_copies_only_delta_migration_and_dist_with_private_manifest(tmp_path):
+@pytest.mark.parametrize('migration_path', [
+    'backend/migrations/cloud_agent_sync/001_agent_sources.sql',
+    'backend/control_migrations/127_agent_session_identity.sql',
+])
+def test_stage_copies_only_delta_migration_and_dist_with_private_manifest(tmp_path, migration_path):
     h = load(); repo = tmp_path / 'repo'; repo.mkdir()
     git(repo, 'init', '-q'); git(repo, 'config', 'user.email', 'test@example.invalid'); git(repo, 'config', 'user.name', 'Test')
     code = repo / 'backend/app/a.py'; code.parent.mkdir(parents=True); code.write_text('old = 1\n')
     git(repo, 'add', '.'); git(repo, 'commit', '-qm', 'base'); baseline = git(repo, 'rev-parse', 'HEAD')
     oldhash = h.digest(code.read_bytes()); code.write_text('new = 2\n')
-    migration = repo / h.MIGRATION; migration.parent.mkdir(parents=True); migration.write_text('SELECT 1;\n')
+    migration = repo / migration_path; migration.parent.mkdir(parents=True); migration.write_text('SELECT 1;\n')
     git(repo, 'add', '.'); git(repo, 'commit', '-qm', 'release'); release = git(repo, 'rev-parse', 'HEAD')
     git(repo, 'update-ref', 'refs/remotes/origin/master', release)
     dist = tmp_path / 'dist'; dist.mkdir(); (dist / 'index.html').write_text('<html>built</html>')
@@ -168,7 +172,7 @@ def test_stage_copies_only_delta_migration_and_dist_with_private_manifest(tmp_pa
     assert dockerfile.startswith('FROM sha256:' + 'a' * 64 + '\n')
     assert 'RUN ' not in dockerfile
     assert 'pip' not in dockerfile and 'apt' not in dockerfile
-    assert {f['destination'] for f in manifest['files']} == {'/app/backend/app/a.py', '/app/backend/' + h.MIGRATION.removeprefix('backend/'), '/app/backend/app/static/index.html'}
+    assert {f['destination'] for f in manifest['files']} == {'/app/backend/app/a.py', '/app/backend/' + migration_path.removeprefix('backend/'), '/app/backend/app/static/index.html'}
     assert (output / 'manifest.json').stat().st_mode & 0o777 == 0o600
     assert output.stat().st_mode & 0o777 == 0o700
     assert not (output / '.git').exists()

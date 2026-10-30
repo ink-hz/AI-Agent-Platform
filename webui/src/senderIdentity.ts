@@ -1,6 +1,10 @@
 import type { SessionSummary } from "./types";
 
-export function formatFaeSender(session: SessionSummary) {
+export function hasFaeSubjectIdentity(item: Pick<SessionSummary, "source_kind" | "agent_id">) {
+  return item.source_kind === "fae" && ["ai-fae-agent", "ai-daq-fae-agent"].includes(item.agent_id);
+}
+
+export function formatFaeSender(session: Pick<SessionSummary, "verified_subject" | "primary_sender_name">) {
   const ref = session.verified_subject;
   if (!ref) return "提问人未知";
   const kind = ref.subject_type === "enterprise_member" ? "内部用户" : "外部用户";

@@ -1,6 +1,6 @@
 import { SourceFreshness } from "./SourceFreshness";
 import type { SessionSummary } from "../types";
-import { additionalParticipantLabel, formatFaeSender, formatSenderIdentity } from "../senderIdentity";
+import { additionalParticipantLabel, formatFaeSender, formatSenderIdentity, hasFaeSubjectIdentity } from "../senderIdentity";
 import { PlatformLink } from "./PlatformLink";
 
 
@@ -22,7 +22,7 @@ export function SessionListItem({
   detailHref: string;
   showSignals?: boolean;
 }) {
-  const sender = session.source_kind === "fae" && session.agent_id === "ai-fae-agent"
+  const sender = hasFaeSubjectIdentity(session)
     ? formatFaeSender(session)
     : session.source_kind === "metabot"
     ? formatSenderIdentity(session.primary_sender_name, session.primary_sender_department)

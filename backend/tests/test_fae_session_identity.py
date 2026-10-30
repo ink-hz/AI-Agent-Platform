@@ -100,7 +100,7 @@ def test_decryption_failure_is_explicit_and_does_not_leak_protected_values():
 
 
 def test_other_agent_source_is_not_identity_directory_input():
-    item = summary().model_copy(update={'agent_id': 'ai-daq-fae-agent'})
+    item = summary().model_copy(update={'agent_id': 'unsupported-agent'})
     rows = Rows([])
     assert resolver(rows).hydrate(item, SimpleNamespace(session_id=uuid4())) == item
     assert rows.calls == []

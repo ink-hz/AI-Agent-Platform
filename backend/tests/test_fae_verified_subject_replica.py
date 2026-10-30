@@ -117,7 +117,7 @@ def test_import_rejects_enterprise_internal_identity_mismatch(change):
 
 
 @pytest.mark.parametrize(
-    "source,table", [("daq", "chat_sessions"), ("admin", "admin_chat_sessions")]
+    "source,table", [("admin", "admin_chat_sessions")]
 )
 def test_other_imports_keep_existing_behavior(source, table):
     row = {

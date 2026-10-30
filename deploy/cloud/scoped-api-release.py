@@ -14,6 +14,7 @@ import time
 import uuid
 
 MIGRATION = 'backend/migrations/cloud_agent_sync/001_agent_sources.sql'
+MIGRATIONS = (MIGRATION, 'backend/control_migrations/127_agent_session_identity.sql')
 PROJECT = 'orbbec-agent-platform'
 SERVICE = 'platform-api'
 PRIVATE = Path('/opt/orbbec-agent-platform/private')
@@ -191,12 +192,12 @@ def stage(repo, baseline, release, receipt, code_proof, dist, output, static_pro
     command(['git', 'merge-base', '--is-ancestor', baseline, release], cwd=repo)
     api = api_from_receipt(receipt)
     assert_static_baseline(static_proof, api['image_id'], baseline)
-    changed = command(['git', 'diff', '--no-renames', '--name-status', baseline, release, '--', 'backend/app', MIGRATION], cwd=repo).decode().splitlines()
+    changed = command(['git', 'diff', '--no-renames', '--name-status', baseline, release, '--', 'backend/app', *MIGRATIONS], cwd=repo).decode().splitlines()
     proof = {item['path']: item for item in code_proof}
     payload = []
     for row in changed:
         status, name = row.split('\t')
-        require(status in ('A', 'M') and (name == MIGRATION or (name.startswith('backend/app/') and name.endswith('.py'))), 'delta_scope')
+        require(status in ('A', 'M') and (name in MIGRATIONS or (name.startswith('backend/app/') and name.endswith('.py'))), 'delta_scope')
         require('..' not in PurePosixPath(name).parts, 'delta_scope')
         mode = command(['git', 'ls-tree', release, '--', name], cwd=repo).decode().split()[0]
         require(mode == '100644' or mode == '100755', 'delta_type')
@@ -207,7 +208,8 @@ def stage(repo, baseline, release, receipt, code_proof, dist, output, static_pro
                     and item.get('baseline') == digest(old), 'code_baseline')
         raw = command(['git', 'show', release + ':' + name], cwd=repo)
         payload.append((raw, '/app/backend/' + name.removeprefix('backend/')))
-    require(any(dest == '/app/backend/' + MIGRATION.removeprefix('backend/') for _, dest in payload), 'migration_missing')
+    require(any(dest in {'/app/backend/' + path.removeprefix('backend/') for path in MIGRATIONS}
+                for _, dest in payload), 'migration_missing')
     require(dist.is_dir() and not dist.is_symlink() and (dist/'index.html').is_file(), 'dist')
     for path in sorted(dist.rglob('*')):
         require(not path.is_symlink() and (path.is_dir() or path.is_file()), 'dist_type')
@@ -251,7 +253,7 @@ def validate_stage(root):
         destination = item['destination']
         require(not relative.is_absolute() and '..' not in relative.parts
                 and item['source'] == 'payload/' + destination.removeprefix('/app/backend/')
-                and (destination == '/app/backend/' + MIGRATION.removeprefix('backend/')
+                and (destination in {'/app/backend/' + path.removeprefix('backend/') for path in MIGRATIONS}
                      or destination.startswith('/app/backend/app/static/')
                      or (destination.startswith('/app/backend/app/') and destination.endswith('.py'))), 'artifact_path')
         path = regular(root/item['source'])

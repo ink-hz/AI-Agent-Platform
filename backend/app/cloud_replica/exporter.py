@@ -207,7 +207,7 @@ def build_session_record(
     verified_subject = sanitized.verified_subject
     if verified_subject is not None:
         verified_subject.require_fae_scope(sanitized.agent_id, sanitized.source_kind)
-        if include_verified_subject:
+        if include_verified_subject and sanitized.agent_id == "ai-fae-agent":
             raw_user = (
                 f"verified-subject:{verified_subject.subject_type}:"
                 f"{verified_subject.subject_id}"

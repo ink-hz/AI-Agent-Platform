@@ -92,7 +92,8 @@ def test_daq_keeps_fae_family_and_user_hmac_scope():
     identity = 'daq:' + hashlib.md5(UID.encode()).hexdigest()
     assert (raw.agent_id, raw.source_kind, raw.session_key) == ('ai-daq-fae-agent', 'fae', 'daq:' + SID)
     assert raw.user_identity == identity
-    assert raw.verified_subject is None
+    assert raw.verified_subject.subject_id == UID
+    assert raw.verified_subject.subject_type == 'enterprise_member'
     assert encode(raw)['user_id'] == stable_id('user:fae', identity, b'k' * 32)
     assert encode(raw)['key'] != encode(project('fae')[0])['key']
 
