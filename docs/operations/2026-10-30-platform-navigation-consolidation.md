@@ -1,6 +1,6 @@
 # 2026-10-30 平台入口与运行中心重构
 
-状态：开发、定向验证和任务审查已完成，最终整合审查中；本批没有生产发布。用户在六项讨论后明确“开始重构”，方案见[设计](../superpowers/specs/2026-10-30-platform-navigation-consolidation-design.md)与[计划](../superpowers/plans/2026-10-30-platform-navigation-consolidation.md)。
+状态：开发、定向验证、任务审查和整体审查均已通过；本批没有生产发布。用户在六项讨论后明确“开始重构”，方案见[设计](../superpowers/specs/2026-10-30-platform-navigation-consolidation-design.md)与[计划](../superpowers/plans/2026-10-30-platform-navigation-consolidation.md)。准确主线归并/推送身份保存在本批私有整合回执，不以本地提交推定生产版本。
 
 ## 版本与保全
 
@@ -28,7 +28,9 @@
 
 组件测试中的身份、网络、catalog和部分工作区边界为明确替身；宿主输入保留用测试textarea隔离，独立权限工作区的真实组件状态/管理员不确定结果处理另有既有回归，不能冒称完整HR或员工任务验收。真实模型调用0、生产业务测试写入0；研发tokens未精确计量。真实员工SSO、真实数据库决策、浏览器交互、进程故障和生产验收未执行。开发侧按接口优先完成验证，页面验收由用户负责。
 
-前端任务独立规格PASS、质量批准，C0/I0/M1；非阻断项为原生全景链接已不调用的旧openAction确认回调，应由最终整体审查明确裁定。最终审查和主线提交另记，不把任务通过等同整合或上线。
+前端任务独立规格PASS、质量批准，C0/I0/M1。最终完整分支架构/规格/质量审查同为PASS、APPROVED、C0/I0/M1，允许主线整合。M1已明确裁定非阻断：原生全景链接不再调用旧openAction确认回调，实际原生链接仍有既有unload保护；本批保留该未调用兼容代码，不再扩大功能改动。审查核对17份原始日志摘要与完整改动包，未重复运行已通过测试。真实浏览器和生产验收继续单列。
+
+私有证据初批31文件、567373字节已逐文件SHA256验证，目录为本机 `/Users/neo/Library/Application Support/OrbbecAI-Agent-Platform/development-runs/20261030-platform-navigation-030435Z`；另存最终文档、整合回执和总manifest。保留原始失败、旧归档及所有用户工作树，未清理其他会话材料。
 
 ## 后续发布边界
 

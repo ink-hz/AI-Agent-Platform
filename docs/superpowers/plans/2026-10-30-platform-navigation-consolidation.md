@@ -46,5 +46,5 @@
 
 - [x] Run focused real HTTP catalog authorization checks through the local app's real endpoint with explicit identity/PG provider test boundaries, inspect all task reports and final build evidence; record skipped real employee/browser/production acceptance.
 - [x] Update operations record plus current HR architecture/workflow entry note if necessary to distinguish Web routing from legacy adapter; do not claim HR execution changes.
-- [ ] Obtain final whole-branch review against original base using a saved diff package; fix all critical/important findings in one bounded wave with affected tests.
-- [ ] Fetch fresh master, preserve concurrent commits, merge reviewed work and push master; leave production deployment separate. Retain private progress, review and verification records and user worktrees/materials.
+- [x] Obtain final whole-branch review against original base using a saved diff package. Spec PASS, Quality APPROVED, C0/I0/M1; no critical/important fix wave required. M1 unused panorama callback explicitly accepted as nonblocking; live native links retain unload protection.
+- [x] Complete reviewed mainline closeout with fresh-master/ancestor checks and ordinary push, retaining exact integration identities in the private receipt. Leave production deployment separate; preserve evidence and user worktrees/materials. Initial private archive31files567373bytes verified; final documents/integration manifest added during closeout.
