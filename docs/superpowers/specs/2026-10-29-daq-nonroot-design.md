@@ -218,3 +218,13 @@ ModuleNotFound的准确名字为`src.agent.session`；文件本身root0644，父
 最终只读全机围栏原批又在inspect集合比较被拒绝。固定字段路径诊断发现差异仅位于三个服务的`Mounts`列表编码位置，容器成员未变；该诊断没有证明完整条目等价，也不能回填原批通过。同类问题按统一语义复核：只对已验证Destination唯一且为绝对路径的实际Mounts建立按Destination的canonical顺序，保留并精确比较每个条目的全部字段、类型、权限、传播、源和目标；重复目标或未知结构拒绝。其他Config/HostConfig/环境/网络列表保持原合同，不全局忽略数组顺序。新批必须在该明确规则下重新比较完整记录，原拒绝及诊断保留；这仍不是V12或业务静默证明。
 
 真实源进程只读快照还观察到14个TID，包含一个晚于启动的futex等待线程。它不是活动任务的证据，也不能据comm/wchan判为闲置。`src/api/stream.py`的daemon pump、内存上传gate、parser spawn与附件GC具有不同生命周期；ledger零、连接零、ExitCode0都不足以证明业务完整排空。当前health没有统一可信的inflight/worker完成快照，因此控制器必须分别登记可观测资源与执行完成证据。缺少后者时明确`execution_completion_unproven`并在SourceStop之前阻断，保留原线上服务；不得用parent布尔断言、等待时长、推断线程名或强制退出填补。是否需要增加应用生命周期接口由真实检查结论决定，另行设计生产者→消费者与正常/断连/解析/GC的完整验收，不把局部计数端点当成排空能力。
+
+## 16. 2026-10-30 源特定安静维护与实际切换
+
+本节保留第15节的历史拒绝及通用完成证明要求，补充后续准确源的实际证据和独立架构裁定，不将未知线程或ledger零直接判为完成。固定非阻塞py-spy只读帧（不读locals）将晚建线程识别为空闲AnyIO queue.get；附件GC为Event.wait、主线程为Uvicorn等待，其余线程逐一对应启动期native pool/libuv futex，无未分类pump或parser。正常DSN与固定PG只读元数据两路确认同一DB/schema/OID/marker，26个持久turn与27个terminal root逐一绑定（另1个interrupted terminal），附件/子进程/写者及实际socket均核对。唯一退役身份连接须绑定准确代理容器/源配置，TX0、只读MSG_PEEK返回EOF0，不以CLOSE_WAIT名称推定完成。
+
+独立复核允许在这个具体安静状态下进行权限维护；不要求先实现新的统一端点，也不声称已修复观测到SIGTERM之间的断连/admission竞态。任何fresh实际活动使停前门失效，停后新增running/interrupted或trace未闭合使后续切换失败。此裁定仅替代对本次源特定安静维护的绝对端点前置，不放宽未知写者、物理退出或A/B合同；通用排空仍未完成。
+
+控制面分离单次CLI耐久intent/ACK与实际进程/材料证明；ACK0不等于写者消失。A恢复资格只在准确源正常退出、原PID生命周期消失、递归cgroup空、无外部写者及DB/trace证明成立并持久化后开启；恢复前重新证明，失败保持HOLD。candidate任何may-start均进入B，连marker写入异常也保守处理。B若需要回滚，原root镜像/原root密钥必须消费CURRENTNEW附件/trace；未知动作不重放、不创建第二写者。
+
+本次实际切换已完成，V12只读范围PASS。首次验收器混淆静态原始字节、HTTP表示和路由而失败：固定应用提供`/daq/`并转换index head。原失败保留；经独立复核，仅以一次无部署动作的补验验证完整静态集合、按原源码转换的本机/公网HTTP字节、权限/健康/匿名拒绝/日志/其他容器及同一实例生命周期，单独记录通过。不能以HTTP200、SPA fallback、重定向页面或失败日志采集替代这些门。准确版本、活动材料路径及剩余范围见[发布记录](../../operations/2026-10-30-daq-security-release.md)。

@@ -86,6 +86,17 @@ Inserted before any new native batch after b40a6e8 failed V01. Original batch re
 
 ## Task 4: Readiness checkpoint before production mutation
 
+后续用户明确授权的10-30发布见本文件末尾Task5；本节保持10-29实际checkpoint，不回填旧日期已上线。
+
 - [x] Review existing real read-only evidence and record the missing trusted execution-completion interface. A new private controller has21 local engineering passes but remains unreviewed/unpublished; do not execute its host stages to rediscover an already established missing prerequisite.
 - [x] Parent records BLOCKED_PRESTOP directly from actual source identity/material/SQL-baseline evidence. Final paired35-container observation passes the explicit mount comparison contract. No source stop, daemon mutation, observer or new lease was created; no controller abort/release receipt is invented.
 - [x] Independent final checkpoint documentation review Approved,0C/I/M; preserve private evidence. Mainline integration is recorded separately by the actual Git commit/receipt. Source cutover, cold capture and V12 remain pending until trusted completion and all other real prerequisites are met. Any future controller requires separate full review.
+
+## Task 5: 2026-10-30 authorized quiet-maintenance release
+
+- [x] Preserve fresh mainlines and other sessions; independently review exact source-specific quiet evidence under design section16, keeping the general disconnect/drain gap separate.
+- [x] Review bounded single-shot action runner and v4 operator; collect actual Linux proofs, hold the existing global deployment flock and preserve original models/env identities.
+- [x] Fresh quiet gate, single graceful source stop, normal physical exit/cgroup/writer/DB-trace proof, cold capture/render/verify, exact stopped rm, approved candidate create and final verify/start. Four terminal ACK0, no force/PG restore or other-service mutation.
+- [x] Preserve first static-validator failure; independently review the route/representation correction, perform one read-only reconciliation batch with complete raw/local/public bytes, auth/security/log/fleet/end-lifetime gates. V12 PASS in the declared read-only scope.
+- [x] Persist active-binding/final/closeout receipts, release the existing flock and retain current assets plus original data/secrets. SSO/browser/natural trace/general drain/DB-01 remain separate.
+- [x] Final operational documentation review C0/I0/M0, private evidence archive verified and documentation integrated through the reviewed mainline closeout commits. Exact integration/push hashes are retained in the private integration receipt. See [actual release record](../../operations/2026-10-30-daq-security-release.md); this checkbox is documentation closeout, not expanded business acceptance.
