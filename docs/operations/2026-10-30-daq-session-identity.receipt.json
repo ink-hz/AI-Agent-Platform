@@ -76,5 +76,14 @@
   "sample_session_key": "zxmcvgkeychqpzcdvqjdtluvvgyf2j36ihjugablyjgudaxdyrwa",
   "model_calls": 0,
   "rollback_exercised": false,
-  "evidence_private": true
+  "evidence_private": true,
+  "subsequent_static_release": {
+    "backend_identity_files": 5,
+    "unchanged": true,
+    "api_release": "c6ee87f25e4562ee9ce84a4508491a3a089dbd4e",
+    "api_image": "sha256:15ad498db1afce24eb8064b72e64465643141dc6f745a44ebe12398053edc773",
+    "worker_release": "c13433f4580a54629626daf9017b642d44bed009",
+    "worker_image": "sha256:048e90d5bba6303fcb68f08f1ba4f69796295a171f1066c51be0d6af5acc687a",
+    "identity_ui_tests": "3 passed; changed display paths only"
+  }
 }
