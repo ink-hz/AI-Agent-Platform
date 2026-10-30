@@ -28,6 +28,36 @@ class _HostFile(Model):
     observations: list[_HostRow] = Field(max_length=2)
 
 
+class _HostSnapshot(dict):
+    """Internal file evidence; classification is relative to each consumer clock.
+
+    Keep the file generation timestamp as well as each object's timestamp. This
+    dict-compatible result never adds internal evidence to the public DTO.
+    """
+    def __init__(self, document, ttl, now):
+        self.document, self.ttl = document, ttl
+        super().__init__(self.at(now))
+
+    def at(self, now):
+        def unknown(error, observed_at=None):
+            return HealthObservation(runtime=RuntimeEvidence(method='host_loopback',
+                checked_at=now, observed_at=observed_at, error=error,
+                stale=error == 'observation_stale'))
+        result = {key: unknown('observation_missing') for key in HOST_IDS}
+        for row in self.document.observations:
+            if row.observed_at > now or self.document.generated_at > now:
+                result[row.application_id] = unknown('observation_future', row.observed_at)
+            elif now - row.observed_at > self.ttl or now - self.document.generated_at > self.ttl:
+                result[row.application_id] = unknown('observation_stale', row.observed_at)
+            else:
+                result[row.application_id] = HealthObservation(
+                    runtime=RuntimeEvidence(coverage='observed', state=row.state,
+                        observed_at=row.observed_at, checked_at=now, method='host_loopback', error=row.error),
+                    deployment=Deployment(version=row.version, observed_at=row.observed_at if row.version else None,
+                        evidence='ready_release_sha' if row.version else None))
+        return result
+
+
 class HostObservationReader:
     def __init__(self, path=Path('/run/platform-runtime/snapshot.json'), *, ttl_seconds=90):
         self.path = Path(path)
@@ -66,19 +96,7 @@ class HostObservationReader:
             return {key: unknown('observation_missing') for key in HOST_IDS}
         except (OSError, ValueError, TypeError):
             return {key: unknown('observation_invalid') for key in HOST_IDS}
-        result = {key: unknown('observation_missing') for key in HOST_IDS}
-        for row in document.observations:
-            if row.observed_at > now or document.generated_at > now:
-                result[row.application_id] = unknown('observation_future', row.observed_at)
-            elif now - row.observed_at > self.ttl or now - document.generated_at > self.ttl:
-                result[row.application_id] = unknown('observation_stale', row.observed_at)
-            else:
-                result[row.application_id] = HealthObservation(
-                    runtime=RuntimeEvidence(coverage='observed', state=row.state,
-                        observed_at=row.observed_at, checked_at=now, method='host_loopback', error=row.error),
-                    deployment=Deployment(version=row.version, observed_at=row.observed_at if row.version else None,
-                        evidence='ready_release_sha' if row.version else None))
-        return result
+        return _HostSnapshot(document, self.ttl, now)
 
 
 class HealthReader:
@@ -95,6 +113,7 @@ class HealthReader:
         self._cached = {}
         self._flight = None
         self._host_work = SharedWork()
+        self._prior_host = {}
         from urllib.parse import urlsplit
         for key, url in self.urls.items():
             parsed = urlsplit(url)
@@ -109,7 +128,10 @@ class HealthReader:
             self._flight.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
         try:
             async with asyncio.timeout(remaining(deadline)):
-                return await asyncio.shield(self._flight)
+                remote, host = await asyncio.shield(self._flight)
+            values = dict(remote)
+            values.update(self._consume_host(host, now))
+            return values
         except Exception:
             values = dict(self._cached)
             for key in (*HOST_IDS, 'ai-fae-agent', 'ai-daq-fae-agent', 'voc'):
@@ -117,19 +139,55 @@ class HealthReader:
                     values[key] = self._failure(key, now)
             return values
 
-    def _failure(self, key, now):
-        previous = self._cached.get(key)
+    def _failure(self, key, now, error='health_unavailable'):
+        previous = (self._prior_host if key in HOST_IDS else self._cached).get(key)
         return HealthObservation(runtime=RuntimeEvidence(checked_at=now,
             observed_at=previous.runtime.observed_at if previous else None,
             stale=bool(previous and previous.runtime.observed_at),
-            method='host_loopback' if key in HOST_IDS else 'safe_http', error='health_unavailable'),
+            method='host_loopback' if key in HOST_IDS else 'safe_http', error=error),
             **({'deployment': previous.deployment} if previous else {}))
 
-    async def _host(self, now, deadline):
-        try:
-            return await self._host_work.read(lambda: self.host.read(now), deadline)
-        except Exception:
+    def _consume_host(self, snapshot, now):
+        if snapshot is None:
             return {key: self._failure(key, now) for key in HOST_IDS}
+        # Every caller reclassifies immutable file/object times, including callers
+        # sharing the same in-progress health flight with different reporting now.
+        values = snapshot.at(now) if isinstance(snapshot, _HostSnapshot) else snapshot
+        result = {}
+        for key in HOST_IDS:
+            value = values.get(key)
+            if value is None:
+                result[key] = self._failure(key, now)
+            elif isinstance(snapshot, _HostSnapshot) and value.runtime.coverage == 'observed':
+                self._prior_host[key] = value.model_copy(deep=True)
+                result[key] = value
+            elif value.runtime.coverage == 'observed':
+                # An opaque injected dict has no file-generation proof. Do not
+                # fabricate it from object/checked times or accept healthy state.
+                result[key] = self._failure(key, now, 'observation_invalid')
+            elif key in self._prior_host:
+                result[key] = self._failure(key, now, value.runtime.error or 'health_unavailable')
+            else:
+                # Missing/invalid file results still carry this consumer's clock.
+                result[key] = value.model_copy(deep=True)
+                result[key].runtime.checked_at = now
+        return result
+
+    async def _host(self, now, deadline):
+        def read():
+            try:
+                remaining(deadline)
+                snapshot = self.host.read(now)
+                remaining(deadline)
+                return snapshot
+            except Exception:
+                # The owned future resolves without publishing expired success.
+                # Its waiter may already have left; no replacement read/retry.
+                return None
+        try:
+            return await self._host_work.read(read, deadline)
+        except Exception:
+            return None
 
     async def _read(self, now, deadline):
         import asyncio
@@ -139,8 +197,7 @@ class HealthReader:
             if monotonic() < self._expires:
                 # File freshness is checked on every read, including the 90s boundary.
                 values = dict(self._cached)
-                values.update(await host_task)
-                return values
+                return values, await host_task
             async def probe(key):
                 runtime = RuntimeEvidence(coverage='not_configured', checked_at=now,
                     method='safe_http', error='health_not_configured')
@@ -177,6 +234,4 @@ class HealthReader:
             values = dict(await asyncio.gather(*(probe(key) for key in ('ai-fae-agent','ai-daq-fae-agent','voc'))))
             # Commit remote evidence before waiting for the independent host file.
             self._cached, self._expires = values, monotonic()+self.ttl
-            values = dict(values)
-            values.update(await host_task)
-            return values
+            return values, await host_task
