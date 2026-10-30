@@ -50,7 +50,7 @@ _SAFE_RETURN_EXACT = frozenset(
         "/sdk", "/sdk/", "/sdk/tasks",
         "/hr/chat", "/hr/agent", "/hr/panorama", "/hr/positions",
         "/marketing/", "/admin", "/admin/",
-        "/admin/identity/observers", "/admin/identity/partners",
+        "/admin/identity/observers", "/admin/identity/partners", "/admin/identity/security",
         "/fae/manage/access", "/admin/voc/access",
     }
 )
