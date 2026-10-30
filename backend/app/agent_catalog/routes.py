@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.control_plane.models import AuthContext
 
+from .web_entries import web_entry_for
+
 
 _NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
@@ -40,7 +42,11 @@ def build_agent_catalog_router(agent_use_authorization) -> APIRouter:
         response.headers.update(_NO_STORE)
         return {
             "agents": [
-                {**card.model_dump(mode="json"), "dispatchable": card.dispatchable}
+                {
+                    **card.model_dump(mode="json"),
+                    "dispatchable": card.dispatchable,
+                    "web_entry": web_entry_for(card.agent_id),
+                }
                 for card in cards
             ]
         }
