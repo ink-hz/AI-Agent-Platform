@@ -705,7 +705,7 @@ body {
 .session-pagination span { min-width: 82px; color: var(--ink); font-size: 12.5px; font-weight: 720; text-align: center; }
 
 .session-list { overflow: hidden; margin-top: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 12px 30px rgba(20,51,89,.08); }
-.session-row { display: grid; grid-template-columns: 116px minmax(240px, 1.7fr) minmax(190px, 1fr) 120px 70px; align-items: center; gap: 17px; min-height: 92px; padding: 17px 20px; border-top: 1px solid var(--line-soft); color: inherit; text-decoration: none; transition: background .15s ease; }
+.session-row { display: grid; grid-template-columns: 116px minmax(240px, 1.7fr) minmax(190px, 1fr) 120px; align-items: center; gap: 17px; min-height: 92px; padding: 17px 20px; border-top: 1px solid var(--line-soft); color: inherit; text-decoration: none; transition: background .15s ease; }
 .session-row:first-child { border-top: 0; }
 .session-row:hover { background: #f4f8fd; }
 .session-source span { display: block; color: var(--brand); font-size: 11.5px; font-weight: 850; letter-spacing: .08em; }
@@ -938,7 +938,7 @@ body {
   .insight-grid { grid-template-columns: 1fr; }
   .fleet-agent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .directory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .session-row { grid-template-columns: 95px minmax(220px, 1fr) 170px 70px; }
+  .session-row { grid-template-columns: 95px minmax(220px, 1fr) 170px; }
   .session-row time { display: none; }
 }
 
@@ -979,9 +979,8 @@ body {
   .page-intro > strong { font-size: 38px; }
   .page-intro > strong span { text-align: left; }
   .filter-bar { grid-template-columns: 1fr; }
-  .session-row { grid-template-columns: 72px minmax(0, 1fr) auto; gap: 11px; padding: 15px; }
+  .session-row { grid-template-columns: 72px minmax(0, 1fr); gap: 11px; padding: 15px; }
   .session-counts, .session-row time { display: none; }
-  .session-row > .freshness { grid-column: 3; grid-row: 1; }
   .profile-metrics { grid-template-columns: 1fr; }
   .profile-lifecycle { grid-template-columns: 1fr; }
   .runtime-primary-facts, .runtime-detail-grid, .runtime-lifecycle dl, .runtime-evidence-list { grid-template-columns: 1fr; }

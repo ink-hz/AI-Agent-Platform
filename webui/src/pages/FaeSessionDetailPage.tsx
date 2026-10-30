@@ -3,7 +3,6 @@ import { FaeWorkbenchShell } from "../components/fae-workbench/FaeWorkbenchShell
 import { PlatformLink } from "../components/PlatformLink";
 import { SessionReplay } from "../components/session/SessionReplay";
 import { useSessionDetail } from "../components/session/useSessionDetail";
-import { SourceFreshness } from "../components/SourceFreshness";
 import { faeWorkbenchApi } from "../faeWorkbenchApi";
 import type { SessionDetail } from "../types";
 import { sessionReturnTarget } from "../navigationContext";
@@ -40,7 +39,6 @@ function GovernancePanel({ session }: { session: SessionDetail }) {
       <div><dt>数据截止时间</dt><dd>{session.source_synced_at
         ? <time dateTime={session.source_synced_at}>{session.source_synced_at}</time>
         : "暂不可用"}</dd></div>
-      <div><dt>数据新鲜度</dt><dd><SourceFreshness freshness={session.freshness} status={session.source_status} /></dd></div>
     </dl>
   </aside>;
 }

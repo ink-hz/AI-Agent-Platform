@@ -127,7 +127,7 @@ describe("SessionsPage URL state", () => {
     expect(sessionPaths.length).toBe(initialCalls + 1);
     expect(container.textContent).toContain("分页验证 Session");
     expect(container.textContent).toContain("刷新失败");
-    expect(container.querySelector(".freshness-stale")).not.toBeNull();
+    expect(container.querySelector(".freshness-stale")).toBeNull();
     hidden = true;
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     await act(async () => vi.advanceTimersByTimeAsync(30_000));

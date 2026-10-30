@@ -93,7 +93,7 @@ describe("SessionDetailPage return navigation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain(session.title);
     expect(container.textContent).toContain("刷新失败");
-    expect(container.querySelector(".freshness-stale")).not.toBeNull();
+    expect(container.querySelector(".freshness-stale")).toBeNull();
     hidden = true;
     await act(async () => document.dispatchEvent(new Event("visibilitychange")));
     await act(async () => vi.advanceTimersByTimeAsync(30_000));

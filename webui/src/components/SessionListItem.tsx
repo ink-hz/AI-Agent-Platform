@@ -1,4 +1,3 @@
-import { SourceFreshness } from "./SourceFreshness";
 import type { SessionSummary } from "../types";
 import { additionalParticipantLabel, formatFaeSender, formatSenderIdentity, hasFaeSubjectIdentity } from "../senderIdentity";
 import { PlatformLink } from "./PlatformLink";
@@ -40,7 +39,6 @@ export function SessionListItem({
       </div>
       <div className="session-counts"><span>{session.turn_count} 轮</span>{showSignals && session.feedback_count === null && <span>反馈暂不可用</span>}{showSignals && session.feedback_count !== null && session.feedback_count > 0 && <span>{session.feedback_count} 条反馈</span>}{showSignals && session.review_count === null && <span>复审暂不可用</span>}{showSignals && session.review_count !== null && session.review_count > 0 && <span>{session.review_count} 条复审</span>}</div>
       <time dateTime={session.last_active_at}>{dateTime(session.last_active_at)}</time>
-      <SourceFreshness freshness={session.freshness} status={session.source_status} />
     </PlatformLink>
   );
 }
