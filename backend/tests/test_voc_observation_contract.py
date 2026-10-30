@@ -1,5 +1,7 @@
 """VOC producer -> restricted source -> encrypted replica; no external services."""
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+import time
 from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -14,6 +16,7 @@ from app.cloud_replica.repository import ReplicaObservabilityRepository
 from app.cloud_replica.sanitize import SanitizationPolicy
 from app.cloud_sync.health import healthy_sources
 from app.cloud_sync.models import SourceProfile, SourceReadError
+from app.cloud_sync import sources
 from app.cloud_sync.sources import DatabaseAgentSource
 from app.cloud_sync.store import CloudSyncStore
 from app.cloud_sync.worker import CloudSyncWorker
@@ -82,6 +85,48 @@ def voc_database(observability_database, tmp_path, monkeypatch):
     path.write_text(reader_dsn)
     path.chmod(0o600)
     return dsn, reader_dsn, SourceProfile('voc','voc',str(path),database,'voc_raw/voc_core'), tool, actor_dsn
+
+
+def after_query(callback, *, business_results=None):
+    """Keep real reader SQL/results; coordinate a separate committed writer."""
+    def factory(*args, **kwargs):
+        real = psycopg.connect(*args, **kwargs)
+        class Cursor:
+            def __init__(self): self.cursor = real.cursor()
+            def execute(self, query, params=None):
+                self.cursor.execute(query, params)
+                rendered = query.as_string(real) if hasattr(query, 'as_string') else str(query)
+                self.business_query = 'from voc_raw.inbound_messages inbound' in rendered
+                callback(rendered, real)
+                return self
+            def fetchall(self):
+                rows = self.cursor.fetchall()
+                if self.business_query and business_results is not None:
+                    business_results.append(rows)
+                return rows
+            def __getattr__(self, name): return getattr(self.cursor, name)
+        class Connection:
+            def __enter__(self): real.__enter__(); return self
+            def __exit__(self, *args): return real.__exit__(*args)
+            def transaction(self): return real.transaction()
+            def cursor(self): return Cursor()
+        return Connection()
+    return factory
+
+
+@pytest.mark.postgres
+def test_policy_committed_after_identity_before_table_locks_is_rejected(voc_database):
+    dsn, _, profile, _, _ = voc_database
+    committed = []
+    def change_policy(query, reader):
+        if 'select current_database() as database' in query:
+            with psycopg.connect(dsn, autocommit=True) as owner:
+                owner.execute("set lock_timeout='100ms'")
+                owner.execute(f'alter policy {POLICY} on voc_core.outbox_messages using (false)')
+            committed.append(True)
+    with pytest.raises(SourceReadError, match='^source_visibility_unverified$'):
+        DatabaseAgentSource(profile, connection_factory=after_query(change_policy)).read_snapshot()
+    assert committed == [True]
 
 
 @pytest.mark.postgres
@@ -154,7 +199,8 @@ def test_typed_producer_constraints_and_restricted_acl(voc_database):
 
 
 @pytest.mark.postgres
-def test_producer_reader_encrypted_consumer_and_visibility_failure_preserves_snapshot(voc_database):
+@pytest.mark.parametrize('drift_timing', ['before_read', 'after_identity'])
+def test_producer_reader_encrypted_consumer_and_visibility_failure_preserves_snapshot(voc_database, drift_timing):
     dsn, _, profile, _, actor_dsn = voc_database
     root = Path(__file__).parents[1]
     with psycopg.connect(dsn,autocommit=True) as owner:
@@ -167,9 +213,10 @@ def test_producer_reader_encrypted_consumer_and_visibility_failure_preserves_sna
     cipher = FieldCipher(b'e' * 32)
     store = CloudSyncStore(make_conninfo(dsn,user='voc_contract_writer'),cipher=cipher)
     events = []
+    connection_factory = [psycopg.connect]
     worker = CloudSyncWorker(store=store,identity_key=b'k'*32,policy=SanitizationPolicy(),
         include_verified_subject=True,clock=lambda:clock[0],emit=events.append,
-        source_factory=lambda p:DatabaseAgentSource(p,clock=lambda:clock[0]))
+        source_factory=lambda p:DatabaseAgentSource(p,clock=lambda:clock[0],connection_factory=connection_factory[0]))
     repository = ReplicaObservabilityRepository(make_conninfo(dsn,user='voc_contract_reader'),cipher=cipher,now=lambda:clock[0])
     result = worker.run_once(profile)
     assert result is not None and result.source_turns == 2
@@ -193,9 +240,20 @@ def test_producer_reader_encrypted_consumer_and_visibility_failure_preserves_sna
     with psycopg.connect(dsn,autocommit=True) as owner:
         before = owner.execute('select session_key,display_payload,payload_nonce,payload_sha256 from platform_replica.sessions').fetchall()
         success = owner.execute("select last_source_success_at,last_published_at,source_sessions,source_turns from platform_replica.agent_sources where agent_id='voc'").fetchone()
-        owner.execute(f'drop policy {POLICY} on voc_core.outbox_messages')
+        if drift_timing == 'before_read':
+            owner.execute(f'drop policy {POLICY} on voc_core.outbox_messages')
+    raced = []
+    if drift_timing == 'after_identity':
+        def change_policy(query, reader):
+            if 'select current_database() as database' in query:
+                with psycopg.connect(dsn, autocommit=True) as owner:
+                    owner.execute("set lock_timeout='100ms'")
+                    owner.execute(f'alter policy {POLICY} on voc_core.outbox_messages using (false)')
+                raced.append(True)
+        connection_factory[0] = after_query(change_policy)
     clock[0] += timedelta(seconds=10)
     assert worker.run_once(profile) is None
+    assert raced == ([True] if drift_timing == 'after_identity' else [])
     assert events[-1]['error_code'] == 'source_visibility_unverified'
     with psycopg.connect(dsn) as owner:
         assert owner.execute('select session_key,display_payload,payload_nonce,payload_sha256 from platform_replica.sessions').fetchall() == before
@@ -219,7 +277,7 @@ def test_policy_contract_and_business_read_share_transaction_and_ddl_lock(voc_da
                 rendered = query.as_string(real) if hasattr(query,'as_string') else str(query)
                 if 'from pg_policy where polrelid=' in rendered:
                     transaction = real.execute("select current_setting('transaction_isolation') as isolation,current_setting('transaction_read_only') as readonly").fetchone()
-                    assert tuple(transaction.values()) == ('repeatable read','on')
+                    assert tuple(transaction.values()) == ('read committed','on')
                     with psycopg.connect(dsn,autocommit=True) as ddl:
                         ddl.execute("set lock_timeout='50ms'")
                         with pytest.raises(psycopg.errors.LockNotAvailable):
@@ -252,3 +310,101 @@ def test_installer_refuses_conflicting_owned_policy_without_touching_business_po
             owner.execute(tool.source_role_sql('voc','contract_password'))
         owner.execute('rollback')
         assert owner.execute('select polname,polcmd,polpermissive,polroles,pg_get_expr(polqual,polrelid),pg_get_expr(polwithcheck,polrelid) from pg_policy order by polname').fetchall() == before
+
+
+@pytest.mark.postgres
+def test_voc_concurrent_producer_commit_cannot_split_business_snapshot(voc_database, monkeypatch):
+    dsn, _, profile, _, actor_dsn = voc_database
+    # Block inside the business statement AFTER its MVCC snapshot is taken.
+    # This does not replace any PG boundary or any reader result.
+    key = 73561030
+    original_query = sources.VOC_QUERY
+    monkeypatch.setattr(sources, 'VOC_QUERY', sql.SQL(original_query.as_string().replace(
+        'from voc_raw.inbound_messages inbound',
+        f', pg_advisory_xact_lock({key}) as snapshot_barrier from voc_raw.inbound_messages inbound')))
+    pids = []
+    def remember_reader(query, reader):
+        if 'select current_database() as database' in query:
+            pids.append(reader.info.backend_pid)
+    with psycopg.connect(dsn, autocommit=True) as coordinator, ThreadPoolExecutor(max_workers=1) as pool:
+        coordinator.execute('select pg_advisory_lock(%s)', (key,))
+        future = pool.submit(DatabaseAgentSource(profile, connection_factory=after_query(remember_reader)).read_snapshot)
+        try:
+            deadline = time.monotonic() + 3
+            while True:
+                if pids and coordinator.execute("select wait_event from pg_stat_activity where pid=%s", (pids[0],)).fetchone() == ('advisory',):
+                    break
+                assert time.monotonic() < deadline, 'reader did not reach the statement barrier'
+                time.sleep(0.005)
+            # Ordinary producer inserts still commit while the reader holds all
+            # relation locks. Insert all related rows in one genuine transaction.
+            with psycopg.connect(actor_dsn) as producer:
+                producer.execute("set local lock_timeout='250ms'")
+                producer.execute("insert into voc_raw.inbound_messages (id,sender_internal_user_id,conversation_id,conversation_type,received_at,text_content) values (3,%s,'conversation','group',%s,'late question')", (UID,NOW))
+                producer.execute("insert into voc_raw.interaction_jobs values (3,'done')")
+                producer.execute("insert into voc_core.outbox_messages (source_inbound_message_id,status,content,sent_at,recipient_staff_id) values (3,'sent','late answer',%s,%s)", (NOW,UID))
+            # A separate atomic change of existing input/receipt tests that joins
+            # cannot combine an old question with a new answer or outcome.
+            with psycopg.connect(dsn) as writer:
+                writer.execute("set local lock_timeout='250ms'")
+                writer.execute("update voc_raw.inbound_messages set text_content='changed question' where id=1")
+                writer.execute("update voc_core.outbox_messages set content='changed answer' where source_inbound_message_id=1")
+        finally:
+            coordinator.execute('select pg_advisory_unlock(%s)', (key,))
+        snapshot = future.result(timeout=3)
+    turns = [turn for session in snapshot.sessions for turn in session.turns]
+    assert len(turns) == 2
+    assert {(t.question, t.answer) for t in turns} == {('question 1','confirmed answer'), ('question 2','')}
+    monkeypatch.setattr(sources, 'VOC_QUERY', original_query)
+    later = [turn for session in DatabaseAgentSource(profile).read_snapshot().sessions for turn in session.turns]
+    assert len(later) == 3
+    assert {(t.question, t.answer) for t in later} == {('changed question','changed answer'), ('question 2',''), ('late question','late answer')}
+
+
+@pytest.mark.postgres
+def test_voc_single_statement_bounds_and_empty_snapshot(voc_database):
+    dsn, reader_dsn, profile, _, _ = voc_database
+    with psycopg.connect(reader_dsn) as reader:
+        count, size = reader.execute(sql.SQL('select count(*),sum(octet_length(row_to_json(snapshot)::text)) from ({}) snapshot').format(sources.VOC_QUERY)).fetchone()
+    assert count == 2 and size > 1
+    received = []
+    factory = after_query(lambda *_: None, business_results=received)
+    snapshot = DatabaseAgentSource(profile, max_rows=count, max_bytes=int(size), connection_factory=factory).read_snapshot()
+    assert sum(len(session.turns) for session in snapshot.sessions) == count
+    assert len(received) == 1 and len(received[0]) == count
+    for bounds, error in (({'max_rows':count-1}, 'source_row_limit'),
+                          ({'max_bytes':int(size)-1}, 'source_body_limit')):
+        received.clear()
+        with pytest.raises(SourceReadError, match='^' + error + '$'):
+            DatabaseAgentSource(profile, connection_factory=factory, **bounds).read_snapshot()
+        # Excess business payloads never cross the source connection: only the
+        # one-row size/count sentinel is returned from the statement.
+        assert len(received) == 1 and len(received[0]) == 1
+        assert received[0][0]['snapshot_count'] == count
+        assert all(value is None for key, value in received[0][0].items()
+                   if key not in {'snapshot_count', 'snapshot_bytes'})
+    with psycopg.connect(dsn) as owner:
+        owner.execute('delete from voc_core.outbox_messages')
+        owner.execute('delete from voc_raw.interaction_jobs')
+        owner.execute('delete from voc_raw.inbound_messages')
+    empty = DatabaseAgentSource(profile, max_rows=1, max_bytes=1).read_snapshot()
+    assert empty.complete and not empty.sessions
+
+
+@pytest.mark.postgres
+def test_voc_ddl_lock_wait_obeys_source_timeout(voc_database):
+    dsn, _, profile, _, _ = voc_database
+    with psycopg.connect(dsn) as ddl:
+        ddl.execute('lock table voc_core.outbox_messages in access exclusive mode')
+        with pytest.raises(SourceReadError, match='^source_time_limit$'):
+            DatabaseAgentSource(profile, budget_ms=150).read_snapshot()
+
+
+@pytest.mark.postgres
+def test_voc_business_statement_obeys_source_timeout(voc_database, monkeypatch):
+    _, _, profile, _, _ = voc_database
+    monkeypatch.setattr(sources, 'VOC_QUERY', sql.SQL(sources.VOC_QUERY.as_string().replace(
+        'from voc_raw.inbound_messages inbound',
+        ', pg_sleep(0.3) as statement_delay from voc_raw.inbound_messages inbound')))
+    with pytest.raises(SourceReadError, match='^source_time_limit$'):
+        DatabaseAgentSource(profile, budget_ms=150).read_snapshot()

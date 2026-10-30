@@ -45,7 +45,7 @@ left join voc_core.outbox_messages delivery on delivery.source_inbound_message_i
 
 
 def _verify_voc_visibility(execute) -> None:
-    """Prove the linked-receipt domain under the actual reader's snapshot.
+    """Prove the linked-receipt domain after stabilizing its DDL boundary.
 
     Counting the same RLS-filtered join twice cannot establish completeness.
     Accept only the reviewed consumer policy and one-to-one source constraints;
@@ -57,6 +57,8 @@ def _verify_voc_visibility(execute) -> None:
 
     # Planning zero-row reads obtains ACCESS SHARE until transaction end, using
     # only the existing column grants (explicit LOCK requires a table grant).
+    # READ COMMITTED is essential: catalog statements AFTER these locks must
+    # see DDL that committed before the locks, even if identity was read earlier.
     # Policy/constraint DDL then cannot change the contract before the join.
     for (schema, table), columns in VOC_COLUMNS.items():
         execute(sql.SQL('select {} from {}.{} where false').format(
@@ -235,9 +237,13 @@ class DatabaseAgentSource:
             with self._connect(dsn, options=options, connect_timeout=max(1, min(5, self.budget_ms // 1000)),
                                row_factory=dict_row) as connection, connection.transaction():
                 cursor = connection.cursor()
-                cursor.execute('set transaction isolation level repeatable read, read only')
-                # A repeatable-read snapshot describes the beginning of the read,
-                # not its completion. The store lease orders entire read/publish cycles.
+                # VOC proves current catalog state after relation locks and reads
+                # all business rows in ONE bounded statement snapshot. Other
+                # sources retain their multi-statement repeatable-read contract.
+                isolation = 'read committed' if self.profile.kind == 'voc' else 'repeatable read'
+                cursor.execute(f'set transaction isolation level {isolation}, read only')
+                # Conservative start-of-observation time, never completion time.
+                # The store lease orders entire read/publish cycles.
                 observed_at = self._clock()
                 if not isinstance(observed_at, datetime) or observed_at.tzinfo is None:
                     raise SourceReadError('source_timestamp_invalid')
@@ -250,6 +256,8 @@ class DatabaseAgentSource:
                 identity = execute('select current_database() as database, current_schema() as schema').fetchone()
                 if identity != {'database': self.profile.expected_database, 'schema': schema}:
                     raise SourceReadError('source_identity_unverified')
+                if self.profile.kind == 'voc':
+                    _verify_voc_visibility(execute)
                 required = _tables(self.profile)
                 for (table_schema, table), columns in required.items():
                     actual = execute('''select column_name, udt_name from information_schema.columns
@@ -272,7 +280,6 @@ class DatabaseAgentSource:
                     marker = execute("select count(*) as count from voc_meta.schema_migrations where name='020_employee_chatbot_experience.sql'").fetchone()
                     if marker['count'] != 1:
                         raise SourceReadError('source_identity_unverified')
-                    _verify_voc_visibility(execute)
 
                 def fetch_bounded(query):
                     nonlocal rows_used, bytes_used
@@ -290,7 +297,32 @@ class DatabaseAgentSource:
                     return values
 
                 if self.profile.kind == 'voc':
-                    sessions = project_voc_snapshot(fetch_bounded(VOC_QUERY))
+                    # Materialize once: bounds and payload must use the same
+                    # statement snapshot despite concurrent producer commits.
+                    # The left join emits only a measurement sentinel on empty
+                    # or oversized snapshots, never transfers excess payloads.
+                    query = sql.SQL('''with snapshot as materialized ({}),
+                        measurement as (
+                            select count(*) as snapshot_count,
+                            coalesce(sum(octet_length(row_to_json(snapshot)::text)),0) as snapshot_bytes
+                            from snapshot)
+                        select measurement.*, snapshot.* from measurement
+                        left join snapshot on snapshot_count <= %s and snapshot_bytes <= %s
+                    ''').format(VOC_QUERY)
+                    values = execute(query, (self.max_rows, self.max_bytes)).fetchall()
+                    count, size = values[0]['snapshot_count'], values[0]['snapshot_bytes']
+                    if count > self.max_rows:
+                        raise SourceReadError('source_row_limit')
+                    if size > self.max_bytes:
+                        raise SourceReadError('source_body_limit')
+                    if not count:
+                        values = []
+                    elif len(values) != count:
+                        raise SourceReadError('source_snapshot_incomplete')
+                    for value in values:
+                        del value['snapshot_count'], value['snapshot_bytes']
+                    remaining()
+                    sessions = project_voc_snapshot(values)
                 else:
                     tables = {}
                     for (table_schema, table), columns in required.items():

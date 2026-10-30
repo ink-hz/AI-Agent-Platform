@@ -262,11 +262,22 @@ reader. Employee isolation and forbidden writes are local disposable-PG tests;
 do not issue production business writes for acceptance.
 
 Release the matching worker adapter before its next ordinary VOC-only cycle.
-The adapter checks the real role/column grants, table/RLS state, precise applicable
-SELECT policy and actual valid constraints within its repeatable-read/read-only
-snapshot. Zero-row allowlisted reads hold ACCESS SHARE against policy/constraint
-DDL through the business read, permit ordinary producer writes, and retain the
-existing read budget. Additional applicable SELECT/ALL policies (including
+VOC uses a READ COMMITTED, read-only transaction. Zero-row allowlisted reads
+first obtain ACCESS SHARE on all required relations; subsequent catalog reads
+check the real role/column grants, table/RLS state, precise applicable SELECT
+policy and actual valid constraints against freshly committed catalog state.
+This order detects policy DDL committed after identity lookup but before the
+locks. A repeatable-read catalog snapshot taken before these locks is unsafe:
+its old policy proof can disagree with the policy actually applied by PostgreSQL.
+The locks block policy/constraint DDL through the business read while permitting
+ordinary producer writes. One materialized SQL statement then measures the
+complete business join and returns its rows from the SAME statement snapshot;
+row/byte overflow returns only a measurement sentinel and fails without
+transferring the business payload. Empty snapshots are still complete. Catalog,
+lock wait, measurement and transfer share the existing total read budget. Other
+sources retain their multi-statement repeatable-read contract.
+
+Additional applicable SELECT/ALL policies (including
 PUBLIC or restrictive policies), changed predicates, membership/bypass/ownership
 or changed one-to-one constraints fail closed as `source_visibility_unverified`.
 Do not grant table SELECT to obtain an explicit LOCK and do not disable RLS.
