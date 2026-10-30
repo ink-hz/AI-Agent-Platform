@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import time
 from collections.abc import Callable
@@ -41,6 +42,87 @@ from voc_raw.inbound_messages inbound
 left join voc_raw.interaction_jobs job on job.inbound_message_id=inbound.id
 left join voc_core.outbox_messages delivery on delivery.source_inbound_message_id=inbound.id
 ''')
+
+
+def _verify_voc_visibility(execute) -> None:
+    """Prove the linked-receipt domain under the actual reader's snapshot.
+
+    Counting the same RLS-filtered join twice cannot establish completeness.
+    Accept only the reviewed consumer policy and one-to-one source constraints;
+    policy/schema evolution requires an explicit contract review.
+    """
+    def require(condition):
+        if not condition:
+            raise SourceReadError('source_visibility_unverified')
+
+    # Planning zero-row reads obtains ACCESS SHARE until transaction end, using
+    # only the existing column grants (explicit LOCK requires a table grant).
+    # Policy/constraint DDL then cannot change the contract before the join.
+    for (schema, table), columns in VOC_COLUMNS.items():
+        execute(sql.SQL('select {} from {}.{} where false').format(
+            sql.SQL(',').join(map(sql.Identifier, columns)),
+            sql.Identifier(schema), sql.Identifier(table)))
+    role = execute('''select oid, rolname, rolsuper, rolcreatedb, rolcreaterole,
+        rolinherit, rolreplication, rolbypassrls,
+        exists(select 1 from pg_auth_members where member=pg_roles.oid) as member
+        from pg_roles where rolname=current_user''').fetchone()
+    require(role is not None and role['rolname'] == 'platform_sync_voc_read'
+            and not any(role[key] for key in ('rolsuper', 'rolcreatedb', 'rolcreaterole',
+                'rolinherit', 'rolreplication', 'rolbypassrls', 'member')))
+    relations = {}
+    for (schema, table), columns in VOC_COLUMNS.items():
+        relation = execute('''select c.oid,c.relkind,c.relowner,c.relrowsecurity,
+            row_security_active(c.oid) as active,
+            has_schema_privilege(current_user,n.oid,'USAGE') as usage,
+            has_schema_privilege(current_user,n.oid,'CREATE') as create_schema,
+            has_table_privilege(current_user,c.oid,
+                'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') as broad
+            from pg_class c join pg_namespace n on n.oid=c.relnamespace
+            where n.nspname=%s and c.relname=%s''', (schema, table)).fetchone()
+        is_outbox = table == 'outbox_messages'
+        require(relation is not None and relation['relkind'] == 'r'
+                and relation['relowner'] != role['oid'] and relation['usage']
+                and not relation['create_schema'] and not relation['broad']
+                and relation['relrowsecurity'] == is_outbox
+                and relation['active'] == is_outbox)
+        attributes = execute('''select attnum,attname,
+            has_column_privilege(current_user,attrelid,attnum,'SELECT') as readable,
+            has_column_privilege(current_user,attrelid,attnum,'INSERT,UPDATE,REFERENCES') as writable
+            from pg_attribute where attrelid=%s and attnum>0 and not attisdropped''',
+            (relation['oid'],)).fetchall()
+        require({a['attname'] for a in attributes if a['readable']} == set(columns)
+                and not any(a['writable'] for a in attributes))
+        relations[table] = (relation['oid'], {a['attname']: a['attnum'] for a in attributes})
+
+    outbox_oid = relations['outbox_messages'][0]
+    policies = execute('''select polname,polcmd,polpermissive,polroles,
+        pg_get_expr(polqual,polrelid) as expression, polwithcheck is null as no_check
+        from pg_policy where polrelid=%s and polcmd in ('r','*')
+        and (0=any(polroles) or %s=any(polroles))''', (outbox_oid,role['oid'])).fetchall()
+    require(len(policies) == 1)
+    policy = policies[0]
+    expression = re.sub(r'[\s()]', '', policy['expression'] or '').lower()
+    require(policy['polname'] == 'platform_sync_outbox_select_policy'
+            and policy['polcmd'] == 'r' and policy['polpermissive']
+            and policy['polroles'] == [role['oid']] and policy['no_check']
+            and expression == 'source_inbound_message_idisnotnull')
+
+    constraints = execute('''select conrelid,contype,conkey,confrelid,confkey
+        from pg_constraint where conrelid=any(%s) and convalidated
+        and not condeferrable''', ([r[0] for r in relations.values()],)).fetchall()
+    inbound_oid, inbound_columns = relations['inbound_messages']
+    inbound_key = [inbound_columns['id']]
+    require(any(c['conrelid'] == inbound_oid and c['contype'] == 'p'
+                and c['conkey'] == inbound_key for c in constraints))
+    for table, column in (('interaction_jobs','inbound_message_id'),
+                          ('outbox_messages','source_inbound_message_id')):
+        oid, attributes = relations[table]
+        key = [attributes[column]]
+        require(any(c['conrelid'] == oid and c['contype'] in ('p','u')
+                    and c['conkey'] == key for c in constraints))
+        require(any(c['conrelid'] == oid and c['contype'] == 'f'
+                    and c['conkey'] == key and c['confrelid'] == inbound_oid
+                    and c['confkey'] == inbound_key for c in constraints))
 
 
 def _tables(profile: SourceProfile) -> dict[tuple[str, str], tuple[str, ...]]:
@@ -190,6 +272,7 @@ class DatabaseAgentSource:
                     marker = execute("select count(*) as count from voc_meta.schema_migrations where name='020_employee_chatbot_experience.sql'").fetchone()
                     if marker['count'] != 1:
                         raise SourceReadError('source_identity_unverified')
+                    _verify_voc_visibility(execute)
 
                 def fetch_bounded(query):
                     nonlocal rows_used, bytes_used

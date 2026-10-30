@@ -126,6 +126,28 @@ GRANT USAGE ON SCHEMA {schema_list} TO {role};
 """
     for (schema, table), columns in TABLES[kind].items():
         script += f'GRANT SELECT ({", ".join(columns)}) ON {schema}.{table} TO {role};\n'
+    if kind == 'voc':
+        # This policy belongs to this consumer, never to the employee/actor roles.
+        # A same-name policy of another command/type is not ours to overwrite.
+        script += """DO $policy$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policy
+    WHERE polrelid='voc_core.outbox_messages'::regclass
+      AND polname='platform_sync_outbox_select_policy'
+      AND (polcmd <> 'r' OR NOT polpermissive)) THEN
+    RAISE EXCEPTION 'cloud_sync_source_policy_conflict';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy
+    WHERE polrelid='voc_core.outbox_messages'::regclass
+      AND polname='platform_sync_outbox_select_policy') THEN
+    CREATE POLICY platform_sync_outbox_select_policy ON voc_core.outbox_messages
+      FOR SELECT TO platform_sync_voc_read
+      USING (source_inbound_message_id IS NOT NULL);
+  ELSE
+    ALTER POLICY platform_sync_outbox_select_policy ON voc_core.outbox_messages
+      TO platform_sync_voc_read USING (source_inbound_message_id IS NOT NULL);
+  END IF;
+END $policy$;
+"""
     # Fail visibly if PUBLIC or ownership still gives the dedicated role writes.
     script += f"""DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -249,6 +271,33 @@ def provision(private_dir, *, runner=subprocess.run, uid=10001, gid=10001):
     _psql(REPLICA, script, runner)
 
 
+def repair_voc_observation(private_dir, *, runner=subprocess.run, uid=10001):
+    """Reconcile only the VOC consumer, requiring its existing private DSN."""
+    private_dir = Path(private_dir)
+    if (not private_dir.is_absolute() or '..' in private_dir.parts
+            or any(ord(c) < 32 for c in str(private_dir))):
+        raise ProvisionError('cloud_sync_input_invalid')
+    try:
+        metadata = private_dir.lstat()
+        if (not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o700
+                or metadata.st_uid != uid):
+            raise ValueError
+    except (OSError, ValueError):
+        raise ProvisionError('cloud_sync_private_directory_invalid') from None
+    profile = SOURCES['voc']
+    try:
+        value = _read_private(private_dir / 'voc-database-url', uid).decode().strip()
+        prefix = f"postgresql://{profile['role']}:"
+        suffix = f"@{profile['container']}:5432/{profile['database']}"
+        if not value.startswith(prefix) or not value.endswith(suffix):
+            raise ValueError
+        password = value[len(prefix):-len(suffix)]
+        _token(password)
+    except (ValueError, UnicodeError):
+        raise ProvisionError('cloud_sync_private_file_invalid') from None
+    _psql(profile, source_role_sql('voc', password), runner)
+
+
 def set_publisher(kind, publisher, source_instance_id, *, runner=subprocess.run):
     if kind not in SOURCES or publisher not in ('cloud', 'office'):
         raise ProvisionError('cloud_sync_input_invalid')
@@ -267,6 +316,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     install = sub.add_parser('provision')
     install.add_argument('--private-dir', default='/opt/orbbec-agent-platform/private/cloud-agent-sync')
+    repair = sub.add_parser('repair-voc-observation')
+    repair.add_argument('--private-dir', default='/opt/orbbec-agent-platform/private/cloud-agent-sync')
     ownership = sub.add_parser('set-publisher')
     ownership.add_argument('--source', choices=tuple(SOURCES), required=True)
     ownership.add_argument('--publisher', choices=('cloud', 'office'), required=True)
@@ -277,9 +328,13 @@ def main(argv=None):
             raise ProvisionError('cloud_sync_root_required')
         if args.command == 'provision':
             provision(args.private_dir)
+        elif args.command == 'repair-voc-observation':
+            repair_voc_observation(args.private_dir)
         else:
             set_publisher(args.source, args.publisher, args.source_instance_id)
-        print('CLOUD_SYNC_PROVISION_OK' if args.command == 'provision' else 'CLOUD_SYNC_PUBLISHER_CHANGED')
+        print({'provision': 'CLOUD_SYNC_PROVISION_OK',
+               'repair-voc-observation': 'CLOUD_SYNC_VOC_OBSERVATION_OK',
+               'set-publisher': 'CLOUD_SYNC_PUBLISHER_CHANGED'}[args.command])
         return 0
     except Exception as error:
         print(str(error) if isinstance(error, ProvisionError) else 'cloud_sync_provision_failed', file=sys.stderr)

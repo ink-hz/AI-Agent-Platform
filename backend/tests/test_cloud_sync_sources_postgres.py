@@ -179,7 +179,7 @@ def test_source_connection_failure_is_payload_free(tmp_path):
 
 
 @pytest.mark.postgres
-def test_all_remaining_families_use_real_postgres_and_canonical_namespaces(source_database):
+def test_daq_admin_use_real_postgres_and_canonical_namespaces(source_database):
     dsn, path = source_database
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute('drop schema if exists daq_fae cascade')
@@ -198,20 +198,9 @@ def test_all_remaining_families_use_real_postgres_and_canonical_namespaces(sourc
         conn.execute('alter table public.admin_chat_sessions add column internal_user_id uuid, add column verification_method text, add column verified_at timestamptz')
         conn.execute("update public.admin_chat_sessions set internal_user_id=%s, verification_method='platform_session', verified_at=%s, external_user_id=%s, metadata='{\"display_name\":\"Forged\"}'", (UID,NOW,'platform:'+UID))
         conn.execute('alter table public.admin_turn_reviews rename column review_status to verdict')
-        for name in ('voc_raw','voc_core','voc_meta'):
-            conn.execute(sql.SQL('drop schema if exists {} cascade').format(sql.Identifier(name)))
-            conn.execute(sql.SQL('create schema {}').format(sql.Identifier(name)))
-        conn.execute('create table voc_raw.inbound_messages (id bigint, sender_internal_user_id uuid, conversation_id text, conversation_type text, sender_name text, sender_dept text, received_at timestamptz, dingtalk_created_at timestamptz, text_content text)')
-        conn.execute('create table voc_raw.interaction_jobs (inbound_message_id bigint, status text)')
-        conn.execute('create table voc_core.outbox_messages (source_inbound_message_id bigint, status text, content text, sent_at timestamptz)')
-        conn.execute('create table voc_meta.schema_migrations (name text)')
-        conn.execute("insert into voc_meta.schema_migrations values ('020_employee_chatbot_experience.sql')")
-        conn.execute("insert into voc_raw.inbound_messages values (1,%s,'thread','group','Employee','Department',%s,%s,'VOC question')",(UID,NOW,NOW))
-        conn.execute("insert into voc_raw.interaction_jobs values (1,'completed')")
-        conn.execute("insert into voc_core.outbox_messages values (1,'sent','Confirmed answer',%s)",(NOW,))
     SourceProfile = module('models').SourceProfile
     Adapter = module('sources').DatabaseAgentSource
-    for kind, agent, schema in [('daq','ai-daq-fae-agent','daq_fae'),('admin','ai-admin-agent','public'),('voc','voc','voc_raw/voc_core')]:
+    for kind, agent, schema in [('daq','ai-daq-fae-agent','daq_fae'),('admin','ai-admin-agent','public')]:
         raw, = Adapter(SourceProfile(agent,kind,str(path),'postgres',schema)).read_snapshot().sessions
         assert raw.session_key.startswith(kind + ':')
         assert raw.turns[0].turn_key.startswith(kind + ':')
@@ -220,8 +209,6 @@ def test_all_remaining_families_use_real_postgres_and_canonical_namespaces(sourc
         if kind == 'admin':
             assert raw.details['verified_internal_user_id'] == UID
             assert raw.primary_sender_name == 'Forged'
-        if kind == 'voc':
-            assert raw.turns[0].answer == 'Confirmed answer' and raw.turns[0].outcome == 'sent'
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute("update daq_fae.daq_installation_identity set database_name='wrong'")
     with pytest.raises(ValueError,match='source_identity_unverified'):

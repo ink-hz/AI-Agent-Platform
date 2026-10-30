@@ -209,3 +209,91 @@ silently undoing a staged/rollback config. Verify the resumed worker's per-agent
 health and office publication separately. Full rollback needs no worker restart.
 Keep credentials and encrypted backups for investigation; revoke source worker
 logins only after verifying no source still depends on them.
+
+## Repair an existing VOC receipt observation grant
+
+This operation is separate from publisher cutover and business-service release.
+Use the accepted merged platform release, record its commit/image digest and
+`provision-agent-sync.py` SHA256, and record the actual existing VOC/worker
+release versions. Do not identify the deployed version from a checkout's HEAD.
+Keep the worker stopped while preserving a private catalog/ACL receipt for
+`platform_sync_voc_read`, its memberships, the three VOC data tables and their
+constraints, and every existing outbox policy definition. Preserve the existing
+VOC DSN/identity/encryption keys and previous source-success/publication state.
+Do not record employee bodies or credentials in normal deployment logs.
+
+The reviewed role installer owns exactly one additional policy:
+
+```sql
+CREATE POLICY platform_sync_outbox_select_policy
+ON voc_core.outbox_messages FOR SELECT TO platform_sync_voc_read
+USING (source_inbound_message_id IS NOT NULL);
+```
+
+It runs in the existing role/ACL transaction. Repeated installation coordinates
+only this named permissive SELECT policy; a same-name policy with another command
+or restrictive type aborts the transaction. Actor INSERT and employee SELECT
+policies and other roles' grants remain unchanged. The role retains precisely
+`source_inbound_message_id,status,content,sent_at` SELECT on outbox, no table-wide
+SELECT, no writes, no membership, and NOBYPASSRLS. Unlinked notifications remain
+outside its observation domain; they cannot become conversation turns.
+
+For an existing installation use the VOC-only helper as host root:
+
+```sh
+python3 deploy/cloud/provision-agent-sync.py repair-voc-observation
+```
+
+This requires the existing private `voc-database-url` (0600, owned10001 in its
+0700 directory), reuses its exact password and reconciles only the VOC login and
+its owned policy. It creates no private files, rotates no unrelated credential,
+does not provision other sources/replica roles, and changes no publisher. A
+missing/unsafe credential fails closed. Do not run the all-source `provision`
+command just to repair this observation grant.
+
+Before resuming, use authorized owner **readonly** catalog/aggregate inspection
+and a separate actual reader connection to compare the linked receipt domain,
+including sent/pending/failed, at explicitly recorded times. Confirm inbound PK,
+job unique/FK and outbox unique/FK are valid, immediate and match the inbound ID;
+compare linked count with distinct inbound count, and orphan/duplicate counts.
+Do not require reader outbox count to equal all outbox rows: unlinked rows are
+intentionally excluded. No SQL with a source administrator may stand in for the
+reader. Employee isolation and forbidden writes are local disposable-PG tests;
+do not issue production business writes for acceptance.
+
+Release the matching worker adapter before its next ordinary VOC-only cycle.
+The adapter checks the real role/column grants, table/RLS state, precise applicable
+SELECT policy and actual valid constraints within its repeatable-read/read-only
+snapshot. Zero-row allowlisted reads hold ACCESS SHARE against policy/constraint
+DDL through the business read, permit ordinary producer writes, and retain the
+existing read budget. Additional applicable SELECT/ALL policies (including
+PUBLIC or restrictive policies), changed predicates, membership/bypass/ownership
+or changed one-to-one constraints fail closed as `source_visibility_unverified`.
+Do not grant table SELECT to obtain an explicit LOCK and do not disable RLS.
+
+Run only the already authorized VOC source through `config-voc.json`; preserve
+stable keys and the current publisher instance. Confirm the normal snapshot
+updates existing encrypted rows in place, that source and replica input totals
+match, and that confirmed sent counts match only the linked sent domain. Done
+jobs with no receipt remain unknown; pending/failed receipts remain pending/failed.
+A failed observation must leave encrypted payloads and success/publication
+watermarks intact, persist the source error/failure time and make health fail.
+Local acceptance is not production acceptance. Record production checks separately.
+
+For rollback stop the worker first and retain failure evidence. If this release
+created the policy, execute only the following reviewed DDL as the controlled
+source owner (stdin, transaction, no credential output):
+
+```sql
+BEGIN;
+DROP POLICY platform_sync_outbox_select_policy ON voc_core.outbox_messages;
+COMMIT;
+```
+
+If the policy already existed, restore only its saved definition instead of
+assuming it was absent. Never drop actor/employee policies, change RLS settings,
+restore an entire source database or delete replica payloads. Keep VOC polling
+stopped after policy rollback: the new reader correctly rejects missing
+observation capability. Do not resume an older unchecked reader and publish
+invisible receipts as a fresh successful snapshot. Publisher rollback, if needed,
+remains the separate controlled operation above.

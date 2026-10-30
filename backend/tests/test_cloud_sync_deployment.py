@@ -225,3 +225,27 @@ def test_generated_source_role_sql_reconciles_real_column_privileges(observabili
             worker.execute(sql.SQL("update {} set {}='forbidden'").format(source_table, sql.Identifier(columns[0])))
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             worker.execute(sql.SQL('delete from {}').format(source_table))
+
+
+def test_voc_only_repair_reuses_existing_credentials_and_never_touches_other_sources(tmp_path):
+    tool = provisioner()
+    private = tmp_path / 'private'
+    private.mkdir(mode=0o700)
+    credential = private / 'voc-database-url'
+    credential.write_text('postgresql://platform_sync_voc_read:existing_password@orbbec-voc-postgres-1:5432/orbbec_voc\n')
+    credential.chmod(0o600)
+    before = credential.read_bytes()
+    calls = []
+    def run(argv, **kwargs):
+        calls.append((argv,kwargs))
+        return subprocess.CompletedProcess(argv,0,stdout=b'',stderr=b'')
+    tool.repair_voc_observation(private,runner=run,uid=os.getuid())
+    assert credential.read_bytes() == before
+    assert list(private.iterdir()) == [credential]
+    assert len(calls) == 1
+    assert calls[0][0][-4:] == ['-U','postgres','-d','orbbec_voc']
+    assert calls[0][1]['input'].decode() == tool.source_role_sql('voc','existing_password')
+    credential.unlink()
+    with pytest.raises(tool.ProvisionError,match='cloud_sync_private_file_invalid'):
+        tool.repair_voc_observation(private,runner=lambda *a,**k:pytest.fail('must not provision'),uid=os.getuid())
+    assert not list(private.iterdir())

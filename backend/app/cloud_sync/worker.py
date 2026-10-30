@@ -79,6 +79,7 @@ class CloudSyncWorker:
                     "source_credentials_invalid", "source_identity_unverified", "source_schema_unverified",
                     "source_time_limit", "source_row_limit", "source_body_limit", "source_row_invalid",
                     "source_timestamp_invalid", "source_duplicate_row", "source_snapshot_incomplete",
+                    "source_visibility_unverified",
                 }:
                     code = candidate
             recorded = True
