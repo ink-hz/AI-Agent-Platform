@@ -1,5 +1,9 @@
 """Pure projection: a single UTC instant supplies every reporting window."""
+import asyncio
+from bisect import bisect_left
 from collections import Counter
+
+from .budget import SharedWork
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -25,7 +29,31 @@ def empty_counts(status='unavailable', reason='source_unavailable'):
     return Counts(**{name: metric(name, status=status, reason=reason) for name in DEFINITIONS})
 
 
-def usage_for(items, evidence, start, end, *, delivery_supported=False, applicable=True):
+class UsageIndex:
+    """One numeric input index per response source, shared by every window."""
+    def __init__(self, items):
+        rows = [(turn.at, index, turn) for index, item in enumerate(items) for turn in item.turns]
+        rows.sort(key=lambda row: row[0])
+        self.times = [row[0] for row in rows]
+        self.sessions = [row[1] for row in rows]
+        self.answered, self.delivered = [0], [0]
+        self.proxy = False
+        self.outcomes = Counter()
+        for _, _, turn in rows:
+            self.answered.append(self.answered[-1]+turn.answered)
+            self.delivered.append(self.delivered[-1]+turn.delivered)
+            self.proxy |= turn.input_time_basis == 'record_created_at'
+            if turn.outcome is not None:
+                self.outcomes[turn.outcome] += 1
+        self.retained = (len(items), len(rows), self.answered[-1], self.delivered[-1])
+
+    def window(self, start, end):
+        left, right = bisect_left(self.times, start), bisect_left(self.times, end)
+        return (len(set(self.sessions[left:right])), right-left,
+            self.answered[right]-self.answered[left], self.delivered[right]-self.delivered[left])
+
+
+def usage_for(items, evidence, start, end, *, delivery_supported=False, applicable=True, index=None):
     if not applicable:
         return Usage(retained=empty_counts('not_applicable', 'workspace_not_conversational'),
             window=empty_counts('not_applicable', 'workspace_not_conversational'))
@@ -34,23 +62,16 @@ def usage_for(items, evidence, start, end, *, delivery_supported=False, applicab
             window=empty_counts(reason=evidence.error or 'source_unavailable'))
     status = 'observed' if evidence.complete and evidence.status == 'fresh' else 'partial'
     reason = None if status == 'observed' else evidence.error or 'source_partial'
-    # Incomplete absence cannot establish an empty source.
     if not items and not evidence.complete:
         return Usage(retained=empty_counts(reason=reason), window=empty_counts(reason=reason))
-    all_turns = [turn for item in items for turn in item.turns]
-    selected = [turn for turn in all_turns if start <= turn.at < end]
-    proxy = any(turn.input_time_basis == 'record_created_at' for turn in all_turns)
-    def counts(turns, sessions, *, window=False):
-        count_status = 'partial' if window and proxy else status
-        count_reason = reason or ('input_time_proxy' if window and proxy else None)
-        values = {'sessions': sessions, 'turns': len(turns), 'answered_turns': sum(t.answered for t in turns),
-                  'deliveries': sum(t.delivered for t in turns)}
+    index = index if index is not None else UsageIndex(items)
+    def counts(values, *, window=False):
+        count_status = 'partial' if window and index.proxy else status
+        count_reason = reason or ('input_time_proxy' if window and index.proxy else None)
         return Counts(**{name: metric(name, value, count_status, count_reason) if name != 'deliveries' or delivery_supported
-            else metric(name, reason='delivery_not_proven') for name, value in values.items()})
-    return Usage(retained=counts(all_turns, len(items)),
-        window=counts(selected, sum(any(start <= turn.at < end for turn in item.turns) for item in items),window=True),
-        last_activity_at=max((turn.at for turn in all_turns), default=None),
-        outcome_counts=dict(Counter(t.outcome for t in all_turns if t.outcome is not None)))
+            else metric(name, reason='delivery_not_proven') for name, value in zip(DEFINITIONS, values)})
+    return Usage(retained=counts(index.retained), window=counts(index.window(start, end), window=True),
+        last_activity_at=index.times[-1] if index.times else None, outcome_counts=dict(index.outcomes))
 
 
 def sum_counts(values):
@@ -64,9 +85,10 @@ def sum_counts(values):
     return Counts(**fields)
 
 
-def active_agents_for(sources, start, end):
+def active_agents_for(sources, start, end, *, indexes=None):
     # Reuse the exact cohort selection and coverage/clock precision rules.
-    metrics = [usage_for(data.contributions,data.evidence,start,end).window.turns for data in sources]
+    metrics = [usage_for(data.contributions,data.evidence,start,end,
+        index=indexes[id(data)][1] if indexes is not None and id(data) in indexes else None).window.turns for data in sources]
     known = [value for value in metrics if value.value is not None]
     complete = len(known) == len(metrics) and all(value.status == 'observed' for value in metrics)
     return Metric(value=sum(value.value > 0 for value in known) if known else None, unit='agent',
@@ -79,25 +101,45 @@ class DashboardService:
     def __init__(self, *, replica=None, hr=None, clock=lambda: datetime.now(UTC), catalog=None):
         self.replica, self.hr, self.clock = replica, hr, clock
         self.catalog = catalog or load_agent_catalog()
+        self._replica_work, self._hr_work = SharedWork(), SharedWork()
 
-    def overview(self, days=7, *, now=None, health=None):
+    async def sources(self, now, deadline):
+        async def read(reader, work):
+            try:
+                return await work.read(lambda: reader.snapshot(now, deadline=deadline), deadline)
+            except Exception:
+                return reader.failure(now)
+        jobs = [read(reader, work) if reader else asyncio.sleep(0, result=None)
+                for reader, work in ((self.replica, self._replica_work), (self.hr, self._hr_work))]
+        replica, hr = await asyncio.gather(*jobs)
+        result = dict(replica or {})
+        if hr:
+            result['hr-bot'] = hr
+        return result
+
+    def overview(self, days=7, *, now=None, health=None, sources=None):
         if days not in {7, 30}:
             raise ValueError('days_invalid')
         now = now or self.clock()
         start = (now.astimezone(SHANGHAI).replace(hour=0, minute=0, second=0, microsecond=0)
                  - timedelta(days=days-1)).astimezone(UTC)
-        sources = dict(self.replica.snapshot(now)) if self.replica else {}
-        if self.hr:
-            sources['hr-bot'] = self.hr.snapshot(now)
+        if sources is None:
+            sources = dict(self.replica.snapshot(now)) if self.replica else {}
+            if self.hr:
+                sources['hr-bot'] = self.hr.snapshot(now)
         health = health or {}
         current, channels = [], []
         usages = {}
+        indexes = {}
         def source(key, family, channel=None):
             return sources.get(key, SourceData(SourceEvidence(source_id=key, source_kind=family,
                 channel=channel, checked_at=now, error='source_not_configured')))
         def use(data, a, b, applicable=True):
+            if applicable and id(data) not in indexes:
+                indexes[id(data)] = (data, UsageIndex(data.contributions))
             return usage_for(data.contributions, data.evidence, a, b,
-                delivery_supported=data.evidence.source_kind == 'voc', applicable=applicable)
+                delivery_supported=data.evidence.source_kind == 'voc', applicable=applicable,
+                index=indexes[id(data)][1] if applicable else None)
         for card in self.catalog:
             entry = web_entry_for(card.agent_id)
             if entry:
@@ -137,7 +179,7 @@ class DashboardService:
                 configured_agents=len({card.agent_id for card in self.catalog}), channel_agents=len(channels), legacy_streams=len(legacy_rows)),
             applications=current, channel_agents=channels, legacy_streams=legacy_rows,
             summary=Summary(usage=summary_usage, covered_sources=coverage, expected_sources=len(usages),
-                active_agents_15m=active_agents_for(usages.values(),now-timedelta(minutes=15),now),
+                active_agents_15m=active_agents_for(usages.values(),now-timedelta(minutes=15),now,indexes=indexes),
                 status='complete' if coverage == len(usages) else 'partial' if coverage else 'unavailable'),
             trend=trend, last_24h=sum_counts([use(data, now-timedelta(hours=24), now).window for data in usages.values()]),
             ranking=sorted([Ranking(application_id=a.id, turns=a.usage.window.turns) for a in current

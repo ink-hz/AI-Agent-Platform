@@ -6,6 +6,7 @@ from time import monotonic
 import psycopg
 from psycopg.rows import dict_row
 
+from .budget import SOURCE_SECONDS, DeadlineConnection, remaining
 from .models import Metric, SourceEvidence
 from .repository import Contribution, SourceData, Turn
 
@@ -17,28 +18,43 @@ class HrMetadataReader:
         self._lock, self._expires, self._cached = Lock(), 0, None
         self.stats = {'queries': 0, 'decrypts': 0}
 
-    def snapshot(self, now):
-        with self._lock:
+    def failure(self, now):
+        cached = self._cached
+        if cached:
+            return SourceData(cached.evidence.model_copy(update={'status': 'stale',
+                'checked_at': now, 'error': 'hr_metadata_unavailable'}), cached.contributions,
+                {key: value.model_copy(update={'status': 'partial', 'reason': 'hr_metadata_unavailable'})
+                 if value.value is not None else value for key, value in cached.business.items()})
+        return SourceData(SourceEvidence(source_id='native-hr', source_kind='hr',
+            checked_at=now, error='hr_metadata_unavailable'))
+
+    def snapshot(self, now, *, deadline=None):
+        deadline = deadline if deadline is not None else monotonic()+SOURCE_SECONDS
+        try:
+            acquired = self._lock.acquire(timeout=remaining(deadline))
+        except TimeoutError:
+            acquired = False
+        if not acquired:
+            return self.failure(now)
+        try:
             if self._cached and self.timer() < self._expires:
                 return self._cached
             try:
-                data = self._read(now)
+                data = self._read(now, deadline)
+                remaining(deadline)
             except Exception:
-                if self._cached:
-                    data = SourceData(self._cached.evidence.model_copy(update={'status': 'stale',
-                        'checked_at': now, 'error': 'hr_metadata_unavailable'}), self._cached.contributions,
-                        {key: value.model_copy(update={'status': 'partial', 'reason': 'hr_metadata_unavailable'})
-                         if value.value is not None else value for key, value in self._cached.business.items()})
-                else:
-                    data = SourceData(SourceEvidence(source_id='native-hr', source_kind='hr',
-                        checked_at=now, error='hr_metadata_unavailable'))
+                data = self.failure(now)
             self._cached, self._expires = data, self.timer()+self.ttl
             return data
+        finally:
+            self._lock.release()
 
-    def _read(self, now):
+    def _read(self, now, deadline):
         with self._connect(self._database_url, connect_timeout=3,
-                options='-c default_transaction_read_only=on -c statement_timeout=5000', row_factory=dict_row) as c:
-            c.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+                options='-c default_transaction_read_only=on -c statement_timeout=5000', row_factory=dict_row) as raw:
+            remaining(deadline)
+            raw.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            c = DeadlineConnection(raw, deadline)
             role = c.execute('select current_user as role').fetchone()['role']
             threads = c.execute('select thread_id,created_at from platform_hr_agent.threads order by thread_id limit 10001').fetchall()
             if len(threads) > 10_000:
@@ -56,6 +72,7 @@ class HrMetadataReader:
             self.stats['queries'] += 5
         turns = defaultdict(list)
         for row in rows:
+            remaining(deadline)
             turns[row['thread_id']].append(Turn(row['created_at'], int(row['answered']), 0, None, 'inputs_created_at'))
         items = tuple(Contribution(str(t['thread_id']), 'hr-bot','hr',None,t['created_at'],
             max((turn.at for turn in turns[t['thread_id']]),default=t['created_at']),tuple(turns[t['thread_id']])) for t in threads)

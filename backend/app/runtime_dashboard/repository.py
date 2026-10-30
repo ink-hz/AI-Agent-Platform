@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from threading import Lock
 from time import monotonic
 
+from .budget import SOURCE_SECONDS, DeadlineConnection, remaining
 from .models import SourceEvidence
 
 
@@ -103,30 +104,44 @@ class ReplicaDashboardReader:
         self._expires = 0
         self.stats = {'metadata_reads': 0, 'payload_reads': 0, 'decrypts': 0, 'refreshes': 0}
 
-    def snapshot(self, now):
-        with self._lock:
+    def failure(self, now, error=None):
+        code = 'replica_limit_exceeded' if isinstance(error, OverflowError) else 'replica_unavailable'
+        result = {key: SourceData(value.evidence.model_copy(update={
+            'status': 'stale', 'checked_at': now, 'error': code}), value.contributions)
+            for key, value in self._sources.items()}
+        for key, (family, channels) in DIRECT.items():
+            channel = channels[0] if len(channels) == 1 else None
+            result.setdefault(key, SourceData(SourceEvidence(source_id=key, source_kind=family,
+                channel=channel, checked_at=now, error=code)))
+        return result
+
+    def snapshot(self, now, *, deadline=None):
+        deadline = deadline if deadline is not None else monotonic()+SOURCE_SECONDS
+        try:
+            acquired = self._lock.acquire(timeout=remaining(deadline))
+        except TimeoutError:
+            acquired = False
+        if not acquired:
+            return self.failure(now)
+        try:
             if self.timer() < self._expires:
                 return self._sources
             try:
-                result = self._refresh(now)
+                result = self._refresh(now, deadline)
             except Exception as error:
-                code = 'replica_limit_exceeded' if isinstance(error, OverflowError) else 'replica_unavailable'
-                result = {key: SourceData(value.evidence.model_copy(update={
-                    'status': 'stale', 'checked_at': now, 'error': code}), value.contributions)
-                    for key, value in self._sources.items()}
-                for key, (family, channels) in DIRECT.items():
-                    channel = channels[0] if len(channels) == 1 else None
-                    result.setdefault(key, SourceData(SourceEvidence(source_id=key, source_kind=family,
-                        channel=channel, checked_at=now, error=code)))
+                result = self.failure(now, error)
             self._sources = result
             self._expires = self.timer() + self.ttl
             return result
+        finally:
+            self._lock.release()
 
-    def _refresh(self, now):
+    def _refresh(self, now, deadline):
         repo = self.repository
-        with repo._connection() as connection:
-            connection.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
-            connection.execute("SET LOCAL statement_timeout = '5s'")
+        with repo._connection() as raw:
+            remaining(deadline)
+            raw.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+            connection = DeadlineConnection(raw, deadline)
             role = connection.execute('select current_user as role').fetchone()['role']
             rows = connection.execute('''select session_key, payload_sha256, agent_id, source_kind,
                 channel, created_at, last_active_at from platform_replica.sessions order by session_key limit %s''',
@@ -147,11 +162,13 @@ class ReplicaDashboardReader:
             for offset in range(0, len(changed), 100):
                 for row in connection.execute(f'select {_SESSION_COLUMNS} from platform_replica.sessions where session_key = any(%s)',
                         (changed[offset:offset+100],)).fetchall():
+                    remaining(deadline)
                     self.stats['payload_reads'] += 1
                     self.stats['decrypts'] += 1
                     try:
                         payloads[row['session_key']] = (representation_fingerprint(row), contribution(repo._decrypt(row)))
                     except Exception:
+                        remaining(deadline)
                         payloads[row['session_key']] = None
         groups = {key: [] for key in set(DIRECT) | set(self._sources)}
         for aid, state in states.items():
@@ -161,6 +178,7 @@ class ReplicaDashboardReader:
         failed = set()
         updated = {}
         for row in rows:
+            remaining(deadline)
             # An identity drift must also invalidate the last verified owner,
             # including when the new metadata no longer maps to a known source.
             previous = self._cached.get(row['session_key'])
@@ -216,6 +234,7 @@ class ReplicaDashboardReader:
                 result[key] = SourceData(evidence, tuple(items))
         if len(updated) > self.max_sessions:
             raise OverflowError
+        remaining(deadline)
         self._cached = updated
         self.stats['refreshes'] += 1
         return result

@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from pydantic import AwareDatetime, Field
 
+from time import monotonic
+from .budget import SharedWork, SOURCE_SECONDS, remaining
 from .models import Model, RuntimeEvidence, Deployment, HealthObservation
 
 HOST_IDS = ('hr-bot', 'ai-admin-agent')
@@ -91,20 +93,53 @@ class HealthReader:
         self._lock = asyncio.Lock()
         self._expires = 0
         self._cached = {}
+        self._flight = None
+        self._host_work = SharedWork()
         from urllib.parse import urlsplit
         for key, url in self.urls.items():
             parsed = urlsplit(url)
             if key not in {'ai-fae-agent','ai-daq-fae-agent'} or parsed.scheme not in {'http','https'} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path != '/health':
                 raise ValueError('trusted_health_url_invalid')
 
-    async def read(self, now):
+    async def read(self, now, *, deadline=None):
+        import asyncio
+        deadline = deadline if deadline is not None else monotonic()+SOURCE_SECONDS
+        if self._flight is None or self._flight.done():
+            self._flight = asyncio.create_task(self._read(now, deadline))
+            self._flight.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+        try:
+            async with asyncio.timeout(remaining(deadline)):
+                return await asyncio.shield(self._flight)
+        except Exception:
+            values = dict(self._cached)
+            for key in (*HOST_IDS, 'ai-fae-agent', 'ai-daq-fae-agent', 'voc'):
+                if key in HOST_IDS or key not in values or monotonic() >= self._expires:
+                    values[key] = self._failure(key, now)
+            return values
+
+    def _failure(self, key, now):
+        previous = self._cached.get(key)
+        return HealthObservation(runtime=RuntimeEvidence(checked_at=now,
+            observed_at=previous.runtime.observed_at if previous else None,
+            stale=bool(previous and previous.runtime.observed_at),
+            method='host_loopback' if key in HOST_IDS else 'safe_http', error='health_unavailable'),
+            **({'deployment': previous.deployment} if previous else {}))
+
+    async def _host(self, now, deadline):
+        try:
+            return await self._host_work.read(lambda: self.host.read(now), deadline)
+        except Exception:
+            return {key: self._failure(key, now) for key in HOST_IDS}
+
+    async def _read(self, now, deadline):
         import asyncio
         from time import monotonic
         async with self._lock:
+            host_task = asyncio.create_task(self._host(now, deadline))
             if monotonic() < self._expires:
                 # File freshness is checked on every read, including the 90s boundary.
                 values = dict(self._cached)
-                values.update(await asyncio.to_thread(self.host.read,now))
+                values.update(await host_task)
                 return values
             async def probe(key):
                 runtime = RuntimeEvidence(coverage='not_configured', checked_at=now,
@@ -112,7 +147,7 @@ class HealthReader:
                 if key not in self.urls and not (key == 'voc' and self.voc_client):
                     return key, HealthObservation(runtime=runtime)
                 try:
-                    async with asyncio.timeout(3):
+                    async with asyncio.timeout(min(3, remaining(deadline))):
                         if key == 'voc':
                             response = await self.voc_client.health()
                             status = response.status_code
@@ -137,10 +172,11 @@ class HealthReader:
                             runtime = RuntimeEvidence(coverage='observed' if status >= 500 else 'not_observed',state='degraded' if status >= 500 else 'unknown',
                                 observed_at=now,checked_at=now,method='safe_http',error='health_http_error')
                 except Exception:
-                    runtime = RuntimeEvidence(coverage='not_observed',state='unknown',observed_at=None,
-                        checked_at=now,method='safe_http',error='health_unavailable')
+                    return key, self._failure(key, now)
                 return key, HealthObservation(runtime=runtime)
             values = dict(await asyncio.gather(*(probe(key) for key in ('ai-fae-agent','ai-daq-fae-agent','voc'))))
-            values.update(await asyncio.to_thread(self.host.read,now))
+            # Commit remote evidence before waiting for the independent host file.
             self._cached, self._expires = values, monotonic()+self.ttl
+            values = dict(values)
+            values.update(await host_task)
             return values

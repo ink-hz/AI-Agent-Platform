@@ -1,11 +1,14 @@
 """Manager-only metadata views; use grants are always evaluated independently."""
 import asyncio
+from time import monotonic
+
+from .budget import ActorWork, REQUEST_SECONDS, SOURCE_SECONDS
+from .workspaces import SdkSummaryReader
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
-from app.agent_brain.authorization import AgentUseAuthorizationUnavailable
 from app.agent_catalog.web_entries import web_entry_for
 from app.control_plane.models import AuthContext, Role
 from .models import DashboardOverview
@@ -39,21 +42,24 @@ def require_manager(request):
     return actor
 
 
-def build_dashboard_router(service, authorization, *, health=None, workspace_summaries=True, route_prefix=''):
+def build_dashboard_router(service, authorization, *, health=None, workspace_summaries=True, route_prefix='', actor_limit=8):
     router = APIRouter(prefix='/api/dashboard',tags=['runtime-dashboard'],route_class=PrivateRoute)
-    async def permitted(actor):
+    actor_work = ActorWork(actor_limit)
+    sdk_reader = SdkSummaryReader(actors=actor_work)
+    async def permitted(actor, deadline):
         if authorization is None:
             raise HTTPException(503,'agent_authorization_unavailable')
         try:
-            cards = await asyncio.to_thread(authorization.permitted_catalog_for_user_id,actor.internal_user_id)
+            cards = await actor_work.read(('catalog', actor.internal_user_id),
+                lambda: authorization.permitted_catalog_for_user_id(actor.internal_user_id), deadline)
             return {card.agent_id for card in cards}
-        except AgentUseAuthorizationUnavailable:
+        except Exception:
             raise HTTPException(503,'agent_authorization_unavailable') from None
 
     @router.get('/catalog')
     async def catalog(request:Request):
         actor = require_manager(request)
-        allowed = await permitted(actor)
+        allowed = await permitted(actor, monotonic()+REQUEST_SECONDS)
         return {'agents':[{**card.model_dump(mode='json'),'can_use':card.agent_id in allowed,
             'dispatchable':card.dispatchable,'web_entry':web_entry_for(card.agent_id)} for card in service.catalog]}
 
@@ -62,15 +68,38 @@ def build_dashboard_router(service, authorization, *, health=None, workspace_sum
         if days not in {7,30}:
             raise HTTPException(422,'dashboard_query_invalid')
         actor = require_manager(request)
-        allowed = await permitted(actor)
+        deadline = monotonic()+REQUEST_SECONDS
+        source_deadline = min(deadline-.2, monotonic()+SOURCE_SECONDS)
         now = service.clock()
-        observations = await health.read(now) if health else {}
-        result = await asyncio.to_thread(service.overview,days,now=now,health=observations)
-        workspaces = {a.id:a for a in result.applications if a.kind == 'workspace'}
+        # Private scratch objects permit business reads to run independently of
+        # the global numeric projection. No task may mutate the final response.
+        scratch = service.overview(days, now=now, sources={})
+        by_id = {app.id: app for app in scratch.applications}
+        jobs = [asyncio.create_task(permitted(actor, source_deadline)),
+            asyncio.create_task(service.sources(now, source_deadline)),
+            asyncio.create_task(health.read(now, deadline=source_deadline) if health else asyncio.sleep(0, result={}))]
         if workspace_summaries:
-            await asyncio.gather(sdk_summary(request,workspaces['sdk'],now),
-                manufacturing_summary(request,workspaces['manufacturing'],now,route_prefix=route_prefix),
-                voc_business_summary(request,next(a for a in result.applications if a.id == 'voc'),now))
+            jobs.extend([asyncio.create_task(sdk_summary(request, by_id['sdk'], now,
+                    reader=sdk_reader, deadline=source_deadline)),
+                asyncio.create_task(manufacturing_summary(request, by_id['manufacturing'], now,
+                    route_prefix=route_prefix, deadline=source_deadline)),
+                asyncio.create_task(voc_business_summary(request, by_id['voc'], now, deadline=source_deadline))])
+        try:
+            values = await asyncio.gather(*jobs)
+        finally:
+            for job in jobs:
+                if not job.done():
+                    job.cancel()
+            await asyncio.gather(*jobs, return_exceptions=True)
+        allowed, sources, observations = values[:3]
+        result = service.overview(days, now=now, sources=sources, health=observations)
+        if workspace_summaries:
+            for index, app in enumerate(result.applications):
+                if app.kind == 'workspace':
+                    result.applications[index] = by_id[app.id]
+                elif app.id == 'voc':
+                    app.business_metrics.update(by_id['voc'].business_metrics)
+                    app.business_sources.update(by_id['voc'].business_sources)
         for app in result.applications:
             if app.kind == 'agent':
                 app.can_use = app.id in allowed
