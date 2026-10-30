@@ -56,11 +56,27 @@ SourceEvidence含source_id/source_kind/channel、status=fresh|stale|unavailable|
 
 为正式服务配置显式可信健康端点，优先复用现有safe health客户端，HTTP仅固定路径、禁止重定向/凭证外泄、短超时、无业务调用。每应用独立探测、缓存与失败；HR ready采用真实release_sha。缺配置显示未观测，不能用本机localhost猜容器网络。主控发布前核对真实可达地址；不恢复云端SSH/MetaBot poller。
 
+真实网络核验补充：平台容器可达FAE edge8000、DAQ配置health、VOC配置health；FAE/HR/行政公开health为404，HR/行政仅监听127.0.0.1:8012/8011。因此不能靠公开探针、host-gateway或开放监听来补健康。
+
+新增独立宿主回环观测源：标准库collector仅探测固定HR ready和行政health，不执行Agent/SSH/Docker，也不读业务库或秘密。systemd oneshot+30秒timer，DynamicUser与专用StateDirectory，单次限时、无隐藏重试；输出schema_version1、两应用逐条checked_at/state/稳定error/release_sha(仅ready真实报告)，不存健康响应正文或身份字段。原子写入/var/lib/orbbec-platform-runtime/snapshot.json，应用通过专用只读bind目录/run/platform-runtime消费，90秒TTL，未来时间/损坏/缺失逐对象unknown。URL不可来自网页请求，采集器不能访问非回环地址。失败写当次失败观测，不沿用旧healthy假正常。
+
+本源作为独立交付Task3并经真实本地HTTP/文件/过期测试；不会给API Docker socket、宿主SSH凭据或写观测目录的权限。新增只读挂载属于明确发布配置增量，Task5必须对完整原策略做精确白名单比较：仅允许这一条bind新增，所有原挂载/环境/用户/能力/网络/其他服务不变；回滚恢复原完整输入链和原HostConfig。不能用放松通用parity/hash检查来发布。新systemd单元为本任务自有，行政/HR既有单元不改；发布前先核对collector真实输出与目录权限。
+
 SDK复用已校验的SdkAdminRepository catalog与manifest，显示知识文档量/发布证据、说明文档工作台不是聊天服务；不逐页拉禅道、不触发SSO provision。大制造沿用既有access与workflow/dashboard读合同，保留真实账号授权、project_ids和dataset(演示/测试/正式)标记；不得内部伪造owner、跨用户全局缓存项目数据或把就绪当生产验收。能读取的现有业务指标以原单位展示；不适用/缺源/无权限分别表达，不能发明字段或将这两项删出库存。
+
+## Agent目录：最新用户补充（2026-10-30）
+
+用户明确要求目录展示MetaBot+飞书Agent，以反映已开发/配置数量；覆盖之前只显示Web条目的页面裁定，但没有恢复平台内使用入口。目录展示完整且经过授权的注册元数据，独立Web与MetaBot/飞书分组、分项计数；注册/可网页使用/渠道配置与运行监控覆盖分开。HR以现行Web投影优先，不因保留的旧MetaBot适配字段被错误分回旧执行链，同一agent_id不重复计数。
+
+管理者(owner/admin)需要完整目录元数据视图；若现有permitted_catalog仅提供可使用条目，则新增管理目录GET接口，返回非秘密目录元数据及按原use授权计算的can_use，独立Web链接仍需真实use授权。普通成员沿用原按use授权过滤的目录，禁止公开管理库存或越权使用。WebCatalogProvider保留full catalog与filtered applications两个字段，sidebar/panorama仍只消费已授权正式Web入口；MetaBot条目为说明卡，无旧Brain/聊天启动链接。列表数量来自实际去重元数据，不能为显得多而写死或重复计数。
 
 ## 页面
 
 运行中心保留现有路由，顶部为正式应用/Agent数量、实际健康覆盖、当前用户轮次及数据覆盖；提供7/30天切换。近24小时活动、趋势和排名采用同一窗口定义；排名只基于当前Agent，缺数据不参加排序为0。应用区域区分Agent与业务工作台，卡片展示健康/数据状态、源时间、会话/输入/回复/送达单位、业务成果与实际版本证据。历史渠道单独折叠区，明确不计当前总数。数据故障在本源卡片明确呈现，移除未经证据的“暂无严重问题/所有检查正常”。不展示HR原始输入/个人材料。保留现有工程笔记、账号权限、安全记录及会话详情入口。
+
+## Task1独立审查发现的快照边界（实施前纠正）
+
+77939d1b的首次实现214工程测试通过，但独立审查的真实PG交错发现：RR快照在identity查询建立，表锁稍后取得，期间policy DDL可提交；pg_policy旧快照校验与RLS当前syscache应用不同策略，可错误发布complete空关联。原after-proof锁测试未覆盖这一窗口，证据保留，不能把Task1标完成。修复必须使DDL边界与权限证据/实际数据查询一致；可采用在业务快照之前稳定锁边界的能力设计，或VOC单一有界SQL业务快照配合锁后新鲜权限证明，保留独立数据一致性，不要求为了沿用RR实现而扩大列权限。不能靠重试/吞错/伪造回执通过。需要确切复现该前置交错及同次读取中源数据变化的回归，源错误仍先于发布，其他源读契约不退化。
 
 ## 验收与成本
 
