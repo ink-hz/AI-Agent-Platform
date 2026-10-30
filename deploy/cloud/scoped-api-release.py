@@ -191,7 +191,10 @@ def stage(repo, baseline, release, receipt, code_proof, dist, output, static_pro
     assert_release(repo, release)
     command(['git', 'merge-base', '--is-ancestor', baseline, release], cwd=repo)
     api = api_from_receipt(receipt)
-    assert_static_baseline(static_proof, api['image_id'], baseline)
+    static_baseline = static_proof.get('baseline_commit')
+    require(isinstance(static_baseline, str) and bool(SHA.fullmatch(static_baseline)), 'static_baseline_commit')
+    command(['git', 'merge-base', '--is-ancestor', static_baseline, release], cwd=repo)
+    assert_static_baseline(static_proof, api['image_id'], static_baseline)
     changed = command(['git', 'diff', '--no-renames', '--name-status', baseline, release, '--', 'backend/app', *MIGRATIONS], cwd=repo).decode().splitlines()
     proof = {item['path']: item for item in code_proof}
     payload = []
@@ -231,7 +234,7 @@ def stage(repo, baseline, release, receipt, code_proof, dist, output, static_pro
     lines.append('COPY --chown=10001:10001 ["payload/", "/app/backend/"]')
     dockerfile = ('\n'.join(lines) + '\n').encode()
     save(output/'Dockerfile', dockerfile)
-    manifest = {'version': 1, 'baseline_commit': baseline, 'release_sha': release,
+    manifest = {'version': 1, 'baseline_commit': baseline, 'static_baseline_commit': static_baseline, 'release_sha': release,
                 'base_image_id': api['image_id'], 'files': files, 'dockerfile_sha256': digest(dockerfile),
                 'dist_provenance': 'operator_built_from_release_commit; verify before staging'}
     save(output/'manifest.json', manifest)
@@ -247,7 +250,8 @@ def validate_stage(root):
             and bool(IMAGE.fullmatch(manifest['base_image_id'])), 'manifest')
     require(digest(private_read(root/'Dockerfile')) == manifest['dockerfile_sha256'], 'artifact_hash')
     expected = {'Dockerfile', 'manifest.json', 'readiness.json', 'static-baseline.json'}
-    assert_static_baseline(read_json(root/'static-baseline.json'), manifest['base_image_id'], manifest['baseline_commit'])
+    assert_static_baseline(read_json(root/'static-baseline.json'), manifest['base_image_id'],
+                           manifest.get('static_baseline_commit', manifest['baseline_commit']))
     for item in manifest['files']:
         relative = PurePosixPath(item['source'])
         destination = item['destination']

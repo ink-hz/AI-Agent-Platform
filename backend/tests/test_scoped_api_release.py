@@ -194,6 +194,26 @@ def test_stage_rejects_symlink_dist_and_missing_live_code_proof(tmp_path):
     with pytest.raises(h.ReleaseError): h.stage(repo,base,release,receipt,[],dist,tmp_path/'out2',static_proof(receipt,base))
 
 
+def test_stage_tracks_distinct_verified_frontend_and_backend_baselines(tmp_path):
+    h=load();repo=tmp_path/'repo';repo.mkdir()
+    git(repo,'init','-q');git(repo,'config','user.email','test@example.invalid');git(repo,'config','user.name','Test')
+    code=repo/'backend/app/a.py';code.parent.mkdir(parents=True);code.write_text('old')
+    git(repo,'add','.');git(repo,'commit','-qm','backend baseline');base=git(repo,'rev-parse','HEAD')
+    (repo/'frontend-marker').write_text('already deployed independently')
+    git(repo,'add','.');git(repo,'commit','-qm','frontend baseline');front=git(repo,'rev-parse','HEAD')
+    oldhash=h.digest(code.read_bytes());code.write_text('new')
+    migration=repo/'backend/control_migrations/127_agent_session_identity.sql';migration.parent.mkdir(parents=True);migration.write_text('SELECT 1;')
+    git(repo,'add','.');git(repo,'commit','-qm','release');release=git(repo,'rev-parse','HEAD')
+    git(repo,'update-ref','refs/remotes/origin/master',release)
+    dist=tmp_path/'dist';dist.mkdir();(dist/'index.html').write_text('built')
+    receipt={'containers':[{'compose_labels':{'com.docker.compose.service':'platform-api'},'image_id':'sha256:'+'a'*64}]}
+    proof=[{'path':'backend/app/a.py','same_baseline':True,'actual':oldhash,'baseline':oldhash}]
+    manifest=h.stage(repo,base,release,receipt,proof,dist,tmp_path/'out',static_proof(receipt,front))
+    assert manifest['baseline_commit']==base
+    assert manifest['static_baseline_commit']==front
+    h.validate_stage(tmp_path/'out')
+
+
 def test_cli_failure_does_not_echo_secret_or_traceback(tmp_path):
     load(); p=tmp_path/'bad';p.write_text('{"secret":"never-echo"}');p.chmod(0o600)
     result=subprocess.run(['python3',str(MODULE),'inspect-plan','--transaction',str(tmp_path)],text=True,capture_output=True)
