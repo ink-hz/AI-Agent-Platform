@@ -1,0 +1,80 @@
+{
+  "status": "published_and_verified",
+  "implementation_commit": "2f539f59e2140116057626f3a5267055bcf63f69",
+  "release_commit": "c13433f4580a54629626daf9017b642d44bed009",
+  "image": "sha256:048e90d5bba6303fcb68f08f1ba4f69796295a171f1066c51be0d6af5acc687a",
+  "manifest_sha256": "da06d98ce5787c03d4e1be30bcf92fab2f4d50a2637e9912f958ba2ee57e1872",
+  "migration": 127,
+  "old_camera_126_unchanged": true,
+  "runtime": {
+    "status": "verified",
+    "targets": [
+      {
+        "name": "/orbbec-agent-cloud-sync-cloud-agent-sync-1",
+        "id": "8cf7efc060f3c58cd268a90c4ce073a57bcea4ba555e89a01d32dd4b6cf859ce",
+        "image": "sha256:048e90d5bba6303fcb68f08f1ba4f69796295a171f1066c51be0d6af5acc687a",
+        "release": "c13433f4580a54629626daf9017b642d44bed009",
+        "running": true,
+        "health": "healthy",
+        "restarts": 0
+      },
+      {
+        "name": "/orbbec-agent-platform-platform-api-1",
+        "id": "12918fbe2c5fbef2433842f27c23100a411068a2ed13506e87a49c3308ccc3ae",
+        "image": "sha256:048e90d5bba6303fcb68f08f1ba4f69796295a171f1066c51be0d6af5acc687a",
+        "release": "c13433f4580a54629626daf9017b642d44bed009",
+        "running": true,
+        "health": "healthy",
+        "restarts": 0
+      }
+    ],
+    "unchanged_non_target_containers": 33,
+    "native_daq_camera_unchanged": true,
+    "runtime_payload": {
+      "checked": 72,
+      "all_match": true
+    },
+    "locks": {
+      "deploy-input.lock": false,
+      "agent-brain-action.lock": false
+    },
+    "nginx_and_admin_guardrails": true,
+    "production_model_calls": 0
+  },
+  "attribution": {
+    "sessions": 17,
+    "turns": 26,
+    "verified_source_refs": 17,
+    "business_payloads_unchanged": true,
+    "list_detail_turn_identity_consistent": true,
+    "authorization": "existing_active_management_session_db_projection",
+    "browser_test": false,
+    "production_model_calls": 0,
+    "camera_identity_types_checked": [
+      "enterprise_member",
+      "partner_operator"
+    ],
+    "camera_unknown_samples": 1
+  },
+  "source_preservation": {
+    "all_existing_source_rows_unchanged": true,
+    "counts_before": {
+      "chat_sessions": 17,
+      "chat_turns": 26,
+      "turn_feedback": 2,
+      "turn_reviews": 0
+    },
+    "counts_after": {
+      "chat_sessions": 17,
+      "chat_turns": 26,
+      "turn_feedback": 2,
+      "turn_reviews": 0
+    },
+    "turn_identity_conflicts": 0
+  },
+  "public_assets_verified": 234,
+  "sample_session_key": "zxmcvgkeychqpzcdvqjdtluvvgyf2j36ihjugablyjgudaxdyrwa",
+  "model_calls": 0,
+  "rollback_exercised": false,
+  "evidence_private": true
+}
