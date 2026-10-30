@@ -13,6 +13,7 @@ class Turn:
     answered: int
     delivered: int
     outcome: str | None
+    input_time_basis: str = 'record_created_at'
 
 
 @dataclass(frozen=True)
@@ -41,8 +42,13 @@ def contribution(record):
             raise ValueError('duplicate_turn')
         answer = turn.get('answer') or {}
         text = answer.get('text', '') if isinstance(answer, dict) else answer
-        unique[key] = Turn(timestamp(turn['created_at']), int(bool(text and text.strip())),
-            int(record['source_kind'] == 'voc' and turn.get('outcome') == 'sent'), turn.get('outcome'))
+        question_at = turn.get('question_at')
+        # Only genuine absence permits the declared record-time proxy. Invalid
+        # supplied timestamps fail the source rather than silently moving input.
+        basis = 'question_at' if question_at is not None else 'record_created_at'
+        unique[key] = Turn(timestamp(question_at if question_at is not None else turn['created_at']),
+            int(bool(text and text.strip())),
+            int(record['source_kind'] == 'voc' and turn.get('outcome') == 'sent'), turn.get('outcome'), basis)
     return Contribution(record['key'], record['agent_id'], record['source_kind'], record['channel'],
         timestamp(record['created_at']), timestamp(record['last_active_at']), tuple(unique.values()))
 
@@ -52,6 +58,15 @@ class SourceData:
     evidence: SourceEvidence
     contributions: tuple[Contribution, ...] = ()
     business: dict = field(default_factory=dict)
+
+
+def input_clock_evidence(items, *, complete):
+    if not items and not complete:
+        return {'input_time_basis': None, 'missing_question_time_records': None}
+    turns = [turn for item in items for turn in item.turns]
+    bases = {turn.input_time_basis for turn in turns}
+    return {'input_time_basis': next(iter(bases)) if len(bases) == 1 else 'mixed' if bases else None,
+        'missing_question_time_records': sum(turn.input_time_basis == 'record_created_at' for turn in turns)}
 
 
 # Authoritative agent/family ownership selects the service; retain actual channels.
@@ -182,13 +197,15 @@ class ReplicaDashboardReader:
                 status='stale' if stale else 'fresh', complete=bool(complete and not mismatch), observed_at=observed,
                 published_at=state.get('last_published_at'), checked_at=now,
                 error=error or ('source_completeness_unknown' if not complete else None), reader_role=role,
-                channels=sorted({item.channel for item in items},key=lambda c:c or ''))
+                channels=sorted({item.channel for item in items},key=lambda c:c or ''),
+                **input_clock_evidence(items,complete=bool(complete and not mismatch)))
             previous = self._sources.get(key)
             if key in failed or (previous is not None and not evidence.complete):
                 failure_code = 'replica_payload_invalid' if key in failed else evidence.error
                 result[key] = SourceData((previous.evidence if previous else evidence).model_copy(update={
                     'status': 'stale' if previous else 'unavailable', 'complete': False,
-                    'checked_at': now, 'error': failure_code}),
+                    'checked_at': now, 'error': failure_code,
+                    **({} if previous else {'input_time_basis': None, 'missing_question_time_records': None})}),
                     previous.contributions if previous else ())
                 updated = {k: v for k, v in updated.items() if source_key(v[1].agent_id, v[1].source_kind, v[1].channel) != key}
                 updated.update({k: v for k, v in self._cached.items() if source_key(v[1].agent_id, v[1].source_kind, v[1].channel) == key})

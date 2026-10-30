@@ -28,38 +28,45 @@
     "unknown": 3,
     "observed_runtime": 2,
     "expected_runtime": 5,
-    "covered_sources": 1,
+    "covered_sources": 2,
     "expected_sources": 5,
     "status": "partial",
     "usage": {
       "sessions": {
-        "value": 1,
+        "value": 2,
         "status": "partial",
         "unit": "session",
         "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
         "reason": "source_coverage_partial"
       },
       "turns": {
-        "value": 2,
+        "value": 3,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 2,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 1,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
+    },
+    "active_agents_15m": {
+      "value": 1,
+      "status": "partial",
+      "unit": "agent",
+      "definition": "近15分钟有用户输入的独立Agent服务数；按输入时间半开窗口，缺提问时间使用record.created_at代理；缺源仅计已知范围",
+      "reason": "source_coverage_or_input_time_partial"
     }
   },
   "applications": [
@@ -90,7 +97,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -105,21 +114,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -135,21 +144,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -194,7 +203,9 @@
           "dingtalk"
         ],
         "permission_scope": "platform_management",
-        "reader_role": "platform_replica_read"
+        "reader_role": "platform_replica_read",
+        "input_time_basis": "question_at",
+        "missing_question_time_records": 0
       },
       "usage": {
         "retained": {
@@ -209,21 +220,21 @@
             "value": 2,
             "status": "observed",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": null
           },
           "answered_turns": {
             "value": 2,
             "status": "observed",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": null
           },
           "deliveries": {
             "value": 1,
             "status": "observed",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": null
           }
         },
@@ -239,21 +250,21 @@
             "value": 2,
             "status": "observed",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": null
           },
           "answered_turns": {
             "value": 2,
             "status": "observed",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": null
           },
           "deliveries": {
             "value": 1,
             "status": "observed",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": null
           }
         },
@@ -285,7 +296,9 @@
           "error": null,
           "channels": [],
           "permission_scope": "current_actor_voc_management",
-          "reader_role": null
+          "reader_role": null,
+          "input_time_basis": null,
+          "missing_question_time_records": null
         }
       },
       "deployment": {
@@ -322,7 +335,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -337,21 +352,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -367,21 +382,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -424,7 +439,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -439,21 +456,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -469,21 +486,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -518,78 +535,82 @@
         "source_id": "ai-daq-fae-agent",
         "source_kind": "fae",
         "channel": "fae",
-        "status": "unavailable",
-        "observed_at": null,
+        "status": "fresh",
+        "observed_at": "2026-10-30T02:00:00Z",
         "published_at": null,
         "checked_at": "2026-10-30T02:00:00Z",
-        "complete": false,
-        "error": "source_not_configured",
-        "channels": [],
+        "complete": true,
+        "error": null,
+        "channels": [
+          "fae"
+        ],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": "record_created_at",
+        "missing_question_time_records": 1
       },
       "usage": {
         "retained": {
           "sessions": {
-            "value": null,
-            "status": "unavailable",
+            "value": 1,
+            "status": "observed",
             "unit": "session",
             "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
-            "reason": "source_not_configured"
+            "reason": null
           },
           "turns": {
-            "value": null,
-            "status": "unavailable",
+            "value": 1,
+            "status": "observed",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
-            "reason": "source_not_configured"
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
+            "reason": null
           },
           "answered_turns": {
-            "value": null,
-            "status": "unavailable",
+            "value": 0,
+            "status": "observed",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
-            "reason": "source_not_configured"
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
+            "reason": null
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
-            "reason": "source_not_configured"
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
+            "reason": "delivery_not_proven"
           }
         },
         "window": {
           "sessions": {
-            "value": null,
-            "status": "unavailable",
+            "value": 1,
+            "status": "partial",
             "unit": "session",
             "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
-            "reason": "source_not_configured"
+            "reason": "input_time_proxy"
           },
           "turns": {
-            "value": null,
-            "status": "unavailable",
+            "value": 1,
+            "status": "partial",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
-            "reason": "source_not_configured"
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
+            "reason": "input_time_proxy"
           },
           "answered_turns": {
-            "value": null,
-            "status": "unavailable",
+            "value": 0,
+            "status": "partial",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
-            "reason": "source_not_configured"
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
+            "reason": "input_time_proxy"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
-            "reason": "source_not_configured"
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
+            "reason": "delivery_not_proven"
           }
         },
-        "last_activity_at": null,
+        "last_activity_at": "2026-10-30T01:40:00Z",
         "outcome_counts": {}
       },
       "business_metrics": {},
@@ -628,7 +649,9 @@
         "error": null,
         "channels": [],
         "permission_scope": "business_scope",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -643,21 +666,21 @@
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "workspace_not_conversational"
           },
           "answered_turns": {
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "workspace_not_conversational"
           },
           "deliveries": {
             "value": null,
             "status": "not_applicable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "workspace_not_conversational"
           }
         },
@@ -673,21 +696,21 @@
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "workspace_not_conversational"
           },
           "answered_turns": {
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "workspace_not_conversational"
           },
           "deliveries": {
             "value": null,
             "status": "not_applicable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "workspace_not_conversational"
           }
         },
@@ -738,7 +761,9 @@
         "error": "business_permission_denied",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -753,21 +778,21 @@
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "workspace_not_conversational"
           },
           "answered_turns": {
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "workspace_not_conversational"
           },
           "deliveries": {
             "value": null,
             "status": "not_applicable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "workspace_not_conversational"
           }
         },
@@ -783,21 +808,21 @@
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "workspace_not_conversational"
           },
           "answered_turns": {
             "value": null,
             "status": "not_applicable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "workspace_not_conversational"
           },
           "deliveries": {
             "value": null,
             "status": "not_applicable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "workspace_not_conversational"
           }
         },
@@ -839,7 +864,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -854,21 +881,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -884,21 +911,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -924,7 +951,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -939,21 +968,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -969,21 +998,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1009,7 +1038,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -1024,21 +1055,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1054,21 +1085,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1094,7 +1125,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -1109,21 +1142,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1139,21 +1172,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1179,7 +1212,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -1194,21 +1229,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1224,21 +1259,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1266,7 +1301,9 @@
         "error": "source_not_configured",
         "channels": [],
         "permission_scope": "platform_management",
-        "reader_role": null
+        "reader_role": null,
+        "input_time_basis": null,
+        "missing_question_time_records": null
       },
       "usage": {
         "retained": {
@@ -1281,21 +1318,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1311,21 +1348,21 @@
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "原始用户输入轮次，包含失败与未回复输入",
+            "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
             "reason": "source_not_configured"
           },
           "answered_turns": {
             "value": null,
             "status": "unavailable",
             "unit": "turn",
-            "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+            "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
             "reason": "source_not_configured"
           },
           "deliveries": {
             "value": null,
             "status": "unavailable",
             "unit": "delivery",
-            "definition": "有来源明确成功回执的输入轮次",
+            "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
             "reason": "source_not_configured"
           }
         },
@@ -1343,21 +1380,21 @@
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 0,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
     },
@@ -1367,21 +1404,21 @@
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 0,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
     },
@@ -1391,21 +1428,21 @@
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 0,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
     },
@@ -1415,21 +1452,21 @@
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 0,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
     },
@@ -1439,21 +1476,21 @@
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 0,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
     },
@@ -1463,76 +1500,76 @@
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 0,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 0,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
     },
     {
       "date": "2026-10-30",
       "turns": {
-        "value": 2,
+        "value": 3,
         "status": "partial",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": "source_coverage_partial"
       },
       "answered_turns": {
         "value": 2,
         "status": "partial",
         "unit": "turn",
-        "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+        "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
         "reason": "source_coverage_partial"
       },
       "deliveries": {
         "value": 1,
         "status": "partial",
         "unit": "delivery",
-        "definition": "有来源明确成功回执的输入轮次",
+        "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
         "reason": "source_coverage_partial"
       }
     }
   ],
   "last_24h": {
     "sessions": {
-      "value": 1,
+      "value": 2,
       "status": "partial",
       "unit": "session",
       "definition": "保留的来源会话；窗口内至少有一条用户输入的会话",
       "reason": "source_coverage_partial"
     },
     "turns": {
-      "value": 2,
+      "value": 3,
       "status": "partial",
       "unit": "turn",
-      "definition": "原始用户输入轮次，包含失败与未回复输入",
+      "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
       "reason": "source_coverage_partial"
     },
     "answered_turns": {
       "value": 2,
       "status": "partial",
       "unit": "turn",
-      "definition": "出现回复记录的输入轮次；不代表完整回答或业务成功",
+      "definition": "所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功",
       "reason": "source_coverage_partial"
     },
     "deliveries": {
       "value": 1,
       "status": "partial",
       "unit": "delivery",
-      "definition": "有来源明确成功回执的输入轮次",
+      "definition": "所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件",
       "reason": "source_coverage_partial"
     }
   },
@@ -1543,8 +1580,18 @@
         "value": 2,
         "status": "observed",
         "unit": "turn",
-        "definition": "原始用户输入轮次，包含失败与未回复输入",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
         "reason": null
+      }
+    },
+    {
+      "application_id": "ai-daq-fae-agent",
+      "turns": {
+        "value": 1,
+        "status": "partial",
+        "unit": "turn",
+        "definition": "原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at",
+        "reason": "input_time_proxy"
       }
     }
   ]

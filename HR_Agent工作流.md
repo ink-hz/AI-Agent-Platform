@@ -2,6 +2,8 @@
 
 ## 运行看板只读观测（2026-10-30，本地实现，尚未发布）
 
+输入窗口、最近输入活动和15分钟活跃服务数统一按 `inputs.created_at`，不采用工作更新时间或助手回复时间；来源证据明确为 `input_time_basis=inputs_created_at`、`missing_question_time_records=0`。窗口内回复数是同一输入群组当前已有回复的记录数，不是该窗口发生的回复事件数；跨源缺提问时间的记录时间代理不改变现行 HR 的原生输入时间依据。
+
 平台管理看板 `/api/dashboard/overview` 以当前控制库 `platform_hr_agent` 元数据为 HR 来源：线程作为来源会话，`inputs` 唯一输入作为用户轮次，按 `(work_id,input_revision)` 去重的 assistant 记录仅表示出现回复；question 记录、工作 state/answer_state 与已保存成果分别计量，不宣称完整答案、送达或业务成功。固定 SQL 使用 repeatable-read/read-only 与 5 秒语句超时，30 秒单次刷新缓存，只读取元数据；不获取 HR 内容密钥、sealed 字段、objects、员工正文或输出 owner 标识。旧 HR MetaBot/飞书来源单列历史，不补当前 HR 缺数；Marketing 五项仍按已配置渠道 Agent 展示。
 
 仅真实平台 owner/admin 可读全局管理统计，目录 `can_use` 每次沿用原 Agent 使用授权，管理观测不扩大任何用户的岗位、材料、成果或制造项目访问。HR 健康独立读取 `/run/platform-runtime/snapshot.json` 中逐对象的宿主回环观测，90 秒过期或缺失显示未知，版本只采用 ready 实际报告；数据库读取成功不代表进程健康。此次不修改 Loop、模型、工具、记忆或成果执行合同，不调用真实模型。接口/临时 PostgreSQL 验证与生产发布、业务及用户页面验收分开记录，完整契约见[运行看板设计](docs/superpowers/specs/2026-10-30-complete-runtime-dashboard-design.md)。

@@ -42,6 +42,8 @@ class SourceEvidence(Model):
     channels: list[str | None] = Field(default_factory=list)
     permission_scope: str = 'platform_management'
     reader_role: str | None = None
+    input_time_basis: Literal['question_at', 'record_created_at', 'mixed', 'inputs_created_at'] | None = None
+    missing_question_time_records: int | None = Field(default=None, ge=0)
 
 
 class RuntimeEvidence(Model):
@@ -116,6 +118,8 @@ class Summary(Model):
     expected_sources: int = 5
     status: Literal['complete', 'partial', 'unavailable'] = 'unavailable'
     usage: Counts
+    active_agents_15m: Metric = Field(default_factory=lambda: Metric(unit='agent',
+        definition='近15分钟有用户输入的独立Agent服务数；按输入时间半开窗口，缺提问时间使用record.created_at代理'))
 
 
 class Trend(Model):

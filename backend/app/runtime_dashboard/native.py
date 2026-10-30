@@ -50,18 +50,15 @@ class HrMetadataReader:
                 order by i.created_at,i.work_id,i.revision limit 100001''').fetchall()
             if len(rows) > 100_000:
                 raise OverflowError
-            activity = c.execute('''select thread_id,max(coalesce(last_active_at,created_at)) as active
-                from platform_hr_agent.works group by thread_id''').fetchall()
             states = c.execute('select state,answer_state,count(*) as n from platform_hr_agent.works group by state,answer_state').fetchall()
             totals = c.execute('''select (select count(result_id) from platform_hr_agent.results) as results,
                 (select count(kind) from platform_hr_agent.entries where kind='question') as questions''').fetchone()
-            self.stats['queries'] += 6
+            self.stats['queries'] += 5
         turns = defaultdict(list)
         for row in rows:
-            turns[row['thread_id']].append(Turn(row['created_at'], int(row['answered']), 0, None))
-        active = {r['thread_id']: r['active'] for r in activity}
+            turns[row['thread_id']].append(Turn(row['created_at'], int(row['answered']), 0, None, 'inputs_created_at'))
         items = tuple(Contribution(str(t['thread_id']), 'hr-bot','hr',None,t['created_at'],
-            active.get(t['thread_id'],t['created_at']),tuple(turns[t['thread_id']])) for t in threads)
+            max((turn.at for turn in turns[t['thread_id']]),default=t['created_at']),tuple(turns[t['thread_id']])) for t in threads)
         def metric(value, unit, definition):
             return Metric(value=value, status='observed', unit=unit, definition=definition)
         business = {'works': metric(sum(s['n'] for s in states),'work','当前保留工作数'),
@@ -74,4 +71,5 @@ class HrMetadataReader:
                 business[key] = metric(sum(s['n'] for s in states if s[column] == value), 'work',
                     f'当前工作 {column}={value} 数；不是历史每轮结果')
         return SourceData(SourceEvidence(source_id='native-hr',source_kind='hr',status='fresh',
-            observed_at=now,checked_at=now,complete=True,reader_role=role),items,business)
+            observed_at=now,checked_at=now,complete=True,reader_role=role,
+            input_time_basis='inputs_created_at',missing_question_time_records=0),items,business)

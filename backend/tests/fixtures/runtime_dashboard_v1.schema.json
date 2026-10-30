@@ -527,6 +527,37 @@
           ],
           "default": null,
           "title": "Reader Role"
+        },
+        "input_time_basis": {
+          "anyOf": [
+            {
+              "enum": [
+                "question_at",
+                "record_created_at",
+                "mixed",
+                "inputs_created_at"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Time Basis"
+        },
+        "missing_question_time_records": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Missing Question Time Records"
         }
       },
       "required": [
@@ -586,6 +617,9 @@
         },
         "usage": {
           "$ref": "#/$defs/Counts"
+        },
+        "active_agents_15m": {
+          "$ref": "#/$defs/Metric"
         }
       },
       "required": [

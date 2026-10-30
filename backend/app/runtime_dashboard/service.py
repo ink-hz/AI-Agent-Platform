@@ -11,9 +11,9 @@ from .repository import DIRECT, SourceData
 
 SHANGHAI = ZoneInfo('Asia/Shanghai')
 DEFINITIONS = {'sessions': ('session', '保留的来源会话；窗口内至少有一条用户输入的会话'),
-    'turns': ('turn', '原始用户输入轮次，包含失败与未回复输入'),
-    'answered_turns': ('turn', '出现回复记录的输入轮次；不代表完整回答或业务成功'),
-    'deliveries': ('delivery', '有来源明确成功回执的输入轮次')}
+    'turns': ('turn', '原始用户输入轮次，包含失败与未回复输入；按question_at归窗，缺失用record.created_at代理；现行HR按inputs.created_at'),
+    'answered_turns': ('turn', '所选输入群组当前有回复记录的轮次，不是窗口内回复事件；不代表完整回答或业务成功'),
+    'deliveries': ('delivery', '所选输入群组当前有明确成功回执的轮次，不是窗口内送达事件')}
 
 
 def metric(name, value=None, status='unavailable', reason=None):
@@ -39,14 +39,17 @@ def usage_for(items, evidence, start, end, *, delivery_supported=False, applicab
         return Usage(retained=empty_counts(reason=reason), window=empty_counts(reason=reason))
     all_turns = [turn for item in items for turn in item.turns]
     selected = [turn for turn in all_turns if start <= turn.at < end]
-    def counts(turns, sessions):
+    proxy = any(turn.input_time_basis == 'record_created_at' for turn in all_turns)
+    def counts(turns, sessions, *, window=False):
+        count_status = 'partial' if window and proxy else status
+        count_reason = reason or ('input_time_proxy' if window and proxy else None)
         values = {'sessions': sessions, 'turns': len(turns), 'answered_turns': sum(t.answered for t in turns),
                   'deliveries': sum(t.delivered for t in turns)}
-        return Counts(**{name: metric(name, value, status, reason) if name != 'deliveries' or delivery_supported
+        return Counts(**{name: metric(name, value, count_status, count_reason) if name != 'deliveries' or delivery_supported
             else metric(name, reason='delivery_not_proven') for name, value in values.items()})
     return Usage(retained=counts(all_turns, len(items)),
-        window=counts(selected, sum(any(start <= turn.at < end for turn in item.turns) for item in items)),
-        last_activity_at=max((item.last_active_at for item in items), default=None),
+        window=counts(selected, sum(any(start <= turn.at < end for turn in item.turns) for item in items),window=True),
+        last_activity_at=max((turn.at for turn in all_turns), default=None),
         outcome_counts=dict(Counter(t.outcome for t in all_turns if t.outcome is not None)))
 
 
@@ -59,6 +62,17 @@ def sum_counts(values):
         fields[name] = metric(name, sum(m.value for m in observed), status,
             None if status == 'observed' else 'source_coverage_partial') if observed else metric(name, reason='source_unavailable')
     return Counts(**fields)
+
+
+def active_agents_for(sources, start, end):
+    # Reuse the exact cohort selection and coverage/clock precision rules.
+    metrics = [usage_for(data.contributions,data.evidence,start,end).window.turns for data in sources]
+    known = [value for value in metrics if value.value is not None]
+    complete = len(known) == len(metrics) and all(value.status == 'observed' for value in metrics)
+    return Metric(value=sum(value.value > 0 for value in known) if known else None, unit='agent',
+        status='observed' if complete else 'partial' if known else 'unavailable',
+        reason=None if complete else 'source_coverage_or_input_time_partial' if known else 'source_unavailable',
+        definition='近15分钟有用户输入的独立Agent服务数；按输入时间半开窗口，缺提问时间使用record.created_at代理；缺源仅计已知范围')
 
 
 class DashboardService:
@@ -123,6 +137,7 @@ class DashboardService:
                 configured_agents=len({card.agent_id for card in self.catalog}), channel_agents=len(channels), legacy_streams=len(legacy_rows)),
             applications=current, channel_agents=channels, legacy_streams=legacy_rows,
             summary=Summary(usage=summary_usage, covered_sources=coverage, expected_sources=len(usages),
+                active_agents_15m=active_agents_for(usages.values(),now-timedelta(minutes=15),now),
                 status='complete' if coverage == len(usages) else 'partial' if coverage else 'unavailable'),
             trend=trend, last_24h=sum_counts([use(data, now-timedelta(hours=24), now).window for data in usages.values()]),
             ranking=sorted([Ranking(application_id=a.id, turns=a.usage.window.turns) for a in current
