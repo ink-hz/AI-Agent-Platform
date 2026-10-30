@@ -14,8 +14,14 @@ const SEVERITY: Record<EventTone, { icon: string; label: string }> = {
   recovery: { icon: "✓", label: "已恢复" },
 };
 
+function eventTone(event: OperationalEvent): EventTone {
+  return event.event_family === "recovery" || event.status === "resolved"
+    ? "recovery"
+    : event.severity;
+}
+
 function EventContent({ event }: { event: OperationalEvent }) {
-  const tone: EventTone = event.event_family === "recovery" ? "recovery" : event.severity;
+  const tone = eventTone(event);
   const severity = SEVERITY[tone];
   return <>
     <div className="operational-event-head">
@@ -35,7 +41,7 @@ function EventContent({ event }: { event: OperationalEvent }) {
 
 export function OperationalEventItem({ event }: { event: OperationalEvent }) {
   const target = eventTargetPath(event);
-  const tone: EventTone = event.event_family === "recovery" ? "recovery" : event.severity;
+  const tone = eventTone(event);
   const className = `operational-event-item event-severity-${tone} event-visibility-${event.agent_visibility}`;
   const content: ReactNode = <EventContent event={event} />;
   if (target) {
