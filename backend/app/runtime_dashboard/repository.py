@@ -71,6 +71,13 @@ def source_key(agent_id, family, channel):
     return None
 
 
+def representation_fingerprint(row):
+    # Inherit every plaintext comparison in ReplicaObservabilityRepository._decrypt.
+    # A hash certifies payload content, not these separately stored columns.
+    return (row['session_key'], row['payload_sha256'], row['agent_id'],
+        row['source_kind'], row['channel'], row['created_at'], row['last_active_at'])
+
+
 class ReplicaDashboardReader:
     def __init__(self, repository, *, max_sessions=10_000, ttl_seconds=30, timer=monotonic):
         self.repository = repository
@@ -107,7 +114,7 @@ class ReplicaDashboardReader:
             connection.execute("SET LOCAL statement_timeout = '5s'")
             role = connection.execute('select current_user as role').fetchone()['role']
             rows = connection.execute('''select session_key, payload_sha256, agent_id, source_kind,
-                channel from platform_replica.sessions order by session_key limit %s''',
+                channel, created_at, last_active_at from platform_replica.sessions order by session_key limit %s''',
                 (self.max_sessions + 1,)).fetchall()
             self.stats['metadata_reads'] += 1
             if len(rows) > self.max_sessions:
@@ -115,8 +122,10 @@ class ReplicaDashboardReader:
             states = {row['agent_id']: row for row in connection.execute('''select agent_id, source_kind,
                 mode, publisher, last_source_success_at, last_published_at, last_failure_at,
                 source_sessions, source_turns from platform_replica.agent_sources''').fetchall()}
-            changed = [row['session_key'] for row in rows if source_key(row['agent_id'], row['source_kind'], row['channel'])
-                and (row['session_key'] not in self._cached or self._cached[row['session_key']][0] != row['payload_sha256'])]
+            changed = [row['session_key'] for row in rows
+                if (source_key(row['agent_id'], row['source_kind'], row['channel']) or row['session_key'] in self._cached)
+                and (row['session_key'] not in self._cached
+                    or self._cached[row['session_key']][0] != representation_fingerprint(row))]
             payloads = {}
             # Batches cap transient encrypted material; plaintext is discarded each iteration.
             from app.cloud_replica.repository import _SESSION_COLUMNS
@@ -126,7 +135,7 @@ class ReplicaDashboardReader:
                     self.stats['payload_reads'] += 1
                     self.stats['decrypts'] += 1
                     try:
-                        payloads[row['session_key']] = (row['payload_sha256'], contribution(repo._decrypt(row)))
+                        payloads[row['session_key']] = (representation_fingerprint(row), contribution(repo._decrypt(row)))
                     except Exception:
                         payloads[row['session_key']] = None
         groups = {key: [] for key in set(DIRECT) | set(self._sources)}
@@ -137,6 +146,12 @@ class ReplicaDashboardReader:
         failed = set()
         updated = {}
         for row in rows:
+            # An identity drift must also invalidate the last verified owner,
+            # including when the new metadata no longer maps to a known source.
+            previous = self._cached.get(row['session_key'])
+            if row['session_key'] in payloads and payloads[row['session_key']] is None and previous:
+                prior = previous[1]
+                failed.add(source_key(prior.agent_id, prior.source_kind, prior.channel))
             key = source_key(row['agent_id'], row['source_kind'], row['channel'])
             if not key:
                 continue

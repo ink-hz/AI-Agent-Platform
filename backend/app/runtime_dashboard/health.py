@@ -1,5 +1,7 @@
 """Trusted observations only; no SSH, container discovery or business calls."""
 import json
+import os
+import stat
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,8 +37,16 @@ class HostObservationReader:
                 checked_at=now, observed_at=observed_at, error=error,
                 stale=error == 'observation_stale'))
         try:
-            with self.path.open('rb') as stream:
-                raw = stream.read(16_385)
+            # Open cannot wait for a FIFO writer; nofollow rejects a replaced link.
+            # Validate the opened object, not a racy pre-open path.is_file check.
+            descriptor = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
+            try:
+                metadata = os.fstat(descriptor)
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 16_384:
+                    raise ValueError
+                raw = os.read(descriptor, 16_385)
+            finally:
+                os.close(descriptor)
             if len(raw) > 16_384:
                 raise ValueError
             document = _HostFile.model_validate(json.loads(raw))

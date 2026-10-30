@@ -167,3 +167,108 @@ def test_management_metadata_uses_authorization_configured_catalog():
     auth=object.__new__(AgentUseAuthorization)
     auth._catalog_cards=load_agent_catalog()
     assert auth.catalog_cards is auth._catalog_cards
+
+
+def test_host_fifo_cannot_block_concurrent_health_readers(tmp_path):
+    """Kill/reap the whole isolated reader process if a regression blocks open."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    path = tmp_path/'snapshot.json'
+    os.mkfifo(path)
+    child = '''import asyncio, sys
+from datetime import UTC, datetime
+import httpx
+from app.runtime_dashboard.health import HealthReader, HostObservationReader
+async def run():
+    calls = []
+    def handle(request):
+        calls.append(str(request.url))
+        return httpx.Response(200, json={'status':'ok'})
+    reader = HealthReader(host=HostObservationReader(sys.argv[1]), urls={'ai-fae-agent':'http://fae.local/health'}, transport=httpx.MockTransport(handle))
+    print('ENTER_READER', flush=True)
+    values = await asyncio.gather(*(reader.read(datetime.now(UTC)) for _ in range(4)))
+    for value in values:
+        assert value['hr-bot'].runtime.error == 'observation_invalid'
+        assert value['ai-admin-agent'].runtime.error == 'observation_invalid'
+        assert value['ai-fae-agent'].runtime.state == 'healthy'
+    assert len(calls) == 1
+    assert not reader._lock.locked()
+    print('READERS_COMPLETED', flush=True)
+asyncio.run(run())
+'''
+    try:
+        result = subprocess.run([sys.executable,'-c',child,str(path)],capture_output=True,text=True,timeout=3,cwd=Path(__file__).resolve().parents[1])
+    except subprocess.TimeoutExpired as error:
+        pytest.fail(f'FIFO blocked health readers; killed/reaped child; stdout={error.stdout!r}')
+    assert result.returncode == 0,result.stderr
+    assert 'READERS_COMPLETED' in result.stdout
+
+
+@pytest.mark.parametrize('kind',['directory','symlink','oversized','corrupt'])
+def test_host_unsafe_files_are_unknown(tmp_path,kind):
+    from app.runtime_dashboard.health import HostObservationReader
+    path = tmp_path/'snapshot.json'
+    if kind == 'directory':
+        path.mkdir()
+    elif kind == 'symlink':
+        target = tmp_path/'valid.json'
+        target.write_text(json.dumps(dict(schema_version=1,generated_at=NOW.isoformat(),observations=[
+            dict(application_id='hr-bot',state='healthy',observed_at=NOW.isoformat(),error=None,version=None)])))
+        path.symlink_to(target)
+    elif kind == 'oversized':
+        path.write_bytes(b' '*16_385)
+    else:
+        path.write_text('not json')
+    values = HostObservationReader(path).read(NOW)
+    assert all(value.runtime.state == 'unknown' and value.runtime.error == 'observation_invalid' for value in values.values())
+
+
+@pytest.mark.parametrize('failure',[None,'fstat','read','oversized','corrupt','directory'])
+def test_host_descriptor_closed_after_success_and_every_opened_failure(tmp_path,monkeypatch,failure):
+    import errno
+    import os
+    from app.runtime_dashboard import health
+    path = tmp_path/'snapshot.json'
+    if failure == 'directory':
+        path.mkdir()
+    else:
+        path.write_text(json.dumps(dict(schema_version=1,generated_at=NOW.isoformat(),observations=[
+            dict(application_id='hr-bot',state='healthy',observed_at=NOW.isoformat(),error=None,version=None)])))
+        if failure == 'oversized':
+            path.write_bytes(b' '*16_385)
+        elif failure == 'corrupt':
+            path.write_text('not json')
+    opened,reads = [],[]
+    real_open,real_read,real_fstat = os.open,os.read,os.fstat
+    def tracked_open(target,flags):
+        assert flags & os.O_NONBLOCK and flags & os.O_NOFOLLOW
+        descriptor = real_open(target,flags)
+        opened.append(descriptor)
+        return descriptor
+    def checked_fstat(descriptor):
+        if failure == 'fstat':
+            raise OSError('injected descriptor failure')
+        return real_fstat(descriptor)
+    def checked_read(descriptor,size):
+        reads.append(descriptor)
+        assert descriptor in opened and size == 16_385
+        if failure == 'read':
+            raise OSError('injected read failure')
+        return real_read(descriptor,size)
+    monkeypatch.setattr(health.os,'open',tracked_open)
+    monkeypatch.setattr(health.os,'fstat',checked_fstat)
+    monkeypatch.setattr(health.os,'read',checked_read)
+    result = health.HostObservationReader(path).read(NOW)
+    assert len(opened) == 1
+    for descriptor in opened:
+        with pytest.raises(OSError) as error:
+            real_fstat(descriptor)
+        assert error.value.errno == errno.EBADF
+    if failure in {'fstat','oversized','directory'}:
+        assert not reads  # prove rejection precedes body IO on the opened object
+    if failure is None:
+        assert result['hr-bot'].runtime.state == 'healthy'
+    else:
+        assert all(value.runtime.error == 'observation_invalid' for value in result.values())

@@ -256,3 +256,110 @@ def test_incomplete_old_source_retention_cannot_grow_cache_past_bound(dashboard_
     result=reader.snapshot(NOW)
     assert len(reader._cached)<=1
     assert result['voc'].evidence.error=='replica_limit_exceeded'
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize('field,value', [
+    ('channel', 'web'), ('agent_id', 'ai-daq-fae-agent'), ('source_kind', 'voc'),
+    ('created_at', NOW-timedelta(days=2)), ('last_active_at', NOW-timedelta(seconds=2)),
+])
+def test_replica_metadata_drift_revalidates_only_changed_row_and_rejects_cold_and_warm(dashboard_db, field, value):
+    from psycopg import sql
+    from app.cloud_replica.crypto import FieldCipher
+    from app.cloud_replica.repository import ReplicaObservabilityRepository
+    from app.runtime_dashboard.repository import ReplicaDashboardReader
+    cipher = FieldCipher(b'a'*32)
+    with psycopg.connect(dashboard_db) as c:
+        c.execute('delete from platform_replica.sessions')
+        c.execute('update platform_replica.agent_sources set source_sessions=0,source_turns=0')
+        put_record(c,cipher,'drift-row','ai-fae-agent')
+        put_record(c,cipher,'untouched-row')
+        c.execute("insert into platform_replica.agents(agent_id,display_payload,payload_nonce,payload_sha256,updated_at) values ('ai-daq-fae-agent','x','x',%s,%s) on conflict do nothing", ('a'*64,NOW))
+    def repository():
+        return ReplicaObservabilityRepository(dashboard_db,cipher=cipher,connect=as_role('platform_replica_read'))
+    warm = ReplicaDashboardReader(repository(),ttl_seconds=0)
+    initial = warm.snapshot(NOW)
+    assert initial['ai-fae-agent'].evidence.complete
+    warm.snapshot(NOW)
+    assert warm.stats['decrypts'] == warm.stats['payload_reads'] == 2
+    with psycopg.connect(dashboard_db) as c:
+        if field == 'agent_id':
+            # The DB forbids UPDATE of agent ownership. A source replacement can
+            # reuse its key: delete/reinsert atomically without disabling guards.
+            row = c.cursor(row_factory=dict_row).execute('delete from platform_replica.sessions where session_key=%s returning *',('drift-row',)).fetchone()
+            row[field] = value
+            c.execute(sql.SQL('insert into platform_replica.sessions ({}) values ({})').format(
+                sql.SQL(',').join(map(sql.Identifier,row)),sql.SQL(',').join(sql.Placeholder() for _ in row)),tuple(row.values()))
+        else:
+            c.execute(sql.SQL('update platform_replica.sessions set {}=%s where session_key=%s').format(sql.Identifier(field)),(value,'drift-row'))
+    result = warm.snapshot(NOW+timedelta(seconds=1))
+    cold = ReplicaDashboardReader(repository()).snapshot(NOW+timedelta(seconds=1))
+    print('METADATA_DRIFT',field,dict(warm=result['ai-fae-agent'].evidence.model_dump(mode='json'),cold=cold['ai-fae-agent'].evidence.model_dump(mode='json'),stats=warm.stats))
+    assert not result['ai-fae-agent'].evidence.complete
+    assert result['ai-fae-agent'].evidence.status == 'stale'
+    assert result['ai-fae-agent'].evidence.error == 'replica_payload_invalid'
+    assert result['ai-fae-agent'].evidence.observed_at == initial['ai-fae-agent'].evidence.observed_at
+    assert result['ai-fae-agent'].contributions == initial['ai-fae-agent'].contributions
+    assert not cold['ai-fae-agent'].evidence.complete
+    assert not cold['ai-fae-agent'].contributions
+    assert result['voc'].evidence.complete and result['voc'].evidence.status == 'fresh'
+    assert warm.stats['decrypts'] == warm.stats['payload_reads'] == 3
+    assert len(warm._cached) == 2
+    assert all(item.agent_id == key for key, data in result.items() for item in data.contributions)
+
+
+@pytest.mark.postgres
+def test_replica_matching_payload_and_metadata_change_is_incrementally_accepted(dashboard_db):
+    from app.cloud_replica.crypto import FieldCipher
+    from app.cloud_replica.repository import ReplicaObservabilityRepository
+    from app.runtime_dashboard.repository import ReplicaDashboardReader
+    cipher = FieldCipher(b'a'*32)
+    with psycopg.connect(dashboard_db) as c:
+        c.execute('delete from platform_replica.sessions')
+        c.execute('update platform_replica.agent_sources set source_sessions=0,source_turns=0')
+        put_record(c,cipher,'valid-change')
+    reader = ReplicaDashboardReader(ReplicaObservabilityRepository(dashboard_db,cipher=cipher,connect=as_role('platform_replica_read')),ttl_seconds=0)
+    assert reader.snapshot(NOW)['voc'].evidence.complete
+    with psycopg.connect(dashboard_db) as c:
+        # Change the same encrypted source contract on both sides, retaining its key.
+        record = reader.repository._decrypt(c.cursor(row_factory=dict_row).execute('select * from platform_replica.sessions where session_key=%s',('valid-change',)).fetchone())
+        record['channel'] = 'web'
+        record['last_active_at'] = NOW.isoformat()
+        raw = json.dumps(record,sort_keys=True,separators=(',',':'))
+        sealed = cipher.encrypt(raw,'1:session:valid-change')
+        decode = lambda value: base64.urlsafe_b64decode(value+'='*(-len(value)%4))
+        c.execute('update platform_replica.sessions set channel=%s,last_active_at=%s,display_payload=%s,payload_nonce=%s,payload_sha256=%s where session_key=%s',
+            ('web',NOW,decode(sealed['ciphertext']),decode(sealed['nonce']),hashlib.sha256(raw.encode()).hexdigest(),'valid-change'))
+    result = reader.snapshot(NOW)['voc']
+    assert result.evidence.complete and result.evidence.status == 'fresh'
+    assert result.evidence.channels == ['web']
+    assert result.contributions[0].last_active_at == NOW
+    assert reader.stats['decrypts'] == 2
+    reader.snapshot(NOW)
+    assert reader.stats['decrypts'] == 2
+
+
+@pytest.mark.postgres
+def test_replica_original_voc_channel_fault_cold_and_warm(dashboard_db):
+    from app.cloud_replica.crypto import FieldCipher
+    from app.cloud_replica.repository import ReplicaObservabilityRepository
+    from app.runtime_dashboard.repository import ReplicaDashboardReader
+    cipher = FieldCipher(b'a'*32)
+    with psycopg.connect(dashboard_db) as c:
+        c.execute('delete from platform_replica.sessions')
+        c.execute('update platform_replica.agent_sources set source_sessions=0,source_turns=0')
+        put_record(c,cipher,'original-voc-drift')
+    def repository():
+        return ReplicaObservabilityRepository(dashboard_db,cipher=cipher,connect=as_role('platform_replica_read'))
+    warm = ReplicaDashboardReader(repository(),ttl_seconds=0)
+    initial = warm.snapshot(NOW)['voc']
+    assert initial.evidence.complete
+    with psycopg.connect(dashboard_db) as c:
+        c.execute("update platform_replica.sessions set channel='web' where session_key='original-voc-drift'")
+    result = warm.snapshot(NOW)['voc']
+    cold = ReplicaDashboardReader(repository()).snapshot(NOW)['voc']
+    assert result.evidence.error == cold.evidence.error == 'replica_payload_invalid'
+    assert not result.evidence.complete and not cold.evidence.complete
+    assert result.evidence.status == 'stale' and cold.evidence.status == 'unavailable'
+    assert result.contributions == initial.contributions and not cold.contributions
+    assert warm.stats['payload_reads'] == warm.stats['decrypts'] == 2
