@@ -154,6 +154,7 @@ function parseCapabilityCard(value: unknown): AgentCapabilityCard {
   const hasAttachmentOutput = contentTypes(outputTypes)
     && outputTypes.some((item) => item !== "text");
   if (!isObject(value)
+    || (value.can_use !== undefined && typeof value.can_use !== "boolean")
     || typeof value.agent_id !== "string" || !value.agent_id
     || typeof value.display_name !== "string" || !value.display_name
     || (value.persona_subtitle !== null
@@ -216,6 +217,19 @@ export async function fetchAgentCatalog(signal?: AbortSignal): Promise<AgentCapa
   const value: unknown = await response.json();
   if (!isObject(value) || !Array.isArray(value.agents)) throw new Error("Agent catalog response invalid");
   return value.agents.map(parseCapabilityCard);
+}
+
+/** Complete management metadata; use grants remain independent. */
+export async function fetchManagementAgentCatalog(signal?: AbortSignal): Promise<AgentCapabilityCard[]> {
+  const response = await checked(await fetch(platformPath("/api/dashboard/catalog"), {
+    credentials: "include", cache: "no-store", headers: { Accept: "application/json" }, signal,
+  }));
+  const value: unknown = await response.json();
+  if (!isObject(value) || !Array.isArray(value.agents)) throw new Error("Agent catalog response invalid");
+  return value.agents.map(card => {
+    if (!isObject(card) || typeof card.can_use !== "boolean") throw new Error("Agent catalog response invalid");
+    return parseCapabilityCard(card);
+  });
 }
 
 export async function launchAgent(

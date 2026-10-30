@@ -72,11 +72,45 @@ it.each([{}, {kind:'other',path:'/hr/'}, {kind:'independent_service',path:'/hr/?
 
 it('binds AppShell catalog sessions to the actual account and ignores a late previous-account response',async()=>{
  let oldDone!:(cards:AgentCapabilityCard[])=>void;let newDone!:(cards:AgentCapabilityCard[])=>void;
- const load=vi.spyOn(brainApi,'fetchAgentCatalog').mockImplementationOnce(()=>new Promise(resolve=>{oldDone=resolve;})).mockImplementationOnce(()=>new Promise(resolve=>{newDone=resolve;}));
+ const load=vi.spyOn(brainApi,'fetchManagementAgentCatalog').mockImplementationOnce(()=>new Promise(resolve=>{oldDone=resolve;})).mockImplementationOnce(()=>new Promise(resolve=>{newDone=resolve;}));
  const render=(id:string)=><AppShell route={{name:'agents'}} account={{...account,internal_user_id:id}}><AgentUseDirectoryPage/></AppShell>;
  await act(async()=>root.render(render('old-account')));
  await act(async()=>root.render(render('new-account')));
  expect(load.mock.calls[0][0]?.aborted).toBe(true);
  await act(async()=>oldDone([card]));expect(box.querySelector('.agent-use-card')).toBeNull();expect(box.querySelector('.platform-sidebar a[href="/hr/"]')).toBeNull();
  await act(async()=>newDone([]));expect(box.textContent).toContain('暂时没有可用的专业 Agent');expect(load).toHaveBeenCalledTimes(2);
+});
+
+it('keeps full de-duplicated inventory while filtering use links and giving HR Web precedence',async()=>{
+ const cards=[{...card,web_entry:null}, {...card,can_use:false}, ...Array.from({length:5},(_,i)=>({...card,agent_id:`marketing-${i}`,display_name:`渠道${i}`,web_entry:null,can_use:false}))];
+ const load=vi.fn().mockResolvedValue(cards);
+ await act(async()=>root.render(<WebCatalogProvider identityKey="owner" loadCatalog={load}><AgentUseDirectoryPage/><PlatformSidebar route={{name:'home'}} account={account} readOnly={false} collapsed={false}/></WebCatalogProvider>));
+ expect(box.querySelectorAll('.agent-use-card')).toHaveLength(6);expect(box.querySelectorAll('[data-access-method="channel"] .agent-use-card')).toHaveLength(5);expect(box.querySelector('[data-access-method="web"]')?.textContent).toContain('HR');expect(box.textContent).toContain('已配置 6 个 Agent');expect(box.querySelector('.agent-use-directory a')).toBeNull();expect(box.querySelector('.platform-sidebar a[href="/hr/"]')).toBeNull();expect(box.textContent).not.toContain('停用');
+});
+it('updates revoked use grants without removing management metadata',async()=>{
+ const load=vi.fn().mockResolvedValueOnce([{...card,can_use:true}]).mockResolvedValueOnce([{...card,can_use:false}]);
+ const render=(key:string)=><WebCatalogProvider identityKey={key} loadCatalog={load}><AgentUseDirectoryPage/></WebCatalogProvider>;
+ await act(async()=>root.render(render('before')));expect(box.querySelector('a[href="/hr/"]')).not.toBeNull();await act(async()=>root.render(render('revoked')));expect(box.querySelector('a[href="/hr/"]')).toBeNull();expect(box.querySelectorAll('.agent-use-card')).toHaveLength(1);
+});
+
+it.each(['platform_owner','platform_admin','member'] as const)('selects the correct catalog contract for %s without permission fallback',async role=>{
+ const managed=vi.spyOn(brainApi,'fetchManagementAgentCatalog').mockResolvedValue([{...card,can_use:false}]);
+ const member=vi.spyOn(brainApi,'fetchAgentCatalog').mockResolvedValue([card]);
+ await act(async()=>root.render(<AppShell route={{name:'agents'}} account={{...account,role}}><AgentUseDirectoryPage/></AppShell>));
+ const manager=role!=='member';expect(managed).toHaveBeenCalledTimes(manager?1:0);expect(member).toHaveBeenCalledTimes(manager?0:1);
+ expect(box.querySelector('.agent-use-directory a[href="/hr/"]')!==null).toBe(!manager);
+});
+it('never falls back to the member catalog or launchers after management catalog failure',async()=>{
+ const managed=vi.spyOn(brainApi,'fetchManagementAgentCatalog').mockRejectedValue(new Error('403'));
+ const member=vi.spyOn(brainApi,'fetchAgentCatalog').mockResolvedValue([card]);
+ await act(async()=>root.render(<AppShell route={{name:'agents'}} account={account}><AgentUseDirectoryPage/></AppShell>));
+ expect(managed).toHaveBeenCalledTimes(1);expect(member).not.toHaveBeenCalled();expect(box.querySelector('.agent-use-directory a')).toBeNull();expect(box.querySelector('.agent-use-directory')?.textContent).toContain('重试');
+});
+it.each([undefined,'true',null])('requires an explicit boolean can_use on management metadata: %j',async can_use=>{
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({agents:[{...card,can_use}]}))));await expect(brainApi.fetchManagementAgentCatalog()).rejects.toThrow('Agent catalog response invalid');
+});
+it('preserves complete management metadata and false use permission through the HTTP adapter',async()=>{
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({agents:[{...card,can_use:false},{...card,agent_id:'channel',web_entry:null,can_use:false}]}))));
+ await expect(brainApi.fetchManagementAgentCatalog()).resolves.toMatchObject([{agent_id:'hr-bot',can_use:false},{agent_id:'channel',can_use:false}]);
+ expect(fetch).toHaveBeenCalledWith('/api/dashboard/catalog',expect.objectContaining({credentials:'include',cache:'no-store'}));
 });

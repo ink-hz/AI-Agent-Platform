@@ -1,0 +1,36 @@
+.runtime-dashboard { display: grid; gap: 24px; min-width: 0; }
+.runtime-dashboard section, .runtime-history { min-width: 0; }
+.runtime-dashboard h2 { margin: 0 0 14px; font-size: 19px; }
+.runtime-dashboard h3 { margin: 0; font-size: 17px; }
+.runtime-dashboard h4 { margin: 16px 0 8px; font-size: 14px; }
+.runtime-dashboard p { line-height: 1.7; overflow-wrap: anywhere; }
+.runtime-window { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.runtime-window select, .runtime-dashboard button { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; }
+.runtime-coverage, .runtime-dashboard > section, .runtime-insights > section, .runtime-history { border: 1px solid var(--line); border-radius: 14px; padding: 20px; background: var(--surface); }
+.runtime-application-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 370px), 1fr)); gap: 16px; }
+.runtime-application, .runtime-channel { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--surface); }
+.runtime-application header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.runtime-application header span, .runtime-source, .runtime-deployment, .runtime-application > p { color: var(--ink-soft); font-size: 12px; }
+.runtime-source p { margin: 5px 0; }
+.runtime-metric { display: inline-flex; flex-direction: column; gap: 4px; vertical-align: top; }
+.runtime-metric strong { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.runtime-metric small { font-size: 11px; color: var(--ink-soft); font-weight: 400; }
+.runtime-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.runtime-application .runtime-counts, .runtime-channel .runtime-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.runtime-counts dt { color: var(--ink-soft); font-size: 12px; margin-bottom: 8px; }
+.runtime-counts dd { margin: 0; }
+.runtime-counts strong { font-size: 20px; }
+.runtime-warning, .runtime-dataset { color: var(--warn); }
+.runtime-insights { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; }
+.runtime-table-scroll { overflow-x: auto; max-height: 460px; }
+.runtime-dashboard table { width: 100%; border-collapse: collapse; text-align: left; }
+.runtime-dashboard th, .runtime-dashboard td { padding: 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.runtime-dashboard caption { text-align: left; margin: 0 0 12px; color: var(--ink-soft); font-size: 12px; }
+.runtime-ranking { padding-left: 24px; }
+.runtime-ranking li { padding: 12px 0; }
+.runtime-ranking li > span:first-child { display: block; margin-bottom: 8px; }
+.runtime-dashboard details > summary { cursor: pointer; line-height: 1.7; }
+.runtime-history > .runtime-application-grid { margin-top: 16px; }
+.runtime-dashboard .error-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.runtime-deployment code { overflow-wrap: anywhere; }
+@media(max-width: 800px) { .runtime-insights { grid-template-columns: minmax(0, 1fr); } .runtime-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

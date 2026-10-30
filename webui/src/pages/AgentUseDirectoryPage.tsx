@@ -3,7 +3,7 @@ import { PlatformPageHeader } from "../platform/PlatformPageHeader";
 
 import { BUSINESS_AGENT_LABELS } from "../platform/agentLabels";
 import { WebCatalogProvider, useWebCatalog, type CatalogLoader } from "../platform/WebCatalog";
-import { webEntryPath } from "../platform/webEntryPolicy";
+import { webEntryPath, validWebEntry, webInventoryApplications } from "../platform/webEntryPolicy";
 import type { AgentCapabilityCard } from "../brainTypes";
 import { EmptyState, ErrorState, LoadingState } from "../components/DataState";
 
@@ -34,8 +34,9 @@ function AgentCard({ card }: { card: AgentCapabilityCard }) {
     <span className="agent-use-card-open">打开 <span aria-hidden="true">→</span></span>
   </span>;
   const href = webEntryPath(card);
+  const channel = !validWebEntry(card.web_entry);
   if (!href) return <article className="agent-use-card agent-use-card-disabled" data-agent-kind={kind}>
-    {content}<span className="agent-use-card-unavailable">入口暂不可用</span>
+    {content}<span className="agent-use-card-unavailable">{channel ? "已配置 · 通过 MetaBot / 飞书使用" : "未获使用授权"}</span>
   </article>;
   return <a aria-label={`打开 ${displayName} 工作区`} className="agent-use-card"
     data-agent-kind={kind} href={href}>{content}{footer}</a>;
@@ -45,14 +46,23 @@ function AgentCard({ card }: { card: AgentCapabilityCard }) {
 export function AgentUseDirectoryPage({ loadCatalog }: { loadCatalog?: CatalogLoader }) {
   const catalog = useWebCatalog();
   if (!catalog) return <WebCatalogProvider identityKey="standalone-directory" loadCatalog={loadCatalog}><AgentUseDirectoryPage /></WebCatalogProvider>;
-  const {applications, status, retry} = catalog;
+  const {catalog: cards, status, retry} = catalog;
+  const applications = webInventoryApplications(cards);
+  const channels = cards.filter(card => !validWebEntry(card.web_entry));
   return <div className="agent-use-directory">
-    <PlatformPageHeader className="use-page-intro" title="Agent 目录" description="选择正式 Web 应用开始工作。" />
+    <PlatformPageHeader className="use-page-intro" title="Agent 目录" description="查看已配置 Agent，按访问方式选择已授权的正式应用。" />
     {status === "error" ? <ErrorState onRetry={retry} />
       : status === "loading" ? <LoadingState label="正在读取可用 Agent" />
-      : applications.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="当前账号暂无已授权的正式 Web 应用。" />
-      : <div className="agent-use-grid agent-use-directory-grid">
-        {applications.map(card => <AgentCard card={card} key={card.agent_id} />)}
-      </div>}
+      : cards.length === 0 ? <EmptyState title="暂时没有可用的专业 Agent" description="当前账号暂无已授权的正式 Web 应用。" />
+      : <>
+        <p className="catalog-inventory">已配置 {cards.length} 个 Agent · 独立 Web 应用 {applications.length} 个 · MetaBot / 飞书 {channels.length} 个</p>
+        <section data-access-method="web" aria-label="独立 Web 应用"><h2>独立 Web 应用（{applications.length}）</h2>
+          <div className="agent-use-grid agent-use-directory-grid">{applications.map(card => <AgentCard card={card} key={card.agent_id} />)}</div>
+        </section>
+        <section data-access-method="channel" aria-label="MetaBot / 飞书 Agent"><h2>MetaBot / 飞书 Agent（{channels.length}）</h2>
+          <p>渠道配置独立于 Web 服务；此处展示配置元数据，运行状态见实际观测。</p>
+          <div className="agent-use-grid agent-use-directory-grid">{channels.map(card => <AgentCard card={card} key={card.agent_id} />)}</div>
+        </section>
+      </>}
   </div>;
 }

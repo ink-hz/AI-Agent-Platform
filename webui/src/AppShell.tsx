@@ -76,7 +76,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
       return next;
     });
   };
-  if (aiNotesWorkspace) return <WebCatalogProvider identityKey={catalogIdentity}><DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
+  if (aiNotesWorkspace) return <WebCatalogProvider identityKey={catalogIdentity} management={accountCanReadDeployment}><DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className="ai-notes-standalone-shell">
       <main className="page is-ai-notes-workspace ai-notes-standalone-main">
         {account?.hard_stale_read_only && <aside className="hard-stale-banner" role="status">
@@ -86,7 +86,7 @@ export function AppShell({ route, children, account, panorama = false }: { route
       </main>
     </div>
   </DeploymentProvider></WebCatalogProvider>;
-  return <WebCatalogProvider identityKey={catalogIdentity}><DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
+  return <WebCatalogProvider identityKey={catalogIdentity} management={accountCanReadDeployment}><DeploymentProvider deployment={deployment} resolved={deploymentResolved}>
     <div className={`app platform-shell${panorama ? " is-panorama-shell" : ""}${brainWorkspace ? " is-brain-workspace-shell" : ""}${hrWorkspace ? " is-hr-workspace-shell" : ""}${sdkWorkspace ? " is-sdk-workspace-shell" : ""}`}>
       <header className="topbar">
         <div className="topbar-inner">

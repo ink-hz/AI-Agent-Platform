@@ -92,21 +92,24 @@ describe("professional Agent use pages", () => {
   });
   afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks(); });
 
-  it("renders only five authorized Web applications including legacy-adapter HR and DAQ", async () => {
+  it("renders five authorized Web launchers plus all five configured channels including legacy-adapter HR and DAQ", async () => {
     const daq = { ...faeCard, agent_id: "ai-daq-fae-agent", web_entry: { kind: "independent_service" as const, path: "/daq/" } };
     await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([adminCard, ...marketingCards, vocCard, card, daq, faeCard])} />));
-    const links = [...container.querySelectorAll<HTMLAnchorElement>(".agent-use-card")];
+    const links = [...container.querySelectorAll<HTMLAnchorElement>("a.agent-use-card")];
     expect(links.map(node => node.getAttribute("href"))).toEqual(["/fae/", "/daq/", "/hr/", "/voc/", "/office/?view=services"]);
     expect(container.querySelector("a[href='/daq/']")?.textContent).toContain("DAQ");
     expect(container.querySelector("a[href='/daq/']")?.getAttribute("data-agent-kind")).toBe("fae");
     expect(container.querySelector("a[href='/hr/']")?.textContent).toContain(card.mission);
-    expect(container.textContent).not.toContain("Marketing");
+    expect(container.textContent).toContain("Marketing");
+    expect(container.querySelectorAll("[data-access-method=channel] .agent-use-card")).toHaveLength(5);
+    expect(container.querySelectorAll("[data-access-method=channel] a")).toHaveLength(0);
+    expect(container.textContent).toContain("已配置 10 个 Agent");
   });
 
   it.each([undefined, null, {kind:"independent_service",path:"https://evil.example/"}, {kind:"independent_service",path:"//evil.example/hr/"}, {kind:"independent_service",path:"/hr/?redirect=/brain"}, {kind:"independent_service",path:"/%68r/"}, {kind:"independent_service",path:"/hr/\\evil"}, {kind:"other",path:"/hr/"}])("does not infer or repair unavailable Web metadata: %j", async web_entry => {
     await act(async () => root.render(<AgentUseDirectoryPage loadCatalog={vi.fn().mockResolvedValue([{...card, web_entry}])} />));
-    expect(container.querySelectorAll(".agent-use-card")).toHaveLength(0);
-    expect(container.textContent).toContain("暂时没有可用的专业 Agent");
+    expect(container.querySelectorAll("a.agent-use-card")).toHaveLength(0);
+    expect(container.textContent).toContain("已配置");
     expect(container.textContent).not.toContain("AI 助手");
   });
 

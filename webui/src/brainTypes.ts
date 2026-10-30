@@ -50,6 +50,7 @@ export interface AgentAttachmentLimits {
 }
 
 export interface AgentCapabilityCard {
+  can_use?: boolean;
   agent_id: string;
   display_name: string;
   persona_subtitle: string | null;
