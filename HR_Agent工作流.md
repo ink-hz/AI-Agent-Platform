@@ -8,9 +8,9 @@
 
 采集器每小时 :05 获取官网岗位，云端 :15 接收已发布的完整快照。当前由 PM2 守护进程调度这两段动作，启动晚于时点时只补做当小时，采集未成功发布则不推送；源时间与云端投影回执分别核对。Hannah 的岗位发现与 JD/JR 阅读仅使用已成功投影的准确官网版本；同步失败时继续保留最后有效版本并标明真实来源时间，不能把定时器触发当作岗位已更新。官网状态变化不自动改写内部工作版 JD/JR 或已确认标准。小时同步的接口、事务和运维验收见[任务记录](docs/operations/2026-10-09-hr-hourly-official-sync.md)。
 
-## 平台入口收敛（2026-10-30，开发验证，未生产发布）
+## 平台入口收敛（2026-10-30，平台已发布，页面待验收）
 
-HR继续从独立 `/hr/` 使用。平台新增授权后的正式Web入口投影，区分现行HR云端服务与旧Brain catalog中的MetaBot适配信息；隐藏平台助手/历史任务不删除HR会话、岗位、标准或成果，不切换执行通道。原统一授权和对象读取重验保持。见[平台收敛设计](docs/superpowers/specs/2026-10-30-platform-navigation-consolidation-design.md)，此次不冒称修改或重新验收HR业务Loop。
+HR继续从独立 `/hr/` 使用。平台新增授权后的正式Web入口投影，区分现行HR云端服务与旧Brain catalog中的MetaBot适配信息；隐藏平台助手/历史任务不删除HR会话、岗位、标准或成果，不切换执行通道。原统一授权和对象读取重验保持。见[平台收敛设计](docs/superpowers/specs/2026-10-30-platform-navigation-consolidation-design.md)；平台代码08c16fd8已发布并完成只读生产检查，真实员工SSO、受认证目录HTTP与用户页面仍待验收，准确版本及首批验收工具失败见[发布记录](docs/operations/2026-10-30-platform-navigation-consolidation.md)。此次不冒称修改或重新验收HR业务Loop。
 
 ## 当前实现入口（2026-09-15）
 

@@ -1,8 +1,8 @@
 # HR 总体架构设计
 
-## 平台Web目录与旧执行配置分离（2026-10-30，开发验证，未生产发布）
+## 平台Web目录与旧执行配置分离（2026-10-30，平台已发布，页面待验收）
 
-平台入口收敛以正式独立 `/hr/` 为HR使用入口。旧Brain catalog中 `hr-bot` 的MetaBot适配字段保留原执行合同，平台在既有真实账号授权过滤之后单独投影 `web_entry`；该旧字段不再用于判断HR是否应显示Web入口。目录展示不改变HR云端执行通道、数据库/对象权限、共享附件票据、岗位或成果归属，也不增加Agent使用授权。平台助手与历史任务界面收起不影响独立HR工作区及其历史。契约与验收范围见[平台入口收敛设计](docs/superpowers/specs/2026-10-30-platform-navigation-consolidation-design.md)，开发/主线/生产状态分别记录。
+平台入口收敛以正式独立 `/hr/` 为HR使用入口。旧Brain catalog中 `hr-bot` 的MetaBot适配字段保留原执行合同，平台在既有真实账号授权过滤之后单独投影 `web_entry`；该旧字段不再用于判断HR是否应显示Web入口。目录展示不改变HR云端执行通道、数据库/对象权限、共享附件票据、岗位或成果归属，也不增加Agent使用授权。平台助手与历史任务界面收起不影响独立HR工作区及其历史。契约见[平台入口收敛设计](docs/superpowers/specs/2026-10-30-platform-navigation-consolidation-design.md)；平台代码08c16fd8已于本日发布，只读生产检查通过，真实员工SSO、受认证目录HTTP和用户页面验收未执行，准确镜像与证据见[发布记录](docs/operations/2026-10-30-platform-navigation-consolidation.md)。此次未重新发布或重新验收HR业务Loop。
 
 ## 旧候选解析器切换与健康契约（2026-10-19）
 
