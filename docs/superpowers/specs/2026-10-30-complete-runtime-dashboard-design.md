@@ -140,6 +140,12 @@ Bound each synchronous refresh as a whole, including query batches, decrypt work
 
 Before implementation the fixer must state concrete deadline/single-flight/cancellation responsibilities and measured cost implications. Acceptance preserves the original6s repro and proves the corrected seven-entry response arrives before5s. Cover cold/warm sources, concurrent callers, delayed/timeout DB refresh and SDK boundary, canceled request followed by another, exact query/decrypt/work counts, source time/identity/no-content invariants and original request authorization. Run only the affected integration/PG/component scope; do not retry failing cases to manufacture success or rerun unrelated Agent/model scenarios. No Agent execution/Loop/context/tool contract changes are authorized by this observation fix.
 
+### Host temporal validity correction review
+
+Focused review closed the latency path but reproduced a remaining host sharing violation: the file reader correctly marks an observation unknown at NOW+91s, while a delayed shared host job validated against its first caller's NOW can return the same observation healthy to the later caller. The common responsibility gap is treating a completed job's time-relative classification as reusable evidence. Single-flight ownership/deadline validity and per-consumer source TTL are separate proofs; retaining one worker does not validate its result for another request clock.
+
+The host worker must reject successful publication after its original deadline. Every consumer, including one joining a live health flight, revalidates the immutable host observation timestamps against its own reporting instant with the existing90s TTL/future rules. Preserve per-host prior observation/version metadata for unknown/stale fallback with original success timestamps, separately from independently completed remote health values. Never relabel old healthy state current, refresh a previous success watermark, reread/retry to manufacture a replacement, or relax TTL. Verify one retained worker, canceled/timed-out first waiter, later/concurrent waiters across TTL/future boundaries, prior version/time retention and healthy remote isolation; preserve the exact failed reproduction before this narrow correction.
+
 
 ### Implemented budget ownership (I1 correction, local validation)
 
