@@ -215,3 +215,84 @@ API recreation and production acceptance remain separate gates.
 ## HostConfig 比较状态版本
 
 原始运行快照仍按原始哈希核对；重建后的比较只对唯一目标的 Binds/Mounts 列表排序，保留每个条目和其他字段，重复目标拒绝。新事务状态必须带 `hostconfig_hash_scheme=unique-mount-lists-v1`；旧原始哈希状态在任何重建前拒绝。需要恢复旧事务时，必须取得与旧哈希精确匹配的原始 HostConfig，保存原始状态，显式原子迁移仅相关哈希/版本字段并保留 raw 证据，重新验证全部配置、身份、锁、其他服务和健康；不得直接删锁或跳过未知差异。
+
+## One-time dashboard observer profile
+
+`plan --profile dashboard-observer-bind-v1 --source-receipt <private-receipt>` is
+an explicit, versioned candidate-only addition. Omit both options for the existing
+image/release-only profile. The default `stage` migration requirement is unchanged;
+a migration-free release needs its separately reviewed context assembler.
+
+Before planning, the operator installs the reviewed observer script/service/timer
+at their fixed paths, performs daemon-reload, and starts the collector to produce
+its StateDirectory and metadata snapshot. The helper never creates, chowns or
+chmods those paths. Approved file hashes are pinned to collector commit `91c872dc`
+in the profile; updating them requires an explicit profile contract review/version.
+The script must be root-owned0755; unit fragments root-owned0644. All parents
+are root-controlled and not group/world writable. No drop-ins or pending reload
+are accepted. Effective loaded invocation, DynamicUser, StateDirectory, timer and
+hardening properties are checked independently of fragment bytes.
+
+The source is either the direct0755 directory
+`/var/lib/orbbec-platform-runtime`, or precisely the root-owned systemd link to
+`/var/lib/private/orbbec-platform-runtime`. The terminal directory's numeric
+DynamicUser owner is diagnostic, while its device/inode/mode are immutable for
+this transaction. Do not relax the private parent's permissions or assign the
+source to API UID10001. Snapshot files must be regular0644, bounded to16KiB, and
+contain only the fixed metadata schema; atomic replacement and collector ownership
+changes are normal. Snapshot content/inode/freshness are not immutable inputs.
+
+On the actual target Engine/Compose version, first verify an isolated task-owned
+fixture produces exactly this one representation: a long `HostConfig.Mounts`
+entry with `Type=bind`, declared `Source=/var/lib/orbbec-platform-runtime`,
+`Target=/run/platform-runtime`, `ReadOnly=true`, and
+`BindOptions={Propagation:rprivate}`. Actual `Mounts.Source` must retain that same
+declared source, with readonly access and `Propagation=rprivate`. A resolved-path
+or other representation mismatch stops for profile revision. Local or synthetic
+fixtures cannot establish the cloud mapping. Also verify API UID10001 can read,
+cannot create/write, sees atomic snapshot replacement, and retains access after
+restarting the real DynamicUser collector without directory replacement.
+
+After that fixture and fixed-path installation, capture a new private receipt:
+
+```sh
+python3 "$ops/scoped-api-release.py" attest-observer --output "$ops/observer-source.json"
+python3 "$ops/scoped-api-release.py" plan --stage "$ops/context" \
+  --build-receipt "$ops/build/build.json" --recipe "$ops/recipe.json" \
+  --profile dashboard-observer-bind-v1 --source-receipt "$ops/observer-source.json" \
+  --output "$ops/transaction"
+python3 "$ops/scoped-api-release.py" inspect-plan --transaction "$ops/transaction"
+```
+
+Attestation is read-only except for the new0600 receipt; it does not run the
+collector or contact health endpoints. Its fixed unit-property parser ignores
+only volatile execution timestamps/PID/result and timer next-elapse values.
+A property-format mismatch fails explicitly; do not edit the receipt to bypass
+it. Plan, inspect-plan and locked preapply re-attest the source and loaded units.
+
+The candidate adds exactly one long bind, readonly, with
+`create_host_path=false` and `propagation=rprivate`. Existing target, ancestor,
+descendant or duplicate mounts, including tmpfs and lexical path aliases, reject
+the profile. It adds `PLATFORM_FAE_HEALTH_URL=http://ai-fae-backend:8000/health`
+only when absent from the effective original image plus Compose environment.
+Existing custom/canonical values remain unchanged. After removing only those
+proved additions, full original Compose parity still applies.
+
+Observer transactions use version2 and
+`hostconfig_hash_scheme=unique-mount-lists-observer-bind-v2`, so the prior helper
+rejects them before mutation. They record full original HostConfig and exact old
+and expected candidate hashes; only unique mount-list ordering is normalized.
+Apply checks preold/postcandidate. Explicit rollback accepts running/stopped
+candidate only with its exact effective configuration, image/tag, mounts and full
+candidate HostConfig. Stopped original additionally requires the exact original
+container ID and original raw Config hash. Missing/stopped recovery requires the
+owned apply-started receipt bound to action/owner/deployment/image/tag/release and
+both owned locks. Missing runtime has no invented hash. Every recovery verifies
+postold; failure retains locks/evidence. Rollback does not require a current or
+healthy snapshot and does not remove observer files or units.
+
+All original input, image-reference, Admin/Nginx, resource-policy and other-container
+guards remain. An existing worker is an unrelated protected container; do not
+remove it to satisfy a historical first-install sequence. API and worker updates
+need sequential fresh baselines. Merged code, helper tests and source attestation
+are separate from actual Engine/systemd fixtures, API and production acceptance.

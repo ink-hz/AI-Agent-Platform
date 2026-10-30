@@ -2,6 +2,7 @@
 """Scoped API image overlay and transaction. No SSH, credentials or Nginx operations."""
 import argparse
 import copy
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -20,6 +21,32 @@ SERVICE = 'platform-api'
 PRIVATE = Path('/opt/orbbec-agent-platform/private')
 SHA = re.compile(r'[0-9a-f]{40}\Z')
 IMAGE = re.compile(r'sha256:[0-9a-f]{64}\Z')
+OBSERVER_PROFILE = 'dashboard-observer-bind-v1'
+OBSERVER_SCHEME = 'unique-mount-lists-observer-bind-v2'
+DEFAULT_PROFILE = 'image-release-v1'
+OBSERVER_SOURCE = '/var/lib/orbbec-platform-runtime'
+OBSERVER_RESOLVED = '/var/lib/private/orbbec-platform-runtime'
+OBSERVER_TARGET = '/run/platform-runtime'
+FAE_KEY = 'PLATFORM_FAE_HEALTH_URL'
+FAE_URL = 'http://ai-fae-backend:8000/health'
+OBSERVER_BIND = {'type': 'bind', 'source': OBSERVER_SOURCE, 'target': OBSERVER_TARGET,
+                 'read_only': True, 'bind': {'create_host_path': False, 'propagation': 'rprivate'}}
+OBSERVER_HOST_BIND = {'Type': 'bind', 'Source': OBSERVER_SOURCE, 'Target': OBSERVER_TARGET,
+                      'ReadOnly': True, 'BindOptions': {'Propagation': 'rprivate'}}
+OBSERVER_EXEC = ('{ path=/usr/bin/python3 ; argv[]=/usr/bin/python3 '
+                 '/usr/local/libexec/orbbec-platform/collect-runtime-observations.py '
+                 '--output /var/lib/orbbec-platform-runtime/snapshot.json ; ignore_errors=no ; ')
+OBSERVER_FILES = {
+    '/usr/local/libexec/orbbec-platform/collect-runtime-observations.py': {
+        'repository': 'deploy/cloud/collect-runtime-observations.py', 'mode': 0o755,
+        'sha256': 'e4d40dd3b1ca409fbdecb9dae8aba4c6f4491a51b8e13e1d2c730f18f6eefd10'},
+    '/etc/systemd/system/orbbec-platform-runtime-observer.service': {
+        'repository': 'deploy/cloud/systemd/orbbec-platform-runtime-observer.service', 'mode': 0o644,
+        'sha256': '7715d33a94dd28bd2a2416c92b4a9cb91cd790f966ee0cba8c150f87c286bc41'},
+    '/etc/systemd/system/orbbec-platform-runtime-observer.timer': {
+        'repository': 'deploy/cloud/systemd/orbbec-platform-runtime-observer.timer', 'mode': 0o644,
+        'sha256': '134b09db1389a01f281b7d7dc52277e626f2937a1289962800b502acd75c0963'},
+}
 REFERENCE = re.compile(r'orbbec-agent-platform:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z')
 
 
@@ -302,6 +329,275 @@ def assert_parity(before, after, image, release):
     require(expected == after, 'compose_parity')
 
 
+
+def validate_profile(profile):
+    require(profile in (DEFAULT_PROFILE, OBSERVER_PROFILE), 'release_profile')
+
+
+def canonical_target(target):
+    require(isinstance(target, str) and target.startswith('/'), 'mount_target')
+    # Resolve lexical aliases only; never resolve host filesystem paths.
+    parts = []
+    for part in target.split('/'):
+        if part == '..':
+            if parts: parts.pop()
+        elif part not in ('', '.'): parts.append(part)
+    return '/' + '/'.join(parts)
+
+
+def assert_mount_targets(targets, observer_absent=True):
+    normalized = [canonical_target(v) for v in targets]
+    require(len(normalized) == len(set(normalized)), 'duplicate_mount_target')
+    if observer_absent:
+        require(all(v != OBSERVER_TARGET and not OBSERVER_TARGET.startswith(v.rstrip('/') + '/')
+                    and not v.startswith(OBSERVER_TARGET + '/') for v in normalized), 'observer_mount_overlap')
+
+
+def compose_targets(service):
+    targets = [v['target'] for v in service.get('volumes', [])]
+    targets.extend(v.split(':', 1)[0] for v in service.get('tmpfs', []))
+    return targets
+
+
+def fae_addition(before, image):
+    env = dict(v.split('=', 1) for v in image['Config'].get('Env', []))
+    env.update(before['services'][SERVICE].get('environment', {}))
+    return FAE_KEY not in env
+
+
+def assert_observer_delta(before, after, image, release, old_image):
+    old_api = before['services'][SERVICE]
+    assert_mount_targets(compose_targets(old_api))
+    candidate = copy.deepcopy(after)
+    api = candidate['services'][SERVICE]
+    assert_mount_targets(compose_targets(api), observer_absent=False)
+    matches = [v for v in api.get('volumes', []) if v == OBSERVER_BIND]
+    require(len(matches) == 1, 'observer_bind')
+    api['volumes'].remove(matches[0])
+    if 'volumes' not in old_api and not api['volumes']: del api['volumes']
+    added = fae_addition(before, old_image)
+    if added:
+        require(api.get('environment', {}).get(FAE_KEY) == FAE_URL, 'observer_environment')
+        del api['environment'][FAE_KEY]
+    assert_parity(before, candidate, image, release)
+    return added
+
+
+def expected_observer_hostconfig(original):
+    result = copy.deepcopy(original)
+    targets = [v.split(':')[1] for v in (result.get('Binds') or [])]
+    targets.extend(v['Target'] for v in (result.get('Mounts') or []))
+    targets.extend((result.get('Tmpfs') or {}).keys())
+    assert_mount_targets(targets)
+    result['Mounts'] = list(result.get('Mounts') or []) + [copy.deepcopy(OBSERVER_HOST_BIND)]
+    hostconfig_hash(result)
+    return result
+
+
+def assert_observer_live_mount(live):
+    matches = [v for v in live['Mounts'] if v['Destination'] == OBSERVER_TARGET]
+    require(len(matches) == 1 and matches[0].get('Type') == 'bind'
+            and matches[0].get('Source') == OBSERVER_SOURCE and matches[0].get('RW') is False
+            and matches[0].get('Propagation') == 'rprivate', 'observer_live_mount')
+
+
+def validate_state(state):
+    profile = state.get('profile', DEFAULT_PROFILE)
+    validate_profile(profile)
+    if profile == DEFAULT_PROFILE:
+        require(state.get('hostconfig_hash_scheme') == 'unique-mount-lists-v1', 'state_hostconfig_scheme')
+        require(not any(k in state for k in ('source_receipt', 'candidate_hostconfig', 'old_hostconfig_raw', 'fae_added')),
+                'state_profile')
+        return profile
+    require(state.get('version') == 2 and state.get('hostconfig_hash_scheme') == OBSERVER_SCHEME, 'state_hostconfig_scheme')
+    required = {'old_config', 'old_hostconfig_raw', 'old_hostconfig', 'candidate_hostconfig', 'source_receipt', 'fae_added',
+                'owner', 'deployment_id', 'old_id', 'old_image', 'old_image_reference', 'new_image', 'new_image_reference',
+                'old_release', 'release', 'manifest_sha256', 'inputs', 'before_config', 'after_config',
+                'baseline_containers', 'guardrails', 'api_name', 'files', 'working_dir', 'project', 'env_file'}
+    require(required <= state.keys() and type(state['fae_added']) is bool, 'state_profile')
+    require(hostconfig_hash(state['old_hostconfig_raw']) == state['old_hostconfig']
+            and hostconfig_hash(expected_observer_hostconfig(state['old_hostconfig_raw'])) == state['candidate_hostconfig'], 'state_hostconfig')
+    validate_source_receipt(state['source_receipt'])
+    return profile
+
+
+def assert_transaction_parity(state, old, new):
+    if state.get('profile', DEFAULT_PROFILE) == OBSERVER_PROFILE:
+        added = assert_observer_delta(old, new, state['new_image_reference'], state['release'], inspect_image(state['old_image']))
+        require(added == state['fae_added'], 'state_environment')
+    else:
+        assert_parity(old, new, state['new_image_reference'], state['release'])
+
+
+def observer_unit_contract(unit):
+    common = {'LoadState': 'loaded', 'FragmentPath': '/etc/systemd/system/' + unit,
+              'DropInPaths': '', 'NeedDaemonReload': 'no'}
+    if unit == 'orbbec-platform-runtime-observer.timer':
+        return {**common, 'Unit': 'orbbec-platform-runtime-observer.service', 'AccuracyUSec': '1s',
+                'RandomizedDelayUSec': '0', 'Persistent': 'no', 'WakeSystem': 'no',
+                'RemainAfterElapse': 'yes', 'TimersCalendar': ''}
+    require(unit == 'orbbec-platform-runtime-observer.service', 'observer_unit')
+    return {**common, 'Type': 'oneshot', 'DynamicUser': 'yes',
+            'StateDirectory': 'orbbec-platform-runtime', 'StateDirectoryMode': '0755', 'UMask': '0022',
+            'TimeoutStartUSec': '10s', 'NoNewPrivileges': 'yes', 'ProtectSystem': 'strict',
+            'ProtectHome': 'yes', 'PrivateTmp': 'yes', 'PrivateDevices': 'yes', 'PrivateNetwork': 'no',
+            'ProtectKernelTunables': 'yes', 'ProtectKernelModules': 'yes', 'ProtectKernelLogs': 'yes',
+            'ProtectControlGroups': 'yes', 'RestrictSUIDSGID': 'yes', 'RestrictRealtime': 'yes',
+            'LockPersonality': 'yes', 'MemoryDenyWriteExecute': 'yes', 'CapabilityBoundingSet': '',
+            'AmbientCapabilities': '', 'RestrictAddressFamilies': 'AF_INET',
+            'IPAddressDeny': '0.0.0.0/0 ::/0', 'IPAddressAllow': '127.0.0.1/32',
+            'TasksMax': '4', 'MemoryMax': '67108864', 'StandardOutput': 'journal', 'StandardError': 'journal',
+            'ExecCondition': '', 'ExecStartPre': '', 'ExecStartPost': '', 'ExecStop': '', 'ExecStopPost': '',
+            'Environment': '', 'EnvironmentFiles': '', 'RootDirectory': '', 'RootImage': '',
+            'BindPaths': '', 'BindReadOnlyPaths': '', 'ReadWritePaths': '', 'ReadOnlyPaths': '',
+            'InaccessiblePaths': '', 'TemporaryFileSystem': ''}
+
+
+def observer_effective_unit(unit):
+    expected = observer_unit_contract(unit)
+    special = 'ExecStart' if unit.endswith('.service') else 'TimersMonotonic'
+    raw = command(['systemctl', 'show', '--all', '--no-pager', '--property=' + ','.join([*expected, special]), unit])
+    rows = {}
+    for line in raw.decode().splitlines():
+        key, value = line.split('=', 1)
+        rows.setdefault(key, []).append(value)
+    # systemd255 omits these empty arrays even with --all. All other fixed
+    # properties must be present, including scalar/path-list empty values.
+    omitted = {'ExecCondition', 'ExecStartPre', 'ExecStartPost', 'ExecStop', 'ExecStopPost',
+               'EnvironmentFiles', 'TimersCalendar'} & set(expected)
+    require(set(rows) == (set(expected) - omitted) | {special}
+            and all(rows[k] == [v] for k, v in expected.items() if k not in omitted), 'observer_effective_unit')
+    if special == 'ExecStart':
+        prefix = OBSERVER_EXEC
+        require(len(rows[special]) == 1 and rows[special][0].startswith(prefix), 'observer_exec')
+        require(re.fullmatch(r'start_time=\[[^\]\n]*\] ; stop_time=\[[^\]\n]*\] ; pid=\d+ ; code=[A-Za-z0-9]+ ; status=\d+ }',
+                             rows[special][0][len(prefix):]) is not None, 'observer_exec')
+        stable = prefix
+    else:
+        stable = []
+        for value in rows[special]:
+            match = re.fullmatch(r'{ (OnBootUSec=10s|OnUnitActiveUSec=30s) ; next_elapse=[A-Za-z0-9 .]+ }', value)
+            require(match is not None, 'observer_timer')
+            stable.append(match[1])
+        require(sorted(stable) == ['OnBootUSec=10s', 'OnUnitActiveUSec=30s'], 'observer_timer')
+        stable.sort()
+    return {**expected, special: stable}
+
+
+def controlled_parents(path):
+    for parent in Path(path).parents:
+        metadata = parent.lstat()
+        require(stat.S_ISDIR(metadata.st_mode) and metadata.st_uid == 0
+                and not metadata.st_mode & 0o022, 'observer_parent')
+
+
+def validate_observer_snapshot(value):
+    def timestamp(raw):
+        require(isinstance(raw, str) and len(raw) <= 40, 'observer_snapshot')
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            raise ReleaseError('observer_snapshot') from None
+        require(parsed.tzinfo is not None, 'observer_snapshot')
+    require(isinstance(value, dict) and set(value) == {'schema_version', 'generated_at', 'observations'}
+            and type(value['schema_version']) is int and value['schema_version'] == 1, 'observer_snapshot')
+    timestamp(value['generated_at'])
+    observations = value['observations']
+    require(isinstance(observations, list) and len(observations) == 2, 'observer_snapshot')
+    identities = []
+    errors = {None, 'health_redirect', 'health_http_error', 'health_not_ready', 'health_payload_limit',
+              'health_invalid_json', 'health_connection_refused', 'health_timeout', 'health_unavailable'}
+    for item in observations:
+        require(isinstance(item, dict) and set(item) == {'application_id', 'state', 'observed_at', 'error', 'version'}, 'observer_snapshot')
+        require(item['application_id'] in ('hr-bot', 'ai-admin-agent')
+                and item['state'] in ('unknown', 'healthy', 'degraded', 'offline')
+                and item['error'] in errors
+                and (item['version'] is None or (item['application_id'] == 'hr-bot'
+                     and isinstance(item['version'], str) and SHA.fullmatch(item['version']))), 'observer_snapshot')
+        timestamp(item['observed_at'])
+        identities.append(item['application_id'])
+    require(sorted(identities) == ['ai-admin-agent', 'hr-bot'], 'observer_snapshot')
+
+
+def source_identity(path):
+    metadata = Path(path).lstat()
+    return {'device': metadata.st_dev, 'inode': metadata.st_ino, 'mode': stat.S_IMODE(metadata.st_mode)}
+
+
+def observer_source_receipt():
+    """Attest fixed installed files and loaded units; never create/chown a source."""
+    require(os.geteuid() == 0, 'host_root')
+    source = Path(OBSERVER_SOURCE)
+    controlled_parents(source)
+    metadata = source.lstat()
+    link = None
+    if stat.S_ISLNK(metadata.st_mode):
+        require(metadata.st_uid == 0 and os.readlink(source) == OBSERVER_RESOLVED, 'observer_source_link')
+        link = source_identity(source)
+        terminal = Path(OBSERVER_RESOLVED)
+        controlled_parents(terminal)
+    else:
+        terminal = source
+    metadata = terminal.lstat()
+    require(stat.S_ISDIR(metadata.st_mode) and stat.S_IMODE(metadata.st_mode) == 0o755, 'observer_source_directory')
+    directory = source_identity(terminal)
+    files = {}
+    for name, expected in OBSERVER_FILES.items():
+        path = Path(name)
+        controlled_parents(path)
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0
+                and stat.S_IMODE(info.st_mode) == expected['mode'], 'observer_code_permission')
+        require(digest(path.read_bytes()) == expected['sha256'], 'observer_code_hash')
+        files[name] = {**source_identity(path), 'sha256': expected['sha256']}
+    units = {unit: observer_effective_unit(unit) for unit in
+             ('orbbec-platform-runtime-observer.service', 'orbbec-platform-runtime-observer.timer')}
+    # A no-follow, bounded regular read permits atomic rename; inode/bytes/UID of
+    # the snapshot are deliberately not immutable deployment inputs.
+    fd = os.open(terminal / 'snapshot.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o644
+                and info.st_size <= 16384, 'observer_snapshot_file')
+        raw = stream.read(16385)
+        require(len(raw) <= 16384, 'observer_snapshot_file')
+        validate_observer_snapshot(json.loads(raw))
+    require(directory == source_identity(terminal) and (link is None or link == source_identity(source)), 'observer_source_changed')
+    return {'profile': OBSERVER_PROFILE, 'declared': OBSERVER_SOURCE, 'resolved': str(terminal),
+            'directory': directory, 'link': link, 'files': files, 'units': units,
+            'diagnostic_ownership': {'uid': metadata.st_uid, 'gid': metadata.st_gid}}
+
+
+def validate_source_receipt(receipt):
+    require(isinstance(receipt, dict) and set(receipt) == {'profile', 'declared', 'resolved', 'directory', 'link', 'files', 'units', 'diagnostic_ownership'}
+            and receipt['profile'] == OBSERVER_PROFILE and receipt['declared'] == OBSERVER_SOURCE
+            and receipt['resolved'] in (OBSERVER_SOURCE, OBSERVER_RESOLVED), 'observer_receipt')
+    require((receipt['link'] is None) == (receipt['resolved'] == OBSERVER_SOURCE), 'observer_receipt')
+    for identity in [receipt['directory'], *([receipt['link']] if receipt['link'] else [])]:
+        require(isinstance(identity, dict) and set(identity) == {'device', 'inode', 'mode'}
+                and all(type(v) is int and v >= 0 for v in identity.values()), 'observer_receipt')
+    require(receipt['directory']['mode'] == 0o755 and set(receipt['files']) == set(OBSERVER_FILES), 'observer_receipt')
+    require(isinstance(receipt['diagnostic_ownership'], dict) and set(receipt['diagnostic_ownership']) == {'uid', 'gid'}
+            and all(type(v) is int and v >= 0 for v in receipt['diagnostic_ownership'].values()), 'observer_receipt')
+    for name, expected in OBSERVER_FILES.items():
+        item = receipt['files'][name]
+        require(isinstance(item, dict) and set(item) == {'device', 'inode', 'mode', 'sha256'}
+                and all(type(item[k]) is int and item[k] >= 0 for k in ('device', 'inode', 'mode'))
+                and item['sha256'] == expected['sha256'] and item['mode'] == expected['mode'], 'observer_receipt')
+    require(set(receipt['units']) == {'orbbec-platform-runtime-observer.service', 'orbbec-platform-runtime-observer.timer'}, 'observer_receipt')
+    for unit, values in receipt['units'].items():
+        expected = observer_unit_contract(unit)
+        special = {'ExecStart': OBSERVER_EXEC} if unit.endswith('.service') else {'TimersMonotonic': ['OnBootUSec=10s', 'OnUnitActiveUSec=30s']}
+        require(values == {**expected, **special}, 'observer_receipt')
+
+
+def assert_observer_source(receipt):
+    validate_source_receipt(receipt)
+    current = observer_source_receipt()
+    require({k: v for k, v in current.items() if k != 'diagnostic_ownership'} ==
+            {k: v for k, v in receipt.items() if k != 'diagnostic_ownership'}, 'observer_source_changed')
+
+
 def daemon_logging():
     path = Path('/etc/docker/daemon.json')
     settings = json.loads(path.read_bytes()) if path.is_file() else {}
@@ -317,7 +613,7 @@ def duration_ns(value):
     return int(match[1]) * {'ns':1, 'us':1000, 'ms':1000000, 's':1000000000, 'm':60000000000, 'h':3600000000000}[match[2]]
 
 
-def assert_runtime_policy(config, live, image, logging_default):
+def assert_runtime_policy(config, live, image, logging_default, running=True):
     """Bounded contract for this API. Unmapped Compose policy fails before mutation."""
     service = config['services'][SERVICE]
     allowed = {'image','environment','command','entrypoint','user','working_dir','volumes','networks',
@@ -383,6 +679,9 @@ def assert_runtime_policy(config, live, image, logging_default):
         endpoint = endpoint or {}
         require(set(endpoint) <= {'aliases','ipv4_address','ipv6_address','link_local_ips','driver_opts','gw_priority','priority'}, 'unsupported_runtime_setting')
         network_name = config['networks'][key]['name']
+        priorities.append((-endpoint.get('priority', 0), key, network_name))
+        if not running:
+            continue
         actual = live['NetworkSettings']['Networks'].get(network_name, {})
         ipam = actual.get('IPAMConfig') or {}
         require(set(ipam) <= {'IPv4Address','IPv6Address','LinkLocalIPs'}, 'live_network_endpoint')
@@ -392,17 +691,17 @@ def assert_runtime_policy(config, live, image, logging_default):
                 and sorted(actual.get('Aliases') or []) == sorted({name, SERVICE, *(endpoint.get('aliases') or [])})
                 and (actual.get('DriverOpts') or {}) == (endpoint.get('driver_opts') or {})
                 and not actual.get('Links') and actual.get('GwPriority', 0) == endpoint.get('gw_priority', 0), 'live_network_endpoint')
-        priorities.append((-endpoint.get('priority', 0), key, network_name))
-    require(set(live['NetworkSettings']['Networks']) == {v[2] for v in priorities}, 'live_network_endpoint')
+    if running:
+        require(set(live['NetworkSettings']['Networks']) == {v[2] for v in priorities}, 'live_network_endpoint')
     require(host.get('NetworkMode') == sorted(priorities)[0][2], 'live_network_mode')
 
 
-def assert_live_contract(config, live, image):
+def assert_live_contract(config, live, image, running=True):
     """Reject stale env-file interpolation or mounted code before comparing candidates."""
     service = config['services'][SERVICE]
     require(not service.get('build'), 'compose_build')
     require(service['image'] == live['Config']['Image'], 'live_image_reference')
-    assert_runtime_policy(config, live, image, daemon_logging())
+    assert_runtime_policy(config, live, image, daemon_logging(), running=running)
     env = dict(v.split('=', 1) for v in image['Config'].get('Env', []))
     env.update({k: str(v) for k, v in service.get('environment', {}).items()})
     require(env == dict(v.split('=', 1) for v in live['Config'].get('Env', [])), 'live_environment')
@@ -432,7 +731,8 @@ def assert_live_contract(config, live, image):
         require(not (v['Destination'].rstrip('/') in ('/app', '/app/backend', '/app/backend/app', '/app/backend/app/static')
                      or v['Destination'].startswith('/app/backend/app/')), 'live_code_bind')
     networks = {config['networks'][name]['name'] for name in service.get('networks', {})}
-    require(networks == set(live['NetworkSettings']['Networks']), 'live_networks')
+    if running:
+        require(networks == set(live['NetworkSettings']['Networks']), 'live_networks')
 
 
 def compose_command(state, override):
@@ -454,9 +754,14 @@ def render(state, override):
     return json.loads(command(compose_command(state, override) + ['config', '--format', 'json']))
 
 
-def override(path, image, release):
+def override(path, image, release, profile=DEFAULT_PROFILE, fae_added=False):
     require(bool(REFERENCE.fullmatch(image)) and bool(SHA.fullmatch(release)), 'override')
-    save(path, {'services': {SERVICE: {'image': image, 'environment': {'PLATFORM_RELEASE_SHA': release}}}})
+    validate_profile(profile)
+    api = {'image': image, 'environment': {'PLATFORM_RELEASE_SHA': release}}
+    if profile == OBSERVER_PROFILE:
+        api['volumes'] = [copy.deepcopy(OBSERVER_BIND)]
+        if fae_added: api['environment'][FAE_KEY] = FAE_URL
+    save(path, {'services': {SERVICE: api}})
 
 
 def snapshots():
@@ -507,7 +812,11 @@ def build(stage_root, output):
                                    'release_sha': manifest['release_sha'], 'manifest_sha256': manifest_hash})
 
 
-def plan(stage_root, build_receipt, recipe, output):
+def plan(stage_root, build_receipt, recipe, output, profile=DEFAULT_PROFILE, source_receipt=None):
+    validate_profile(profile)
+    require((profile == OBSERVER_PROFILE) == (source_receipt is not None), 'observer_receipt')
+    source = read_json(source_receipt) if source_receipt is not None else None
+    if source is not None: assert_observer_source(source)
     manifest = validate_stage(stage_root)
     built, recipe = read_json(build_receipt), read_json(recipe)
     require(built['base_image_id'] == manifest['base_image_id'] and built['release_sha'] == manifest['release_sha']
@@ -535,10 +844,16 @@ def plan(stage_root, build_receipt, recipe, output):
     resolve_reference(old_reference, live['Image'])
     root = private_dir(output, create=True)
     override(root/'compose.rollback.json', old_reference, old_sha)
-    override(root/'compose.candidate.json', built['image_reference'], manifest['release_sha'])
-    before = render(recipe, root/'compose.rollback.json'); after = render(recipe, root/'compose.candidate.json')
-    assert_live_contract(before, live, inspect_image(live['Image']))
-    assert_parity(before, after, built['image_reference'], manifest['release_sha'])
+    before = render(recipe, root/'compose.rollback.json')
+    old_image = inspect_image(live['Image'])
+    assert_live_contract(before, live, old_image)
+    added = fae_addition(before, old_image) if profile == OBSERVER_PROFILE else False
+    override(root/'compose.candidate.json', built['image_reference'], manifest['release_sha'], profile, added)
+    after = render(recipe, root/'compose.candidate.json')
+    if profile == OBSERVER_PROFILE:
+        require(assert_observer_delta(before, after, built['image_reference'], manifest['release_sha'], old_image) == added, 'observer_environment')
+    else:
+        assert_parity(before, after, built['image_reference'], manifest['release_sha'])
     state = {**recipe, 'version': 1, 'old_image': live['Image'], 'old_release': old_sha, 'old_id': live['Id'],
              'new_image': built['image_id'], 'release': manifest['release_sha'], 'api_name': live['Name'],
              'new_image_reference': built['image_reference'], 'old_image_reference': old_reference, 'manifest_sha256': built['manifest_sha256'],
@@ -546,6 +861,12 @@ def plan(stage_root, build_receipt, recipe, output):
              'hostconfig_hash_scheme': 'unique-mount-lists-v1',
              'inputs': input_hashes(recipe), 'before_config': digest(canonical(before)), 'after_config': digest(canonical(after)),
              'baseline_containers': baseline, 'guardrails': readiness, 'owner': str(uuid.uuid4()), 'deployment_id': uuid.uuid4().hex}
+    if profile == OBSERVER_PROFILE:
+        state.update({'profile': profile, 'version': 2, 'hostconfig_hash_scheme': OBSERVER_SCHEME,
+                      'old_config': digest(canonical(live['Config'])), 'old_hostconfig_raw': live['HostConfig'],
+                      'candidate_hostconfig': hostconfig_hash(expected_observer_hostconfig(live['HostConfig'])),
+                      'source_receipt': source, 'fae_added': added})
+    validate_state(state)
     save(root/'state.json', state)
 
 
@@ -571,7 +892,7 @@ def release_locks(state):
 
 def transact(root, rollback=False):
     root = private_dir(root); state = read_json(root/'state.json')
-    require(state.get('hostconfig_hash_scheme') == 'unique-mount-lists-v1', 'state_hostconfig_scheme')
+    profile = validate_state(state)
     assert_reference_bindings(state)
     require(input_hashes(state) == state['inputs'], 'compose_input_changed')
     guardrails(state['guardrails'])
@@ -588,7 +909,14 @@ def transact(root, rollback=False):
             # Explicit recovery from a failed recreate, never an automatic fallback.
             started = read_json(root/'apply.started.json')
             require(started.get('image_id') == state['new_image'] and started.get('release_sha') == state['release'], 'rollback_attempt')
+            if profile == OBSERVER_PROFILE:
+                require(started.get('action') == 'apply' and started.get('image_reference') == state['new_image_reference']
+                        and started.get('owner') == state['owner'] and started.get('deployment_id') == state['deployment_id'], 'rollback_attempt')
             require(live is None or live['Image'] in (state['old_image'], state['new_image']), 'rollback_runtime')
+            if live is not None:
+                old_survivor = live['Image'] == state['old_image']
+                require(live['Config']['Image'] == state['old_image_reference' if old_survivor else 'new_image_reference']
+                        and (not old_survivor or live['Id'] == state['old_id']), 'rollback_runtime')
             locks(state, False)
     else:
         live = live_api(values)
@@ -597,21 +925,29 @@ def transact(root, rollback=False):
         require(before == state['baseline_containers'], 'runtime_changed')
     old = render(state, root/'compose.rollback.json'); new = render(state, root/'compose.candidate.json')
     require(digest(canonical(old)) == state['before_config'] and digest(canonical(new)) == state['after_config'], 'compose_changed')
-    assert_parity(old, new, state['new_image_reference'], state['release'])
+    assert_transaction_parity(state, old, new)
     selected, image, release = (root/'compose.rollback.json', state['old_image'], state['old_release']) if rollback else (root/'compose.candidate.json', state['new_image'], state['release'])
     reference = state['old_image_reference'] if rollback else state['new_image_reference']
     # Independent of config-only parity: effective image env and live data paths must still match.
-    if live is not None and live['State']['Running']:
-        assert_live_contract(new if rollback else old, live, inspect_image(live['Image']))
+    if live is not None:
+        candidate_live = rollback and live['Image'] == state['new_image']
+        if profile == OBSERVER_PROFILE and not candidate_live:
+            require(digest(canonical(live['Config'])) == state['old_config'], 'runtime_changed')
+        assert_live_contract(new if candidate_live else old, live, inspect_image(live['Image']), running=live['State']['Running'])
+        expected_hash = state['candidate_hostconfig'] if profile == OBSERVER_PROFILE and candidate_live else state['old_hostconfig']
+        require(hostconfig_hash(live['HostConfig']) == expected_hash, 'api_hostconfig_changed')
+        if profile == OBSERVER_PROFILE and candidate_live: assert_observer_live_mount(live)
     inspect_image(image)
     locks(state, True)
     require(input_hashes(state) == state['inputs'], 'compose_input_changed')
     guardrails(state['guardrails'])
+    if profile == OBSERVER_PROFILE and not rollback: assert_observer_source(state['source_receipt'])
     immediate, _ = snapshots()
     require(immediate == before, 'runtime_changed')
     assert_reference_bindings(state)
     action = 'rollback' if rollback else 'apply'
-    save(root/(action+'.started.json'), {'action': action, 'time': time.time(), 'image_id': image, 'image_reference': reference, 'release_sha': release})
+    save(root/(action+'.started.json'), {'action': action, 'time': time.time(), 'image_id': image, 'image_reference': reference, 'release_sha': release,
+                                        'owner': state['owner'], 'deployment_id': state['deployment_id']})
     # Failure after acquiring locks deliberately retains them; no silent rollback.
     command(recreate_command(state, selected))
     for _ in range(60):
@@ -623,7 +959,9 @@ def transact(root, rollback=False):
         require(current['Image'] == image and current['Config']['Image'] == reference
                 and env.get('PLATFORM_RELEASE_SHA') == release, 'post_runtime')
         assert_live_contract(old if rollback else new, current, inspect_image(image))
-        require(hostconfig_hash(current['HostConfig']) == state['old_hostconfig'], 'api_hostconfig_changed')
+        expected_hash = state['candidate_hostconfig'] if profile == OBSERVER_PROFILE and not rollback else state['old_hostconfig']
+        require(hostconfig_hash(current['HostConfig']) == expected_hash, 'api_hostconfig_changed')
+        if profile == OBSERVER_PROFILE and not rollback: assert_observer_live_mount(current)
         health = current['State'].get('Health', {}).get('Status')
         if health == 'healthy':
             save(root/(action+'.complete.json'), {'action': action, 'image_id': image, 'image_reference': reference, 'release_sha': release,
@@ -649,20 +987,26 @@ def main(argv=None):
     p = subs.add_parser('build'); p.add_argument('--stage', required=True); p.add_argument('--output', required=True)
     p = subs.add_parser('plan')
     for flag in ['stage', 'build-receipt', 'recipe', 'output']: p.add_argument('--'+flag, required=True)
+    p.add_argument('--profile', default=DEFAULT_PROFILE)
+    p.add_argument('--source-receipt')
+    p = subs.add_parser('attest-observer'); p.add_argument('--output', required=True)
     for action in ['apply', 'rollback', 'inspect-plan']:
         p = subs.add_parser(action); p.add_argument('--transaction', required=True)
     args = parser.parse_args(argv)
     if args.action == 'stage':
         stage(args.repository, args.baseline, args.release, read_json(args.readiness), read_json(args.code_baseline), args.dist, args.output, read_json(args.static_baseline))
     elif args.action == 'build': build(args.stage, args.output)
-    elif args.action == 'plan': plan(args.stage, args.build_receipt, args.recipe, args.output)
+    elif args.action == 'plan': plan(args.stage, args.build_receipt, args.recipe, args.output, args.profile, args.source_receipt)
+    elif args.action == 'attest-observer': save(args.output, observer_source_receipt())
     elif args.action == 'inspect-plan':
         root = private_dir(args.transaction); state = read_json(root/'state.json')
+        profile = validate_state(state)
+        if profile == OBSERVER_PROFILE: assert_observer_source(state['source_receipt'])
         assert_reference_bindings(state)
         require(input_hashes(state) == state['inputs'], 'compose_input_changed')
         old, new = render(state, root/'compose.rollback.json'), render(state, root/'compose.candidate.json')
         require(digest(canonical(old)) == state['before_config'] and digest(canonical(new)) == state['after_config'], 'compose_changed')
-        assert_parity(old, new, state['new_image_reference'], state['release'])
+        assert_transaction_parity(state, old, new)
     else: transact(args.transaction, rollback=args.action == 'rollback')
     print('SCOPED_API_RELEASE_OK action=' + args.action)
 
