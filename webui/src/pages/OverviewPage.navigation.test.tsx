@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import fixture from '../../../backend/tests/fixtures/runtime_dashboard_v1.json';
 import type { DashboardOverview } from '../runtimeDashboardTypes';
 import { OverviewPage } from './OverviewPage';
+import { RuntimeDashboard } from '../runtimeDashboardUi';
 let box:HTMLDivElement;let root:ReturnType<typeof createRoot>;let data:DashboardOverview;
 beforeEach(()=>{(globalThis as any).IS_REACT_ACT_ENVIRONMENT=true;box=document.createElement('div');document.body.append(box);root=createRoot(box);data=structuredClone(fixture) as unknown as DashboardOverview;vi.stubGlobal('fetch',vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify(data)))));});
 afterEach(async()=>{await act(async()=>root.unmount());box.remove();vi.restoreAllMocks();vi.unstubAllGlobals();});
@@ -30,4 +31,33 @@ it('preserves authorized workspace destinations, dataset and actor visibility wi
  const app=data.applications.find(app=>app.id==='manufacturing')!;app.can_use=true;app.entry_path='/manufacturing/';app.dataset={mode:'demo',label:'授权演示项目'} as any;app.source.permission_scope='current_actor_projects';
  await act(async()=>root.render(<OverviewPage/>));const workspace=box.querySelector('[data-application-id="manufacturing"]')!;
  expect(workspace.querySelector('a')?.getAttribute('href')).toBe('/manufacturing/');expect(workspace.textContent).toContain('授权演示项目');expect(workspace.textContent).toContain('演示');expect(workspace.textContent).toContain('当前账号授权项目');expect(workspace.textContent).toContain('不加入会话');expect(workspace.textContent).toContain('运行观测不适用');
+});
+it('keeps provenance and detailed trend data accessible behind closed disclosures',async()=>{
+ await act(async()=>root.render(<OverviewPage/>));
+ const voc=box.querySelector('[data-application-id="voc"]')!;
+ const source=voc.querySelector('details.runtime-source') as HTMLDetailsElement;
+ expect(source).not.toBeNull();expect(source.open).toBe(false);
+ expect(source.querySelector('summary')?.textContent).toContain('新鲜');
+ expect(source.textContent).toContain(data.applications.find(app=>app.id==='voc')!.source.reader_role!);
+ expect(box.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('输入趋势');
+ const table=box.querySelector('.runtime-trend-details') as HTMLDetailsElement;
+ expect(table.open).toBe(false);expect(table.querySelectorAll('tbody tr')).toHaveLength(data.trend.length);
+});
+it.each([['not_configured','未配置健康观测'],['not_observed','尚未观测']] as const)('retains the %s coverage explanation without an error',async(coverage,label)=>{
+ const app=data.applications[0];app.runtime.coverage=coverage;app.runtime.error=null;
+ await act(async()=>root.render(<OverviewPage/>));
+ expect(box.querySelector(`[data-application-id="${app.id}"] .runtime-observation`)?.textContent).toContain(label);
+});
+it('distinguishes unknown and zero days when a 30-day chart omits most date labels',async()=>{
+ data.window.days=30;data.trend=Array.from({length:30},(_,i)=>({...structuredClone(data.trend[0]),date:`2026-10-${String(i+1).padStart(2,'0')}`}));
+ data.trend[1].turns={...data.trend[1].turns,value:null,status:'unavailable'};
+ data.trend[0].turns={...data.trend[0].turns,value:null,status:'unavailable'};
+ data.trend[2].turns={...data.trend[2].turns,value:0,status:'observed'};
+ await act(async()=>root.render(<RuntimeDashboard data={data}/>));
+ const days=box.querySelectorAll('svg g');
+ expect(days[0].querySelectorAll('text')).toHaveLength(2);
+ expect(days[1].querySelector('text')?.textContent).toBe('?');
+ expect(days[1].querySelector('rect')).toBeNull();
+ expect(days[2].querySelector('circle')).not.toBeNull();
+ expect(box.querySelector('.runtime-chart-legend')?.textContent).toContain('部分覆盖');
 });

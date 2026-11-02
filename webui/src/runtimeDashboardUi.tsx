@@ -32,14 +32,16 @@ export function UsageCounts({counts}: {counts:Counts}) {
 const scopes:Record<string,string>={platform_management:'平台管理可见范围',business_scope:'业务授权范围',current_actor_voc_management:'当前账号 VOC 管理可见范围',current_actor:'当前账号可见范围',current_actor_projects:'当前账号授权项目'};
 export function SourceDetails({source}: {source:SourceEvidence}) {
   const proxy = source.input_time_basis === 'record_created_at' || source.input_time_basis === 'mixed';
-  return <div className="runtime-source">
-    <p>数据：{{fresh:'新鲜',stale:'已过期',unavailable:'未知',not_applicable:'不适用'}[source.status]} · {source.complete ? '来源读取完整' : '来源覆盖不完整'}</p>
+  return <details className={`runtime-source source-${source.status}`}>
+    <summary><span className="runtime-source-status">数据：{{fresh:'新鲜',stale:'已过期',unavailable:'未知',not_applicable:'不适用'}[source.status]}</span><span>来源与口径</span></summary>
+    <div className="runtime-source-body"><p>{source.complete ? '来源读取完整' : '来源覆盖不完整'}</p>
     <p>来源 {source.source_id} · {source.source_kind}{source.channel ? ` / ${source.channel}` : ''}{source.channels.length ? ` · 渠道 ${source.channels.filter(Boolean).join('、')}` : ''}</p>
     <p>范围：{scopes[source.permission_scope] ?? source.permission_scope}{source.reader_role ? ` · 读取角色 ${source.reader_role}` : ''}</p>
     <p>源观测 {evidenceTime(source.observed_at)} · 发布/同步 {evidenceTime(source.published_at)} · 检查 {evidenceTime(source.checked_at)}</p>
     {source.input_time_basis && <p>输入归窗：{proxy ? '含记录创建时间代理' : source.input_time_basis === 'inputs_created_at' ? 'HR 原生 inputs.created_at' : '原始提问时间 question_at'}{source.missing_question_time_records != null ? ` · 缺提问时间 ${source.missing_question_time_records} 条` : ''}</p>}
     {source.error && <p className="runtime-warning">{evidenceReason(source.error)}</p>}
-  </div>;
+    </div>
+  </details>;
 }
 const runtimeMethods: Record<string,string> = {host_loopback:'宿主回环观测',safe_http:'固定健康端点观测'};
 const deploymentEvidence: Record<string,string> = {ready_release_sha:'就绪端点实际版本',immutable_catalog_release:'不可变文档目录发布',configured_package_release:'业务包发布配置'};
@@ -51,15 +53,18 @@ function ApplicationCard({app}: {app:Application}) {
   const href = app.can_use && app.entry_path && (app.kind === 'agent'
     ? validWebEntry({kind:'independent_service',path:app.entry_path})
     : (app.id === 'sdk' && app.entry_path === '/sdk/') || (app.id === 'manufacturing' && app.entry_path === '/manufacturing/')) ? app.entry_path : null;
+  const primaryKeys = new Set(['works','results','registered_vocs','documents','published_documents','visible_projects','tasks','complete_answers']);
+  const business = Object.entries(app.business_metrics);
+  const businessMetric = ([key,metric]:[string,Metric])=><div className="runtime-business" key={key}><h4>{businessLabels[key] ?? metric.definition}</h4><MetricValue metric={metric}/><p>{metric.definition}</p>{app.business_sources[key] && <SourceDetails source={app.business_sources[key]}/>}</div>;
   return <article className="runtime-application" data-application-id={app.id} data-application-kind={app.kind}>
-    <header><h3>{app.name}</h3><span>{app.kind === 'agent' ? '独立 Agent 服务' : '业务工作台'}</span></header>
-    {href && <a href={platformPath(href)}>打开工作台 ↗</a>}
-    <p className="runtime-health">{runtime.coverage === 'not_applicable' ? '运行观测不适用 · 内嵌工作台' : state}{runtime.stale ? ' · 健康证据已过期' : runtime.coverage === 'not_configured' ? ' · 未配置健康观测' : runtime.coverage === 'not_observed' ? ' · 尚未观测' : ''}</p>
-    <p>运行观测 {evidenceTime(runtime.observed_at)} · 检查 {evidenceTime(runtime.checked_at)}{runtime.method ? ` · ${runtimeMethods[runtime.method] ?? runtime.method}` : ''}</p>
+    <header><div><span className="runtime-app-kind">{app.kind === 'agent' ? '独立 Agent 服务' : '业务工作台'}</span><h3>{app.name}</h3></div><span className={`runtime-health health-${observed ? runtime.state : 'unknown'}`}>{runtime.coverage === 'not_applicable' ? '内嵌工作台' : state}{runtime.stale ? ' · 已过期' : ''}</span></header>
+    {href && <a className="runtime-entry" href={platformPath(href)}>打开工作台 ↗</a>}
+    <details className="runtime-observation"><summary>{runtime.coverage === 'not_applicable' ? '运行观测不适用' : '运行观测详情'}</summary>{runtime.coverage==='not_configured' && <p>未配置健康观测</p>}{runtime.coverage==='not_observed' && <p>尚未观测</p>}<p>运行观测 {evidenceTime(runtime.observed_at)} · 检查 {evidenceTime(runtime.checked_at)}{runtime.method ? ` · ${runtimeMethods[runtime.method] ?? runtime.method}` : ''}</p></details>
     {runtime.error && <p className="runtime-warning">{evidenceReason(runtime.error)}</p>}
     <SourceDetails source={app.source}/>
     {app.kind === 'agent' ? <><h4>所选窗口输入群组</h4><UsageCounts counts={app.usage.window}/><details><summary>来源保留记录</summary><UsageCounts counts={app.usage.retained}/></details><p>最近输入锚点 {evidenceTime(app.usage.last_activity_at)}</p></> : <p>文档与业务指标独立计量，不加入会话或用户轮次。</p>}
-    {Object.entries(app.business_metrics).map(([key,metric])=><div className="runtime-business" key={key}><h4>{businessLabels[key] ?? metric.definition}</h4><MetricValue metric={metric}/><p>{metric.definition}</p>{app.business_sources[key] && <SourceDetails source={app.business_sources[key]}/>}</div>)}
+    <div className="runtime-business-grid">{business.filter(([key])=>primaryKeys.has(key)).map(businessMetric)}</div>
+    {business.some(([key])=>!primaryKeys.has(key)) && <details className="runtime-business-details"><summary>更多业务指标（{business.filter(([key])=>!primaryKeys.has(key)).length}）</summary><div className="runtime-business-grid">{business.filter(([key])=>!primaryKeys.has(key)).map(businessMetric)}</div></details>}
     {app.dataset && <p className="runtime-dataset">数据集：{app.dataset.label ?? '未提供标签'} · {({demo:'演示',test:'测试',production:'正式'} as Record<string,string>)[app.dataset.mode] ?? app.dataset.mode ?? '类型未知'}</p>}
     <p className="runtime-deployment">实际版本：{app.deployment.version && app.deployment.evidence ? <><code>{app.deployment.version}</code> · {deploymentEvidence[app.deployment.evidence] ?? app.deployment.evidence} · 观测 {evidenceTime(app.deployment.observed_at)}</> : '未知（无发布证据）'}</p>
   </article>;
@@ -67,20 +72,36 @@ function ApplicationCard({app}: {app:Application}) {
 function ChannelCard({channel, historical=false}: {channel:Channel;historical?:boolean}) {
   return <article className="runtime-channel"><h3>{channel.name}</h3><p>{historical ? '历史来源' : channel.configured ? '已配置渠道 Agent' : '配置状态未知'} · 不计独立服务使用总数</p><SourceDetails source={channel.source}/><h4>所选窗口输入群组</h4><UsageCounts counts={channel.usage.window}/><details><summary>来源保留记录</summary><UsageCounts counts={channel.usage.retained}/></details></article>;
 }
+function InputTrend({data}: {data:DashboardOverview}) {
+  const maximum=Math.max(1,...data.trend.map(day=>day.turns.value ?? 0));
+  const width=Math.max(420,data.trend.length*36), step=width/Math.max(1,data.trend.length);
+  return <div className="runtime-chart-scroll"><svg className={`runtime-trend-chart${data.trend.length>14 ? ' is-long' : ''}`} role="img" aria-label={`近 ${data.window.days} 天用户输入趋势`} viewBox={`0 0 ${width} 180`}>
+    <title>用户输入趋势，详细数值与覆盖情况见下方数据表</title>
+    <defs><pattern id="runtime-trend-partial" patternUnits="userSpaceOnUse" width="6" height="6"><rect width="6" height="6" className="runtime-chart-pattern-base"/><path d="M-1,1 L1,-1 M0,6 L6,0 M5,7 L7,5" className="runtime-chart-pattern-line"/></pattern></defs>
+    <line x1="0" y1="146" x2={width} y2="146" className="runtime-chart-baseline"/>
+    {data.trend.map((day,index)=>{
+      const height=day.turns.value===null ? null : (day.turns.value/maximum)*112;
+      return <g key={day.date} className={day.turns.status==='partial' ? 'runtime-chart-day is-partial' : 'runtime-chart-day'}>
+        <title>{day.date}：{day.turns.value===null ? '未知' : `${day.turns.value} 轮`} · {statuses[day.turns.status]}{day.turns.reason ? ` · ${evidenceReason(day.turns.reason)}` : ''}</title>
+        {height===null ? <text x={index*step+step/2} y="138" className="runtime-chart-missing">?</text> : height===0 ? <circle cx={index*step+step/2} cy="146" r="3" className="runtime-chart-zero"><title>0 轮</title></circle> : <rect x={index*step+(step-20)/2} y={146-height} width="20" height={height} rx="3"/>}
+        {(data.trend.length<=14 || index%5===0 || index===data.trend.length-1) && <>{height!==null && <text x={index*step+step/2} y={138-height} className="runtime-chart-value">{day.turns.value}</text>}<text x={index*step+step/2} y="168" className="runtime-chart-date">{day.date.slice(5).replace('-','/')}</text></>}
+      </g>;
+    })}
+  </svg></div>;
+}
 export function RuntimeDashboard({data}: {data:DashboardOverview}) {
   const summary=data.summary;
   const names=new Map(data.applications.filter(app=>app.kind==='agent').map(app=>[app.id,app.name]));
   return <>
-    <section className="runtime-coverage" aria-label="数据覆盖"><h2>数据覆盖</h2>
-      <p>正式应用 {data.inventory.applications} 个 · 独立 Agent 服务 {data.inventory.agent_services} 个 · 业务工作台 {data.inventory.business_workspaces} 个 · 已配置 Agent {data.inventory.configured_agents} 个</p>
-      <p>健康观测覆盖 {summary.observed_runtime}/{summary.expected_runtime} · 健康 {summary.healthy} · 异常 {summary.abnormal} · 未知 {summary.unknown}</p>
-      <p>独立服务数据覆盖 {summary.covered_sources}/{summary.expected_sources} · {{complete:'完整覆盖',partial:'部分覆盖',unavailable:'未知'}[summary.status]}</p>
+    <section className="runtime-coverage" aria-label="数据覆盖"><div className="runtime-section-heading"><h2>数据覆盖</h2><span className={`runtime-coverage-status coverage-${summary.status}`}>{summary.covered_sources}/{summary.expected_sources} 独立服务 · {{complete:'完整覆盖',partial:'部分覆盖',unavailable:'未知'}[summary.status]}</span></div>
+      <div className="runtime-inventory"><span><strong>{data.inventory.applications}</strong> 正式应用</span><span><strong>{data.inventory.agent_services}</strong> 独立 Agent 服务</span><span><strong>{data.inventory.business_workspaces}</strong> 业务工作台</span><span><strong>{data.inventory.configured_agents}</strong> 已配置 Agent</span></div>
+      <div className="runtime-health-summary"><span>健康观测覆盖 {summary.observed_runtime}/{summary.expected_runtime}</span><span className="health-healthy">健康 {summary.healthy}</span><span className={summary.abnormal ? 'health-degraded' : ''}>异常 {summary.abnormal}</span><span>未知 {summary.unknown}</span></div>
       <p>快照 {evidenceTime(data.generated_at)} · 上海时区 · 输入时间窗口 [{evidenceTime(data.window.start)}, {evidenceTime(data.window.end)})</p>
       <p>近 15 分钟有输入的独立 Agent：<MetricValue metric={summary.active_agents_15m}/></p>
     </section>
-    <section aria-label="当前独立服务使用"><h2>当前独立服务使用 · 近 {data.window.days} 天</h2><UsageCounts counts={summary.usage}/><p>仅统计当前独立 Agent；渠道与历史来源、工作台业务指标分别呈现。回复/送达表示同一输入群组当前记录状态，不代表窗口内回复/送达事件或任务完成。</p></section>
-    <section aria-label="近24小时活动"><h2>近 24 小时活动</h2><p>输入窗口 [{evidenceTime(data.rolling_24h.start)}, {evidenceTime(data.rolling_24h.end)})</p><UsageCounts counts={data.last_24h}/></section>
-    <div className="runtime-insights"><section><h2>近 {data.window.days} 天输入趋势</h2><div className="runtime-table-scroll"><table><caption>上海自然日 · 同一输入群组的当前回复与送达状态</caption><thead><tr><th scope="col">日期</th><th scope="col">用户输入</th><th scope="col">已有回复记录</th><th scope="col">已确认送达</th></tr></thead><tbody>{data.trend.map(day=><tr key={day.date}><th scope="row">{day.date}</th><td><MetricValue metric={day.turns}/></td><td><MetricValue metric={day.answered_turns}/></td><td><MetricValue metric={day.deliveries}/></td></tr>)}</tbody></table></div></section>
+    <section className="runtime-usage-summary" aria-label="当前独立服务使用"><h2>当前独立服务使用 · 近 {data.window.days} 天</h2><UsageCounts counts={summary.usage}/><p className="runtime-note">仅统计当前独立 Agent；渠道与历史来源、工作台业务指标分别呈现。回复/送达表示同一输入群组当前记录状态，不代表窗口内回复/送达事件或任务完成。</p></section>
+    <section className="runtime-recent" aria-label="近24小时活动"><h2>近 24 小时活动</h2><p className="runtime-note">输入窗口 [{evidenceTime(data.rolling_24h.start)}, {evidenceTime(data.rolling_24h.end)})</p><UsageCounts counts={data.last_24h}/></section>
+    <div className="runtime-insights"><section><h2>近 {data.window.days} 天输入趋势</h2><p className="runtime-note">上海自然日 · 每日用户输入，覆盖情况见明细</p><InputTrend data={data}/><p className="runtime-chart-legend">实色：已观测 · 斜纹：部分覆盖 · ○：零输入 · ?：未知</p><details className="runtime-trend-details"><summary>查看每日数据与统计口径</summary><div className="runtime-table-scroll"><table><caption>上海自然日 · 同一输入群组的当前回复与送达状态</caption><thead><tr><th scope="col">日期</th><th scope="col">用户输入</th><th scope="col">已有回复记录</th><th scope="col">已确认送达</th></tr></thead><tbody>{data.trend.map(day=><tr key={day.date}><th scope="row">{day.date}</th><td><MetricValue metric={day.turns}/></td><td><MetricValue metric={day.answered_turns}/></td><td><MetricValue metric={day.deliveries}/></td></tr>)}</tbody></table></div></details></section>
     <section><h2>当前独立服务输入排名</h2><ol className="runtime-ranking">{data.ranking.filter(row=>names.has(row.application_id) && row.turns.value !== null).map(row=><li key={row.application_id}><span>{names.get(row.application_id)}</span><MetricValue metric={row.turns}/></li>)}</ol><p>仅列有已知输入量的独立服务；缺数据不按 0 排名。</p></section></div>
     <section><h2>独立 Agent 服务</h2><div className="runtime-application-grid">{data.applications.filter(app=>app.kind==='agent').map(app=><ApplicationCard app={app} key={app.id}/>)}</div></section>
     <section><h2>业务工作台</h2><div className="runtime-application-grid">{data.applications.filter(app=>app.kind==='workspace').map(app=><ApplicationCard app={app} key={app.id}/>)}</div></section>
