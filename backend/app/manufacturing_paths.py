@@ -60,6 +60,14 @@ WORKFLOW_ROUTES = frozenset(
         ("POST", "/projects/{project_id}/commands"),
         ("GET", "/projects/{project_id}/trace"),
         ("GET", "/projects/{project_id}/exchanges"),
+        ("GET", "/projects/{project_id}/assistance"),
+        ("GET", "/reusable-assets"),
+        ("GET", "/projects/{project_id}/integration-intents"),
+        ("GET", "/projects/{project_id}/integration-links"),
+        ("GET", "/projects/{project_id}/systems"),
+        ("GET", "/projects/{project_id}/systems/{system}/facts"),
+        ("GET", "/projects/{project_id}/systems/{system}/facts/{object_type}/{external_id}"),
+        ("GET", "/projects/{project_id}/systems/product_test/artifacts/{artifact_id}"),
     }
 )
 WORKFLOW_AUTH_ROUTES = frozenset(

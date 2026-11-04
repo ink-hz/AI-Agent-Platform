@@ -362,3 +362,47 @@ def test_unavailable_global_routes_authenticate_before_validation(tmp_path, monk
         assert response.status_code == 503
         assert response.headers['cache-control'] == 'private, no-store'
         client.cookies.clear()
+
+
+def test_host_allowlist_covers_every_released_workflow_route(tmp_path):
+    # The host denies unlisted workflow routes, so a library route missing here
+    # surfaces to users as "no access" even for platform owners.
+    import importlib.util
+    import os
+    import sys
+    from pathlib import Path
+
+    from app.manufacturing_paths import WORKFLOW_AUTH_ROUTES
+    from fastapi.routing import APIRoute
+
+    configured = os.environ.get("TEST_MANUFACTURING_RELEASE_ROOT")
+    if not configured:
+        pytest.skip("set TEST_MANUFACTURING_RELEASE_ROOT for real sibling integration")
+    package = Path(configured) / "src/manufacturing_platform"
+    spec = importlib.util.spec_from_file_location(
+        "_route_contract_manufacturing", package / "__init__.py",
+        submodule_search_locations=[str(package)],
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        router = module.build_workflow_router(
+            database_path=str(tmp_path / "domain.db"),
+            authority_database_path=str(tmp_path / "authority.db"),
+            assets_dir=str(tmp_path),
+            authenticate=lambda request, write: None,
+            resolve_subject=lambda user_id: False,
+            release={},
+            dataset={"id": "test", "mode": "test", "label": "test"},
+        )
+    finally:
+        for name in [n for n in sys.modules if n.startswith(spec.name)]:
+            del sys.modules[name]
+    released = {
+        (method, route.path)
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+    assert released and released <= WORKFLOW_AUTH_ROUTES, sorted(released - WORKFLOW_AUTH_ROUTES)
