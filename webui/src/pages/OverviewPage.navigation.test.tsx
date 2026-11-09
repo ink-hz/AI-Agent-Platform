@@ -24,8 +24,8 @@ it('keeps native HR counts separate from 369 historical turns and never links an
  data.applications[0].usage.window.turns={...data.applications[1].usage.window.turns,value:39};data.legacy_streams[0].usage.retained.turns={...data.applications[1].usage.window.turns,value:369};data.applications[0].can_use=false;
  await act(async()=>root.render(<OverviewPage/>));expect(box.querySelector('[data-application-id="hr-bot"]')?.textContent).toContain('39 轮');expect(box.querySelector('.runtime-history')?.textContent).toContain('369 轮');expect(box.querySelector('[aria-label="当前独立服务使用"]')?.textContent).not.toContain('369');expect(box.querySelector('a[href="/hr/"]')).toBeNull();
 });
-it('reports first request failure with no invented healthy or zero cards',async()=>{vi.mocked(fetch).mockRejectedValue(new Error('offline'));await act(async()=>root.render(<OverviewPage/>));expect(box.querySelector('[role="alert"]')?.textContent).toContain('读取失败');expect(box.querySelectorAll('[data-application-id]')).toHaveLength(0);});
-it('shows stale source evidence without suppressing known metrics or inferring fresh health',async()=>{data.applications[1].source.status='stale';data.applications[1].source.error='source_read_failed';data.applications[1].runtime.stale=true;await act(async()=>root.render(<OverviewPage/>));const voc=box.querySelector('[data-application-id="voc"]')!;expect(voc.textContent).toContain('已过期');expect(voc.textContent).toContain('运行未知');expect(voc.textContent).toContain('2 轮');});
+it('reports first request failure with no invented healthy or zero cards',async()=>{vi.mocked(fetch).mockRejectedValue(new Error('offline'));await act(async()=>root.render(<OverviewPage/>));expect(box.querySelector('.runtime-reconnecting')?.textContent).toContain('读取失败');expect(box.querySelectorAll('[data-application-id]')).toHaveLength(0);});
+it('keeps the last source values and unknown health without an expired-state banner',async()=>{data.applications[1].source.status='stale';data.applications[1].source.error='source_read_failed';data.applications[1].runtime.stale=true;await act(async()=>root.render(<OverviewPage/>));const voc=box.querySelector('[data-application-id="voc"]')!;expect(voc.textContent).not.toContain('过期');expect(voc.querySelector('.runtime-source')?.getAttribute('data-source-status')).toBe('stale');expect(voc.textContent).toContain('更新待确认');expect(voc.textContent).toContain('运行未知');expect(voc.textContent).toContain('2 轮');});
 
 it('preserves authorized workspace destinations, dataset and actor visibility without conversation totals',async()=>{
  const app=data.applications.find(app=>app.id==='manufacturing')!;app.can_use=true;app.entry_path='/manufacturing/';app.dataset={mode:'demo',label:'授权演示项目'} as any;app.source.permission_scope='current_actor_projects';
@@ -37,7 +37,7 @@ it('keeps provenance and detailed trend data accessible behind closed disclosure
  const voc=box.querySelector('[data-application-id="voc"]')!;
  const source=voc.querySelector('details.runtime-source') as HTMLDetailsElement;
  expect(source).not.toBeNull();expect(source.open).toBe(false);
- expect(source.querySelector('summary')?.textContent).toContain('新鲜');
+ expect(source.getAttribute('data-source-status')).toBe('fresh');expect(source.querySelector('summary')?.textContent).toContain('统计口径');
  expect(source.textContent).toContain(data.applications.find(app=>app.id==='voc')!.source.reader_role!);
  expect(box.querySelector('svg[role="img"]')?.getAttribute('aria-label')).toContain('输入趋势');
  const table=box.querySelector('.runtime-trend-details') as HTMLDetailsElement;
@@ -60,4 +60,54 @@ it('distinguishes unknown and zero days when a 30-day chart omits most date labe
  expect(days[1].querySelector('rect')).toBeNull();
  expect(days[2].querySelector('circle')).not.toBeNull();
  expect(box.querySelector('.runtime-chart-legend')?.textContent).toContain('部分覆盖');
+});
+it('uses the chosen local homepage hierarchy and treats configured channels as history',async()=>{
+ for(const channel of data.channel_agents){channel.source.status='stale';channel.source.error='source_stale';channel.source.observed_at=null;}
+ await act(async()=>root.render(<OverviewPage/>));
+ expect(box.querySelectorAll('.fleet-summary-grid > article')).toHaveLength(4);
+ expect(box.querySelectorAll('.fleet-agent-grid [data-application-kind="agent"]')).toHaveLength(5);
+ expect(box.querySelector('.runtime-channel-list')?.textContent).toContain('已配置');
+ expect(box.querySelector('.runtime-channel-list')?.textContent).not.toContain('过期');
+ expect(box.querySelector('.runtime-channel-list a[href="/marketing/"]')).toBeNull();
+ expect(box.querySelector('.runtime-channel-list details')?.textContent).toContain('历史记录');
+});
+it('pauses background polling and refreshes immediately when the page becomes visible',async()=>{
+ vi.useFakeTimers();const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ try {
+  await act(async()=>root.render(<OverviewPage/>));expect(fetch).toHaveBeenCalledTimes(1);
+  visibility.mockReturnValue('hidden');await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+  await act(async()=>vi.advanceTimersByTimeAsync(40_000));expect(fetch).toHaveBeenCalledTimes(1);
+  visibility.mockReturnValue('visible');await act(async()=>document.dispatchEvent(new Event('visibilitychange')));expect(fetch).toHaveBeenCalledTimes(2);
+ } finally {visibility.mockRestore();vi.useRealTimers();}
+});
+it('keeps the latest visible-page response when an aborted background request settles late',async()=>{
+ const visibility=vi.spyOn(document,'visibilityState','get').mockReturnValue('visible');
+ const old=structuredClone(data);let finish!:(response:Response)=>void;
+ vi.mocked(fetch).mockImplementationOnce(()=>new Promise<Response>(resolve=>{finish=resolve;}));
+ await act(async()=>root.render(<OverviewPage/>));
+ const signal=vi.mocked(fetch).mock.calls[0][1]?.signal;
+ visibility.mockReturnValue('hidden');await act(async()=>document.dispatchEvent(new Event('visibilitychange')));expect(signal?.aborted).toBe(true);
+ data.summary.usage.turns.value=9999;
+ visibility.mockReturnValue('visible');await act(async()=>document.dispatchEvent(new Event('visibilitychange')));
+ expect(box.querySelector('.summary-total')?.textContent).toContain('9,999');
+ await act(async()=>finish(new Response(JSON.stringify(old))));
+ expect(box.querySelector('.summary-total')?.textContent).toContain('9,999');
+ expect(box.querySelector('.runtime-reconnecting')).toBeNull();expect(fetch).toHaveBeenCalledTimes(2);
+});
+it('retains real values on refresh failure and recovers through the visible retry action',async()=>{
+ await act(async()=>root.render(<OverviewPage/>));
+ const old=box.querySelector('.summary-total')!.textContent;
+ vi.mocked(fetch).mockRejectedValueOnce(new Error('network unavailable'));
+ await act(async()=>[...box.querySelectorAll('button')].find(button=>button.textContent==='立即刷新')!.click());
+ expect(box.querySelector('.summary-total')?.textContent).toBe(old);
+ expect(box.querySelector('.runtime-reconnecting')?.textContent).toContain('上次成功读取');expect(box.textContent).not.toContain('过期');
+ await act(async()=>[...box.querySelectorAll('button')].find(button=>button.textContent==='立即重试')!.click());
+ expect(box.querySelector('.runtime-reconnecting')).toBeNull();expect(fetch).toHaveBeenCalledTimes(3);
+});
+it('labels retained inputs accurately and does not turn an unknown timestamp into an empty history',async()=>{
+ const app=data.applications[1];app.usage.last_activity_at=null;app.source.status='unavailable';
+ await act(async()=>root.render(<OverviewPage/>));const card=box.querySelector(`[data-application-id="${app.id}"]`)!;
+ expect(card.querySelector('.fleet-usage')?.textContent).toContain('来源保留输入');
+ expect(card.querySelector('.fleet-usage')?.textContent).not.toContain('累计');
+ expect(card.querySelector('.runtime-card-meta')?.textContent).toContain('暂无可用时间');
 });
