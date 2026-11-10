@@ -153,15 +153,22 @@ def _unavailable_router() -> APIRouter:
     return router
 
 
-def _native_production_options(module, paths, dataset):
+def _native_production_options(module, paths):
     """Optional connector errors must never disable the controlled workflow."""
-    parameter = inspect.signature(module.build_workflow_router).parameters.get("production_tools")
-    compatible = (
-        parameter is not None
-        and parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
-        and callable(getattr(module, "build_native_config", None))
-        and callable(getattr(module, "validate_snapshot_path", None))
-    )
+    factory = getattr(module, "build_native_config", None)
+    try:
+        parameter = inspect.signature(module.build_workflow_router).parameters.get("production_tools")
+        compatible = (
+            getattr(module, "NATIVE_PRODUCTION_PROTOCOL", None) == 2
+            and parameter is not None
+            and parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+            and callable(factory)
+            and callable(getattr(module, "validate_snapshot_path", None))
+        )
+        if compatible:
+            inspect.signature(factory).bind("config_path", "snapshot_path")
+    except (TypeError, ValueError):
+        compatible = False
     if not compatible:
         logging.getLogger(__name__).warning("PRODUCTION_TOOLS_RELEASE_INCOMPATIBLE")
         return False, {}
@@ -173,7 +180,7 @@ def _native_production_options(module, paths, dataset):
             if not config_path or not snapshot_path or not Path(config_path).is_absolute():
                 raise ValueError("invalid native settings")
             module.validate_snapshot_path(snapshot_path, (*map(str, paths), config_path))
-            options["production_tools"] = module.build_native_config(config_path, snapshot_path, dataset)
+            options["production_tools"] = factory(config_path, snapshot_path)
         except Exception:  # noqa: BLE001 - never log private settings or source errors
             logging.getLogger(__name__).warning("PRODUCTION_TOOLS_CONFIG_INVALID")
     return True, options
@@ -275,8 +282,7 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
                         and paths[i].samefile(paths[j])
                     ):
                         raise ValueError("invalid workflow configuration")
-            dataset = {"id": dataset_id, "mode": mode, "label": label}
-            native_compatible, profile_options = _native_production_options(module, paths, dataset)
+            native_compatible, profile_options = _native_production_options(module, paths)
             profile_parameter = inspect.signature(module.build_workflow_router).parameters.get("resolve_subject_profiles")
             if profile_parameter is not None and profile_parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}:
                 profile_options["resolve_subject_profiles"] = resolve_workflow_profiles

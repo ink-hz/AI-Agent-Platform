@@ -71,11 +71,17 @@ WORKFLOW_ROUTES = frozenset(
     }
 )
 PRODUCTION_TOOLS_ROUTES = frozenset(
-    ("GET", "/projects/{project_id}/production-tools" + suffix)
-    for suffix in (
-        "/status", "/observations", "/catalog/{kind}", "/evidence",
-        "/evidence/{source_log_id}/content", "/statistics", "/snapshots/{snapshot_id}",
-    )
+    {
+        ("GET", "/production-tools/status"),
+        ("GET", "/production-tools/projects"),
+        ("GET", "/production-tools/projects/{source_project_id}/status"),
+        ("GET", "/production-tools/projects/{source_project_id}/observations"),
+        ("GET", "/production-tools/projects/{source_project_id}/catalog/{kind}"),
+        ("GET", "/production-tools/projects/{source_project_id}/evidence"),
+        ("GET", "/production-tools/projects/{source_project_id}/evidence/{source_log_id}/content"),
+        ("GET", "/production-tools/projects/{source_project_id}/statistics"),
+        ("GET", "/production-tools/projects/{source_project_id}/snapshots/{snapshot_id}"),
+    }
 )
 WORKFLOW_ROUTES |= PRODUCTION_TOOLS_ROUTES
 WORKFLOW_AUTH_ROUTES = frozenset(

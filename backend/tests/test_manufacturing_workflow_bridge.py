@@ -132,7 +132,23 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
         assert response.headers["cache-control"] == "private, no-store"
     assert not (tmp_path / "domain.db").exists()
     caplog.clear()
+    for path in ("/production-tools/status", "/production-tools/projects/10001/status"):
+        assert client.get(wf + path).status_code == 401
     client.cookies.set(auth.cookie_name, "valid-cookie")
+    # Independent source routes work before any manufacturing project exists.
+    assert client.get(wf + "/projects").json()["items"] == []
+    assert client.get(wf + "/production-tools/status").json()["configured"] is False
+    auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
+    for path in ("/production-tools/status", "/production-tools/projects",
+                 "/production-tools/projects/10001/status"):
+        denied = client.get(wf + path)
+        assert denied.status_code == 403
+        assert denied.json()["code"] == "FORBIDDEN"
+    auth.context = AuthContext(owner, Role.PLATFORM_OWNER, auth.context.session_id, False)
+    for source_id in ("0", "01", "-1", "1.0", "a", "1" * 21):
+        assert client.get(wf + f"/production-tools/projects/{source_id}/status").status_code == 422
+    assert client.get(wf + "/production-tools/unknown").status_code in (403, 404)
+    assert client.post(wf + "/production-tools/status", json={}).status_code in (403, 404, 405)
     headers = {
         "Origin": "https://agent.example.test",
         "X-CSRF-Token": auth.csrf,
@@ -238,13 +254,14 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
     assert client.get(wf + "/access").json()["project_ids"] == [pid]
     assert client.get(f"{wf}/projects/{pid}").status_code == 200
-    tools = f"{wf}/projects/{pid}/production-tools"
-    assert client.get(tools + "/status").json()["configured"] is False
+    tools = wf + "/production-tools/projects/10001"
+    assert client.get(tools + "/status").status_code == 403
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, True)
-    assert client.get(tools + "/status").status_code == 200
+    assert client.get(tools + "/status").status_code == 403
     auth.context = AuthContext(uuid4(), Role.MEMBER, auth.context.session_id, False)
-    assert client.get(tools + "/status").status_code == 404
+    assert client.get(tools + "/status").status_code == 403
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
+    assert client.get(f"{wf}/projects/{pid}/production-tools/status").status_code in (403, 404)
     scoped_members=client.get(f"{wf}/projects/{pid}/members?limit=1&offset=0")
     assert scoped_members.status_code==200
     assert len(scoped_members.json()["items"])==1

@@ -13,18 +13,16 @@ from app.manufacturing import build_manufacturing_router
 from app.manufacturing_paths import WORKFLOW_ROUTES
 from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants
 
-ROOT = "/projects/{project_id}/production-tools"
 PATHS = {
-    ROOT + suffix
-    for suffix in (
-        "/status",
-        "/observations",
-        "/catalog/{kind}",
-        "/evidence",
-        "/evidence/{source_log_id}/content",
-        "/statistics",
-        "/snapshots/{snapshot_id}",
-    )
+    "/production-tools/status",
+    "/production-tools/projects",
+    "/production-tools/projects/{source_project_id}/status",
+    "/production-tools/projects/{source_project_id}/observations",
+    "/production-tools/projects/{source_project_id}/catalog/{kind}",
+    "/production-tools/projects/{source_project_id}/evidence",
+    "/production-tools/projects/{source_project_id}/evidence/{source_log_id}/content",
+    "/production-tools/projects/{source_project_id}/statistics",
+    "/production-tools/projects/{source_project_id}/snapshots/{snapshot_id}",
 }
 BASE = "/api/v1/manufacturing/workflow"
 
@@ -43,9 +41,15 @@ def test_exact_read_whitelist():
         assert not service.decide(member, "POST", BASE + path, ()).allowed
         assert not service.decide(member, "GET", BASE + path + "/extra", ()).allowed
 
+    for suffix in ("status", "observations", "catalog/{kind}", "evidence",
+                   "evidence/{source_log_id}/content", "statistics", "snapshots/{snapshot_id}"):
+        assert not service.decide(
+            member, "GET", BASE + "/projects/{project_id}/production-tools/" + suffix, ()
+        ).allowed
+
 
 def configured_release(
-    tmp_path, monkeypatch, *, native=True, factory=True, malformed=False
+    tmp_path, monkeypatch, *, native=True, factory=True, malformed=False, protocol=2, factory_arity=2
 ):
     root = tmp_path / "release"
     package = root / "src/manufacturing_platform"
@@ -63,6 +67,8 @@ def build_router(**kw):
     def catchall(path): return {'legacy_catchall': True}
     return router
 """
+    if protocol is not None:
+        source += f"NATIVE_PRODUCTION_PROTOCOL = {protocol!r}\n"
     if factory:
         source += """def validate_snapshot_path(path, protected_paths=()):
     from pathlib import Path
@@ -71,9 +77,9 @@ def build_router(**kw):
     for other in protected_paths:
         p, q = Path(path), Path(other)
         if p.resolve() == q.resolve() or (p.exists() and q.exists() and p.samefile(q)): raise ValueError('private')
-def build_native_config(config_path, snapshot_path, dataset):
-    received['factory'] = (config_path, snapshot_path, dataset)
 """
+        arguments = "config_path, snapshot_path" + (", dataset" if factory_arity == 3 else "")
+        source += f"def build_native_config({arguments}):\n    received['factory'] = (config_path, snapshot_path)\n"
         source += (
             "    raise ValueError('SECRET endpoint')\n"
             if malformed
@@ -87,7 +93,7 @@ def build_native_config(config_path, snapshot_path, dataset):
 """
     if native:
         source += "    received['config'] = production_tools\n"
-        source += "    @router.get('/projects/{project_id}/production-tools/status')\n    def status(project_id): return {'configured': production_tools is not None}\n"
+        source += "    @router.get('/production-tools/status')\n    def status(): return {'configured': production_tools is not None}\n"
     source += "    return router\n"
     (package / "__init__.py").write_text(source)
     env = {
@@ -136,15 +142,19 @@ def loaded(env):
     ]
 
 
-@pytest.mark.parametrize("native,factory", [(False, True), (True, False)])
-def test_old_release_seven_routes_unavailable_before_legacy(
-    tmp_path, monkeypatch, native, factory
+@pytest.mark.parametrize("native,factory,protocol,factory_arity", [
+    (False, True, 2, 2), (True, False, 2, 2),
+    (True, True, None, 2), (True, True, 1, 2), (True, True, 2, 3),
+])
+def test_old_release_nine_routes_unavailable_before_legacy(
+    tmp_path, monkeypatch, native, factory, protocol, factory_arity
 ):
-    configured_release(tmp_path, monkeypatch, native=native, factory=factory)
+    configured_release(tmp_path, monkeypatch, native=native, factory=factory,
+                       protocol=protocol, factory_arity=factory_arity)
     api, auth = client()
     for path in PATHS:
         url = BASE + path.format(
-            project_id=uuid4(), kind="software", source_log_id=1, snapshot_id=uuid4()
+            source_project_id="10001", kind="software", source_log_id=1, snapshot_id=uuid4()
         )
         assert api.get(url).status_code == 401
         api.cookies.set(auth.cookie_name, "valid-cookie")
@@ -170,7 +180,7 @@ def test_old_release_seven_routes_unavailable_before_legacy(
         "relative",
     ],
 )
-def test_config_boundary_preserves_workflow(tmp_path, monkeypatch, mode):
+def test_config_boundary_preserves_workflow(tmp_path, monkeypatch, mode, caplog):
     env = configured_release(tmp_path, monkeypatch, malformed=mode == "malformed")
     config = tmp_path / "private.json"
     config.write_text("{}")
@@ -206,29 +216,26 @@ def test_config_boundary_preserves_workflow(tmp_path, monkeypatch, mode):
     api, auth = client()
     api.cookies.set(auth.cookie_name, "valid-cookie")
     assert api.get(BASE + "/access").json()["workflow_available"] is True
-    result = api.get(BASE + f"/projects/{uuid4()}/production-tools/status")
+    result = api.get(BASE + "/production-tools/status")
     assert result.status_code == 200
     assert result.json()["configured"] is (mode == "enabled")
     module = loaded(env)
     if mode == "enabled":
         assert module.received["config"] == "native-config"
         assert set(module.received["protected"]) == set(protected)
-        assert module.received["factory"][2] == {
-            "id": "test",
-            "mode": "test",
-            "label": "Test",
-        }
+        assert module.received["factory"] == (str(config), str(snapshot))
     else:
         assert module.received["config"] is None
     assert "SECRET" not in result.text
+    assert "SECRET" not in caplog.text
 
 
-def test_whole_workflow_unavailable_authenticates_seven_routes(monkeypatch):
+def test_whole_workflow_unavailable_authenticates_nine_routes(monkeypatch):
     monkeypatch.delenv("PLATFORM_MANUFACTURING_ROOT", raising=False)
     api, auth = client()
     for path in PATHS:
         url = BASE + path.format(
-            project_id=uuid4(), kind="software", source_log_id=1, snapshot_id=uuid4()
+            source_project_id="10001", kind="software", source_log_id=1, snapshot_id=uuid4()
         )
         assert api.get(url).status_code == 401
         api.cookies.set(auth.cookie_name, "valid-cookie")
@@ -242,5 +249,5 @@ def test_release_missing_native_routes_still_reserves_exact_paths(
     configured_release(tmp_path, monkeypatch)
     api, auth = client()
     api.cookies.set(auth.cookie_name, "valid-cookie")
-    result = api.get(BASE + f"/projects/{uuid4()}/production-tools/observations")
+    result = api.get(BASE + "/production-tools/projects/10001/observations")
     assert result.status_code == 503 and "legacy_catchall" not in result.text
