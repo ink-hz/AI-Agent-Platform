@@ -83,6 +83,20 @@ PRODUCTION_TOOLS_ROUTES = frozenset(
         ("GET", "/production-tools/projects/{source_project_id}/snapshots/{snapshot_id}"),
     }
 )
+PRODUCTION_TOOLS_ROUTES |= frozenset({
+    ("GET", "/production-tools/overview"),
+    ("GET", "/production-tools/projects/{source_project_id}/analysis"),
+    ("GET", "/production-tools/projects/{source_project_id}/availability"),
+    ("GET", "/production-tools/projects/{source_project_id}/investigations"),
+    ("POST", "/production-tools/projects/{source_project_id}/investigations"),
+    ("GET", "/production-tools/projects/{source_project_id}/investigations/{investigation_id}"),
+    ("PUT", "/production-tools/projects/{source_project_id}/investigations/{investigation_id}"),
+    ("GET", "/production-tools/projects/{source_project_id}/investigations/{investigation_id}/resolve"),
+    ("POST", "/production-tools/projects/{source_project_id}/investigations/{investigation_id}/handoffs"),
+    ("GET", "/production-tools/handoffs/{handoff_id}"),
+    ("GET", "/production-tools/handoffs/{handoff_id}/resolve"),
+    ("POST", "/production-tools/handoffs/{handoff_id}/fork"),
+})
 WORKFLOW_ROUTES |= PRODUCTION_TOOLS_ROUTES
 WORKFLOW_AUTH_ROUTES = frozenset(
     (method, MANUFACTURING_PREFIX + "/workflow" + path)

@@ -64,9 +64,14 @@ def _workflow_unavailable(
     router = APIRouter(prefix=MANUFACTURING_PREFIX + "/workflow")
 
     def unavailable(request: Request):
-        authorize_workflow_identity(
-            request, write=request.method not in {"GET", "HEAD", "OPTIONS"}
+        authorize = (
+            authorize_manufacturing
+            if request.scope["route"].path.startswith(
+                MANUFACTURING_PREFIX + "/workflow/production-tools/"
+            )
+            else authorize_workflow_identity
         )
+        authorize(request, write=request.method not in {"GET", "HEAD", "OPTIONS"})
         return JSONResponse(
             {"detail": "Workflow unavailable"}, status_code=503, headers=_PRIVATE
         )
@@ -179,7 +184,10 @@ def _native_production_options(module, paths):
         try:
             if not config_path or not snapshot_path or not Path(config_path).is_absolute():
                 raise ValueError("invalid native settings")
-            module.validate_snapshot_path(snapshot_path, (*map(str, paths), config_path))
+            protected = (*map(str, paths), config_path)
+            investigation_path = snapshot_path + ".investigations.sqlite3"
+            module.validate_snapshot_path(snapshot_path, (*protected, investigation_path))
+            module.validate_snapshot_path(investigation_path, (*protected, snapshot_path))
             options["production_tools"] = factory(config_path, snapshot_path)
         except Exception:  # noqa: BLE001 - never log private settings or source errors
             logging.getLogger(__name__).warning("PRODUCTION_TOOLS_CONFIG_INVALID")
@@ -315,11 +323,15 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
     # Older/partially upgraded releases may omit routes despite accepting the keyword.
     released = {(method, route.path) for route in workflow.routes
                 if isinstance(route, APIRoute) for method in route.methods}
-    reserved = {MANUFACTURING_PREFIX + "/workflow" + path
+    reserved = {(method, MANUFACTURING_PREFIX + "/workflow" + path)
                 for method, path in PRODUCTION_TOOLS_ROUTES
                 if not native_compatible or (method, MANUFACTURING_PREFIX + "/workflow" + path) not in released}
     native_unavailable = _workflow_unavailable()
-    native_unavailable.routes = [route for route in native_unavailable.routes if route.path in reserved]
+    native_unavailable.routes = [
+        route for route in native_unavailable.routes
+        if isinstance(route, APIRoute)
+        and any((method, route.path) in reserved for method in route.methods)
+    ]
     combined.include_router(native_unavailable)
     combined.include_router(workflow)
     combined.include_router(legacy)
