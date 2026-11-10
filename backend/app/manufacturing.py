@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import inspect
+import logging
 import os
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from .control_plane.models import AuthContext, Role
 from .manufacturing_paths import (
     MANUFACTURING_PREFIX,
     MANUFACTURING_ROUTES,
+    PRODUCTION_TOOLS_ROUTES,
     WORKFLOW_ROUTES,
 )
 
@@ -151,6 +153,32 @@ def _unavailable_router() -> APIRouter:
     return router
 
 
+def _native_production_options(module, paths, dataset):
+    """Optional connector errors must never disable the controlled workflow."""
+    parameter = inspect.signature(module.build_workflow_router).parameters.get("production_tools")
+    compatible = (
+        parameter is not None
+        and parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+        and callable(getattr(module, "build_native_config", None))
+        and callable(getattr(module, "validate_snapshot_path", None))
+    )
+    if not compatible:
+        logging.getLogger(__name__).warning("PRODUCTION_TOOLS_RELEASE_INCOMPATIBLE")
+        return False, {}
+    options = {"production_tools": None}
+    config_path = os.environ.get("PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_CONFIG_PATH", "")
+    snapshot_path = os.environ.get("PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_SNAPSHOT_PATH", "")
+    if config_path or snapshot_path:
+        try:
+            if not config_path or not snapshot_path or not Path(config_path).is_absolute():
+                raise ValueError("invalid native settings")
+            module.validate_snapshot_path(snapshot_path, (*map(str, paths), config_path))
+            options["production_tools"] = module.build_native_config(config_path, snapshot_path, dataset)
+        except Exception:  # noqa: BLE001 - never log private settings or source errors
+            logging.getLogger(__name__).warning("PRODUCTION_TOOLS_CONFIG_INVALID")
+    return True, options
+
+
 def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflow_profiles=None, workflow_business_clock: Callable[[], datetime] | None = None) -> APIRouter:
     """Load legacy and workflow independently; reserve workflow ahead of legacy catchall."""
     namespace = None
@@ -219,6 +247,7 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
         module = None
         legacy = _unavailable_router()
     available = module is not None
+    native_compatible = False
     workflow = _workflow_unavailable(
         configured_failure=any(values) and not all(values),
         legacy_available=available,
@@ -246,7 +275,8 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
                         and paths[i].samefile(paths[j])
                     ):
                         raise ValueError("invalid workflow configuration")
-            profile_options = {}
+            dataset = {"id": dataset_id, "mode": mode, "label": label}
+            native_compatible, profile_options = _native_production_options(module, paths, dataset)
             profile_parameter = inspect.signature(module.build_workflow_router).parameters.get("resolve_subject_profiles")
             if profile_parameter is not None and profile_parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}:
                 profile_options["resolve_subject_profiles"] = resolve_workflow_profiles
@@ -276,6 +306,15 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
             configured_failure=True, legacy_available=available, release=release
         )
     combined = APIRouter()
+    # Older/partially upgraded releases may omit routes despite accepting the keyword.
+    released = {(method, route.path) for route in workflow.routes
+                if isinstance(route, APIRoute) for method in route.methods}
+    reserved = {MANUFACTURING_PREFIX + "/workflow" + path
+                for method, path in PRODUCTION_TOOLS_ROUTES
+                if not native_compatible or (method, MANUFACTURING_PREFIX + "/workflow" + path) not in released}
+    native_unavailable = _workflow_unavailable()
+    native_unavailable.routes = [route for route in native_unavailable.routes if route.path in reserved]
+    combined.include_router(native_unavailable)
     combined.include_router(workflow)
     combined.include_router(legacy)
     return combined

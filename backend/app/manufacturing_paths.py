@@ -70,6 +70,14 @@ WORKFLOW_ROUTES = frozenset(
         ("GET", "/projects/{project_id}/systems/product_test/artifacts/{artifact_id}"),
     }
 )
+PRODUCTION_TOOLS_ROUTES = frozenset(
+    ("GET", "/projects/{project_id}/production-tools" + suffix)
+    for suffix in (
+        "/status", "/observations", "/catalog/{kind}", "/evidence",
+        "/evidence/{source_log_id}/content", "/statistics", "/snapshots/{snapshot_id}",
+    )
+)
+WORKFLOW_ROUTES |= PRODUCTION_TOOLS_ROUTES
 WORKFLOW_AUTH_ROUTES = frozenset(
     (method, MANUFACTURING_PREFIX + "/workflow" + path)
     for method, path in WORKFLOW_ROUTES

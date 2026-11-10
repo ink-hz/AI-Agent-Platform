@@ -238,6 +238,13 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
     assert client.get(wf + "/access").json()["project_ids"] == [pid]
     assert client.get(f"{wf}/projects/{pid}").status_code == 200
+    tools = f"{wf}/projects/{pid}/production-tools"
+    assert client.get(tools + "/status").json()["configured"] is False
+    auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, True)
+    assert client.get(tools + "/status").status_code == 200
+    auth.context = AuthContext(uuid4(), Role.MEMBER, auth.context.session_id, False)
+    assert client.get(tools + "/status").status_code == 404
+    auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
     scoped_members=client.get(f"{wf}/projects/{pid}/members?limit=1&offset=0")
     assert scoped_members.status_code==200
     assert len(scoped_members.json()["items"])==1
