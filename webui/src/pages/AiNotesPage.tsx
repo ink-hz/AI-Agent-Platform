@@ -94,7 +94,7 @@ export function AiNotesPage({
       if (controller.signal.aborted || request !== articleRequest.current) return;
       setArticle(loaded);
       if (loaded.category_slug !== selectedPath.categorySlug || loaded.slug !== selectedPath.articleSlug) {
-        onNavigate(`/ai-notes/${loaded.category_slug}/${loaded.slug}`, { replace: true });
+        onNavigate(`/ai-notes/${loaded.category_slug}/${loaded.slug}${window.location.search}${window.location.hash}`, { replace: true });
       }
       setArticleError(null);
     }).catch((error: unknown) => {

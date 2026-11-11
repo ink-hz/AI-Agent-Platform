@@ -50,8 +50,10 @@ function clientWith(
 describe("AiNotesPage", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
+  let originalUrl: string;
 
   beforeEach(() => {
+    originalUrl = window.location.href;
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -61,6 +63,7 @@ describe("AiNotesPage", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    window.history.replaceState(null, "", originalUrl);
     vi.restoreAllMocks();
   });
 
@@ -82,6 +85,15 @@ describe("AiNotesPage", () => {
     expect(onNavigate).toHaveBeenCalledWith("/ai-notes/ai-and-agents/example", { replace: true });
     expect(container.querySelector('[data-category="ai-and-agents"]')?.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector('[aria-current="page"]')?.getAttribute("data-article")).toBe("ai-and-agents/example");
+  });
+
+  it("preserves bookmark query and hash when replacing a legacy URL", async () => {
+    window.history.replaceState(null, "", "/ai-notes/foundations/example?from=bookmark#old-section");
+    const canonicalIndex = { categories: [{ slug: "ai-and-agents", title: "AI 与 Agent", articles: [{ ...summary, slug: "example" }] }] };
+    const client = clientWith(canonicalIndex, { ...article, slug: "example", category_slug: "ai-and-agents" });
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<AiNotesPage categorySlug="foundations" articleSlug="example" client={client} onNavigate={onNavigate} />));
+    expect(onNavigate).toHaveBeenCalledWith("/ai-notes/ai-and-agents/example?from=bookmark#old-section", { replace: true });
   });
 
   it("ignores an aborted legacy response even if the client resolves it", async () => {
