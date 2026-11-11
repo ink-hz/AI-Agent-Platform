@@ -8,7 +8,7 @@ from .validation import validate_publication
 
 
 _MODULE_ROOT = Path(__file__).resolve().parent
-_CONTENT_ROOT = _MODULE_ROOT / "content"
+_CONTENT_ROOT = _MODULE_ROOT / "library"
 _MARKER_FILE = _MODULE_ROOT / "legacy_markers.yaml"
 
 

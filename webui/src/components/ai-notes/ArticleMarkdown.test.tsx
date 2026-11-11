@@ -45,7 +45,8 @@ describe("ArticleMarkdown", () => {
 
     const html = renderToStaticMarkup(<AiNoteArticle article={article} />);
 
-    expect(html).toContain("基础与原理 / handbook.md");
+    expect(html).toContain("基础与原理");
+    expect(html).not.toContain("handbook.md");
     expect(html).toContain("Agent 系统手册");
     expect(html).toContain("by");
     expect(html).toContain('<strong class="ai-note-author">苍渊</strong>');

@@ -18,7 +18,7 @@ from app.ai_notes.validation import validate_publication
 
 
 MODULE_ROOT = Path(__file__).resolve().parents[1] / "app" / "ai_notes"
-CONTENT_ROOT = MODULE_ROOT / "content"
+CONTENT_ROOT = MODULE_ROOT / "library"
 MARKER_FILE = MODULE_ROOT / "legacy_markers.yaml"
 SOURCE_REVIEW = (
     Path(__file__).resolve().parents[2]
@@ -38,14 +38,14 @@ MOTTO = "博观而约取，厚积而薄发。"
 
 
 BATCH_ARTICLES = (
-    ("02-agent-architecture/02-agent-identity-access-control.md", "agent-identity-access-control"),
-    ("04-ai-engineering/02-llm-inference-serving-engineering.md", "llm-inference-serving-engineering"),
-    ("04-ai-engineering/03-ai-cloud-native-runtime.md", "ai-cloud-native-runtime"),
-    ("04-ai-engineering/04-llm-agent-observability.md", "llm-agent-observability"),
-    ("03-tools-and-frameworks/02-open-source-agent-runtime.md", "open-source-agent-runtime"),
-    ("03-tools-and-frameworks/03-metabot-agent-control-bus.md", "metabot-agent-control-bus"),
-    ("03-tools-and-frameworks/04-agent-framework-selection.md", "agent-framework-selection"),
-    ("05-thinking-and-methods/02-intent-driven-ai-business-platform.md", "intent-driven-ai-business-platform"),
+    ("01-ai-and-agents/04-agent-identity-access-control.md", "agent-identity-access-control"),
+    ("01-ai-and-agents/10-llm-inference-serving-engineering.md", "llm-inference-serving-engineering"),
+    ("01-ai-and-agents/11-ai-cloud-native-runtime.md", "ai-cloud-native-runtime"),
+    ("01-ai-and-agents/12-llm-agent-observability.md", "llm-agent-observability"),
+    ("01-ai-and-agents/06-open-source-agent-runtime.md", "open-source-agent-runtime"),
+    ("01-ai-and-agents/07-metabot-agent-control-bus.md", "metabot-agent-control-bus"),
+    ("01-ai-and-agents/08-agent-framework-selection.md", "agent-framework-selection"),
+    ("01-ai-and-agents/14-intent-driven-ai-business-platform.md", "intent-driven-ai-business-platform"),
 )
 
 COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
@@ -60,14 +60,14 @@ COMPLETED_BATCH_ARTICLES: tuple[str, ...] = (
 )
 
 EXPECTED_BATCH_RELATIVE_PATHS: tuple[str, ...] = (
-    "02-agent-architecture/02-agent-identity-access-control.md",
-    "04-ai-engineering/02-llm-inference-serving-engineering.md",
-    "04-ai-engineering/03-ai-cloud-native-runtime.md",
-    "04-ai-engineering/04-llm-agent-observability.md",
-    "03-tools-and-frameworks/02-open-source-agent-runtime.md",
-    "03-tools-and-frameworks/03-metabot-agent-control-bus.md",
-    "03-tools-and-frameworks/04-agent-framework-selection.md",
-    "05-thinking-and-methods/02-intent-driven-ai-business-platform.md",
+    "01-ai-and-agents/04-agent-identity-access-control.md",
+    "01-ai-and-agents/10-llm-inference-serving-engineering.md",
+    "01-ai-and-agents/11-ai-cloud-native-runtime.md",
+    "01-ai-and-agents/12-llm-agent-observability.md",
+    "01-ai-and-agents/06-open-source-agent-runtime.md",
+    "01-ai-and-agents/07-metabot-agent-control-bus.md",
+    "01-ai-and-agents/08-agent-framework-selection.md",
+    "01-ai-and-agents/14-intent-driven-ai-business-platform.md",
 )
 
 EXPECTED_BATCH_SLUGS: tuple[str, ...] = (
@@ -81,32 +81,35 @@ EXPECTED_BATCH_SLUGS: tuple[str, ...] = (
     "intent-driven-ai-business-platform",
 )
 
-EXPECTED_PUBLISHED_CATALOG = {
-    "foundations": (
-        "agent-engineering-learning-map",
-        "llm-application-system-architecture",
-    ),
-    "agent-architecture": (
-        "enterprise-agent-system-architecture",
-        "agent-identity-access-control",
-    ),
-    "tools-and-frameworks": (
-        "claude-code-architecture",
-        "open-source-agent-runtime",
-        "metabot-agent-control-bus",
-        "agent-framework-selection",
-    ),
-    "ai-engineering": (
-        "rag-retrieval-engineering",
-        "llm-inference-serving-engineering",
-        "ai-cloud-native-runtime",
-        "llm-agent-observability",
-    ),
-    "thinking-and-methods": (
-        "ai-native-architecture-design",
-        "intent-driven-ai-business-platform",
-    ),
-}
+EXPECTED_PUBLISHED_CATALOG = {'ai-and-agents': ('agent-engineering-learning-map',
+                   'llm-application-system-architecture',
+                   'enterprise-agent-system-architecture',
+                   'agent-identity-access-control',
+                   'claude-code-architecture',
+                   'open-source-agent-runtime',
+                   'metabot-agent-control-bus',
+                   'agent-framework-selection',
+                   'rag-retrieval-engineering',
+                   'llm-inference-serving-engineering',
+                   'ai-cloud-native-runtime',
+                   'llm-agent-observability',
+                   'ai-native-architecture-design',
+                   'intent-driven-ai-business-platform'),
+ 'sdk-architecture': ('orbbec-sdk-system-architecture',),
+ 'manufacturing-processes': ('manufacturing-system-handbook',
+                             'manufacturing-process',
+                             'mrp-worked-example',
+                             'master-data-and-engineering-change',
+                             'quality-lean-and-test-data',
+                             'assessment-and-roadmap',
+                             'metrics-and-business-acceptance',
+                             'comparison-and-transfer'),
+ 'enterprise-systems': ('system-landscape',
+                        'process-and-system-boundaries',
+                        'integration-and-digital-thread'),
+ 'intelligent-manufacturing': ('oem-ai-manufacturing-platform',
+                               'manufacturing-platform-architecture',
+                               'ai-in-manufacturing')}
 
 SEMANTIC_MERMAID_FILLS = {
     "#DBEAFE",
@@ -634,7 +637,7 @@ def batch_article_path(slug: str, *, root: Path = CONTENT_ROOT) -> Path:
 def assert_published_batch_articles(
     *, root: Path = CONTENT_ROOT
 ) -> tuple[ArticleFrontmatter, ...]:
-    repository = AiNotesRepository.load(root, today=TODAY)
+    repository = AiNotesRepository.load(root, today=date(2026, 11, 11))
     assert repository.index().categories
     completed_articles = []
 
@@ -650,7 +653,8 @@ def assert_published_batch_articles(
         assert article.motto == MOTTO
         assert article.title == contract["title"]
         assert article.slug == slug
-        assert category_frontmatter["slug"] == contract["category"]
+        assert category_frontmatter["slug"] == "ai-and-agents"
+        assert f"{contract['category']}/{slug}" in article.legacy_paths
         assert article.tags == contract["tags"]
         assert article.published_at == BATCH_PUBLISHED_ON
         assert article.updated_at == BATCH_PUBLISHED_ON
@@ -661,7 +665,7 @@ def assert_published_batch_articles(
 
 
 def validate_published_batch() -> AiNotesIndex:
-    return validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
+    return validate_publication(CONTENT_ROOT, MARKER_FILE, today=date(2026, 11, 11))
 
 
 def mermaid_principal_node_ids(source: str) -> set[str]:
@@ -1392,25 +1396,10 @@ def assert_safe_resolving_article_link(source_path: Path, destination: str) -> N
     if target_slug.endswith(".md"):
         target_slug = target_slug.removesuffix(".md")
 
-    candidate_categories = tuple(
-        category
-        for category in CONTENT_ROOT.iterdir()
-        if category.is_dir()
-        and (category / "_index.md").is_file()
-        and parse_frontmatter(category / "_index.md")[0].get("slug")
-        == target_category_slug
-    )
-    assert len(candidate_categories) == 1
-    candidates = tuple(
-        candidate
-        for candidate in candidate_categories[0].glob("*.md")
-        if candidate.name != "_index.md"
-        and parse_frontmatter(candidate)[0].get("slug") == target_slug
-    )
-    assert len(candidates) == 1, (
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=date(2026, 11, 11))
+    assert repository.article(target_category_slug, target_slug) is not None, (
         f"broken article link: {source_path} -> {destination}"
     )
-    candidates[0].resolve().relative_to(CONTENT_ROOT.resolve())
 
 
 def published_article_paths_by_slug() -> dict[str, Path]:
@@ -1486,8 +1475,8 @@ def final_deduplication_matrix(markdown: str) -> dict[str, tuple[str, str]]:
 
 def final_deduplication_matrix_fixture(boundary: str) -> str:
     main_article = (
-        "../../backend/app/ai_notes/content/"
-        "01-foundations/01-agent-engineering-learning-map.md"
+        "../../backend/app/ai_notes/library/"
+        "01-ai-and-agents/01-agent-engineering-learning-map.md"
     )
     return f"""
 ## 最终跨文章去重矩阵
@@ -1659,7 +1648,7 @@ flowchart LR
 
 def test_final_deduplication_matrix_rejects_broken_boundary_link() -> None:
     fixture = final_deduplication_matrix_fixture(
-        "转到[不存在文章](../../backend/app/ai_notes/content/"
+        "转到[不存在文章](../../backend/app/ai_notes/library/"
         "01-foundations/missing.md)。"
     )
     with pytest.raises(AssertionError):
@@ -1676,12 +1665,12 @@ def test_final_deduplication_matrix_rejects_external_boundary_link() -> None:
 
 def test_final_deduplication_matrix_rejects_wrong_boundary_article() -> None:
     fixture = final_deduplication_matrix_fixture(
-        "参见[企业级 Agent](../../backend/app/ai_notes/content/"
-        "02-agent-architecture/01-enterprise-agent-system-architecture.md)、"
-        "[RAG](../../backend/app/ai_notes/content/"
-        "04-ai-engineering/01-rag-retrieval-engineering.md)和"
-        "[错误的身份文章](../../backend/app/ai_notes/content/"
-        "02-agent-architecture/02-agent-identity-access-control.md)。"
+        "参见[企业级 Agent](../../backend/app/ai_notes/library/"
+        "01-ai-and-agents/03-enterprise-agent-system-architecture.md)、"
+        "[RAG](../../backend/app/ai_notes/library/"
+        "01-ai-and-agents/09-rag-retrieval-engineering.md)和"
+        "[错误的身份文章](../../backend/app/ai_notes/library/"
+        "01-ai-and-agents/04-agent-identity-access-control.md)。"
     )
     with pytest.raises(AssertionError):
         final_deduplication_matrix(fixture)
@@ -1749,7 +1738,7 @@ def test_completed_batch_helpers_enforce_publication_contract() -> None:
     assert len(published_index.categories) == 5
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_source_review_records_the_exact_source_manifest() -> None:
@@ -1892,7 +1881,7 @@ def test_agent_identity_access_control_published_meets_contract() -> None:
     published_index = validate_published_batch()
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
     assert all(
         len(
             set(
@@ -2044,7 +2033,7 @@ def test_llm_inference_serving_engineering_published_meets_contract() -> None:
     published_index = validate_published_batch()
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_llm_inference_metrics_cost_and_typography_contract() -> None:
@@ -2181,7 +2170,7 @@ def test_ai_cloud_native_runtime_published_meets_contract() -> None:
     published_index = validate_published_batch()
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_cloud_native_contract_guards_reject_bypass_variants() -> None:
@@ -2340,7 +2329,7 @@ def test_llm_agent_observability_published_meets_contract() -> None:
     published_index = validate_published_batch()
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_observability_contract_guards_schema_and_tutorial_boundaries() -> None:
@@ -2538,7 +2527,7 @@ def test_open_source_runtime_published_meets_contract() -> None:
     published_index = validate_published_batch()
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_open_source_runtime_guards_reject_forbidden_claims() -> None:
@@ -2744,7 +2733,7 @@ def test_metabot_agent_control_bus_published_meets_contract() -> None:
     published_index = validate_published_batch()
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_metabot_recovery_discloses_legacy_effect_gate_gap() -> None:
@@ -2949,7 +2938,7 @@ def test_agent_framework_selection_published_meets_contract() -> None:
     published_index = validate_published_batch()
     assert sum(
         len(category.articles) for category in published_index.categories
-    ) == 6 + len(COMPLETED_BATCH_ARTICLES)
+    ) == 21 + len(COMPLETED_BATCH_ARTICLES)
 
 
 def test_framework_selection_guards_reject_rankings_and_false_maturity() -> None:
@@ -3154,7 +3143,7 @@ def test_intent_driven_ai_business_platform_published_meets_contract() -> None:
     assert not intent_platform_contains_forbidden_absolutism(markdown)
 
     published_index = validate_published_batch()
-    assert sum(len(category.articles) for category in published_index.categories) == 14
+    assert sum(len(category.articles) for category in published_index.categories) == 29
 
 
 def test_intent_platform_guards_reject_absolute_and_mixed_claims() -> None:

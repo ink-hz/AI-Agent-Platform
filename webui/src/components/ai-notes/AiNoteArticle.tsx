@@ -5,7 +5,7 @@ import { ArticleMarkdown } from "./ArticleMarkdown";
 export function AiNoteArticle({ article }: { article: AiNoteArticleData }) {
   return <article className="ai-note-article">
     <header className="ai-note-header">
-      <p className="ai-note-path">{article.category_title} / {article.filename}</p>
+      <p className="ai-note-path">{article.category_title}</p>
       <h1>{article.title}</h1>
       <div className="ai-note-signature">
         <p className="ai-note-byline">

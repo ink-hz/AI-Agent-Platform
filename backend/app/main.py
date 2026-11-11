@@ -1092,7 +1092,7 @@ def create_app(
     if identity_enabled and ai_notes_reader is None:
         try:
             ai_notes_reader = AiNotesRepository.load(
-                Path(__file__).resolve().parent / "ai_notes" / "content",
+                Path(__file__).resolve().parent / "ai_notes" / "library",
                 today=date.today(),
             )
         except AiNotesContentError:

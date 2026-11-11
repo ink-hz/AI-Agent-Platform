@@ -17,7 +17,7 @@ import { AI_NOTES_MERMAID_CONFIG, mermaidImageSource } from "./MermaidDiagram";
 import { mermaidMetadata } from "./mermaidMetadata";
 
 
-const CONTENT_ROOT = resolve(process.cwd(), "../backend/app/ai_notes/content");
+const CONTENT_ROOT = resolve(process.cwd(), "../backend/app/ai_notes/library");
 const SEMANTIC_FILLS = [
   "#DBEAFE", "#EDE9FE", "#CCFBF1", "#FEF3C7",
   "#DCFCE7", "#D1FAE5", "#FEE2E2", "#F3F4F6",
@@ -185,19 +185,24 @@ describe("MermaidDiagram with the real renderer", () => {
     expect(rendered).toMatch(/\.cluster rect\s*\{[^}]*stroke:\s*#CBD5E1;/s);
   });
 
-  it("renders every published Mermaid diagram with unique metadata", async () => {
+  it("requires unique metadata across every published Mermaid diagram", () => {
     const files = publishedArticleFiles();
     const sources = files.flatMap((path) => mermaidBlocks(readFileSync(path, "utf8")));
-    expect(files).toHaveLength(14);
-    expect(sources).toHaveLength(43);
-    await expectProductionDiagramsToRender(sources);
-
+    expect(files).toHaveLength(29);
+    expect(sources).toHaveLength(96);
     const metadata = sources.map(mermaidMetadata);
     expect(metadata.every(({ description }) => Boolean(description))).toBe(true);
     expect(new Set(metadata.map(({ title }) => title)).size).toBe(sources.length);
     expect(new Set(metadata.map(({ description }) => description)).size).toBe(
       sources.length,
     );
+  });
+
+  // Keep real rendering bounded per article as the published corpus grows.
+  // The case list still discovers every published file, including articles without diagrams.
+  it.each(publishedArticleFiles())("renders and sanitizes every diagram in %s", async (path) => {
+    const sources = mermaidBlocks(readFileSync(path, "utf8"));
+    await expectProductionDiagramsToRender(sources);
   });
 
 });

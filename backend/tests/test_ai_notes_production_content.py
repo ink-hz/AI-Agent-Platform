@@ -12,10 +12,11 @@ from app.ai_notes.validation import validate_publication
 
 
 MODULE_ROOT = Path(__file__).resolve().parents[1] / "app" / "ai_notes"
-CONTENT_ROOT = MODULE_ROOT / "content"
+CONTENT_ROOT = MODULE_ROOT / "library"
 MARKER_FILE = MODULE_ROOT / "legacy_markers.yaml"
 PUBLISHED_ON = date(2026, 8, 27)
 TODAY = date(2026, 8, 28)
+RELEASE_DATE = date(2026, 11, 11)
 LLM_APPLICATION_PUBLISHED_ON = date(2026, 8, 28)
 BATCH_PUBLISHED_ON = date(2026, 8, 28)
 FIRST_EMPLOYMENT_DATE = date(2026, 5, 25)
@@ -33,7 +34,7 @@ BATCH_ARTICLES = (
 
 
 def published_article(category_slug: str, article_slug: str) -> AiNoteArticle:
-    repository = AiNotesRepository.load(CONTENT_ROOT, today=TODAY)
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=RELEASE_DATE)
     article = repository.article(category_slug, article_slug)
     assert article is not None
     return article
@@ -57,7 +58,7 @@ def test_legacy_marker_file_covers_identified_source_branding() -> None:
 
 
 def test_current_production_content_passes_publication_validation() -> None:
-    index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
+    index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=RELEASE_DATE)
     assert len(index.categories) == 5
 
 
@@ -195,7 +196,7 @@ def test_learning_map_visualizes_the_system_and_progression() -> None:
 
 
 def test_mermaid_group_backgrounds_do_not_use_neutral_gray_panels() -> None:
-    repository = AiNotesRepository.load(CONTENT_ROOT, today=TODAY)
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=RELEASE_DATE)
     for category in repository.index().categories:
         for summary in category.articles:
             article = repository.article(category.slug, summary.slug)
@@ -253,38 +254,38 @@ def test_llm_application_note_visualizes_reliable_answer_boundary() -> None:
     assert all("classDef" in diagram or "style" in diagram for diagram in diagrams)
 
 
-def test_production_catalog_contains_exactly_fourteen_articles() -> None:
-    index = validate_publication(CONTENT_ROOT, MARKER_FILE, today=TODAY)
-    actual = {
-        category.slug: tuple(article.slug for article in category.articles)
-        for category in index.categories
-    }
-    assert actual == {
-        "foundations": (
-            "agent-engineering-learning-map",
-            "llm-application-system-architecture",
-        ),
-        "agent-architecture": (
-            "enterprise-agent-system-architecture",
-            "agent-identity-access-control",
-        ),
-        "tools-and-frameworks": (
-            "claude-code-architecture",
-            "open-source-agent-runtime",
-            "metabot-agent-control-bus",
-            "agent-framework-selection",
-        ),
-        "ai-engineering": (
-            "rag-retrieval-engineering",
-            "llm-inference-serving-engineering",
-            "ai-cloud-native-runtime",
-            "llm-agent-observability",
-        ),
-        "thinking-and-methods": (
-            "ai-native-architecture-design",
-            "intent-driven-ai-business-platform",
-        ),
-    }
+EXPECTED_CATALOG = {
+    "ai-and-agents": ('agent-engineering-learning-map', 'llm-application-system-architecture', 'enterprise-agent-system-architecture', 'agent-identity-access-control', 'claude-code-architecture', 'open-source-agent-runtime', 'metabot-agent-control-bus', 'agent-framework-selection', 'rag-retrieval-engineering', 'llm-inference-serving-engineering', 'ai-cloud-native-runtime', 'llm-agent-observability', 'ai-native-architecture-design', 'intent-driven-ai-business-platform'),
+    "sdk-architecture": ("orbbec-sdk-system-architecture",),
+    "manufacturing-processes": ("manufacturing-system-handbook", "manufacturing-process", "mrp-worked-example", "master-data-and-engineering-change", "quality-lean-and-test-data", "assessment-and-roadmap", "metrics-and-business-acceptance", "comparison-and-transfer"),
+    "enterprise-systems": ("system-landscape", "process-and-system-boundaries", "integration-and-digital-thread"),
+    "intelligent-manufacturing": ("oem-ai-manufacturing-platform", "manufacturing-platform-architecture", "ai-in-manufacturing"),
+}
+LEGACY_CATALOG = {'foundations': ('agent-engineering-learning-map',
+                 'llm-application-system-architecture'),
+ 'agent-architecture': ('enterprise-agent-system-architecture',
+                        'agent-identity-access-control'),
+ 'tools-and-frameworks': ('claude-code-architecture',
+                          'open-source-agent-runtime',
+                          'metabot-agent-control-bus',
+                          'agent-framework-selection'),
+ 'ai-engineering': ('rag-retrieval-engineering',
+                    'llm-inference-serving-engineering',
+                    'ai-cloud-native-runtime',
+                    'llm-agent-observability'),
+ 'thinking-and-methods': ('ai-native-architecture-design',
+                          'intent-driven-ai-business-platform')}
+
+
+def test_production_catalog_and_legacy_urls() -> None:
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=RELEASE_DATE)
+    actual = {c.slug: tuple(a.slug for a in c.articles) for c in repository.index().categories}
+    assert list(actual) == list(EXPECTED_CATALOG)
+    assert actual == EXPECTED_CATALOG
+    assert sum(map(len, actual.values())) == 29
+    for category, slugs in LEGACY_CATALOG.items():
+        for slug in slugs:
+            assert repository.article(category, slug) == repository.article("ai-and-agents", slug)
 
 
 def test_eight_article_batch_is_published_together_on_the_execution_date() -> None:
@@ -297,3 +298,77 @@ def test_eight_article_batch_is_published_together_on_the_execution_date() -> No
     assert len(articles) == 8
     assert all(article.published_at == BATCH_PUBLISHED_ON for article in articles)
     assert all(article.updated_at == BATCH_PUBLISHED_ON for article in articles)
+
+
+def _heading_ids(markdown: str) -> set[str]:
+    import unicodedata
+    counts: dict[str, int] = {}
+    result = set()
+    tokens = MarkdownIt("commonmark").parse(markdown)
+    for i, token in enumerate(tokens):
+        if token.type != "heading_open":
+            continue
+        inline = tokens[i + 1]
+        text = "".join(t.content for t in inline.children or () if t.type in {"text", "code_inline"})
+        base = re.sub(r"[^\w-]", "", re.sub(r"\s+", "-", unicodedata.normalize("NFKC", text).strip().lower())) or "section"
+        counts[base] = counts.get(base, 0) + 1
+        result.add(base if counts[base] == 1 else f"{base}-{counts[base]}")
+    return result
+
+
+def test_added_publication_links_resolve_to_canonical_articles_and_headings() -> None:
+    from urllib.parse import unquote, urlsplit
+    from app.ai_notes.validation import _link_destinations
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=RELEASE_DATE)
+    for category in repository.index().categories[1:]:
+        for summary in category.articles:
+            article = repository.article(category.slug, summary.slug)
+            assert article is not None
+            assert "/Users/" not in article.markdown
+            assert "/home/" not in article.markdown
+            assert_clean_body(article.markdown)
+            for href in _link_destinations(article.markdown):
+                parsed = urlsplit(href)
+                if parsed.scheme:
+                    assert parsed.scheme in {"https", "mailto"}
+                    continue
+                assert not parsed.netloc
+                target = article
+                if parsed.path:
+                    assert parsed.path.startswith("/ai-notes/"), (summary.slug, href)
+                    parts = parsed.path.removeprefix("/ai-notes/").split("/")
+                    assert len(parts) == 2
+                    target = repository.article(*parts)
+                    assert target is not None, (summary.slug, href)
+                    assert target.category_slug == parts[0], (summary.slug, href)
+                if parsed.fragment:
+                    assert unquote(parsed.fragment) in _heading_ids(target.markdown), (summary.slug, href)
+
+
+def test_added_mermaid_group_panels_are_white() -> None:
+    repository = AiNotesRepository.load(CONTENT_ROOT, today=RELEASE_DATE)
+    for category in repository.index().categories[1:]:
+        for summary in category.articles:
+            article = repository.article(category.slug, summary.slug)
+            assert article is not None
+            for diagram in mermaid_blocks(article.markdown):
+                groups = set(re.findall(r"(?m)^\s*subgraph\s+([A-Za-z_][A-Za-z0-9_]*)", diagram))
+                for targets, fill in re.findall(r"(?mi)^\s*style\s+([A-Za-z0-9_,]+)\s+fill:(#[A-F0-9]{6})", diagram):
+                    if groups.intersection(targets.split(",")):
+                        assert fill.upper() == "#FFFFFF", (summary.slug, targets, fill)
+
+
+def test_source_manifest_covers_only_selected_articles_and_preserves_ai_bodies() -> None:
+    import hashlib
+    import json
+    manifest = json.loads((MODULE_ROOT.parents[2] / "docs/knowledge-library/2026-11-11-source-manifest.json").read_text(encoding="utf-8"))
+    expected_added = {f"/ai-notes/{category}/{slug}" for category, slugs in EXPECTED_CATALOG.items() if category != "ai-and-agents" for slug in slugs}
+    assert {entry["canonical"] for entry in manifest["added_articles"]} == expected_added
+    assert len(manifest["preserved_ai_articles"]) == 14
+    root = MODULE_ROOT.parents[2]
+    for entry in manifest["preserved_ai_articles"]:
+        source = (root / entry["destination"]).read_text(encoding="utf-8")
+        body = source.split("\n---\n", 1)[1]
+        assert hashlib.sha256(body.encode()).hexdigest() == entry["body_sha256"]
+    for entry in manifest["added_articles"]:
+        assert entry["source_sha256"] == entry["observed_sha256"]

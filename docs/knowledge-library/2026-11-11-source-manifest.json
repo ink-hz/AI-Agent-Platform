@@ -1,0 +1,1113 @@
+{
+  "release_date": "2026-11-11",
+  "scope_source": "知识库梳理/本轮收录范围.json",
+  "scope_sha256": "244874a3d08e31b712528f2a9b0a8cb61aff606d84a5f7412cd71d0de99ef8f5",
+  "editorial_scope": "仅迁移确认的15篇；原稿只读。保留全文章节、表格及目标架构身份；局部概念、证据强度、来源链接、标题与图示可访问性修订。未重做全部行业事实、设备或现网运行验证。",
+  "manufacturing_repository": {
+    "url": "https://github.com/ink-hz/AI-Manufacturing-Platform",
+    "commit": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+    "unselected_link_verification": "每个未收录本地引用均经git cat-file -e <commit>:<path>验证已提交后生成固定提交URL。"
+  },
+  "sdk_provenance": {
+    "source": "知识库梳理/SDK系统架构导读来源.json",
+    "sha256": "43a7fa212bf0f5055ea99db0ef7c5809257f2c7c682d797f4fa3faae1b91263f",
+    "baseline": {
+      "id": "SDK-LOCAL-20261022-01",
+      "date": "2026-10-22",
+      "source_page": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/16-evidence/KB-EVD-001.md",
+      "repositories": [
+        {
+          "repository": "OpenOrbbecSDKGroup",
+          "sha": "c7669cc67ff303a9d6fc45585d640a546a682dcc"
+        },
+        {
+          "repository": "OpenOrbbecSDK",
+          "sha": "ad7518704a7ab630719a691748c4f36473a416bb"
+        },
+        {
+          "repository": "FrameProcessor",
+          "sha": "c02079049ebe68e3dddc2d47af5ac32d9de38fd8"
+        },
+        {
+          "repository": "OBFilterLib",
+          "sha": "67704b2eccc0dfbc3c689934101bdb865d6e8fee"
+        },
+        {
+          "repository": "OBSDKPrivFilterLib",
+          "sha": "00459333dc8c54c8dbd731b1414d12aba9dee3a4"
+        },
+        {
+          "repository": "OBEnhancedDepthFilter",
+          "sha": "3a811afd370becc8c2d91b4885c875d795a49379"
+        },
+        {
+          "repository": "OpenOrbbecSDKExt",
+          "sha": "ea5e07c5969eb4e33b1b2f261bd5e9c4e84ba74a"
+        },
+        {
+          "repository": "OpenOrbbecViewer",
+          "sha": "e162db6b1b73e98e206c5b38637b35caaf57a195"
+        }
+      ],
+      "verification_scope": "上述为固定知识库所列身份；本次未重新执行git/build/device验证。"
+    },
+    "sources": [
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-001.md",
+        "title": "工程与仓库地图",
+        "sha256": "548e2e8903043bee01955e23a6729b48ba6fd2e9494186fc6dae782f46ca89ef",
+        "line_count": 74,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            74
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-002.md",
+        "title": "SDK能力与边界",
+        "sha256": "d640967e1e96aa85f25780c198f5e354ddcea7967cb818e0576ab9c99555c8a2",
+        "line_count": 82,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            82
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-003.md",
+        "title": "构建模块架构",
+        "sha256": "b4c5a0b92306adffd3266e762d8423bd91bb6d4e7ee7f39054eecc6734d74847",
+        "line_count": 119,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            119
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-004.md",
+        "title": "运行对象架构",
+        "sha256": "98c1a16e259930d67a1ac1ffd32be577c65db03f7bb2bb3bae4ad723a3a7e42d",
+        "line_count": 103,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            103
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-005.md",
+        "title": "控制流与数据流",
+        "sha256": "32f61f94e4b10783ac394306d087c4fe15d0109502f8235dd9e72c60eacbff08",
+        "line_count": 100,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            100
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-006.md",
+        "title": "三层API模型",
+        "sha256": "7a06fda33dcf28f0aa8e6463929d791c384b851669dc7120a062419979f02641",
+        "line_count": 82,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            82
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-007.md",
+        "title": "动态扩展架构",
+        "sha256": "2e94433c1c040fbe7e85d754cc0fa34ffbef1abc0aa461d754a0ef2b27619c11",
+        "line_count": 82,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            82
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-008.md",
+        "title": "设备能力判定模型",
+        "sha256": "da747823e9d0fdb16886edb408f798e8f0a4162df891b021d7ca2a742a598ef4",
+        "line_count": 82,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            82
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/01-system/KB-SYS-009.md",
+        "title": "生命周期全景",
+        "sha256": "9374139a5bdac699fd014818b10270df26079b8463659c0a2b64a3efcb3b4e99",
+        "line_count": 83,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            83
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/03-runtime/KB-RUN-001.md",
+        "title": "Context初始化与配置入口",
+        "sha256": "c83be54a43675bf1183ca1897b5627f4416167ab234331d308eb85db72bb6282",
+        "line_count": 93,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            93
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/04-pipeline/KB-PIPE-001.md",
+        "title": "Pipeline职责与边界",
+        "sha256": "e1bc402607099f472fec9ce2273793581d470a773c1a604011358a54cc61f5ab",
+        "line_count": 96,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            96
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/04-pipeline/KB-PIPE-002.md",
+        "title": "Config数据模型",
+        "sha256": "2e3e514bb2dda162e8908b0a3f64861362449cbfab2e71595da2cf052318afef",
+        "line_count": 97,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            97
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/04-pipeline/KB-PIPE-005.md",
+        "title": "开流完整链路",
+        "sha256": "02d9d626361912997b84a1851be8323cd1c3e5ba80e1ff7707f91e080bb22092",
+        "line_count": 107,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            107
+          ],
+          "note": "本次按原始行号输出并阅读全部正文；KB-PIPE-005在本会话前一轮已全文阅读并复用，当前内容哈希固定。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/05-device/KB-DEV-001.md",
+        "title": "设备接口与组件ID",
+        "sha256": "c13a37de89311a31954170863a0dd70749d8d202f13bf9c98de7aebe3cbc63ba",
+        "line_count": 42,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            42
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/05-device/KB-DEV-002.md",
+        "title": "PID与设备工厂",
+        "sha256": "f38556654e2d6822ba4a213b46c09000d74f657da6a4fd41b262ad95cad8b44f",
+        "line_count": 53,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            53
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/05-device/KB-DEV-003.md",
+        "title": "组件延迟创建与资源锁",
+        "sha256": "dc0eec2dcc353365a0610c307111d9bea563efb7bf1cea741fb86b1008b79d62",
+        "line_count": 42,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            42
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/06-platform/KB-PAL-001.md",
+        "title": "平台接口与工厂",
+        "sha256": "76a44be7b0e5ae6941aed5ff475dc59d50e77d7aa413a83e069d35b7969beca3",
+        "line_count": 43,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            43
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/06-platform/KB-PAL-002.md",
+        "title": "SourcePort类型与分派",
+        "sha256": "b59f024815bbc3be8bb736bbb0a9908e5fdf6aac973697f6f779bc574b3cd1ac",
+        "line_count": 41,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            41
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/06-platform/KB-PAL-021.md",
+        "title": "平台线程与停止矩阵",
+        "sha256": "744d8330f85469a8d9a26b8274a88fa9c589c718cccc4f140bb2115df0d15925",
+        "line_count": 78,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            78
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/07-frame-stream/KB-FRAME-001.md",
+        "title": "Frame类型模型",
+        "sha256": "69f0e3398018f4893237d261093070c83102c44e3e1b38ef795632ee4740fb94",
+        "line_count": 95,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            95
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/07-frame-stream/KB-FRAME-003.md",
+        "title": "FrameSet与子帧",
+        "sha256": "60f0cba2409f75f0f15e87e7b93ed886f2c411bdfb5b7fbcdf77e7293b8f13eb",
+        "line_count": 94,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            94
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/08-processing/KB-FILTER-001.md",
+        "title": "过滤接口与工厂",
+        "sha256": "6f1cfcbdb7ca998e87d9a2806b5423838665983eae7e9df7c39b8121c58947c0",
+        "line_count": 59,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            59
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/09-control/KB-CTRL-001.md",
+        "title": "PropertyServer模型",
+        "sha256": "7ffdc7cce3beb6f1af064f5fa6b803bad7ddbbb2de1908c0b31243bd6e06623f",
+        "line_count": 94,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            23,
+            94
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/10-media/KB-MEDIA-001.md",
+        "title": "录放总体模型",
+        "sha256": "2d48a2b445f119c745752a3f7f1cba894999357b00e6ea5eb00b025f7b836e11",
+        "line_count": 72,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            72
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/11-extensions/KB-EXT-001.md",
+        "title": "扩展仓与制品地图",
+        "sha256": "518f5bec9e63fa94d621e91b1926846be9bd0085fa84ec24a9f9ce619beb39b1",
+        "line_count": 68,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            68
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/11-extensions/KB-EXT-003.md",
+        "title": "FrameProcessor处理编排",
+        "sha256": "56cba87a54035ee6b1a9fd14f69f525e1f4e92ed01133d4c9095a2ef2a6f08ef",
+        "line_count": 62,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            62
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/12-viewer/KB-VIEW-001.md",
+        "title": "Viewer整体架构",
+        "sha256": "75db715e677606a808081ef6929a73ba73fb53a3e4752b0d78119341226b5f52",
+        "line_count": 67,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            67
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/docs/knowledge-base/16-evidence/KB-EVD-001.md",
+        "title": "基线与范围说明",
+        "sha256": "8d23cdd4b46cd387d029013e4a3ee8df00692f240199a642d2c446a69d275dd9",
+        "line_count": 87,
+        "read_scope": {
+          "scope": "正文全文；frontmatter仅读取身份/基线/状态等必要元数据，未逐项重审长review_records",
+          "body_line_range": [
+            22,
+            87
+          ],
+          "note": "已按原始行号输出并阅读全部正文。"
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/README.md",
+        "title": "Open Orbbec SDK Group",
+        "sha256": "d631524fda61927ebffcbc2f4bbfd933bb076bb251c83ebb46633e054059a668",
+        "line_count": 60,
+        "read_scope": {
+          "scope": "全文",
+          "line_range": [
+            1,
+            60
+          ]
+        }
+      },
+      {
+        "path": "AI-SDK-Platform/sdk源码/OpenOrbbecSDKGroup/OpenOrbbecSDK/wrappers/README.md",
+        "title": "Orbbec SDK Wrappers",
+        "sha256": "4e38f09e3dacaa54a6f63216c32f10e2070ea0184c7c93b575a16c77984e597e",
+        "line_count": 27,
+        "read_scope": {
+          "scope": "全文",
+          "line_range": [
+            1,
+            27
+          ]
+        }
+      }
+    ],
+    "evidence_note": "原文35个本地引用转到文内来源附录，逐条保留来源标题、相对文件身份及原行号；八仓固定身份完整转录。未确认远程公开身份，不生成公开SHA URL。"
+  },
+  "preserved_ai_articles": [
+    {
+      "source_path": "backend/app/ai_notes/content/01-foundations/01-agent-engineering-learning-map.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/01-agent-engineering-learning-map.md",
+      "canonical": "/ai-notes/ai-and-agents/agent-engineering-learning-map",
+      "legacy_paths": [
+        "foundations/agent-engineering-learning-map"
+      ],
+      "body_sha256": "42650926c8600dc857be2232cbaf7e4cf63497f59d88d3fb11d818ad902e9ae6"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/01-foundations/02-llm-application-system-architecture.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/02-llm-application-system-architecture.md",
+      "canonical": "/ai-notes/ai-and-agents/llm-application-system-architecture",
+      "legacy_paths": [
+        "foundations/llm-application-system-architecture"
+      ],
+      "body_sha256": "bfac9bcccb8a1257e891b3b37d2c417c3311d32abbb0e79fac1ca50b3c9735ef"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/02-agent-architecture/01-enterprise-agent-system-architecture.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/03-enterprise-agent-system-architecture.md",
+      "canonical": "/ai-notes/ai-and-agents/enterprise-agent-system-architecture",
+      "legacy_paths": [
+        "agent-architecture/enterprise-agent-system-architecture"
+      ],
+      "body_sha256": "9ab5aea53e0d4b8760c498b695ef003cd026026bc69c0211bb4f3e9fe2027cb6"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/02-agent-architecture/02-agent-identity-access-control.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/04-agent-identity-access-control.md",
+      "canonical": "/ai-notes/ai-and-agents/agent-identity-access-control",
+      "legacy_paths": [
+        "agent-architecture/agent-identity-access-control"
+      ],
+      "body_sha256": "b26b4de3b307b3dfa3b8c13d78cafd25474693d50990823a6414f99f7b32dec8"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/03-tools-and-frameworks/01-claude-code-architecture.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/05-claude-code-architecture.md",
+      "canonical": "/ai-notes/ai-and-agents/claude-code-architecture",
+      "legacy_paths": [
+        "tools-and-frameworks/claude-code-architecture"
+      ],
+      "body_sha256": "b6460e7586a0fbce88cf9128e15f174f42aec3dccae657658015ba1ce1f31d29"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/03-tools-and-frameworks/02-open-source-agent-runtime.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/06-open-source-agent-runtime.md",
+      "canonical": "/ai-notes/ai-and-agents/open-source-agent-runtime",
+      "legacy_paths": [
+        "tools-and-frameworks/open-source-agent-runtime"
+      ],
+      "body_sha256": "16b9ce163e3f72076e6b03a25d9ddecb509f71a03b0bd87f5818254aefecd651"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/03-tools-and-frameworks/03-metabot-agent-control-bus.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/07-metabot-agent-control-bus.md",
+      "canonical": "/ai-notes/ai-and-agents/metabot-agent-control-bus",
+      "legacy_paths": [
+        "tools-and-frameworks/metabot-agent-control-bus"
+      ],
+      "body_sha256": "ef82f8fdb558bf8f8e884a28e15260432e8dca4797c2e496c6a9f88521cb4342"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/03-tools-and-frameworks/04-agent-framework-selection.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/08-agent-framework-selection.md",
+      "canonical": "/ai-notes/ai-and-agents/agent-framework-selection",
+      "legacy_paths": [
+        "tools-and-frameworks/agent-framework-selection"
+      ],
+      "body_sha256": "c9f583c00ebde272a61d0bd5df7a0c97d16fe0467b5d36bb33e181801c65e7c2"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/04-ai-engineering/01-rag-retrieval-engineering.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/09-rag-retrieval-engineering.md",
+      "canonical": "/ai-notes/ai-and-agents/rag-retrieval-engineering",
+      "legacy_paths": [
+        "ai-engineering/rag-retrieval-engineering"
+      ],
+      "body_sha256": "53a223b0bdaf7dddedd029ae9d33c7d8cdcd021762be00d5f11894f78458d08e"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/04-ai-engineering/02-llm-inference-serving-engineering.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/10-llm-inference-serving-engineering.md",
+      "canonical": "/ai-notes/ai-and-agents/llm-inference-serving-engineering",
+      "legacy_paths": [
+        "ai-engineering/llm-inference-serving-engineering"
+      ],
+      "body_sha256": "33389cea176e91f4c8eca02f608ffb558b81de1ae92b9407ce761254ee95a9df"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/04-ai-engineering/03-ai-cloud-native-runtime.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/11-ai-cloud-native-runtime.md",
+      "canonical": "/ai-notes/ai-and-agents/ai-cloud-native-runtime",
+      "legacy_paths": [
+        "ai-engineering/ai-cloud-native-runtime"
+      ],
+      "body_sha256": "65debd0ca098089577069b12520ae6303c5598cbbe70cd5d811df149f2f5629d"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/04-ai-engineering/04-llm-agent-observability.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/12-llm-agent-observability.md",
+      "canonical": "/ai-notes/ai-and-agents/llm-agent-observability",
+      "legacy_paths": [
+        "ai-engineering/llm-agent-observability"
+      ],
+      "body_sha256": "e26a6775a6d82399385c3d456f72e42e2ad34e31fe491fdaced2a81b526e28f9"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/05-thinking-and-methods/01-ai-native-architecture-design.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/13-ai-native-architecture-design.md",
+      "canonical": "/ai-notes/ai-and-agents/ai-native-architecture-design",
+      "legacy_paths": [
+        "thinking-and-methods/ai-native-architecture-design"
+      ],
+      "body_sha256": "04373f3af206761952c18a6070af5ff2db23d92be5b1cf9d94d68d5f8bb34e64"
+    },
+    {
+      "source_path": "backend/app/ai_notes/content/05-thinking-and-methods/02-intent-driven-ai-business-platform.md",
+      "destination": "backend/app/ai_notes/library/01-ai-and-agents/14-intent-driven-ai-business-platform.md",
+      "canonical": "/ai-notes/ai-and-agents/intent-driven-ai-business-platform",
+      "legacy_paths": [
+        "thinking-and-methods/intent-driven-ai-business-platform"
+      ],
+      "body_sha256": "136c93d0ae40c103e1b407484fa1e0e6188ec9170f0a43ef07de998c6a2f40c7"
+    }
+  ],
+  "added_articles": [
+    {
+      "path": "AI-Manufacturing-Platform/docs/manufacturing-system-handbook.md",
+      "source_sha256": "841899e158dc7984d62245faf221c03a7bc53745c0e0a08ab23c654fd9ca3345",
+      "observed_sha256": "841899e158dc7984d62245faf221c03a7bc53745c0e0a08ab23c654fd9ca3345",
+      "slug": "manufacturing-system-handbook",
+      "canonical": "/ai-notes/manufacturing-processes/manufacturing-system-handbook",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/01-manufacturing-system-handbook.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [
+        "L378通识judgment改为通识判断。",
+        "L531CTP进一步核算力补为进一步核对产能或资源能力。",
+        "L1274及各处当前代码实现加统一快照日期，避免读成收录时最新状态。",
+        "重定向14个本地配套链接；原目录无文件级断链。",
+        "保留不是SOP以及公司材料待核实的前言。"
+      ],
+      "content_issues": [
+        {
+          "line": 445,
+          "quote": "要点：这条流上**每一次交接都是一次过账**，重复过账和漏过账是账实不符的两大来源；每类事实只能有一个过账入口。OEM 多一条客供料支线：客供料不生成采购建议但占齐套，所有权独立，损耗与对账按合同。**公司现状**：SAP 销售订单→主生产计划→MES 生产计划的主线在作业流程图上存在（IT 材料第 3 页）；但物料段的 15 条痛点全部落在这条流上——到货异常（P01）、客供计划不准（P02）、急料人工传递（P03/P08/P10）、打单与作业脱节（P11—P13）、手工交接（P14/P15）、绕行（P05/P06）。现状明细与候选走法见[流程总览](workflows/manufacturing-process-overview.md)的现状图与分支表。",
+          "impact": "每次交接都等于过账，混淆交接留痕与正式库存/财务过账，也与本书打印/作业/回执/过账分离原则不一致。",
+          "edit_scope": "局部一两句：交接留业务记录；涉及权威账变动才按唯一入口过账。"
+        },
+        {
+          "line": 1186,
+          "quote": "| 幂等与去重 | 同一标识重复到达不重复过账；同标识不同内容显式报错。网络只保证\"至少一次\"，\"恰好一次\"是接收方用去重实现的 |",
+          "impact": "普通网络并不无条件保证至少一次，投递保证取决于具体方案；去重还应与业务写入一致。",
+          "edit_scope": "局部表格一行：限定采用至少一次投递时，并补业务标识持久去重及写入一致性。"
+        },
+        {
+          "line": 950,
+          "quote": "| 测试数据存什么 | 五类：对象（SN/批次/工单/关键件）、版本（硬件/固件/测试程序/限值/参数集）、环境资源（时间/工位/设备/治具/环境）、测量（特性、实测值、单位、上下限、原始文件）、结论（原始失败、复测、返工、最终处置）。**只存 PASS/FAIL 的测试系统等于没有数据** |",
+          "impact": "有PASS/FAIL判定数据但缺原始测量和趋势分析能力，等于没有数据的说法过于绝对。",
+          "edit_scope": "局部修词：缺原始测量数据，难以做趋势和根因分析。"
+        }
+      ],
+      "edits": [
+        {
+          "before": "通识judgment",
+          "after": "通识判断"
+        },
+        {
+          "before": "进一步核算力",
+          "after": "进一步核对产能或资源能力"
+        },
+        {
+          "before": "每一次交接都是一次过账",
+          "after": "每一次交接都应留业务记录；涉及权威账变动的动作才按唯一入口过账"
+        },
+        {
+          "before": "网络只保证\"至少一次\"，\"恰好一次\"是接收方用去重实现的",
+          "after": "采用至少一次投递的方案时，接收方须按业务标识持久去重，并使去重记录与业务写入保持一致；不能假定普通网络无条件保证投递"
+        },
+        {
+          "before": "只存 PASS/FAIL 的测试系统等于没有数据",
+          "after": "只存 PASS/FAIL 会缺少原始测量数据，难以开展趋势和根因分析"
+        }
+      ],
+      "diagram_count": 18,
+      "source_appendix_references": 0,
+      "publication_title": "OEM 制造数字化系统手册",
+      "published_markdown_sha256": "0f03987a37ba9cd1bb893a8753ff61708143bf70e66f3498170058032cfc404c",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "分部H1改H2、其下章节顺移一级，首个分部前的前言/目录保持H2",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL",
+        "原18图补唯一accTitle/accDescr，保留全部节点连线与原语义类；所有subgraph显式底色统一白色，方案深化节点仅降低证据强度"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/01-foundations/03-mrp-worked-example.md",
+      "source_sha256": "89239151dfd82030b6d766acdbd4041b54db9b9618c98b14501c522b9adc5a7b",
+      "observed_sha256": "89239151dfd82030b6d766acdbd4041b54db9b9618c98b14501c522b9adc5a7b",
+      "slug": "mrp-worked-example",
+      "canonical": "/ai-notes/manufacturing-processes/mrp-worked-example",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/03-mrp-worked-example.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [
+        "迁移时仅重定向上一篇和来源JSON两个相对链接，原项目目标均存在。",
+        "保留原创教学数据和不含产能等假设。"
+      ],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "手算一遍 MRP：从成品需求到逾期采购建议",
+      "published_markdown_sha256": "f063fcab5a04159106ab19011b798d4e57a2b524f7a9b631da15f8c6d1c730de",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/03-implementation/03-ai-in-manufacturing.md",
+      "source_sha256": "d8c99a64a2c47c5a0f72a828a3c6d798c80ee8b743093b3faa43dbfd0f643894",
+      "observed_sha256": "d8c99a64a2c47c5a0f72a828a3c6d798c80ee8b743093b3faa43dbfd0f643894",
+      "slug": "ai-in-manufacturing",
+      "canonical": "/ai-notes/intelligent-manufacturing/ai-in-manufacturing",
+      "destination": "backend/app/ai_notes/library/05-intelligent-manufacturing/03-ai-in-manufacturing.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [
+        "重定向4个本地延伸阅读/来源链接，原目录目标均存在。",
+        "保留2026-10-27资料日期和研究范围限定。"
+      ],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "AI 在制造信息化中的位置：知识、业务动作与现场控制分层治理",
+      "published_markdown_sha256": "f165ed7b8b3ce66b129d0fa1408abb4901264586782e5b627b0d89abb5fdc1d9",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/docs/manufacturing-platform-architecture.md",
+      "source_sha256": "19373a6e6d99f0b5b6a97bc8f37303fe28fcb2d5914c9532bfdc8b472a33b1f6",
+      "observed_sha256": "19373a6e6d99f0b5b6a97bc8f37303fe28fcb2d5914c9532bfdc8b472a33b1f6",
+      "slug": "manufacturing-platform-architecture",
+      "canonical": "/ai-notes/intelligent-manufacturing/manufacturing-platform-architecture",
+      "destination": "backend/app/ai_notes/library/05-intelligent-manufacturing/02-manufacturing-platform-architecture.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [
+        "目录第二部分当前止于第26章，但正文另有第27章工程导入、测试标定与能力复用；补上目录项即可。",
+        "L1273的“§9.5影子模式先行”是旧交叉引用：当前§9.5讲平台管理员完整业务权限与普通角色，影子期在§25。改准确章节/文字。",
+        "§7.6保留2026-11-09实际后端发布/schema24记录，但加醒目的“当时实施快照”标注；不让这一个历史状态覆盖本文整体目标架构或读成收录日最新版本。",
+        "L411和L624借FAE情境类比，独立读者不需要其项目背景；可用外部资料/用户现场的一般表述替换，主体论述不变。",
+        "15个本地链接均存在；迁移时保留业务手册/完整方案/流程总览/规格与证据的可访问去向，源码和权限材料按原授权提供。"
+      ],
+      "content_issues": [
+        {
+          "line": 414,
+          "quote": "- **参与齐套与计划的只有明确纳入口径的状态**（合格必然纳入，让步与待验是否纳入是口径决定，冻结必然排除）；",
+          "impact": "允许待验按口径参与“齐套与计划”，L855又举含待验量的齐套结论，而§5.5/§18用齐套作为开工闸门；如果读者不区分预测与现场可开工，会把条件预测读成放行依据。",
+          "edit_scope": "局部澄清：预测齐套可带待验条件；实际领用/开工齐套必须满足当时有效质量与放行条件。目标结构无需改动。"
+        },
+        {
+          "line": 570,
+          "quote": "分离是**结构性**的：不是\"建议由不同人做\"，而是同一主体对同一对象做了前一个动作，后一个动作的授权交集就为空。急单时人手不够怎么办——走 §5.5 同款的受控豁免，豁免留痕，而不是把分离降级为建议。",
+          "impact": "同主体同对象职责分离是固定不变式，§9.5又给管理员全部业务动作及资格。文中已说业务前置仍核验，仍宜明确全局权限不自动等于绕过分权。",
+          "edit_scope": "在§9.5加与§9.2/受控豁免的优先级说明；保留用户已确认的管理员产品规则，不自行取消完整权限。"
+        },
+        {
+          "line": 601,
+          "quote": "产线不能因为网络抖动停线，所以离线暂存是必须能力；但离线数据的身份必须诚实：",
+          "impact": "“不能因网络抖动停线”容易读成所有动作都允许离线；同章虽明确未过账暂存，但允许继续的实物作业范围尚未在该句限定。",
+          "edit_scope": "局部加注离线可继续动作及不能绕过的质量/安全闸门需按业务逐项裁定，沿用手册设备接入与离线边界；无需另写一套架构。"
+        }
+      ],
+      "edits": [
+        {
+          "before": "合格必然纳入，让步与待验是否纳入是口径决定，冻结必然排除",
+          "after": "预测齐套可按明确口径带入待验条件，让步须按适用批准；实际领用和开工齐套必须满足当时有效质量与放行条件，冻结必然排除"
+        },
+        {
+          "before": "产线不能因为网络抖动停线，所以离线暂存是必须能力",
+          "after": "离线暂存是连续性设计的必要能力，但可继续的实物作业范围必须按业务逐项裁定，不得绕过质量与安全闸门；沿用手册设备接入与离线边界"
+        },
+        {
+          "before": "FAE",
+          "after": "外部资料与用户现场"
+        }
+      ],
+      "diagram_count": 11,
+      "source_appendix_references": 0,
+      "publication_title": "OEM 制造系统总体架构设计",
+      "published_markdown_sha256": "625d19a91144d877a4335ebe47c0a15066e9dcf32bf5e70b7ded22676d446bab",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "分部H1改H2、其下章节顺移一级，首个分部前的前言/目录保持H2",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL",
+        "原11图补唯一accTitle/accDescr，保留全部节点连线与原语义类；所有subgraph显式底色统一白色，方案深化节点仅降低证据强度"
+      ],
+      "additional_editorial_edits": [
+        "§9.5明确管理员完整权限不豁免职责分离、业务前置与受控例外",
+        "§17表格区分带待验条件的预测齐套与实际领用/开工放行",
+        "目录第二部分补27章，保留全部原目录条目",
+        "附录C影子期引用修为§25",
+        "两处FAE类比改一般资料与用户现场证据边界"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/docs/oem-ai-manufacturing-platform-discussion.md",
+      "source_sha256": "7088967322970aa4438fea8277d710adfd5257758524fd57f91f40aedb7a8794",
+      "observed_sha256": "7088967322970aa4438fea8277d710adfd5257758524fd57f91f40aedb7a8794",
+      "slug": "oem-ai-manufacturing-platform",
+      "canonical": "/ai-notes/intelligent-manufacturing/oem-ai-manufacturing-platform",
+      "destination": "backend/app/ai_notes/library/05-intelligent-manufacturing/01-oem-ai-manufacturing-platform.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [
+        "给第2章“现状”和第4章代码资产加统一来源/快照日期说明：系统现状来自2026-10材料，代码、77动作/34对象及11月9日补充各保留当时状态；收录身份是v1.1总体设计。",
+        "L35、§11、D01和附录以代料为主/客供为例外表述；配套手册和总体架构多写供料按合同/项目裁定。收录时统一一句主模式与合同差异的关系，不据文稿差异擅自推翻已确认业务决定。",
+        "22个本地链接均存在；迁移时重定向到手册、总体架构、流程总览、产品设计、来源/代码的固定可访问入口。",
+        "保留未核实对象归属、D01-D12、路线候选、AI当前为规则前身等限定；这些是完整目标设计的正常组成，不是排除理由。"
+      ],
+      "content_issues": [
+        {
+          "line": 99,
+          "quote": "公司已有按业务域划分的多系统格局。与通用教科书模型最重要的差别：**质量执行、线边仓储、设备管理、追溯是 MES 内的模块，不是独立系统**；WMS 承担盘点与库存分析，收发料记账在 SAP；独立的 APS、SRM、IIoT 平台、数据仓库目前没有（SRM 在规划中）。",
+          "impact": "“独立的APS/SRM/IIoT/数仓目前没有”比来源支持更强；总体架构§1.1和手册表达的是材料中未出现，尚不能由未列出推断不存在。",
+          "edit_scope": "局部改为“材料中未列出，实际部署待核实”；保留SRM在原材料规划中的身份。"
+        },
+        {
+          "line": 154,
+          "quote": "读图说明：连线表示现有集成关系，**每条接口的实际运行、字段与回执仍需逐条核实**（§14.4）；双向连线不逐字段分配方向。MES 的\"急料管理\"\"WIP 管理\"正在深化——恰好对应物料痛点最密集的两处，说明 IT 侧已有同向判断。**OEM 业务在各系统中的实际覆盖是最重要的待核实项**：实际账号、模块启用、工单样本与现场操作，区分未上线、未启用、绕行和接口问题（决策项 D05）。",
+          "impact": "材料对急料/WIP仅标“深化”，文稿改成“正在深化”，把标注升级为实际进展判断。",
+          "edit_scope": "局部改为“材料标注深化，具体内容与进度待核实”；图节点和相关表格用语一起统一。"
+        },
+        {
+          "line": 163,
+          "quote": "| Marking 品质隔离 | 支持 SN 号段、工单锁 SN、风险物料批次、工序四类锁定，出货校验管控；已有多年大量使用记录 | 四类锁定的实际使用、解除权限、OEM 项目适用 |",
+          "impact": "“已有多年大量使用记录”超出手册/架构说明的截图证据边界：查询日期起点不能证明持续多年在用。L781又称长期在用。",
+          "edit_scope": "统一为“材料中有大量历史记录/界面证据；连续运行与适用范围待核实”。不影响采用既有MES优先复用的设计原则。"
+        },
+        {
+          "line": 747,
+          "quote": "泳道图读法：**主链（实线）大部分时间在现有系统之间流转**（SAP→WMS→MES→产测→SAP），平台泳道的节点几乎全部通过虚线挂在主链的交接处——这就是路径 B 的形状。唯一的例外是 S2 工程导入与 S9 资产回流，这两段的业务对象（评审、问题、资产）目前无系统承载，平台候选承担（待核实）。",
+          "impact": "“评审、问题、资产目前无系统承载”与紧邻§14.1“MES已有试产和质量异常、不预判为平台缺口”冲突。",
+          "edit_scope": "局部改为“当前材料未明确承载及覆盖，平台候选承担经核实的缺口”；无需改职责图的目标布局。"
+        },
+        {
+          "line": 1024,
+          "quote": "要点：**这条流上每一次交接都是一次过账**，重复过账和漏过账是账实不符的两大来源。代料是主模式；客供料不生成采购建议但占齐套、所有者独立记账。现状：15 条痛点全部落在这条流的物料段（§3.1），SAP 打单与 WMS 作业的衔接（P11—P13）是裁定\"作业与过账关系\"的核心核实项。",
+          "impact": "把每一次交接等同正式过账，与R06明确人工交接不产生库存/IQC/预留/过账、四状态分离的规则冲突。",
+          "edit_scope": "局部改为每次交接留不可覆盖业务记录，涉及权威账变动的动作才按唯一入口过账。"
+        },
+        {
+          "line": 1195,
+          "quote": "体系沉淀的核心回路——EX001 的 89 项问题走的就是这条路（当时没有这条路，所以经验留在了人身上）。",
+          "impact": "“当时没有这条路”由问题汇总推断整个历史问题闭环机制不存在，证据身份比“经验未体系化”更强。",
+          "edit_scope": "改为原材料报告的复用/沉淀不足，实际已有问题/验证/资产机制仍按样本核实；保留场景C目标回路。"
+        }
+      ],
+      "edits": [
+        {
+          "before": "独立的 APS、SRM、IIoT 平台、数据仓库目前没有（SRM 在规划中）",
+          "after": "独立的 APS、SRM、IIoT 平台、数据仓库在材料中未列出，实际部署待核实（SRM 在原材料规划中）"
+        },
+        {
+          "before": "正在深化",
+          "after": "材料标注深化，具体内容与进度待核实"
+        },
+        {
+          "before": "已有多年大量使用记录",
+          "after": "材料中有大量历史记录/界面证据；连续运行与适用范围待核实"
+        },
+        {
+          "before": "长期在用",
+          "after": "存在历史记录/界面证据，连续运行与适用范围待核实"
+        },
+        {
+          "before": "这两段的业务对象（评审、问题、资产）目前无系统承载，平台候选承担（待核实）",
+          "after": "这两段的业务对象（评审、问题、资产）在当前材料中未明确承载及覆盖，平台候选承担经核实的缺口"
+        },
+        {
+          "before": "这条流上每一次交接都是一次过账",
+          "after": "这条流上每次交接都应留不可覆盖业务记录，涉及权威账变动的动作才按唯一入口过账"
+        },
+        {
+          "before": "当时没有这条路，所以经验留在了人身上",
+          "after": "原材料报告复用与沉淀不足；实际已有问题、验证与资产机制仍需按样本核实"
+        }
+      ],
+      "diagram_count": 20,
+      "source_appendix_references": 0,
+      "publication_title": "OEM AI 制造平台设计",
+      "published_markdown_sha256": "fd6795db5018eee0d4931f63decd313ddecc8f852129f9a0d266828ed9b73b05",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "分部H1改H2、其下章节顺移一级，首个分部前的前言/目录保持H2",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL",
+        "原20图补唯一accTitle/accDescr，保留全部节点连线与原语义类；所有subgraph显式底色统一白色，方案深化节点仅降低证据强度"
+      ],
+      "additional_editorial_edits": [
+        "全文图节点与表格深化中统一材料标注深化、内容与进度待核实",
+        "SRM表格和附录统一原材料规划、实际部署待核实",
+        "头部明确v1.1完整目标方案；2026-10材料与2026-11-09实施快照；主模式代料及合同差异"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/02-systems/01-system-landscape.md",
+      "source_sha256": "800a3a44ea5eb5442b53f302dc8194fa72956b2d7d76340b441c3163e1260244",
+      "observed_sha256": "800a3a44ea5eb5442b53f302dc8194fa72956b2d7d76340b441c3163e1260244",
+      "slug": "system-landscape",
+      "canonical": "/ai-notes/enterprise-systems/system-landscape",
+      "destination": "backend/app/ai_notes/library/04-enterprise-systems/01-system-landscape.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "制造信息系统全景：先理解业务能力，再理解软件名称",
+      "published_markdown_sha256": "5cc3357a0fd112387c293d9ccb261edd855558a8c175c7cec6084973a5a6f608",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/02-systems/02-process-and-system-boundaries.md",
+      "source_sha256": "74dba4e2a15429eb895cc970529568dc943632874205175c64d4e637b9874735",
+      "observed_sha256": "74dba4e2a15429eb895cc970529568dc943632874205175c64d4e637b9874735",
+      "slug": "process-and-system-boundaries",
+      "canonical": "/ai-notes/enterprise-systems/process-and-system-boundaries",
+      "destination": "backend/app/ai_notes/library/04-enterprise-systems/02-process-and-system-boundaries.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "从一个制造订单看流程、数据权威与系统边界",
+      "published_markdown_sha256": "271986f956277d97dda616527dc84302df95cae9a7f598b8943bb86c97c3de55",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/02-systems/03-integration-and-digital-thread.md",
+      "source_sha256": "9023ad31552b479a88dd0d550a8b30d5aac7b0367d0363bffb0b4b73cb8fa8a4",
+      "observed_sha256": "9023ad31552b479a88dd0d550a8b30d5aac7b0367d0363bffb0b4b73cb8fa8a4",
+      "slug": "integration-and-digital-thread",
+      "canonical": "/ai-notes/enterprise-systems/integration-and-digital-thread",
+      "destination": "backend/app/ai_notes/library/04-enterprise-systems/03-integration-and-digital-thread.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "集成与数字主线：让数据跨系统后仍然能被正确解释",
+      "published_markdown_sha256": "fcdc82015ba4e8d2a8e5feb5d5ccbdaf8460b56dc4ebbda62245253e22b143b0",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/03-implementation/01-assessment-and-roadmap.md",
+      "source_sha256": "ce6a2335abf23d6a1c49108d20e2a0e321a17069346544ab51faa9e6a5560456",
+      "observed_sha256": "ce6a2335abf23d6a1c49108d20e2a0e321a17069346544ab51faa9e6a5560456",
+      "slug": "assessment-and-roadmap",
+      "canonical": "/ai-notes/manufacturing-processes/assessment-and-roadmap",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/06-assessment-and-roadmap.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "接手评估与路线图：把系统项目变成可验收的业务改进",
+      "published_markdown_sha256": "3bf4f71505337e8f63e1d70881438e63759664bb711ecabbd1ed8c13f71ccb1f",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/03-implementation/02-metrics-and-business-acceptance.md",
+      "source_sha256": "67903a0c928eae36feb2cb4c1b042f57e7a4b7d0d07b6ffdecc523d4259ea034",
+      "observed_sha256": "67903a0c928eae36feb2cb4c1b042f57e7a4b7d0d07b6ffdecc523d4259ea034",
+      "slug": "metrics-and-business-acceptance",
+      "canonical": "/ai-notes/manufacturing-processes/metrics-and-business-acceptance",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/07-metrics-and-business-acceptance.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "指标与业务验收：先确定分母，再解释改善",
+      "published_markdown_sha256": "e6f5e751d3a01d253e59abd1b0d73cb11eb5d1f123d9e812ca8564de28e3b7dd",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/01-foundations/05-master-data-and-engineering-change.md",
+      "source_sha256": "b29aa2c9731db9e3dae23dc826e65f8233c0460b8aed8eef0ebd86b8129a597a",
+      "observed_sha256": "b29aa2c9731db9e3dae23dc826e65f8233c0460b8aed8eef0ebd86b8129a597a",
+      "slug": "master-data-and-engineering-change",
+      "canonical": "/ai-notes/manufacturing-processes/master-data-and-engineering-change",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/04-master-data-and-engineering-change.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "主数据与工程变更：让“同一种东西”始终说得清楚",
+      "published_markdown_sha256": "c27e63b3fff84635a4fec3df75d0dd4f43de9fc28f57d3ff5ec6c3b6a4c60a49",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/04-cases/05-comparison-and-transfer.md",
+      "source_sha256": "7b60cd1094a81da202cf979e17f082ca654b80b16aef22dd0214f26713181948",
+      "observed_sha256": "7b60cd1094a81da202cf979e17f082ca654b80b16aef22dd0214f26713181948",
+      "slug": "comparison-and-transfer",
+      "canonical": "/ai-notes/manufacturing-processes/comparison-and-transfer",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/08-comparison-and-transfer.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "四类制造数字化案例如何比较与迁移",
+      "published_markdown_sha256": "1588b6c4240cd8d62ec1e0287baa388fa986b0ed143e56f0bf4e0f3c07f358d1",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/01-foundations/01-manufacturing-process.md",
+      "source_sha256": "ee71bbc8ca744a8a5e82a73f318f0585ceb6a42f958dfd94764bf6c74fd128de",
+      "observed_sha256": "ee71bbc8ca744a8a5e82a73f318f0585ceb6a42f958dfd94764bf6c74fd128de",
+      "slug": "manufacturing-process",
+      "canonical": "/ai-notes/manufacturing-processes/manufacturing-process",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/02-manufacturing-process.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "制造流程：把产品定义变成可交付的实物",
+      "published_markdown_sha256": "dbe64c112e25706a15b2744b949a8d5d109109377b890122f2333985cd3125ea",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "AI-Manufacturing-Platform/knowledge/05-fieldwork/04-quality-lean-and-test-data.md",
+      "source_sha256": "e068cb0d35be1b9c262f2aa5bfca648a53e684294a2d6766c8df8404c1c0ae10",
+      "observed_sha256": "e068cb0d35be1b9c262f2aa5bfca648a53e684294a2d6766c8df8404c1c0ae10",
+      "slug": "quality-lean-and-test-data",
+      "canonical": "/ai-notes/manufacturing-processes/quality-lean-and-test-data",
+      "destination": "backend/app/ai_notes/library/03-manufacturing-processes/05-quality-lean-and-test-data.md",
+      "source_baseline": "53958c7cede6707c41b99cba7c636402f3c23fe3",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 0,
+      "source_appendix_references": 0,
+      "publication_title": "质量方法 精益流程与测试数据",
+      "published_markdown_sha256": "d8fbc2b6e229b5282e72b1825209d0f93115bb22345a703985ecd87102d0ee69",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "已收录互链改规范站内路径；未收录配套来源改经固定提交cat-file核实的源仓URL"
+      ]
+    },
+    {
+      "path": "知识库梳理/SDK系统架构导读.md",
+      "source_sha256": "6269b29b4ee50b3ab7845b884c4ac6521853452f8ed1a7eb23bf4432bd0399a1",
+      "observed_sha256": "6269b29b4ee50b3ab7845b884c4ac6521853452f8ed1a7eb23bf4432bd0399a1",
+      "slug": "orbbec-sdk-system-architecture",
+      "canonical": "/ai-notes/sdk-architecture/orbbec-sdk-system-architecture",
+      "destination": "backend/app/ai_notes/library/02-sdk-architecture/01-orbbec-sdk-system-architecture.md",
+      "source_baseline": "SDK-LOCAL-20261022-01",
+      "minor_fixes": [],
+      "content_issues": [],
+      "edits": [],
+      "diagram_count": 4,
+      "source_appendix_references": 35,
+      "publication_title": "Orbbec SDK 系统架构导读",
+      "published_markdown_sha256": "83c5db4a20b858bc49652a3be195d98fe450d12ec0c8e41618601933be1f8d5e",
+      "mechanical_edits": [
+        "源H1作为frontmatter标题，移除知识序号前缀（如有）",
+        "新frontmatter统一作者、motto、2026-11-11收录日、简明目录描述与文档类型标签，草稿整理后输出正式候选",
+        "源正文其余标题层级保持不变",
+        "SDK原35个本地引用转文内来源附录，保留标题、相对路径和行号；补八仓固定身份",
+        "原4图可访问元数据和样式完整保留，未重画"
+      ]
+    }
+  ]
+}
