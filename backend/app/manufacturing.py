@@ -19,6 +19,7 @@ from .control_plane.models import AuthContext, Role
 from .manufacturing_paths import (
     MANUFACTURING_PREFIX,
     MANUFACTURING_ROUTES,
+    NATIVE_ACCESS_ROUTES,
     PRODUCTION_TOOLS_ROUTES,
     WORKFLOW_ROUTES,
 )
@@ -194,6 +195,74 @@ def _native_production_options(module, paths):
     return True, options
 
 
+def _native_access_router(module, protected_paths):
+    """Mount optional native readers without accessing their files or network."""
+    combined = APIRouter()
+
+    def same_path(left, right):
+        if os.path.realpath(left) == os.path.realpath(right):
+            return True
+        try:
+            return os.path.samefile(left, right)
+        except FileNotFoundError:
+            return False
+
+    def unavailable(request: Request):
+        authorize_manufacturing(
+            request, write=request.method not in {"GET", "HEAD", "OPTIONS"}
+        )
+        return JSONResponse({"detail": "Native reader unavailable"}, status_code=503, headers=_PRIVATE)
+
+    native_paths = {
+        (system, kind): os.environ.get(f"PLATFORM_MANUFACTURING_{system}_{kind}_PATH", "")
+        for system in ("SAP", "MES") for kind in ("CONFIG", "AUDIT")
+    }
+    for system in ("SAP", "MES"):
+        source = None
+        config, audit = (native_paths[(system, key)] for key in ("CONFIG", "AUDIT"))
+        if config or audit:
+            try:
+                if not config or not audit or not Path(config).is_absolute() or not Path(audit).is_absolute():
+                    raise ValueError("invalid native path pair")
+                other_paths = [path for (name, _), path in native_paths.items() if name != system and path]
+                if same_path(config, audit) or any(
+                    same_path(path, protected)
+                    for path in (config, audit)
+                    for protected in (*protected_paths, *other_paths) if protected
+                ):
+                    raise ValueError("native path alias")
+                factory = getattr(module, f"build_{system.lower()}_access_service", None)
+                router_factory = getattr(module, f"build_{system.lower()}_access_router", None)
+                if not callable(factory) or not callable(router_factory):
+                    raise TypeError("native release incompatible")
+                source = router_factory(
+                    service=factory(config, audit), authorize=authorize_workflow_identity
+                )
+                prefix = MANUFACTURING_PREFIX + "/" + system.lower()
+                if not isinstance(source, APIRouter) or any(
+                    not isinstance(route, APIRoute)
+                    or (route.path != prefix and not route.path.startswith(prefix + "/"))
+                    for route in source.routes
+                ):
+                    raise TypeError("native router incompatible")
+            except Exception:  # noqa: BLE001 - never expose private paths or source errors
+                source = None
+                logging.getLogger(__name__).warning("%s_ACCESS_UNAVAILABLE", system)
+        released = {
+            (method, route.path) for route in source.routes for method in route.methods
+        } if source is not None else set()
+        # Reserve missing methods before the package's authenticated catchall,
+        # including older packages that have no native reader exports.
+        for method, suffix in sorted(NATIVE_ACCESS_ROUTES):
+            if suffix.startswith("/" + system.lower() + "/"):
+                path = MANUFACTURING_PREFIX + suffix
+                if (method, path) not in released:
+                    combined.add_api_route(path, unavailable, methods=[method])
+        if source is not None:
+            combined.include_router(source)
+    return combined
+
+
 def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflow_profiles=None, workflow_business_clock: Callable[[], datetime] | None = None) -> APIRouter:
     """Load legacy and workflow independently; reserve workflow ahead of legacy catchall."""
     namespace = None
@@ -320,6 +389,7 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
             configured_failure=True, legacy_available=available, release=release
         )
     combined = APIRouter()
+    combined.include_router(_native_access_router(module, (database, *values[:2])))
     # Older/partially upgraded releases may omit routes despite accepting the keyword.
     released = {(method, route.path) for route in workflow.routes
                 if isinstance(route, APIRoute) for method in route.methods}

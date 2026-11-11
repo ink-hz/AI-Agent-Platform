@@ -1,6 +1,18 @@
 """Exact host authorization contract shared by enabled and unavailable routers."""
 
 MANUFACTURING_PREFIX = "/api/v1/manufacturing"
+NATIVE_ACCESS_ROUTES = frozenset({
+    ("GET", "/sap/status"),
+    ("GET", "/sap/interfaces"),
+    ("GET", "/sap/interfaces/{function}/contract"),
+    ("POST", "/sap/diagnostics/ping"),
+    ("POST", "/sap/interfaces/refresh"),
+    ("POST", "/sap/mrp/stock-requirements"),
+    ("GET", "/mes/status"),
+    ("GET", "/mes/interfaces"),
+    ("POST", "/mes/diagnostics/login"),
+    ("POST", "/mes/interfaces/{interface}/query"),
+})
 MANUFACTURING_ROUTES = frozenset(
     {
         ("GET", "/access"),
@@ -38,6 +50,7 @@ MANUFACTURING_ROUTES = frozenset(
         ("POST", "/projects/{project_id}/readiness/{readiness_id}/issues"),
     }
 )
+MANUFACTURING_ROUTES |= NATIVE_ACCESS_ROUTES
 MANUFACTURING_AUTH_ROUTES = frozenset(
     (method, MANUFACTURING_PREFIX + path) for method, path in MANUFACTURING_ROUTES
 )
