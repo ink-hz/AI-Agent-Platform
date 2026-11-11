@@ -129,10 +129,10 @@ function productPage(route: ReturnType<typeof useRoute>, account?: Account) {
       ? <SdkAdminPage section={route.section} documentId={route.documentId} account={account} />
       : <PendingPage title="正在确认 SDK 访问权限" description="请先登录企业账号。" />;
     case "voc-workspace": return <LegacyRedirect to="/voc/" navigation="document" />;
-    case "ai-notes": return account ? <AiNotesPage /> : <PendingPage title="AI 工程笔记" description="请启用企业身份后阅读。" />;
+    case "ai-notes": return account ? <AiNotesPage /> : <PendingPage title="工程知识库" description="请启用企业身份后阅读。" />;
     case "ai-note": return account
       ? <AiNotesPage categorySlug={route.categorySlug} articleSlug={route.articleSlug} />
-      : <PendingPage title="AI 工程笔记" description="请启用企业身份后阅读。" />;
+      : <PendingPage title="工程知识库" description="请启用企业身份后阅读。" />;
     case "admin-overview": return <OverviewPage />;
     case "admin-agents": return <LegacyRedirect to="/admin" navigation="spa" />;
     case "admin-agent": return <AgentDetailPage agentId={route.agentId} />;

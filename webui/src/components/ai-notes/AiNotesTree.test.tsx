@@ -28,9 +28,9 @@ const index: AiNotesIndex = {
       articles: [
         {
           slug: "frameworks", title: "框架选型", filename: "framework-guide.md",
-          description: "说明", author: "苍渊", motto: null,
+          description: "比较决策依据", author: "苍渊", motto: null,
           published_at: "2026-08-27", updated_at: null,
-          tags: [], reading_minutes: 3,
+          tags: ["选型方法"], reading_minutes: 3,
         },
       ],
     },
@@ -95,6 +95,18 @@ describe("AiNotesTree", () => {
     });
     expect(container.textContent).toContain("Agent 系统手册");
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it.each(["框架选型", "比较决策依据", "选型方法", "工具与框架", "framework-guide"])("searches article metadata: %s", async (query) => {
+    await act(async () => root.render(<AiNotesTree index={index} selectedPath={null} onSelect={vi.fn()} />));
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="搜索文章"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, query);
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-article="tools/frameworks"]')?.textContent).toContain("框架选型");
+    expect(container.textContent).not.toContain("framework-guide.md");
+    expect(container.textContent).toContain("比较决策依据");
   });
 
   it("shows a no-results state without clearing the reader", async () => {

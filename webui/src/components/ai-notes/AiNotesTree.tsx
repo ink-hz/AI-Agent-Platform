@@ -38,7 +38,7 @@ export function AiNotesTree({ index, selectedPath, onSelect }: AiNotesTreeProps)
     const categoryMatches = category.title.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
     const visibleArticles = categoryMatches
       ? category.articles
-      : category.articles.filter((article) => [article.title, article.filename]
+      : category.articles.filter((article) => [article.title, article.filename, article.description, ...article.tags]
         .some((value) => value.toLocaleLowerCase("zh-CN").includes(normalizedQuery)));
     return visibleArticles.length ? [{ ...category, visibleArticles }] : [];
   }), [index.categories, normalizedQuery]);
@@ -47,7 +47,7 @@ export function AiNotesTree({ index, selectedPath, onSelect }: AiNotesTreeProps)
   return (
     <section className="ai-notes-tree" aria-label="文章目录">
       <header className="ai-notes-tree-header">
-        <h1>AI 工程笔记</h1>
+        <h1>工程知识库</h1>
         <span>{total} 篇文章</span>
       </header>
       <a className="ai-notes-tree-return" href={platformPath("/agents")}>返回平台</a>
@@ -90,7 +90,7 @@ export function AiNotesTree({ index, selectedPath, onSelect }: AiNotesTreeProps)
                   key={article.slug}
                   onClick={() => onSelect(category.slug, article.slug)}
                   type="button"
-                ><span>{article.title}</span><small>{article.filename}</small></button>;
+                ><span>{article.title}</span><small>{article.description}</small></button>;
               })}
             </div>}
           </section>;

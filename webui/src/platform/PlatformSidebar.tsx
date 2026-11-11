@@ -46,7 +46,7 @@ function groupsFor(account?: Account | null, readOnly = false, sdkAvailable = fa
       ...(account?.role === 'platform_owner' ? [{label:'访问记录',path:'/admin/access',icon:ScanEye,routes:['admin-access']}] : []),
     ]});
   }
-  groups.push({label:'辅助入口',hideHeading:true,items:[{label:'工程笔记',path:'/ai-notes',icon:BookOpen,external:true,newTab:true,routes:['ai-notes','ai-note']}]});
+  groups.push({label:'辅助入口',hideHeading:true,items:[{label:'工程知识库',path:'/ai-notes',icon:BookOpen,external:true,newTab:true,routes:['ai-notes','ai-note']}]});
   return groups;
 }
 function follow(event: MouseEvent<HTMLAnchorElement>, item: Item, panorama = false) {

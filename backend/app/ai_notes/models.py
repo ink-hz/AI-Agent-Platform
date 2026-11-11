@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
@@ -32,11 +33,22 @@ class ArticleFrontmatter(BaseModel):
     published_at: date = Field(alias="publishedAt")
     updated_at: date | None = Field(default=None, alias="updatedAt")
     tags: tuple[str, ...] = ()
+    legacy_paths: tuple[str, ...] = Field(default=(), alias="legacyPaths")
     draft: StrictBool
 
     _required_text_not_blank = field_validator(
         "title", "description", "author"
     )(_non_blank)
+
+    @field_validator("legacy_paths")
+    @classmethod
+    def validate_legacy_paths(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value) or any(
+            re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,127}", path) is None
+            for path in value
+        ):
+            raise ValueError("legacy paths must be unique safe category/article paths")
+        return value
 
     @field_validator("motto")
     @classmethod

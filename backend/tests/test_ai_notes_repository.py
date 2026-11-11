@@ -24,6 +24,7 @@ def write_article(
     slug: str,
     draft: bool = False,
     title: str = "Agent 系统手册",
+    legacy_paths: tuple[str, ...] | None = None,
     body: str = "## 正文\n\n内容。\n",
 ) -> None:
     category.joinpath(filename).write_text(
@@ -37,7 +38,8 @@ def write_article(
         "updatedAt: 2026-08-27\n"
         "tags: [Agent, 架构]\n"
         f"draft: {'true' if draft else 'false'}\n"
-        "---\n\n"
+        + (f"legacyPaths: {list(legacy_paths)!r}\n" if legacy_paths is not None else "")
+        + "---\n\n"
         f"{body}",
         encoding="utf-8",
     )
@@ -118,3 +120,35 @@ def test_reading_minutes_are_derived_from_body_size(tmp_path: Path) -> None:
     article = repository.article("foundations", "long")
     assert article is not None
     assert article.reading_minutes == 2
+
+
+def test_legacy_path_resolves_canonical_article(tmp_path: Path) -> None:
+    category = write_category(tmp_path, "01-ai-and-agents", "AI 与 Agent", "ai-and-agents")
+    write_article(category, "01-example.md", slug="example", legacy_paths=("foundations/example",))
+    repository = AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))
+    canonical = repository.article("ai-and-agents", "example")
+    assert canonical is not None
+    assert repository.article("foundations", "example") == canonical
+    assert repository.article("foundations", "missing") is None
+
+
+@pytest.mark.parametrize("aliases", [
+    ("/old/example",), ("old/example/extra",), ("../example",),
+    ("old/example\n",), ("old/example", "old/example"), ("old/" + "a" * 129,),
+])
+def test_invalid_legacy_paths_fail_load(tmp_path: Path, aliases: tuple[str, ...]) -> None:
+    category = write_category(tmp_path, "01-current", "当前", "current")
+    write_article(category, "01-example.md", slug="example", legacy_paths=aliases)
+    with pytest.raises(AiNotesContentError):
+        AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))
+
+
+@pytest.mark.parametrize("draft", [False, True])
+@pytest.mark.parametrize("collision", ["canonical", "alias"])
+def test_legacy_collisions_include_drafts(tmp_path: Path, draft: bool, collision: str) -> None:
+    category = write_category(tmp_path, "01-current", "当前", "current")
+    write_article(category, "01-example.md", slug="example", legacy_paths=("current/other",))
+    write_article(category, "02-other.md", slug="other" if collision == "canonical" else "second",
+                  draft=draft, legacy_paths=("current/other",) if collision == "alias" else ())
+    with pytest.raises(AiNotesContentError):
+        AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))

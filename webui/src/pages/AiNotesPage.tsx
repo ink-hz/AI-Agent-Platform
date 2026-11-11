@@ -91,22 +91,29 @@ export function AiNotesPage({
       selectedPath.articleSlug,
       controller.signal,
     ).then((loaded) => {
-      if (request !== articleRequest.current) return;
+      if (controller.signal.aborted || request !== articleRequest.current) return;
       setArticle(loaded);
+      if (loaded.category_slug !== selectedPath.categorySlug || loaded.slug !== selectedPath.articleSlug) {
+        onNavigate(`/ai-notes/${loaded.category_slug}/${loaded.slug}`, { replace: true });
+      }
       setArticleError(null);
     }).catch((error: unknown) => {
       if (controller.signal.aborted || request !== articleRequest.current) return;
       setArticleError(error instanceof AiNotesApiError && error.status === 404 ? "missing" : "unavailable");
     });
     return () => controller.abort();
-  }, [client, indexState, selectedPath]);
+  }, [client, indexState, onNavigate, selectedPath]);
+
+  const resolvedSelection = article && !articleError
+    ? { categorySlug: article.category_slug, articleSlug: article.slug }
+    : selectedPath;
 
   if (indexState === "loading") {
     return <section className="ai-notes-page-state" role="status">正在读取文章目录</section>;
   }
   if (indexState === "error" || !index) {
     return <section className="ai-notes-page-state" role="alert">
-      <h1>AI 工程笔记暂时不可用</h1><p>文章目录暂时无法读取，请稍后再试。</p>
+      <h1>工程知识库暂时不可用</h1><p>文章目录暂时无法读取，请稍后再试。</p>
     </section>;
   }
 
@@ -129,7 +136,7 @@ export function AiNotesPage({
         <AiNotesTree
           index={index}
           onSelect={selectArticle}
-          selectedPath={selectedPath}
+          selectedPath={resolvedSelection}
         />
       </aside>
       {mobileOpen && <>
@@ -148,7 +155,7 @@ export function AiNotesPage({
             ref={mobileCloser}
             type="button"
           >×</button>
-          <AiNotesTree index={index} onSelect={selectArticle} selectedPath={selectedPath} />
+          <AiNotesTree index={index} onSelect={selectArticle} selectedPath={resolvedSelection} />
         </aside>
       </>}
       <section className="ai-notes-reader" aria-live="polite">

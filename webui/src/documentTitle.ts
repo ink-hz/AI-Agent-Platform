@@ -46,8 +46,8 @@ export function routeDocumentTitle(route: Route): string {
     case "fae-manage-issue": return `技术支持工作台 · ${PLATFORM_TITLE}`;
     case "fae-manage-reports": return `技术支持工作台 · ${PLATFORM_TITLE}`;
     case "fae-manage-report": return `技术支持工作台 · ${PLATFORM_TITLE}`;
-    case "ai-notes": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
-    case "ai-note": return `AI 工程笔记 · ${PLATFORM_TITLE}`;
+    case "ai-notes": return `工程知识库 · ${PLATFORM_TITLE}`;
+    case "ai-note": return `工程知识库 · ${PLATFORM_TITLE}`;
     case "admin-overview": return `运行中心 · ${PLATFORM_TITLE}`;
     case "admin-agents": return `Agent 状态 · ${PLATFORM_TITLE}`;
     case "admin-agent": return `Agent 详情 · ${PLATFORM_TITLE}`;

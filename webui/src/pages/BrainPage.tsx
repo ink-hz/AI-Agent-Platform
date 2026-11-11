@@ -86,7 +86,7 @@ export function BrainPage({
           href={platformPath("/ai-notes")}
           target="_blank"
           rel="noopener noreferrer"
-        >AI 工程笔记 <span aria-hidden="true">→</span></a>
+        >工程知识库 <span aria-hidden="true">→</span></a>
       </div>
       <div className="brain-home-focus">
         <h1 id="brain-heading">AI 助手</h1>

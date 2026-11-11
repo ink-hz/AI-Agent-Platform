@@ -80,3 +80,19 @@ def test_content_failure_is_generic_no_store_503() -> None:
         assert response.headers["cache-control"] == "no-store"
         assert "/private/path" not in response.text
         assert "SECRET_BODY" not in response.text
+
+
+def test_alias_returns_canonical_exact_api_shape_and_hides_drafts(tmp_path: Path) -> None:
+    category = write_category(tmp_path, "01-ai-and-agents", "AI 与 Agent", "ai-and-agents")
+    write_article(category, "01-example.md", slug="example", legacy_paths=("foundations/example",))
+    write_article(category, "02-draft.md", slug="draft", draft=True, legacy_paths=("foundations/draft",))
+    app = FastAPI()
+    app.include_router(build_ai_notes_router(AiNotesRepository.load(tmp_path, today=date(2026, 8, 27))))
+    client = TestClient(app)
+    response = client.get("/api/v1/ai-notes/foundations/example")
+    assert response.status_code == 200
+    assert response.json() == client.get("/api/v1/ai-notes/ai-and-agents/example").json()
+    assert response.json()["category_slug"] == "ai-and-agents"
+    assert set(response.json()) == {"slug", "title", "filename", "description", "author", "motto", "published_at", "updated_at", "tags", "reading_minutes", "category_slug", "category_title", "markdown"}
+    for slug in ("draft", "missing"):
+        assert client.get(f"/api/v1/ai-notes/foundations/{slug}").status_code == 404

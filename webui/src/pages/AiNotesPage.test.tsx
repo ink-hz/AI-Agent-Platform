@@ -74,6 +74,28 @@ describe("AiNotesPage", () => {
     expect(container.textContent).toContain("Agent 系统手册");
   });
 
+  it("replaces legacy URLs and expands the canonical selection", async () => {
+    const canonicalIndex = { categories: [{ slug: "ai-and-agents", title: "AI 与 Agent", articles: [{ ...summary, slug: "example" }] }] };
+    const client = clientWith(canonicalIndex, { ...article, slug: "example", category_slug: "ai-and-agents" });
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<AiNotesPage categorySlug="foundations" articleSlug="example" client={client} onNavigate={onNavigate} />));
+    expect(onNavigate).toHaveBeenCalledWith("/ai-notes/ai-and-agents/example", { replace: true });
+    expect(container.querySelector('[data-category="ai-and-agents"]')?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector('[aria-current="page"]')?.getAttribute("data-article")).toBe("ai-and-agents/example");
+  });
+
+  it("ignores an aborted legacy response even if the client resolves it", async () => {
+    let resolveLegacy!: (value: AiNoteArticle) => void;
+    const client = clientWith(index);
+    client.fetchArticle.mockImplementationOnce(() => new Promise<AiNoteArticle>((resolve) => { resolveLegacy = resolve; }));
+    const onNavigate = vi.fn();
+    await act(async () => root.render(<AiNotesPage categorySlug="old" articleSlug="handbook" client={client} onNavigate={onNavigate} />));
+    await act(async () => root.render(<AiNotesPage categorySlug="foundations" articleSlug="handbook" client={client} onNavigate={onNavigate} />));
+    await act(async () => resolveLegacy({ ...article, category_slug: "ai-and-agents" }));
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-current="page"]')?.getAttribute("data-article")).toBe("foundations/handbook");
+  });
+
   it("keeps the return link inside the article directory", async () => {
     await act(async () => root.render(<AiNotesPage client={clientWith(index)} onNavigate={vi.fn()} />));
     expect(container.querySelector<HTMLAnchorElement>(".ai-notes-sidebar a[href='/agents']")).not.toBeNull();
@@ -82,6 +104,7 @@ describe("AiNotesPage", () => {
   it("opens the first article when navigation returns from a deep link to the index without redirecting", async () => {
     const client = clientWith(index);
     const onNavigate = vi.fn();
+    client.fetchArticle.mockResolvedValueOnce({ ...article, category_slug: "tools", slug: "frameworks" });
     await act(async () => root.render(
       <AiNotesPage
         categorySlug="tools"
@@ -138,7 +161,7 @@ describe("AiNotesPage", () => {
     client.fetchIndex.mockRejectedValue(new AiNotesApiError(503));
     await act(async () => root.render(<AiNotesPage client={client} />));
 
-    expect(container.textContent).toContain("AI 工程笔记暂时不可用");
+    expect(container.textContent).toContain("工程知识库暂时不可用");
     expect(container.textContent).not.toContain("暂无已发布文章");
   });
 

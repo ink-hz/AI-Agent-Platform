@@ -42,9 +42,11 @@ class AiNotesRepository:
         self,
         index: AiNotesIndex,
         articles: dict[tuple[str, str], AiNoteArticle],
+        aliases: dict[tuple[str, str], tuple[str, str]] | None = None,
     ) -> None:
         self._index = index
         self._articles = articles
+        self._aliases = aliases or {}
 
     @classmethod
     def load(cls, root: Path, *, today: date) -> "AiNotesRepository":
@@ -66,7 +68,8 @@ class AiNotesRepository:
             or ARTICLE_SLUG.fullmatch(article_slug) is None
         ):
             return None
-        return self._articles.get((category_slug, article_slug))
+        key = (category_slug, article_slug)
+        return self._articles.get(self._aliases.get(key, key))
 
 
 def reading_minutes(markdown: str) -> int:
@@ -104,6 +107,8 @@ def _load_repository(root: Path, *, today: date) -> AiNotesRepository:
     categories: list[AiNoteCategory] = []
     articles: dict[tuple[str, str], AiNoteArticle] = {}
     category_slugs: set[str] = set()
+    canonical_keys: set[tuple[str, str]] = set()
+    pending_aliases: list[tuple[str, tuple[str, str]]] = []
 
     for category_path in _category_paths(root):
         category_metadata, category_body = parse_frontmatter(
@@ -125,6 +130,9 @@ def _load_repository(root: Path, *, today: date) -> AiNotesRepository:
             if frontmatter.slug in article_slugs:
                 raise AiNotesContentError()
             article_slugs.add(frontmatter.slug)
+            key = (category.slug, frontmatter.slug)
+            canonical_keys.add(key)
+            pending_aliases.extend((alias, key) for alias in frontmatter.legacy_paths)
             if frontmatter.draft:
                 continue
 
@@ -160,7 +168,14 @@ def _load_repository(root: Path, *, today: date) -> AiNotesRepository:
             )
         )
 
-    return AiNotesRepository(AiNotesIndex(categories=tuple(categories)), articles)
+    aliases: dict[tuple[str, str], tuple[str, str]] = {}
+    for path, canonical in pending_aliases:
+        category_slug, article_slug = path.split("/")
+        alias = (category_slug, article_slug)
+        if alias in canonical_keys or alias in aliases:
+            raise AiNotesContentError()
+        aliases[alias] = canonical
+    return AiNotesRepository(AiNotesIndex(categories=tuple(categories)), articles, aliases)
 
 
 def _category_paths(root: Path) -> tuple[Path, ...]:

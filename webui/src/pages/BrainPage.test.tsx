@@ -86,7 +86,7 @@ describe("BrainPage", () => {
     ));
 
     const entry = container.querySelector<HTMLAnchorElement>(".brain-ai-notes-entry");
-    expect(entry?.textContent).toBe("AI 工程笔记 →");
+    expect(entry?.textContent).toBe("工程知识库 →");
     expect(entry?.getAttribute("href")).toBe("/ai-notes");
     expect(entry?.getAttribute("target")).toBe("_blank");
     expect(entry?.getAttribute("rel")).toBe("noopener noreferrer");
