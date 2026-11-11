@@ -19,6 +19,7 @@ PATHS = (
     "/projects/{project_id}/material-tasks",
     "/material-control/tasks",
     "/projects/{project_id}/material-control/assignees",
+    "/projects/{project_id}/work-orders/{work_order_id}/mes-materials",
 )
 
 

@@ -55,7 +55,10 @@ MANUFACTURING_AUTH_ROUTES = frozenset(
     (method, MANUFACTURING_PREFIX + path) for method, path in MANUFACTURING_ROUTES
 )
 
-WORKFLOW_ROUTES = frozenset(
+MES_ORDER_ROUTES = frozenset({
+    ("GET", "/projects/{project_id}/work-orders/{work_order_id}/mes-materials"),
+})
+WORKFLOW_ROUTES = MES_ORDER_ROUTES | frozenset(
     {
         ("GET", "/access"),
         ("GET", "/assets/{asset_name}"),
