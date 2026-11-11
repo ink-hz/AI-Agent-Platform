@@ -217,6 +217,21 @@ def _native_access_router(module, protected_paths):
         (system, kind): os.environ.get(f"PLATFORM_MANUFACTURING_{system}_{kind}_PATH", "")
         for system in ("SAP", "MES") for kind in ("CONFIG", "AUDIT")
     }
+
+    def source_storage(system):
+        config = native_paths[(system, "CONFIG")]
+        audit = native_paths[(system, "AUDIT")]
+        return tuple(path for path in (config, audit, audit + ".lock" if audit else "") if path)
+
+    protected = [path for path in protected_paths if path]
+    snapshot = os.environ.get("PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_SNAPSHOT_PATH", "")
+    if snapshot:
+        protected.extend((snapshot, snapshot + ".investigations.sqlite3"))
+    # A presently absent SQLite sidecar is still reserved for its database.
+    protected.extend(path + suffix for path in tuple(protected) for suffix in ("-wal", "-shm", "-journal"))
+    production_config = os.environ.get("PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_CONFIG_PATH", "")
+    if production_config:
+        protected.append(production_config)
     for system in ("SAP", "MES"):
         source = None
         config, audit = (native_paths[(system, key)] for key in ("CONFIG", "AUDIT"))
@@ -224,11 +239,11 @@ def _native_access_router(module, protected_paths):
             try:
                 if not config or not audit or not Path(config).is_absolute() or not Path(audit).is_absolute():
                     raise ValueError("invalid native path pair")
-                other_paths = [path for (name, _), path in native_paths.items() if name != system and path]
-                if same_path(config, audit) or any(
-                    same_path(path, protected)
-                    for path in (config, audit)
-                    for protected in (*protected_paths, *other_paths) if protected
+                storage = source_storage(system)
+                other_paths = source_storage("MES" if system == "SAP" else "SAP")
+                if any(same_path(path, prior) for index, path in enumerate(storage) for prior in storage[:index]) or any(
+                    same_path(path, reserved)
+                    for path in storage for reserved in (*protected, *other_paths)
                 ):
                     raise ValueError("native path alias")
                 factory = getattr(module, f"build_{system.lower()}_access_service", None)

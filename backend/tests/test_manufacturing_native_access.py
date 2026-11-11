@@ -150,3 +150,28 @@ def test_native_audit_cannot_alias_business_data(native_bundle, monkeypatch, tmp
     assert http.get(BASE + "/mes/status").status_code == 200
     assert http.get(BASE + "/catalog").status_code == 200
     assert database.read_bytes() == b"business sentinel"
+
+
+@pytest.mark.parametrize("collision", ["other_audit_lock", "own_lock_config", "production_config", "snapshot", "investigations", "business_wal"])
+def test_native_storage_rejects_auxiliary_collisions(native_bundle, monkeypatch, tmp_path, collision):
+    snapshot = str(tmp_path / "snapshot.sqlite3")
+    production_config = str(tmp_path / "production-private.json")
+    monkeypatch.setenv("PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_CONFIG_PATH", production_config)
+    monkeypatch.setenv("PLATFORM_MANUFACTURING_PRODUCTION_TOOLS_SNAPSHOT_PATH", snapshot)
+    if collision == "own_lock_config":
+        monkeypatch.setenv("PLATFORM_MANUFACTURING_SAP_CONFIG_PATH", str(tmp_path / "SAP-audit.json.lock"))
+    else:
+        target = {
+            "other_audit_lock": str(tmp_path / "MES-audit.json.lock"),
+            "production_config": production_config,
+            "snapshot": snapshot,
+            "investigations": snapshot + ".investigations.sqlite3",
+            "business_wal": str(tmp_path / "db/workbench.sqlite3-wal"),
+        }[collision]
+        monkeypatch.setenv("PLATFORM_MANUFACTURING_SAP_AUDIT_PATH", target)
+    auth = FakeAuth()
+    http = client(auth)
+    http.cookies.set(auth.cookie_name, "valid-cookie")
+    assert http.get(BASE + "/sap/status").status_code == 503
+    assert http.get(BASE + "/catalog").status_code == 200
+    assert not list(tmp_path.glob("*.json"))
