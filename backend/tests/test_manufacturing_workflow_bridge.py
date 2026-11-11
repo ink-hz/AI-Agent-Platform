@@ -274,6 +274,31 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
         assert page.headers["cache-control"] == "private, no-store"
         assert client.get(wf + path, params={"project_id": second_pid}).status_code == 404
         assert client.get(wf + path, params={"limit": "invalid"}).status_code == 422
+    # The real mounted package serves material reads through the host policy,
+    # retaining project grants after the platform-level route check.
+    overview = client.get(wf + "/material-control/overview")
+    assert overview.status_code == 200, overview.text
+    assert [item["project_id"] for item in overview.json()["items"]] == [pid]
+    assert overview.json()["items"][0]["requirement_count"] == 0
+    for path in (
+        f"/projects/{pid}/material-control",
+        f"/projects/{pid}/material-tasks",
+        "/material-control/tasks",
+        f"/projects/{pid}/material-control/assignees?task_kind=trace",
+    ):
+        page = client.get(wf + path)
+        assert page.status_code == 200, page.text
+        assert page.headers["cache-control"] == "private, no-store"
+        if "requirements" in page.json():
+            assert page.json()["requirements"] == []
+            assert page.json()["project_id"] == pid
+        elif "assignees" in path:
+            assert page.json()["items"] == [{"id": str(owner), "display_name": "Project Owner"}]
+        else:
+            assert page.json()["items"] == []
+    for suffix in ("material-control", "material-tasks", "material-control/assignees?task_kind=trace"):
+        assert client.get(f"{wf}/projects/{second_pid}/{suffix}").status_code == 404
+    assert client.get(wf + "/material-control/tasks", params={"project_id": second_pid}).status_code == 404
     assert client.get(base + "/projects").status_code == 403
     assert (
         client.get(wf + "/assets/manufacturing.js?release=development").status_code
