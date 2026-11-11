@@ -296,3 +296,21 @@ guards remain. An existing worker is an unrelated protected container; do not
 remove it to satisfy a historical first-install sequence. API and worker updates
 need sequential fresh baselines. Merged code, helper tests and source attestation
 are separate from actual Engine/systemd fixtures, API and production acceptance.
+
+### Engineering knowledge library content overlay (2026-11-11)
+
+`validate_stage` additionally accepts exactly
+`/app/backend/app/ai_notes/library/<digits>-<lowercase-slug>/{_index|<digits>-<lowercase-slug>}.md`.
+It still rejects legacy `content` Markdown, library root documents, extra depth and
+other app Markdown. Hash, ownership, mode, symlink and exact-context checks remain
+unchanged. The ordinary `stage` command still requires its cloud-sync migration;
+this content-only release uses a separately reviewed private assembler with no
+migration, then the same tested `validate_stage`, derivation and transaction gates.
+
+Use a fresh default-profile recipe, actual ordered Compose inputs and guardrails.
+Never reuse a historical observer profile or readiness receipt. Build from the
+reviewed merged commit, retain the old static asset allowlist in the new Vite
+manifest, and stop on any same-name/hash conflict. The image has immutable FROM,
+release ENV and one COPY layer only. See
+[engineering knowledge release contract](../../../docs/operations/2026-11-11-engineering-knowledge-release.md)
+for this batch's preparation status and acceptance limitations.

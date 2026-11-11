@@ -270,6 +270,12 @@ def stage(repo, baseline, release, receipt, code_proof, dist, output, static_pro
     return manifest
 
 
+NOTES_MARKDOWN_DESTINATION = re.compile(
+    r"/app/backend/app/ai_notes/library/[0-9]+-[a-z0-9][a-z0-9-]*/"
+    r"(?:_index|[0-9]+-[a-z0-9][a-z0-9-]*)\.md\Z"
+)
+
+
 def validate_stage(root):
     root = private_dir(root)
     manifest = read_json(root/'manifest.json')
@@ -285,6 +291,7 @@ def validate_stage(root):
         require(not relative.is_absolute() and '..' not in relative.parts
                 and item['source'] == 'payload/' + destination.removeprefix('/app/backend/')
                 and (destination in {'/app/backend/' + path.removeprefix('backend/') for path in MIGRATIONS}
+                     or NOTES_MARKDOWN_DESTINATION.fullmatch(destination)
                      or destination.startswith('/app/backend/app/static/')
                      or (destination.startswith('/app/backend/app/') and destination.endswith('.py'))), 'artifact_path')
         path = regular(root/item['source'])

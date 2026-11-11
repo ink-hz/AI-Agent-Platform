@@ -508,3 +508,50 @@ def test_build_refuses_existing_manifest_tag_and_receipt_binds_reference_to_id(t
         assert receipt['image_reference']==reference and receipt['image_id']==derived['Id']
         assert receipt['manifest_sha256']==mh
         build=next(c for c in calls if c[0]=='build');assert build[build.index('--tag')+1]==reference
+
+
+@pytest.mark.parametrize('relative', [
+    '01-ai-and-agents/_index.md', '01-ai-and-agents/01-article.md',
+    '05-intelligent-manufacturing/99-example-2.md',
+])
+def test_validate_stage_accepts_only_two_level_library_markdown(tmp_path, relative):
+    h = load()
+    make_markdown_stage(h, tmp_path, '/app/backend/app/ai_notes/library/' + relative)
+    h.validate_stage(tmp_path)
+
+
+@pytest.mark.parametrize('destination', [
+    '/app/backend/app/ai_notes/content/01-ai/01-article.md',
+    '/app/backend/app/README.md',
+    '/app/backend/app/ai_notes/library/_index.md',
+    '/app/backend/app/ai_notes/library/01-ai/sub/01-article.md',
+    '/app/backend/app/ai_notes/library/ai/01-article.md',
+    '/app/backend/app/ai_notes/library/01-AI/01-article.md',
+    '/app/backend/app/ai_notes/library/01-ai/article.md',
+    '/app/backend/app/ai_notes/library/01-ai/01-Article.md',
+    '/app/backend/app/ai_notes/library/01-ai/../01-article.md',
+    '/app/backend/app/ai_notes/library/01-ai/01-article.md/extra',
+])
+def test_validate_stage_rejects_other_markdown_destinations(tmp_path, destination):
+    h = load()
+    make_markdown_stage(h, tmp_path, destination)
+    with pytest.raises(h.ReleaseError, match='artifact_path'):
+        h.validate_stage(tmp_path)
+
+
+def make_markdown_stage(h, root, destination):
+    root.chmod(0o700)
+    source = 'payload/' + destination.removeprefix('/app/backend/')
+    path = root / source
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'example\n'); path.chmod(0o644)
+    for directory in root.rglob('*'):
+        if directory.is_dir(): directory.chmod(0o755)
+    image = 'sha256:' + 'a' * 64; release = 'b' * 40
+    dockerfile = b'FROM fixture\n'
+    h.save(root/'Dockerfile', dockerfile)
+    h.save(root/'readiness.json', {})
+    h.save(root/'static-baseline.json', static_proof({'containers':[{'image_id':image}]}, release))
+    h.save(root/'manifest.json', {'version':1,'release_sha':release,'base_image_id':image,
+        'baseline_commit':release,'dockerfile_sha256':h.digest(dockerfile),
+        'files':[{'source':source,'destination':destination,'sha256':h.digest(b'example\n'),'size':8}]})
