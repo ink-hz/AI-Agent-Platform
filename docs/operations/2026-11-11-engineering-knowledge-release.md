@@ -1,30 +1,71 @@
-# 工程知识库发布合同（候选准备，未部署）
+# 工程知识库发布记录
 
-2026-11-11。本批只准备候选与只读证据，未 build/plan/apply、未创建或替换生产容器，未修改生产配置、业务数据或共享 Nginx。正式发布由 controller 在任务审查和主线合入后执行；准确 release SHA 必须以参数传入，不能把任务分支当已合入主线。
+2026-11-11 已完成代码合入、部署与下列自动验收；真实登录 HTTPS 正向及浏览器视觉/交互验收由用户负责，尚未执行。
 
-## 真实基线与漂移
+## 本次结果
 
-先前只读证据确认 API runtime `f8f362596ed81cac8360c0aa202acb545509ea21`，API 镜像 `sha256:ef3d0dec46610578042dbb1664a8a7a81026dff19c6c1a75a09958b74294f2ff`、78层、66项有序 Compose、35容器。28线上源文件与该 commit 一致。UI 来自 `3c844cbb1509427f5eaa719c5e3d73197c4ca899`，两个提交的 webui Git tree 均为 `6909858923c2d4a6f997b71e8c2de32baa1b95b3`。这些历史观察不是发布时有效凭据。
+`/ai-notes` 更名为“工程知识库”，保留原路径和 `/api/v1/ai-notes` API。共29篇：原14篇AI正文保持完整字节、slug、日期与标签，新增15篇精编文稿；显式legacyPaths兼容全部14条旧分类/文章链接，规范replace保留query与hash。
 
-本任务新鲜只读捕获在精确基线检查处停止：实际 Compose 已变为67项；镜像为 `sha256:5eaec32b3912e76f20d458755a00648213b2738623d83ad49101ece19b0ff8c3`，应用引用 `orbbec-agent-platform:manufacturing-v2-f8f36259-53958c7c`；API容器 `bb0c6d4ccbaab3692ec490a6b201cbce6f4300929284b902446e3f52002f339f`，启动 `2026-11-11T09:10:28.843056248Z`，仍为78层/runtime f8f36259/35容器，双锁为空。末项为 `manufacturing-workflows-20261111-r1/overlay.json`。随后已重新捕获全部67项原序输入、35容器和guardrails；29线上源文件（含README）逐项hash/size与f8f36259一致，581公共资源/index/vite与11-09 artifact-provenance精确一致。新证据保存为capture-refreshed.json及refreshed-source-ui-proof.json；可采用新immutable基线。容器Created为2026-11-11T09:10:27.950976042Z，镜像Created为2026-11-11T08:56:15.956704291Z。发布前仍需刷新，不允许沿用旧image/66项recipe。
+| 主分类 | 篇数 |
+| --- | ---: |
+| AI 与 Agent | 14 |
+| SDK 系统架构 | 1 |
+| 制造业务与流程 | 8 |
+| 企业系统与集成 | 3 |
+| 智能制造架构 | 3 |
 
-## 候选与安全边界
+制造手册、完整目标方案和总体架构各保留全文及章目录；材料所述现状、目标设计、2026-11-09实施快照分别标注。SDK为固定八仓基线的架构导读，不包含场景卡；未构建SDK、连接设备或做现场制造实施验收。来源与必要编辑见[收录来源清单](../knowledge-library/2026-11-11-source-manifest.json)，写作准入见[工程知识库标准](../standards/ai-engineering-notes.md)。本次只写平台副本，未批量导入FAE知识库或其他被排除稿。
 
-范围为本批四个 Python 文件（models/repository/validate/main）的实际差异、完整 library（5分类29文章+5分类索引）及精确提交构建的静态资源。其他 Python 差异立即停止。旧 content 不复制、不删除，运行入口只扫描 library；旧14路径由显式 legacyPaths 归一到同一文章。
+## 主线与实际运行版本
 
-私有 assembler 逐文件比较新捕获线上源码与 f8f36259；验证 UI Git tree、所有旧 public assets，合并新 Vite allowlist，同名异hash即停。普通 stage 的 migration gate不变，本批不附带无关迁移；assembler显式生成无迁移manifest并经受测validate_stage检查。镜像仅 immutable FROM、release ENV、单条 COPY --chown=10001:10001，新增一层，不RUN、不安装、不pull、不改配置。
+- 已审查并合入、推送的应用提交：`d32a3b1bed8e480ba16ed02653d65d9c9e4a3e52`。
+- API容器：`63f378f9f7a2c6596683da9ff2927607afb6235428372a8020816407a2c116f0`；启动于 `2026-11-11T09:58:47.173731473Z`（UTC）；healthy，RestartCount=0。
+- 当前不可变镜像：`sha256:f1d1058feb71cbaf5d5e344f26dca2edc23273c0c60ec1e7e74878460a97fb7e`；由实际最新基线增加一层至79层。
+- 应用镜像引用：`orbbec-agent-platform:scoped-api-d32a3b1bed8e480ba16ed02653d65d9c9e4a3e52-288c16b719b8be5dc3184e5ad7e6def1e4291b9349ea60689845bff265ac82b7`。
+- 原不可变镜像：`sha256:c6ebf87da70839debd71824991f0b543113bad953b72dea63489eb8b5855e878`，原引用 `orbbec-agent-platform:manufacturing-v2-f8f36259-43a893dd`，原runtime为 `f8f362596ed81cac8360c0aa202acb545509ea21`。
+- 保留原68项Compose有序输入，本次candidate override为第69项。API有效配置只改image/release；其他34容器及Admin/Nginx/systemd/worker保持本次捕获状态。
+- Manifest SHA256：`288c16b719b8be5dc3184e5ad7e6def1e4291b9349ea60689845bff265ac82b7`。104个payload文件：4个Python、34个library Markdown（29正文+5分类索引）、66个精确提交构建的静态文件。旧content层保留，main/validate只扫描library。
 
-私有操作根 `/Users/neo/Developer/work/AI-Agent-Platform/tmp/engineering-knowledge-20261111`；精确脚本哈希与本地验证见 `.superpowers/sdd/engineering-knowledge-task-3-report.md`。0700操作目录、0600元数据/脚本、0644内容、0755 payload目录。严格context只含Dockerfile及枚举payload；receipt独立存放。
+UI旧基线来自 `3c844cbb1509427f5eaa719c5e3d73197c4ca899`，其webui Git tree与f8f36259一致；581项原公共资源/index/vite逐项核对后，新manifest保留旧hashed assets白名单，与新资源合成638项。同期制造模块更新已作为最终基线保留。
 
-## Controller执行顺序
+## 验证与证据边界
 
-1. 确认新主线提交与origin/master一致、tracked clean；未跟踪项仅允许精确 `backend/.venv`（依赖symlink，不提交）。刷新35容器、完整有序Compose、Admin/Nginx/systemd/worker guardrails与双锁。不得删除/接管他人锁。
-2. 用仓库当前helper默认profile重新capture；完整审查其私有证据，不复用历史observer v5适配。以精确merged SHA运行stage-local.py，重新构建dist；dry-review产物明确不可发布。检查Python覆盖证明、静态完整并集、Dockerfile和manifest，再上传枚举context。
-3. build-and-plan.py只构建并plan，不apply。候选UID10001逐文件核验，运行verify-container.py真实repository+router只读检查5类29文、14别名、未知404和no-store；再inspect-plan，确认只改platform-api image/release，原全部输入与其他容器保持一致。
-4. controller使用apply-reviewed.sh执行受测helper事务；若失败保留receipt与自有锁，先调查实际状态，不自动重试/回滚。完成后verify.py核对健康、实际image/release、其余34容器与guardrails、全部新旧HTTPS静态资源hash/size、旧14公共shell的index内容、匿名401/no-store与容器内真实repo/router。
+| 验证 | 实测结果 |
+| --- | --- |
+| 内容发布校验 | 5类、29篇，作者/日期/正文/图示发布策略通过 |
+| 本地后端知识库与发布工具 | 213 passed，1个可选历史源稿校验skip；本轮15份源hash独立完整核对 |
+| 前端回归 | 166 passed，含96图真实Mermaid渲染与DOMPurify；suffix修复后reader/router定向95 passed，tsc通过 |
+| 构建 | 精确主线提交npm run build成功；旧chunk大小及jsdom/localStorage提示保留 |
+| 内容保留 | 原AI14篇正文逐字节一致；15份源稿286章节、原表格及53张新图关系完整核对 |
+| 候选镜像 | UID/GID10001读取679个文件hash/size通过；单层派生与image Config继承通过 |
+| 线上内容与真实router | 容器内5类29篇、34个Markdown、14别名与完整正文、未知404及no-store通过；此项不代表真实登录HTTPS |
+| 线上公共静态资源 | 638项、46,719,273 bytes，完整HTTPS SHA256/size一致，CSS MIME正确 |
+| 旧14公共shell | 直接200、text/html、no-store、完整服务端响应字节hash/size均通过 |
+| 匿名API | 目录及未知文章路径均401/no-store，共2路；未伪造session/cookie/staff身份 |
+| 共享生产保护 | 其他34容器Config/HostConfig/Mounts/PID/StartedAt/RestartCount、Admin/systemd、共享Nginx文件、worker12配置hash及只读health通过；自有双锁已释放 |
+| 日志 | 当前API双日志流未见PermissionError、permission denied或Traceback |
+| 未执行 | 真实登录HTTPS正向、桌面/手机视觉与交互、现场业务/设备/真实模型验收 |
 
-## 身份验收与回滚
+未执行数据库迁移、模型调用或Nginx配置/重载/独立检查。浏览器验收按AGENTS.md由用户完成；组件和真实图示渲染不替代该项。
 
-未找到可证明授权且有效的专用验收会话。容器内router测试只证明内容/路由契约，不能冒充真实登录HTTPS验收；不伪造session、cookie或任意staff身份。真实登录接口和浏览器视觉验收留用户，均尚未执行。
+## 发布期间的保护与校验修正
 
-准确回滚点必须是发布前新capture与transaction/state.json中的实际旧image应用引用、immutable ID、runtime SHA和完整Compose链，不使用本文件的历史ID。rollback-reviewed.sh仅由controller明确诊断后调用helper rollback；本批无数据库迁移，原应用tag不得删除或重指。发布后在此补实际merged SHA、image、事务路径/receipt、接口/静态/容器检查结果及真实登录/浏览器尚未执行项；不能预写完成。
+初次fresh capture遇到外来action锁，等待其正常释放，未删除或接管。第一候选构建后，另一次制造模块发布改变运行镜像；plan以runtime_changed拒绝，未apply。随后重新捕获最新基线，保留全部68输入并生成最终候选。失败证据及未发布候选保留，不用于回滚当前版本。
+
+首次线上verify最后一步把原始index文件pin用于公共shell，产生假阴性。既有 `routes_auth._shell_response` 会改写相对资源路径并注入identity-enabled：原文件536 bytes/SHA256 `bebc7d6f2a7d738cb808745b19168574c88efdf1500ef2a1d914a47bcab57a66`，真实响应532 bytes/SHA256 `31184b0bc9387466992370b89baa6e2e30a7ca11268b5d1af401baa6b1544bb2`；实际HTTPS与真实renderer完整字节一致。应用无需改动。v2先验证原文件pin，再调用运行镜像内真实renderer生成完整响应pin，保留全部旧门禁并检查14 shell的no-store；独立审查和3项离线RED/GREEN通过后，完整只读生产验收exit0。未strip未知差异、降低hash检查、伪造登录或覆盖首次失败结果。
+
+## 事务、归档与回滚
+
+最终事务目录：`/opt/orbbec-agent-platform/private/engineering-knowledge-20261111-d32a3b1bed8e480ba16ed02653d65d9c9e4a3e52-20261111T095637Z/transaction`。
+
+最终独立只读验收目录：`/opt/orbbec-agent-platform/private/engineering-knowledge-postrelease-v2-20261111T101304Z`。原verify失败证据留在事务父目录，v2结果另存。
+
+本机私有证据归档：`/Users/neo/Developer/work/AI-Agent-Platform/tmp/engineering-knowledge-20261111/postrelease-receipts.tar`；SHA256 `74b08b46b9c364c50f1a80d8460450463ad2a81c1cd3f874bb25b3ef6d676815`。控制状态与原始/修正验证日志位于本机 `tmp/engineering-knowledge-20261111/`，均为私有证据，不提交运行态或凭据。
+
+仅在明确诊断需要恢复时执行以下已审流程；恢复实际原c6ebf87镜像、原f8f36259 runtime与完整68项输入，不删除/重指原应用tag，也不自动回滚：
+
+```sh
+sh '/opt/orbbec-agent-platform/private/engineering-knowledge-20261111-d32a3b1bed8e480ba16ed02653d65d9c9e4a3e52-20261111T095637Z/rollback-reviewed.sh' '/opt/orbbec-agent-platform/private/engineering-knowledge-20261111-d32a3b1bed8e480ba16ed02653d65d9c9e4a3e52-20261111T095637Z'
+```
+
+当前部署及上述自动验收完成，用户登录与页面验收待完成。后续仅更新本发布记录的文档提交无需重新部署应用。
