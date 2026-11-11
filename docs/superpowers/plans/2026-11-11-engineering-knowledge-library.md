@@ -27,7 +27,7 @@
 - `backend/app/ai_notes/models.py`：可选迁移别名元数据，API 摘要/文章形状保持原样。
 - `backend/app/ai_notes/repository.py`：加载时建立并验证别名索引，不使用请求路径访问文件系统。
 - `webui/src/pages/AiNotesPage.tsx`、`components/ai-notes/AiNotesTree.tsx`：规范路径选择、分类/搜索与名称。
-- `backend/app/ai_notes/content/`：五分类 29 篇正式文章。
+- `backend/app/ai_notes/library/`：五分类 29 篇正式文章；运行入口由旧 content 切至新 library，镜像内旧层残留不参与读取。
 - `docs/knowledge-library/2026-11-11-source-manifest.json`：本批新增文章来源、原始哈希、规范路径、改动和基线记录。
 - `docs/standards/ai-engineering-notes.md`、`backend/app/ai_notes/README.md`：新版准入、别名和验证说明。
 - `docs/operations/2026-11-11-engineering-knowledge-release.md`：实际测试、主线/线上版本、接口与资源完整性、回滚信息。
@@ -77,9 +77,9 @@ Rename user-visible entry titles to 工程知识库 throughout the listed naviga
 ### Task 2: 五分类精编内容迁移
 
 **Files:**
-- Move/create: `backend/app/ai_notes/content/{01-ai-and-agents,02-sdk-architecture,03-manufacturing-processes,04-enterprise-systems,05-intelligent-manufacturing}/`
+- Move/create: `backend/app/ai_notes/library/{01-ai-and-agents,02-sdk-architecture,03-manufacturing-processes,04-enterprise-systems,05-intelligent-manufacturing}/`
 - Create: `docs/knowledge-library/2026-11-11-source-manifest.json`
-- Modify: `docs/standards/ai-engineering-notes.md`, `backend/app/ai_notes/README.md`
+- Modify: `docs/standards/ai-engineering-notes.md`, `backend/app/ai_notes/README.md`, `backend/app/main.py`, `backend/app/ai_notes/validate.py`
 - Test: `backend/tests/test_ai_notes_production_content.py`, `backend/tests/test_ai_notes_eight_article_batch.py`, `backend/tests/test_ai_notes_authoring_assets.py`, affected `webui/src/components/ai-notes/*.test.*` content discovery paths.
 
 **Interfaces:**
@@ -113,7 +113,7 @@ cd backend
 .venv/bin/python -m pytest tests/test_ai_notes_production_content.py -q
 ```
 
-- [ ] **Step 3: Migrate existing and selected source articles.** Read selected sources and exact `minor_fixes`/`content_issues` from scope JSON; apply necessary corrections in platform copies only. Verify source hashes first; record observed changes rather than silently using altered originals. Rename source H1 to frontmatter title and shift heading levels only as needed to maintain no-H1, retaining all chapter text, tables and original TOCs with repaired anchors. Add document-type tags (手册/架构/方案/案例/方法 as suitable) to new articles; preserve original14 tags to retain old assertions. Mark overall design target identity and historical Nov9 snapshot; preserve Oct27 research dates and source strength caveats. New frontmatter uses draft true until all gates reviewed, final artifact draft false for approved corpus.
+- [ ] **Step 3: Migrate existing and selected source articles.** 正式内容由 `ai_notes/content` 切换为 `ai_notes/library`，同步 main.py、validate.py 与所有实际内容发现测试；Git 中移除旧 content，镜像继承旧层无需删除但不得再读取。这样发布保持 COPY-only，不需要 RUN 删除或改变安全门禁。Read selected sources and exact `minor_fixes`/`content_issues` from scope JSON; apply necessary corrections in platform copies only. Verify source hashes first; record observed changes rather than silently using altered originals. Rename source H1 to frontmatter title and shift heading levels only as needed to maintain no-H1, retaining all chapter text, tables and original TOCs with repaired anchors. Add document-type tags (手册/架构/方案/案例/方法 as suitable) to new articles; preserve original14 tags to retain old assertions. Mark overall design target identity and historical Nov9 snapshot; preserve Oct27 research dates and source strength caveats. New frontmatter uses draft true until all gates reviewed, final artifact draft false for approved corpus.
 
 For links, map selected source files to canonical `/ai-notes/...` paths. For unselected manufacturing companion/source files use `https://github.com/ink-hz/AI-Manufacturing-Platform/blob/53958c7cede6707c41b99cba7c636402f3c23fe3/{path}` only if file is committed at that SHA; otherwise use actual source repo identity/verified fixed commit. Do not import unselected articles just to satisfy links. SDK local citations must retain source titles, relative paths/line references and precise baseline via source appendix or verified remote links; no fake public SHA. Keep a provenance manifest linking source hashes and all edits. Existing AI article bodies stay unchanged; their historic links may use legacy routes (which resolve) rather than rewriting them.
 
@@ -132,18 +132,41 @@ npm run build
 
 - [ ] **Step 5: Self-review all selected edits and commit.** Report exact source/canonical mapping, source hash verification, minimal corrections, link/diagram counts, tests and unverified runtime/visual limits. Controller obtains scoped content+quality review and whole-branch review.
 
-### Task 3: 合入主线与安全发布
+### Task 3: 最小发布内容支持与候选准备
 
 **Files:**
-- Create: `docs/operations/2026-11-11-engineering-knowledge-release.md`
-- Use: `deploy/cloud/runbooks/scoped-api-release.md`, `deploy/cloud/scoped-api-release.py` and actual latest migration-free assembler; existing UI static release path from actual deployment audit.
+- Modify: `deploy/cloud/scoped-api-release.py`, `deploy/cloud/runbooks/scoped-api-release.md`
+- Test: `backend/tests/test_scoped_api_release.py`
+- Private release scripts/evidence: `/Users/neo/Developer/work/AI-Agent-Platform/tmp/engineering-knowledge-20261111/`（不提交秘密或运行态数据）
+- Create: `docs/operations/2026-11-11-engineering-knowledge-release.md`（候选与回滚合同，部署后补实测）
 
 **Interfaces:**
-- Consumes: reviewed branch, source provenance, actual production baseline audit `/Users/neo/Developer/work/知识库梳理/知识库发布基线审计.md`.
-- Produces: merged/pushed master commit, exact API/UI deployed versions and verified release/rollback evidence. No database changes.
+- Consumes: 已审查的 Task1/2、实际生产基线审计 `/Users/neo/Developer/work/知识库梳理/知识库发布基线审计.md`，现有 helper 的 `validate_stage`、`plan/inspect-plan/apply/rollback` 合同。
+- Produces: 限定 Markdown 目标白名单（其他 safety gates 不变）、本批最小无迁移 assembler、候选清单和验证/回滚操作脚本。执行 apply 由 controller 在最终审查和主线合入后完成。
 
-- [ ] **Step 1: Resolve all task/broad-review important findings; run fresh scoped backend and frontend tests and build once.** Include route compatibility, full catalog and real published Mermaid rendering. Check `git diff --check` and `git status`; no unrelated files in commit.
-- [ ] **Step 2: Fetch master and merge without overwriting parallel changes.** Recheck shared master worktree clean status, integrate exact reviewed feature commit preserving main history, push master; avoid resets/force. If master moved, assess conflicts and revalidate affected change.
-- [ ] **Step 3: Prepare reviewable scoped API and UI candidates from live baseline.** Capture actual immutable image, release SHA, ordered Compose inputs, all protected containers, UI file inventory and symlink. Build API by replacing only reviewed notes code/content atop actual live image. UI candidate uses precise merged source with source-baseline parity checked. Preserve secrets, OS/dependencies and runtime config; no Nginx configuration or reload needed.
-- [ ] **Step 4: Execute controlled deployment and verify.** Standard helper plan/inspect/apply for API, atomic existing UI static release switch; do not touch other services. Verify authenticated existing notes HTTP interfaces enumerate five domains/29 articles and all old14 URLs return correct canonical identity, unknown paths404; verify served static resource complete bytes/hashes match build and protected services unchanged. If auth prevents HTTP acceptance, use approved existing production test identity/session or local API process from candidate with equivalent real router/auth; never fabricate a production success claim.
-- [ ] **Step 5: Record immutable versions, verification results and rollback.** Keep transaction receipts, old image/Compose chain and previous UI release symlink. Operations record distinguishes API/backend, component/Mermaid, production HTTP/resource checks and user browser acceptance pending. Commit/push evidence documentation; no new deployment needed for doc-only commit.
+- [ ] **Step 1: Add failing stage-validation tests for this exact publication scope.** 使用现有一次性 stage fixtures：合法 library `_index.md`/`01-article.md` 放行；旧 content、其他 app 文档、library 根文件、额外目录层级、非法分类/文件名、越界路径仍拒绝；保留现有 hash/mode/symlink/extra-file 拒绝测试。不调用真实 Docker/SSH。
+
+```python
+# Only this new destination grammar is added, not arbitrary Markdown under app.
+NOTES_MARKDOWN_DESTINATION = re.compile(
+    r"/app/backend/app/ai_notes/library/[0-9]+-[a-z0-9][a-z0-9-]*/"
+    r"(?:_index|[0-9]+-[a-z0-9][a-z0-9-]*)\.md\Z"
+)
+```
+
+- [ ] **Step 2: Run focused tests RED, then extend validate_stage only for the grammar above.** 默认 stage 子命令的云同步迁移要求不变。本批 assembler 显式生成 manifest，不塞入无关迁移来通过 stage。运行 `.venv/bin/python -m pytest tests/test_scoped_api_release.py -q` 确认所有安全回归。
+- [ ] **Step 3: Prepare private bounded release scripts without production mutation.** 参考旧 admin-home-refresh 的 capture-baseline.py/stage-local.py/build-and-plan.py/verify.py，修正为本批准确基线；重新捕获实际66项Compose链、35容器、Admin/Nginx/systemd/worker guardrails，只读，不用旧 readiness 或硬编码旧API ID。逐文件证明本批被覆盖的旧Python/静态源码与线上f8f36259一致；新增 library 完整目录源自已审核 mainline commit，旧 content 层保留但运行不读取。dist 来源为精确合入提交，核对 f8f36259 与实际UI 3c844cbb 的 webui Git tree 完全一致。新 `.vite/manifest.json` 保留所有旧 hashed assets 白名单，冲突即停。
+
+候选 Dockerfile 严格为 immutable FROM、release ENV、单条 COPY --chown，只增加一层，不 RUN/安装依赖/拉镜像/改配置。私有 stage/context 严格枚举、0600元数据/0644内容/0755目录，上传前能由受测 helper 验证。构建、plan/apply、完整HTTPS资产哈希验证和受保护容器验证拆开，默认准备脚本不部署。
+
+- [ ] **Step 4: Document reviewable contract and local validation; commit public helper/tests/docs.** 发布记录写当前已证实基线、预计作用域、尚未执行状态、准确回滚点，不写虚假完成。报告列出私有脚本路径及其内容哈希，便于 reviewer 全文审查；测试、语法检查和 dry staging 必须有真实输出，任何生产 mutation 留给 controller。
+
+## Controller finishing and release
+
+在三项实现任务逐项审查及全分支审查通过之后，controller 使用 finishing-a-development-branch 与 verification-before-completion 完成用户已授权的合入和发布；无需再请求继续。
+
+- [ ] 新鲜 scoped backend/frontend/真实Mermaid、build、diff-check 通过；所有 Critical/Important 清零。
+- [ ] Fetch master，确认主线工作树干净，合入 reviewed commit 并push；保留平行有效改动，不reset/force。若主线移动则重新评估范围并回归。
+- [ ] 以已合入准确提交更新候选，并重新捕获真实 live baseline。审查最小manifest、Python覆盖证明、dist来源、新旧资产并集和回滚；再build/plan/inspect/apply，仅重建platform-api。无需Nginx变更，API与UI同一镜像生效。
+- [ ] 实测5类29篇、全部旧14链接返回规范身份、未知404、未登录401/no-store；验证线上正文与本地hash、所有新旧HTTPS静态资源完整字节/大小、其他34容器/Admin/Nginx不变。使用现有测试会话/身份只读访问，不绕过真实授权；如auth不能验收须明确限制。
+- [ ] 发布记录补实际版本、命令、结果、事务凭据和回滚；浏览器视觉验收留用户，准确区分。提交push文档（无需为纯文档再发布）。若apply失败保留receipt与自有锁，检查实际状态后再决定恢复，不自动重试或删除外来锁。
