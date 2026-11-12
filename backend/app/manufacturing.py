@@ -20,6 +20,7 @@ from .manufacturing_paths import (
     MANUFACTURING_PREFIX,
     MANUFACTURING_ROUTES,
     MES_ORDER_ROUTES,
+    MATERIAL_REFERENCE_ROUTES,
     NATIVE_ACCESS_ROUTES,
     PRODUCTION_TOOLS_ROUTES,
     WORKFLOW_ROUTES,
@@ -424,7 +425,7 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
                 for method, path in PRODUCTION_TOOLS_ROUTES
                 if not native_compatible or (method, MANUFACTURING_PREFIX + "/workflow" + path) not in released}
     reserved |= {(method, MANUFACTURING_PREFIX + "/workflow" + path)
-                 for method, path in MES_ORDER_ROUTES
+                 for method, path in MES_ORDER_ROUTES | MATERIAL_REFERENCE_ROUTES
                  if (method, MANUFACTURING_PREFIX + "/workflow" + path) not in released}
     native_unavailable = _workflow_unavailable()
     native_unavailable.routes = [
