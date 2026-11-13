@@ -61,7 +61,14 @@ MATERIAL_REFERENCE_ROUTES = frozenset({
 MES_ORDER_ROUTES = frozenset({
     ("GET", "/projects/{project_id}/work-orders/{work_order_id}/mes-materials"),
 })
-WORKFLOW_ROUTES = MATERIAL_REFERENCE_ROUTES | MES_ORDER_ROUTES | frozenset(
+SAP_MATERIAL_ROUTES = frozenset({
+    ("GET", "/material-control/sap/status"),
+    ("GET", "/material-control/sap/production-order"),
+    ("POST", "/material-control/sap/production-order"),
+    ("GET", "/material-control/sap/stock-requirements"),
+    ("POST", "/material-control/sap/stock-requirements"),
+})
+WORKFLOW_ROUTES = MATERIAL_REFERENCE_ROUTES | MES_ORDER_ROUTES | SAP_MATERIAL_ROUTES | frozenset(
     {
         ("GET", "/access"),
         ("GET", "/assets/{asset_name}"),
