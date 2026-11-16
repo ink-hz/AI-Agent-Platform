@@ -70,7 +70,7 @@ def _login_csp(auth) -> str:
         base = auth.public_base_url + auth.route_prefix.rstrip("/")
         asset_source = base + "/assets/ " + base + "/api/v1/manufacturing/assets/ " + base + "/api/v1/manufacturing/workflow/assets/"
         image_source = base + "/"
-        connect_source = base + "/api/"
+        connect_source = base + "/api/ " + base + "/login"
     return (
         "default-src 'none'; base-uri 'none'; object-src 'none'; "
         "frame-ancestors 'none'; form-action 'none'; "

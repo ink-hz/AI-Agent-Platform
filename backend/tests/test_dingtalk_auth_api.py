@@ -840,6 +840,64 @@ def test_login_reuses_verified_session_and_resumes_validated_workspace(tmp_path,
     assert auth.provider_calls == 0
 
 
+@pytest.mark.parametrize("prefix", ["/", "/_preview/dingtalk-r1/"])
+@pytest.mark.parametrize(
+    "local_path,app_id",
+    [("/manufacturing", "platform"), ("/office/", "office"), ("/voc/", "voc"), ("/", "platform")],
+)
+def test_real_in_client_configuration_requires_environment_scoped_return_paths(
+    tmp_path, monkeypatch, prefix, local_path, app_id
+) -> None:
+    from app.control_plane.auth import AuthSecrets, DingTalkWebAuth, InClientAuthProfile
+    from test_web_session_security import Provider, SessionRepository
+
+    provider = Provider()
+    auth = DingTalkWebAuth(
+        repository=SessionRepository(),
+        secrets=AuthSecrets(b"r" * 32, key_version=1),
+        qr_login=provider.complete,
+        in_client_login=provider.complete,
+        environment="production" if prefix == "/" else "preview",
+        route_prefix=prefix,
+        public_base_url="https://agent.example.test",
+        app_key="platform-public-key",
+        corp_id="corp",
+        in_client_profiles=tuple(
+            InClientAuthProfile(app, app + "-public-key", (prefix + app + "/",), provider.complete)
+            for app in ("office", "voc")
+        ),
+    )
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+    endpoint = prefix + "api/v1/auth/dingtalk/config"
+    response = client.get(endpoint, params={"return_path": prefix + local_path[1:]})
+
+    assert response.status_code == 200
+    assert response.json() == {"client_id": app_id + "-public-key", "corp_id": "corp", "app_id": app_id}
+    assert response.headers["cache-control"] == "no-store"
+    if prefix != "/":
+        assert client.get(endpoint, params={"return_path": local_path}).status_code == 400
+    assert provider.calls == 0
+
+
+def test_preview_login_csp_allows_challenge_refresh_without_root_access(tmp_path, monkeypatch) -> None:
+    prefix = "/_preview/dingtalk-r1/"
+    auth = FakeAuth(mode=IdentityMode.PREVIEW, prefix=prefix)
+    client = TestClient(_app(tmp_path, monkeypatch, auth))
+
+    for path in (prefix + "login", prefix + "manufacturing"):
+        response = client.get(path)
+        assert response.status_code == 200
+        directives = dict(
+            (parts[0], parts[1:])
+            for directive in response.headers["content-security-policy"].split(";")
+            if (parts := directive.split())
+        )
+        assert set(directives["connect-src"]) == {
+            auth.public_base_url + prefix + "api/",
+            auth.public_base_url + prefix + "login",
+        }
+
+
 def test_preview_login_preserves_already_prefixed_return_path(tmp_path, monkeypatch) -> None:
     auth = FakeAuth(mode=IdentityMode.PREVIEW, prefix="/_preview/dingtalk-r1/")
     response = TestClient(_app(tmp_path, monkeypatch, auth)).get(

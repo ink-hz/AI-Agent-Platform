@@ -12,6 +12,7 @@ it.each(['/', '/_preview/dingtalk-r1/'])('refreshes the server challenge before 
    expect(init).toMatchObject({credentials:'include',cache:'no-store'});
    challenge=true;return new Response('<html></html>');
   }
+  if(String(input)===prefix+'api/v1/account') return new Response('{}',{status:401});
   expect(String(input)).toBe(prefix+'api/v1/auth/dingtalk/start');
   expect(JSON.parse(String(init?.body))).toEqual({return_path:prefix+'hr/'});
   return challenge?new Response(JSON.stringify({authorization_url:'https://login.dingtalk.com/oauth2/auth?state=test'})):new Response('{}',{status:400});
@@ -20,7 +21,7 @@ it.each(['/', '/_preview/dingtalk-r1/'])('refreshes the server challenge before 
  await expect(startQrLogin('/hr/')).resolves.toContain('https://login.dingtalk.com/');
  challenge=false; // Simulate expiry while the same page remains open.
  await expect(startQrLogin('/hr/')).resolves.toContain('https://login.dingtalk.com/');
- expect(fetcher).toHaveBeenCalledTimes(4);
+ expect(fetcher).toHaveBeenCalledTimes(6);
 });
 
 it('does not attempt QR admission if challenge refresh fails',async()=>{
@@ -31,6 +32,6 @@ it('does not attempt QR admission if challenge refresh fails',async()=>{
 });
 
 it('still rejects an authorization URL outside DingTalk',async()=>{
- vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(new Response('<html/>')).mockResolvedValueOnce(new Response(JSON.stringify({authorization_url:'https://evil.test/'}))));
+ vi.stubGlobal('fetch',vi.fn().mockResolvedValueOnce(new Response('<html/>')).mockResolvedValueOnce(new Response('{}',{status:401})).mockResolvedValueOnce(new Response(JSON.stringify({authorization_url:'https://evil.test/'}))));
  await expect(startQrLogin('/hr/')).rejects.toThrow('login response invalid');
 });

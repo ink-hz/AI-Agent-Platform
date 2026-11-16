@@ -391,14 +391,19 @@ async function loginMutationHeaders(): Promise<Record<string, string>> {
 }
 
 
-export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<string> {
+async function refreshLoginChallenge(): Promise<void> {
   // SPA navigation does not visit the server login route, and its HttpOnly
-  // challenge expires while the page is idle. Obtain it before QR admission.
+  // challenge expires while the page is idle. Refresh it before either flow.
   const challenge = await fetch(platformPath("/login"), {
     credentials: "include",
     cache: "no-store",
   });
   await checked(challenge);
+}
+
+
+export async function startQrLogin(returnPath: LoginReturnPath = "/"): Promise<string> {
+  await refreshLoginChallenge();
   const headers = await loginMutationHeaders();
   const response = await fetch(platformPath("/api/v1/auth/dingtalk/start"), {
     method: "POST",
@@ -440,7 +445,7 @@ export function inClientLoginAvailable(): boolean {
 async function loadPublicDingTalkConfig(returnPath: LoginReturnPath): Promise<{
   client_id: string; corp_id: string; app_id: string;
 }> {
-  const query = new URLSearchParams({ return_path: returnPath });
+  const query = new URLSearchParams({ return_path: platformPath(returnPath) });
   const configResponse = await fetch(platformPath(`/api/v1/auth/dingtalk/config?${query.toString()}`), {
     credentials: "include", headers: { Accept: "application/json" },
   });
@@ -459,6 +464,7 @@ async function loadPublicDingTalkConfig(returnPath: LoginReturnPath): Promise<{
 
 export async function inClientLogin(returnPath: LoginReturnPath = "/"): Promise<void> {
   if (!inClientLoginAvailable()) throw new Error("DingTalk JSAPI unavailable");
+  await refreshLoginChallenge();
   const { default: dd } = await import("dingtalk-jsapi");
   const config = await loadPublicDingTalkConfig(returnPath);
   const result = await dd.requestAuthCode({

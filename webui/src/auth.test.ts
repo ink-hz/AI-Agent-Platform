@@ -454,6 +454,7 @@ describe("authenticated account bootstrap", () => {
   it("uses the bundled DingTalk JSAPI code without storing it", async () => {
     const storage = vi.spyOn(Storage.prototype, "setItem");
     const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("login", { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ client_id: "office-client", corp_id: "corp", app_id: "office" }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response("{}", { status: 401 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrf_token: "not-persisted" }), { status: 200, headers: { "Content-Type": "application/json" } }));
@@ -463,10 +464,11 @@ describe("authenticated account bootstrap", () => {
 
     await inClientLogin("/office/");
 
-    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/auth/dingtalk/config?return_path=%2Foffice%2F");
+    expect(fetchMock.mock.calls[0][0]).toBe("/login");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/auth/dingtalk/config?return_path=%2Foffice%2F");
     expect(requestAuthCode).toHaveBeenCalledWith({ clientId: "office-client", corpId: "corp" });
-    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/auth/dingtalk/in-client/exchange");
-    expect(fetchMock.mock.calls[2][1]?.body).toBe(JSON.stringify({ code: "one-time-code", app_id: "office" }));
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/v1/auth/dingtalk/in-client/exchange");
+    expect(fetchMock.mock.calls[3][1]?.body).toBe(JSON.stringify({ code: "one-time-code", app_id: "office" }));
     expect(storage).not.toHaveBeenCalled();
   });
 
