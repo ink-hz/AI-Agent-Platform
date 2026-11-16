@@ -133,13 +133,14 @@ async def manufacturing_summary(request, app, now, *, route_prefix='', deadline=
                     return
                 if access.get('workflow_access') is not True:
                     raise PermissionError
-                data = await read('dashboard')
-                count = data.get('project_count')
-                if type(count) is not int or count < 0:
+                # Phase 1 has no project ledger; the actor's own todo list is the
+                # only per-identity business count the workflow exposes.
+                data = await read('todos')
+                items = data.get('items')
+                if not isinstance(items, list):
                     raise ValueError
-                app.business_metrics = {'visible_projects':Metric(value=count,status='observed',unit='project',
-                    definition='当前身份经项目授权可见的项目数'),
-                    'tasks':Metric(unit='task',definition='当前可见任务数',reason='task_metric_not_supplied')}
+                app.business_metrics = {'tasks':Metric(value=len(items),status='observed',unit='task',
+                    definition='当前身份可见的制造待办数')}
                 dataset = access.get('dataset')
                 if isinstance(dataset,dict):
                     app.dataset = {key: dataset[key] for key in ('mode','label') if isinstance(dataset.get(key),str)}

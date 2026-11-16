@@ -114,7 +114,7 @@ def test_invalid_optional_source_keeps_other_source_and_legacy(native_bundle, mo
     assert response.status_code == 503
     assert response.headers["cache-control"] == "private, no-store"
     assert http.get(BASE + "/mes/status").status_code == 200
-    assert http.get(BASE + "/catalog").status_code == 200
+    assert http.get(BASE + "/health").status_code == 200
 
 
 @pytest.mark.parametrize("configured", [False, True])
@@ -130,7 +130,7 @@ def test_older_release_reserves_unconfigured_native_routes(bundle, monkeypatch, 
         response = http.get(BASE + f"/{system}/status")
         assert response.status_code == 503
         assert response.headers["cache-control"] == "private, no-store"
-    assert http.get(BASE + "/catalog").status_code == 200
+    assert http.get(BASE + "/health").status_code == 200
 
 
 @pytest.mark.parametrize("hardlink", [False, True])
@@ -148,7 +148,7 @@ def test_native_audit_cannot_alias_business_data(native_bundle, monkeypatch, tmp
     http.cookies.set(auth.cookie_name, "valid-cookie")
     assert http.get(BASE + "/sap/status").status_code == 503
     assert http.get(BASE + "/mes/status").status_code == 200
-    assert http.get(BASE + "/catalog").status_code == 200
+    assert http.get(BASE + "/health").status_code == 200
     assert database.read_bytes() == b"business sentinel"
 
 
@@ -173,7 +173,7 @@ def test_native_storage_rejects_auxiliary_collisions(native_bundle, monkeypatch,
     http = client(auth)
     http.cookies.set(auth.cookie_name, "valid-cookie")
     assert http.get(BASE + "/sap/status").status_code == 503
-    assert http.get(BASE + "/catalog").status_code == 200
+    assert http.get(BASE + "/health").status_code == 200
     assert not list(tmp_path.glob("*.json"))
 
 
@@ -275,6 +275,6 @@ def build_workflow_router(*, database_path, authority_database_path, assets_dir,
     http.cookies.set(auth.cookie_name, "valid-cookie")
     assert http.get(BASE + "/workflow/access").status_code == 200
     assert http.get(BASE + "/mes/status").status_code == 200
-    response = http.get(BASE + "/workflow/projects/invalid/work-orders/invalid/mes-materials")
+    response = http.get(BASE + "/workflow/material-control/mes-source/material-iqc")
     assert response.status_code == 503
     assert response.headers["cache-control"] == "private, no-store"

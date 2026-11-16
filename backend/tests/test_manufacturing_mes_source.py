@@ -12,7 +12,7 @@ from app.control_plane.models import AuthContext, Role
 from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants
 
 PREFIX='/api/v1/manufacturing/workflow/material-control/mes-source'
-ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc')}
+ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc','material-iqc','order-reports')}
 
 def test_exact_host_routes():
     from app.manufacturing_paths import WORKFLOW_AUTH_ROUTES, PRODUCTION_TOOLS_ROUTES, SAP_MATERIAL_ROUTES
@@ -65,7 +65,8 @@ def test_real_host_identity_and_source_cache(tmp_path, monkeypatch):
         assert result.status_code==200,result.text
         assert result.json()['snapshot']['data']['items'][0]['shop_order']=='TEST1'
         assert mes.calls==[str(owner)]
-        assert client.get('/api/v1/manufacturing/workflow/projects').json()['items']==[]
+        assert client.get('/api/v1/manufacturing/workflow/todos').json()['items']==[]
+        assert client.get('/api/v1/manufacturing/workflow/projects').status_code==403
         auth.context=AuthContext(owner,Role.PLATFORM_OWNER,auth.context.session_id,True)
         assert client.get(PREFIX+'/status').json()['can_refresh'] is False
         assert client.post(path,headers=headers).status_code==503

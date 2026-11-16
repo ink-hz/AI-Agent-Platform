@@ -7,30 +7,95 @@ from app.manufacturing import authorize_workflow_identity
 from fastapi import HTTPException
 
 
-def test_actual_create_app_uses_injected_real_policy_and_trusted_clock(tmp_path, monkeypatch):
+def _real_release(tmp_path, monkeypatch):
     import os
-    import sys
+    import shutil
     from pathlib import Path
-    root = Path(os.environ["TEST_MANUFACTURING_RELEASE_ROOT"])
-    monkeypatch.syspath_prepend(str(root / "tests"))
-    monkeypatch.setenv("TEST_PLATFORM_SOURCE_ROOT", str(Path(__file__).resolve().parents[2]))
-    from workflow.scenarios.base import ScenarioContext
-    from workflow.d3.pf_client import PlatformHTTP
-    context = ScenarioContext.isolated(tmp_path, case_id="E29", seed=82)
-    api = PlatformHTTP(context)
-    try:
-        pid = api.project("1")
-        result = api.command(pid, "demand.record", kind="firm", product="Camera", quantity="1", unit="piece", due_date="2026-12-01", source=api.source("demand"))
-        with api.db() as db:
-            assert db.execute("SELECT created_at FROM demands WHERE id=?", (result["object_id"],)).fetchone()[0] == context.clock.isoformat()
-        api.request("GET", "/api/v1/manufacturing/projects", actor="planner", expected=403)
-        api.get("/unknown-policy-template", actor="planner", expected=403)
-        api.control("planner", hard_stale=True)
-        api.command(pid, "project.stage", actor="planner", stage="S1", status="active", reason="Denied", expected=503)
-        api.control("planner", revoked=True)
-        api.get("/projects/" + pid, actor="planner", expected=401)
-    finally:
-        api.close()
+
+    configured = os.environ.get("TEST_MANUFACTURING_RELEASE_ROOT")
+    if not configured:
+        pytest.skip("set TEST_MANUFACTURING_RELEASE_ROOT for real sibling integration")
+    root = tmp_path / "release"
+    shutil.copytree(
+        Path(configured) / "src/manufacturing_platform",
+        root / "src/manufacturing_platform",
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
+    assets = root / "webui/dist"
+    assets.mkdir(parents=True)
+    for name in ("manufacturing.js", "manufacturing.css"):
+        shutil.copyfile(Path(configured) / "webui/dist" / name, assets / name)
+    for key, value in {
+        "ROOT": str(root),
+        "DATABASE_PATH": str(tmp_path / "legacy.db"),
+        "WORKFLOW_DATABASE_PATH": str(tmp_path / "domain.db"),
+        "AUTHORITY_DATABASE_PATH": str(tmp_path / "authority.db"),
+        "DATASET_ID": "test",
+        "DATASET_MODE": "test",
+        "DATASET_LABEL": "Test",
+    }.items():
+        monkeypatch.setenv("PLATFORM_MANUFACTURING_" + key, value)
+    return root
+
+
+def test_actual_create_app_uses_injected_real_policy_and_trusted_clock(tmp_path, monkeypatch):
+    import json
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from app.control_plane.authorization import AuthorizationService
+    from app.control_plane.middleware import IdentitySecurityMiddleware
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+    from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants
+
+    _real_release(tmp_path, monkeypatch)
+    static = tmp_path / "static"
+    (static / "assets").mkdir(parents=True)
+    (static / "index.html").write_text("<main>SHELL</main>", encoding="utf-8")
+    (static / ".vite").mkdir()
+    (static / ".vite/manifest.json").write_text(json.dumps({}), encoding="utf-8")
+    monkeypatch.setenv("PLATFORM_STATIC_DIR", str(static))
+    (tmp_path / "registry.yaml").write_text("version: 1\nagents: []\n", encoding="utf-8")
+    (tmp_path / "contract.json").write_text(json.dumps({"bots": []}), encoding="utf-8")
+    auth = FakeAuth()
+    auth.hard_stale_audit = lambda *args: None
+    owner = auth.context.internal_user_id
+    member = uuid4()
+    auth.repository = SimpleNamespace(
+        is_active_internal_user=lambda uid: uid in {owner, member},
+        active_internal_user_profiles=lambda ids: [],
+    )
+    fixed = datetime(2026, 11, 1, 8, 30, tzinfo=UTC)
+    app = create_app(
+        registry_path=str(tmp_path / "registry.yaml"),
+        cluster_contract_path=str(tmp_path / "contract.json"),
+        start_poller=False,
+        identity_auth=auth,
+        manufacturing_business_clock=lambda: fixed,
+    )
+    middleware = next(v for v in app.user_middleware if v.cls is IdentitySecurityMiddleware)
+    middleware.kwargs["authorization"] = AuthorizationService(_NoObservationGrants())
+    client = TestClient(app, base_url=auth.public_base_url)
+    wf = "/api/v1/manufacturing/workflow"
+    client.cookies.set(auth.cookie_name, "valid-cookie")
+    headers = {"Origin": auth.public_base_url, "X-CSRF-Token": auth.csrf, "X-User-ID": str(member)}
+    grant = {"roles": ["production"], "active": True}
+    response = client.put(f"{wf}/members/{member}", headers=headers, json=grant)
+    assert response.status_code == 200, response.text
+    assert response.json()["updated_at"] == fixed.isoformat()
+    with sqlite3.connect(f"file:{tmp_path / 'domain.db'}?mode=ro", uri=True) as db:
+        assert db.execute("SELECT updated_by FROM member_roles WHERE user_id=?", (str(member),)).fetchone() == (str(owner),)
+    auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
+    assert client.get(wf + "/me").json()["roles"] == ["production"]
+    assert client.get("/api/v1/manufacturing/health").status_code == 403
+    assert client.get(wf + "/unknown-policy-template").status_code == 403
+    assert client.put(f"{wf}/members/{member}", headers=headers, json=grant).status_code == 403
+    auth.context = AuthContext(owner, Role.PLATFORM_OWNER, auth.context.session_id, True)
+    assert client.put(f"{wf}/members/{member}", headers=headers, json=grant).status_code == 503
+    auth.revoked = True
+    assert client.get(wf + "/me").status_code == 401
+    client.close()
 
 
 def test_missing_trusted_context_is_unauthenticated():
@@ -114,6 +179,12 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     client = TestClient(app, base_url="https://agent.example.test")
     base = prefix.rstrip("/") + "/api/v1/manufacturing"
     wf = base + "/workflow"
+
+    def domain_files():
+        # The release opens its store eagerly; unauthenticated calls must not touch it.
+        return {p.name: p.read_bytes() for p in tmp_path.glob("domain.db*")}
+
+    pristine = domain_files()
     assert (
         client.get(wf + "/access", headers={"Cookie": "secret-cookie"}).status_code
         == 401
@@ -124,20 +195,26 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert len(events) == 1
     assert events[0]["status"] == 401
     assert "secret" not in str(events)
-    assert not (tmp_path / "domain.db").exists()
+    assert domain_files() == pristine
     caplog.clear()
-    for path in ("/objects/invalid?limit=no", "/tasks?project_id=invalid"):
+    for path in ("/expedites?limit=no", "/handoffs?view=invalid", "/me"):
         response = client.get(wf + path)
         assert response.status_code == 401
         assert response.headers["cache-control"] == "private, no-store"
-    assert not (tmp_path / "domain.db").exists()
+    assert domain_files() == pristine
     caplog.clear()
     for path in ("/production-tools/status", "/production-tools/projects/10001/status"):
         assert client.get(wf + path).status_code == 401
     client.cookies.set(auth.cookie_name, "valid-cookie")
-    # Independent source routes work before any manufacturing project exists.
-    assert client.get(wf + "/projects").json()["items"] == []
+    # Independent source routes work before any manufacturing member exists.
+    assert client.get(wf + "/todos").json()["items"] == []
     assert client.get(wf + "/production-tools/status").json()["configured"] is False
+    me = client.get(wf + "/me").json()
+    assert me["user_id"] == str(owner) and me["configuration_admin"] is True
+    assert me["roles"] == ["mc", "iqc", "warehouse", "production"]
+    bootstrap = client.get(wf + "/access").json()
+    assert bootstrap["allowed"] is True and bootstrap["project_ids"] == []
+    assert bootstrap["roles"] == me["roles"]
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
     for path in ("/production-tools/status", "/production-tools/projects",
                  "/production-tools/projects/10001/status"):
@@ -154,67 +231,28 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
         "X-CSRF-Token": auth.csrf,
         "X-User-ID": str(member),
     }
-    assert client.post(wf + "/projects", json={}).status_code == 403
+    handoff = {
+        "operation_id": str(uuid4()), "material": "M-1", "quantity": "1", "unit": "PC",
+        "to_user": str(member), "from_location": "WH", "to_location": "LINE",
+    }
+    assert client.post(wf + "/handoffs", json=handoff).status_code == 403
     assert (
         client.post(
-            wf + "/projects",
+            wf + "/handoffs",
             headers={"Origin": "https://evil.test", "X-CSRF-Token": auth.csrf},
-            json={},
+            json=handoff,
         ).status_code
         == 403
     )
-    body = {
-        "operation_id": str(uuid4()),
-        "name": "Camera",
-        "line_id": "line",
-        "product": "camera",
-        "customer_id": "customer",
-        "mode": "internal",
-        "unit": {"code": "piece", "scale": 0},
-        "quantity": "100",
-        "contract": {
-            "customer_approval_required": "unknown",
-            "customer_release_required": "unknown",
-            "acceptance_required": "unknown",
-            "customer_revision": "unknown",
-            "internal_revision": "unknown",
-            "material_ownership_rules": "unknown",
-        },
-    }
-    response = client.post(wf + "/projects", headers=headers, json=body)
-    assert response.status_code == 200, response.text
-    pid = response.json()["id"]
-    assert response.json()["version"] == 1
-    # D2: real package commands run behind actual host middleware. Spoofed
-    # caller identity headers never become domain actor; one operation stays one fact.
-    import sqlite3
-    from datetime import UTC, datetime
-    isolated = client.post(wf + "/projects", headers=headers, json={**body, "operation_id": str(uuid4()), "name": "D2 real host command"})
-    assert isolated.status_code == 200, isolated.text
-    second_pid = isolated.json()["id"]
-    now = datetime.now(UTC).isoformat()
-    demand_body = {
-        "operation_id": str(uuid4()), "expected_version": 1, "action": "demand.record",
-        "kind": "firm", "product": body["product"], "quantity": "100", "unit": "piece", "due_date": "2026-12-01",
-        "source": {"system": "D2 isolated source", "object_type": "demand", "external_id": str(uuid4()), "version": 1,
-                   "mode": "manual", "occurred_at": now, "collected_at": now, "evidence": "Signed fixture requirement"},
-    }
-    command_url = f"{wf}/projects/{second_pid}/commands"
-    denied = client.post(command_url, headers=headers, json={**demand_body, "user_id": str(member)})
-    assert denied.status_code == 422
-    accepted = client.post(command_url, headers=headers, json=demand_body)
-    assert accepted.status_code == 200, accepted.text
-    repeated = client.post(command_url, headers=headers, json=demand_body)
-    assert repeated.status_code == 200 and repeated.json()["replayed"] is True
-    assert repeated.json()["object_id"] == accepted.json()["object_id"]
-    with sqlite3.connect(f"file:{tmp_path / 'domain.db'}?mode=ro", uri=True) as facts:
-        assert facts.execute("SELECT COUNT(*) FROM demands WHERE project_id=?", (second_pid,)).fetchone()[0] == 1
-        actors = facts.execute("SELECT actor_id FROM audit_events WHERE project_id=? AND action='demand.record'", (second_pid,)).fetchall()
-        assert actors == [(str(owner),)]
+    # Accepted writes reach the domain; without a MES source no handoff is created.
+    response = client.post(wf + "/handoffs", headers=headers, json=handoff)
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "MES_CONTEXT_UNAVAILABLE"
     assert client.get(prefix.rstrip("/") + "/fixture/login").status_code in (403, 404, 405)
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
-    assert client.get(wf + "/access").json()["allowed"] is False
-    assert client.get(f"{wf}/projects/{pid}").status_code == 404
+    denied_access = client.get(wf + "/access").json()
+    assert denied_access["allowed"] is False and denied_access["roles"] == []
+    assert client.get(wf + "/todos").status_code == 403
     assert (
         client.get(wf + "/assets/manufacturing.js?release=development").status_code
         == 403
@@ -228,84 +266,63 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     )
     assert client.get(wf + "/assets/missing?release=development").status_code == 404
     assert client.get(wf + "/unlisted").status_code in (403, 404)
-    grant = {
-        "operation_id": str(uuid4()),
-        "expected_version": 1,
-        "scope": {"kind": "project", "project_id": pid},
-        "roles": ["planner"],
-        "qualifications": [],
-        "active": True,
-        "evidence": "assigned",
-    }
+    grant = {"roles": ["production"], "active": True}
     active_subjects.remove(member)
     assert (
-        client.put(
-            f"{wf}/projects/{pid}/members/{member}", headers=headers, json=grant
-        ).status_code
-        == 422
+        client.put(f"{wf}/members/{member}", headers=headers, json=grant).status_code
+        == 404
     )
     active_subjects.add(member)
-    assert (
-        client.put(
-            f"{wf}/projects/{pid}/members/{member}", headers=headers, json=grant
-        ).status_code
-        == 200
-    )
+    granted = client.put(f"{wf}/members/{member}", headers=headers, json=grant)
+    assert granted.status_code == 200, granted.text
+    assert granted.json()["roles"] == ["production"]
+    assert granted.json()["display_name"] == "Named project member"
+    import sqlite3
+    with sqlite3.connect(f"file:{tmp_path / 'domain.db'}?mode=ro", uri=True) as facts:
+        # Spoofed caller identity headers never become the domain actor.
+        assert facts.execute("SELECT updated_by FROM member_roles WHERE user_id=?", (str(member),)).fetchall() == [(str(owner),)]
+        assert facts.execute("SELECT COUNT(*) FROM handoffs").fetchone()[0] == 0
+    assert [item["user_id"] for item in client.get(wf + "/members").json()["items"]] == [str(member)]
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
-    assert client.get(wf + "/access").json()["project_ids"] == [pid]
-    assert client.get(f"{wf}/projects/{pid}").status_code == 200
+    bootstrap = client.get(wf + "/access").json()
+    assert bootstrap["allowed"] is True and bootstrap["roles"] == ["production"]
+    assert bootstrap["project_ids"] == []
+    assert client.get(wf + "/members").status_code == 403
+    assert client.put(f"{wf}/members/{member}", headers=headers, json=grant).status_code == 403
     tools = wf + "/production-tools/projects/10001"
     assert client.get(tools + "/status").status_code == 403
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, True)
     assert client.get(tools + "/status").status_code == 403
     auth.context = AuthContext(uuid4(), Role.MEMBER, auth.context.session_id, False)
     assert client.get(tools + "/status").status_code == 403
+    assert client.get(wf + "/todos").status_code == 403
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
-    assert client.get(f"{wf}/projects/{pid}/production-tools/status").status_code in (403, 404)
-    scoped_members=client.get(f"{wf}/projects/{pid}/members?limit=1&offset=0")
-    assert scoped_members.status_code==200
-    assert len(scoped_members.json()["items"])==1
-    assert scoped_members.json()["items"][0]["display_name"] in {"Named project member","Project Owner"}
-    assert client.get(f"{wf}/projects/{pid}/members?limit=51").status_code==422
-    for path in ("/objects/demand", "/tasks"):
+    directory = client.get(wf + "/members/directory", params={"role": "production"})
+    assert directory.status_code == 200, directory.text
+    assert directory.json()["items"] == [
+        {"user_id": str(member), "display_name": "Named project member", "roles": ["production"]}
+    ]
+    assert client.get(wf + "/members/directory", params={"role": "invalid"}).status_code == 422
+    for path in ("/expedites", "/handoffs", "/handoffs?view=pending", "/todos"):
         page = client.get(wf + path)
         assert page.status_code == 200, page.text
-        assert page.json()["total"] == 0
+        assert page.json()["items"] == []
         assert page.headers["cache-control"] == "private, no-store"
-        assert client.get(wf + path, params={"project_id": second_pid}).status_code == 404
-        assert client.get(wf + path, params={"limit": "invalid"}).status_code == 422
-    # The real mounted package serves material reads through the host policy,
-    # retaining project grants after the platform-level route check.
-    overview = client.get(wf + "/material-control/overview")
-    assert overview.status_code == 200, overview.text
-    assert [item["project_id"] for item in overview.json()["items"]] == [pid]
-    assert overview.json()["items"][0]["requirement_count"] == 0
-    for path in (
-        f"/projects/{pid}/material-control",
-        f"/projects/{pid}/material-tasks",
-        "/material-control/tasks",
-        f"/projects/{pid}/material-control/assignees?task_kind=trace",
-    ):
-        page = client.get(wf + path)
-        assert page.status_code == 200, page.text
-        assert page.headers["cache-control"] == "private, no-store"
-        if "requirements" in page.json():
-            assert page.json()["requirements"] == []
-            assert page.json()["project_id"] == pid
-        elif "assignees" in path:
-            assert page.json()["items"] == [{"id": str(owner), "display_name": "Project Owner"}]
-        else:
-            assert page.json()["items"] == []
-    for suffix in ("material-control", "material-tasks", "material-control/assignees?task_kind=trace"):
-        assert client.get(f"{wf}/projects/{second_pid}/{suffix}").status_code == 404
-    assert client.get(wf + "/material-control/tasks", params={"project_id": second_pid}).status_code == 404
+    assert client.get(wf + "/expedites", params={"limit": "invalid"}).status_code == 422
+    assert client.get(wf + "/handoffs", params={"view": "invalid"}).status_code == 422
+    expedite = {"operation_id": str(uuid4()), "shop_order": "WO-1", "material": "M-1",
+                "component_key": "1:1", "reason": "Shortage"}
+    response = client.post(wf + "/expedites", headers=headers, json=expedite)
+    assert response.status_code == 403 and response.json()["code"] == "ROLE_REQUIRED"
     assert client.get(base + "/projects").status_code == 403
+    assert client.get(base + "/health").status_code == 403
+    assert client.get(wf + "/projects").status_code == 403
     assert (
         client.get(wf + "/assets/manufacturing.js?release=development").status_code
         == 200
     )
     caplog.clear()
-    assert client.get(f"{wf}/projects/{uuid4()}").status_code == 404
+    assert client.get(f"{wf}/expedites/999").status_code == 404
     events = [
         r.workflow_security for r in caplog.records if hasattr(r, "workflow_security")
     ]
@@ -319,13 +336,13 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert len(events) == 1
     assert len(str(events[0])) < 1024
     assert "secret" not in str(events[0])
-    assert client.delete(wf + "/projects").status_code in (403, 404, 405)
+    assert client.delete(wf + "/handoffs").status_code in (403, 404, 405)
     auth.context = AuthContext(
         member, Role.MANAGEMENT_VIEWER, auth.context.session_id, False
     )
-    assert client.post(wf + "/projects", headers=headers, json=body).status_code == 403
+    assert client.post(wf + "/handoffs", headers=headers, json=handoff).status_code == 403
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, True)
-    assert client.post(wf + "/projects", headers=headers, json=body).status_code == 503
+    assert client.post(wf + "/handoffs", headers=headers, json=handoff).status_code == 503
 
     # Explicit configuration without a trusted directory resolver fails only the new domain.
     unavailable_app = FastAPI()
@@ -374,7 +391,7 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert legacy_file.read_bytes() == b"legacy sentinel"
 
 @pytest.mark.parametrize('role', list(Role))
-@pytest.mark.parametrize('path', ['/objects/{kind}', '/tasks'])
+@pytest.mark.parametrize('path', ['/me', '/todos', '/members/directory', '/expedites', '/handoffs'])
 def test_global_workflow_exact_auth_contract(role, path):
     from app.control_plane.authorization import AuthorizationService
     from app.manufacturing_paths import WORKFLOW_ROUTES
@@ -385,7 +402,8 @@ def test_global_workflow_exact_auth_contract(role, path):
     route = '/api/v1/manufacturing/workflow' + path
     assert service.decide(None, 'GET', route, ()).status_code == 401
     assert service.decide(context, 'GET', route, ()).allowed
-    assert not service.decide(context, 'POST', route, ()).allowed
+    assert service.decide(context, 'POST', route, ()).allowed is (('POST', path) in WORKFLOW_ROUTES)
+    assert not service.decide(context, 'DELETE', route, ()).allowed
     assert not service.decide(context, 'GET', route + '/extra', ()).allowed
 
 
@@ -402,7 +420,7 @@ def test_unavailable_global_routes_authenticate_before_validation(tmp_path, monk
     app.include_router(build_manufacturing_router())
     app.add_middleware(IdentitySecurityMiddleware, auth=auth, authorization=AuthorizationService(_NoObservationGrants()), routes=app.routes, public_assets=frozenset())
     client = TestClient(app, base_url='https://agent.example.test')
-    for path in ('/objects/invalid?limit=no&project_id=invalid', '/tasks?limit=no&project_id=invalid'):
+    for path in ('/expedites?limit=no&status=invalid', '/handoffs?limit=no&view=invalid', '/expedites/invalid'):
         url = '/api/v1/manufacturing/workflow' + path
         response = client.get(url)
         assert response.status_code == 401
@@ -455,3 +473,6 @@ def test_host_allowlist_covers_every_released_workflow_route(tmp_path):
         for method in route.methods
     }
     assert released and released <= WORKFLOW_AUTH_ROUTES, sorted(released - WORKFLOW_AUTH_ROUTES)
+    # Exact: no retired route remains allowlisted (the shell entry is host-owned).
+    host_only = {("GET", "/manufacturing"), ("GET", "/manufacturing/")}
+    assert WORKFLOW_AUTH_ROUTES - host_only == released, sorted(WORKFLOW_AUTH_ROUTES - host_only - released)

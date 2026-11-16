@@ -17,37 +17,8 @@ MANUFACTURING_ROUTES = frozenset(
     {
         ("GET", "/access"),
         ("GET", "/health"),
-        ("GET", "/catalog"),
         ("GET", "/assets/{asset_name}"),
-        ("GET", "/lines/{line_id}"),
-        ("GET", "/lines/{line_id}/stages/{stage_id}"),
-        ("PUT", "/lines/{line_id}/stages/{stage_id}"),
-        ("POST", "/lines/{line_id}/stages/{stage_id}/tasks"),
-        ("PATCH", "/lines/{line_id}/stages/{stage_id}/tasks/{task_id}"),
-        ("GET", "/dashboard"),
-        ("GET", "/projects"),
-        ("POST", "/projects"),
-        ("GET", "/projects/{project_id}"),
-        ("PATCH", "/projects/{project_id}"),
-        ("PUT", "/projects/{project_id}/stages/{stage_id}"),
-        ("POST", "/projects/{project_id}/tasks"),
-        ("PATCH", "/projects/{project_id}/tasks/{task_id}"),
-        ("GET", "/project-tasks"),
         ("GET", "/handbook"),
-        ("GET", "/collaboration"),
-        ("POST", "/systems"),
-        ("PATCH", "/systems/{system_id}"),
-        ("POST", "/authorities"),
-        ("PATCH", "/authorities/{authority_id}"),
-        ("GET", "/projects/{project_id}/controls"),
-        ("POST", "/projects/{project_id}/packages"),
-        ("PUT", "/projects/{project_id}/packages/{package_id}"),
-        ("POST", "/projects/{project_id}/packages/{package_id}/actions"),
-        ("POST", "/projects/{project_id}/handoffs"),
-        ("PATCH", "/projects/{project_id}/handoffs/{handoff_id}"),
-        ("POST", "/projects/{project_id}/readiness"),
-        ("PUT", "/projects/{project_id}/readiness/{readiness_id}"),
-        ("POST", "/projects/{project_id}/readiness/{readiness_id}/issues"),
     }
 )
 MANUFACTURING_ROUTES |= NATIVE_ACCESS_ROUTES
@@ -55,12 +26,6 @@ MANUFACTURING_AUTH_ROUTES = frozenset(
     (method, MANUFACTURING_PREFIX + path) for method, path in MANUFACTURING_ROUTES
 )
 
-MATERIAL_REFERENCE_ROUTES = frozenset({
-    ("GET", "/projects/{project_id}/material-task-references"),
-})
-MES_ORDER_ROUTES = frozenset({
-    ("GET", "/projects/{project_id}/work-orders/{work_order_id}/mes-materials"),
-})
 SAP_MATERIAL_ROUTES = frozenset({
     ("GET", "/material-control/sap/status"),
     ("GET", "/material-control/sap/production-order"),
@@ -78,38 +43,35 @@ MES_SOURCE_ROUTES = frozenset({
     ("POST", "/material-control/mes-source/priority"),
     ("GET", "/material-control/mes-source/iqc"),
     ("POST", "/material-control/mes-source/iqc"),
+    ("GET", "/material-control/mes-source/material-iqc"),
+    ("POST", "/material-control/mes-source/material-iqc"),
+    ("GET", "/material-control/mes-source/order-reports"),
+    ("POST", "/material-control/mes-source/order-reports"),
 })
-WORKFLOW_ROUTES = MES_SOURCE_ROUTES | MATERIAL_REFERENCE_ROUTES | MES_ORDER_ROUTES | SAP_MATERIAL_ROUTES | frozenset(
+EXPEDITE_ROUTES = frozenset({
+    ("GET", "/expedites"),
+    ("POST", "/expedites"),
+    ("GET", "/expedites/{expedite_id}"),
+    ("POST", "/expedites/{expedite_id}/notes"),
+    ("POST", "/expedites/{expedite_id}/close"),
+})
+HANDOFF_ROUTES = frozenset({
+    ("GET", "/handoffs"),
+    ("POST", "/handoffs"),
+    ("GET", "/handoffs/{handoff_id}"),
+    ("POST", "/handoffs/{handoff_id}/receive"),
+    ("POST", "/handoffs/{handoff_id}/resolve"),
+})
+WORKFLOW_ROUTES = MES_SOURCE_ROUTES | SAP_MATERIAL_ROUTES | EXPEDITE_ROUTES | HANDOFF_ROUTES | frozenset(
     {
         ("GET", "/access"),
         ("GET", "/assets/{asset_name}"),
         ("GET", "/handbook"),
-        ("GET", "/dashboard"),
-        ("GET", "/objects/{kind}"),
-        ("GET", "/tasks"),
-        ("GET", "/material-control/overview"),
-        ("GET", "/projects/{project_id}/material-control"),
-        ("GET", "/projects/{project_id}/material-tasks"),
-        ("GET", "/material-control/tasks"),
-        ("GET", "/projects/{project_id}/material-control/assignees"),
-        ("GET", "/projects"),
-        ("POST", "/projects"),
-        ("GET", "/projects/{project_id}"),
-        ("GET", "/projects/{project_id}/members"),
-        ("PUT", "/projects/{project_id}/members/{user_id}"),
-        ("GET", "/projects/{project_id}/objects/{kind}"),
-        ("GET", "/projects/{project_id}/objects/{kind}/{object_id}"),
-        ("POST", "/projects/{project_id}/commands"),
-        ("GET", "/projects/{project_id}/trace"),
-        ("GET", "/projects/{project_id}/exchanges"),
-        ("GET", "/projects/{project_id}/assistance"),
-        ("GET", "/reusable-assets"),
-        ("GET", "/projects/{project_id}/integration-intents"),
-        ("GET", "/projects/{project_id}/integration-links"),
-        ("GET", "/projects/{project_id}/systems"),
-        ("GET", "/projects/{project_id}/systems/{system}/facts"),
-        ("GET", "/projects/{project_id}/systems/{system}/facts/{object_type}/{external_id}"),
-        ("GET", "/projects/{project_id}/systems/product_test/artifacts/{artifact_id}"),
+        ("GET", "/me"),
+        ("GET", "/members"),
+        ("GET", "/members/directory"),
+        ("PUT", "/members/{user_id}"),
+        ("GET", "/todos"),
     }
 )
 PRODUCTION_TOOLS_ROUTES = frozenset(

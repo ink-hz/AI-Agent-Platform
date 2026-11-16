@@ -119,13 +119,13 @@ def test_workspace_adapters_preserve_real_identity_and_authorization(tmp_path):
         actor=request.state.auth_context
         return {'workflow_available':True,'workflow_access':bool(permitted_projects[actor.internal_user_id]),
             'dataset':{'mode':'test','label':'Synthetic'},'project_ids':['PRIVATE-PROJECT'], 'release':'configured-release'}
-    @app.get('/api/v1/manufacturing/workflow/dashboard')
-    def dashboard(request:Request):
+    @app.get('/api/v1/manufacturing/workflow/todos')
+    def todos(request:Request):
         actor=request.state.auth_context
         if not permitted_projects[actor.internal_user_id]:
             raise HTTPException(403)
         calls.append(('domain',str(actor.internal_user_id)))
-        return {'project_count':permitted_projects[actor.internal_user_id],'cards':[{'secret':'SECRET'}],
+        return {'items':[{'title':'SECRET'}]*permitted_projects[actor.internal_user_id],'cards':[{'secret':'SECRET'}],
             'project_ids':['PRIVATE-PROJECT'], 'counts':{'unknown-business-unit':999}}
     app.include_router(build_dashboard_router(DashboardService(),CatalogPermission()))
     app.add_middleware(IdentitySecurityMiddleware,auth=Auth(),public_assets=frozenset(),authorization=AuthorizationService(Grants()),routes=tuple(app.router.routes))
@@ -137,13 +137,13 @@ def test_workspace_adapters_preserve_real_identity_and_authorization(tmp_path):
     assert byid['voc']['business_metrics']['registered_vocs']['value']==1
     assert upstream.calls[0]['actor_id']==owner.internal_user_id
     assert upstream.calls[0]['query']=={'limit':100}
-    assert byid['manufacturing']['business_metrics']['visible_projects']['value']==2
+    assert byid['manufacturing']['business_metrics']['tasks']['value']==2
     assert byid['manufacturing']['dataset']=={'mode':'test','label':'Synthetic'}
     assert byid['manufacturing']['runtime']['coverage']=='not_applicable'
     assert data['summary']['expected_runtime']==5
     serialized=str(data)
     assert 'SECRET' not in serialized and 'PRIVATE-PROJECT' not in serialized and str(owner.internal_user_id) not in serialized
-    assert calls.count(('auth','owner'))==4  # outer, workflow access/dashboard, VOC list
+    assert calls.count(('auth','owner'))==4  # outer, workflow access/todos, VOC list
     cached=repository._snapshot
     client.get('/api/dashboard/overview')
     assert repository._snapshot is cached
