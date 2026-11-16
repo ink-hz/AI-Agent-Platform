@@ -211,7 +211,7 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert client.get(wf + "/production-tools/status").json()["configured"] is False
     me = client.get(wf + "/me").json()
     assert me["user_id"] == str(owner) and me["configuration_admin"] is True
-    assert me["roles"] == ["mc", "iqc", "warehouse", "production"]
+    assert me["roles"] == ["mc", "iqc", "warehouse", "production", "purchasing"]
     bootstrap = client.get(wf + "/access").json()
     assert bootstrap["allowed"] is True and bootstrap["project_ids"] == []
     assert bootstrap["roles"] == me["roles"]

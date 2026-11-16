@@ -7,7 +7,10 @@ from test_manufacturing_bridge import BASE, client
 from test_manufacturing_native_access import workflow_native_bundle, native_bundle, bundle
 
 PATHS = ("/material-control/sap/status", "/material-control/sap/production-order",
-         "/material-control/sap/stock-requirements")
+         "/material-control/sap/stock-requirements", "/material-control/sap/mrp-list",
+         "/material-control/sap/material-detail", "/material-control/sap/order-status",
+         "/material-control/sap/order-confirmations", "/material-control/sap/confirmation-detail",
+         "/material-control/sap/goods-movement", "/material-control/sap/purchase-orders")
 
 
 def test_sap_reads_are_exactly_registered():

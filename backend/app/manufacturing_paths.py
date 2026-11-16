@@ -32,6 +32,20 @@ SAP_MATERIAL_ROUTES = frozenset({
     ("POST", "/material-control/sap/production-order"),
     ("GET", "/material-control/sap/stock-requirements"),
     ("POST", "/material-control/sap/stock-requirements"),
+    ("GET", "/material-control/sap/mrp-list"),
+    ("POST", "/material-control/sap/mrp-list"),
+    ("GET", "/material-control/sap/material-detail"),
+    ("POST", "/material-control/sap/material-detail"),
+    ("GET", "/material-control/sap/order-status"),
+    ("POST", "/material-control/sap/order-status"),
+    ("GET", "/material-control/sap/order-confirmations"),
+    ("POST", "/material-control/sap/order-confirmations"),
+    ("GET", "/material-control/sap/confirmation-detail"),
+    ("POST", "/material-control/sap/confirmation-detail"),
+    ("GET", "/material-control/sap/goods-movement"),
+    ("POST", "/material-control/sap/goods-movement"),
+    ("GET", "/material-control/sap/purchase-orders"),
+    ("POST", "/material-control/sap/purchase-orders"),
 })
 MES_SOURCE_ROUTES = frozenset({
     ("GET", "/material-control/mes-source/status"),
@@ -57,6 +71,44 @@ MES_SOURCE_ROUTES = frozenset({
     ("POST", "/material-control/mes-source/warehouses"),
     ("GET", "/material-control/mes-source/inventory"),
     ("POST", "/material-control/mes-source/inventory"),
+    ("GET", "/material-control/mes-source/order-header"),
+    ("POST", "/material-control/mes-source/order-header"),
+    ("GET", "/material-control/mes-source/material-receipts"),
+    ("POST", "/material-control/mes-source/material-receipts"),
+    ("GET", "/material-control/mes-source/batch-receipts"),
+    ("POST", "/material-control/mes-source/batch-receipts"),
+    ("GET", "/material-control/mes-source/order-requisitions"),
+    ("POST", "/material-control/mes-source/order-requisitions"),
+    ("GET", "/material-control/mes-source/requisition-lines"),
+    ("POST", "/material-control/mes-source/requisition-lines"),
+    ("GET", "/material-control/mes-source/order-stock"),
+    ("POST", "/material-control/mes-source/order-stock"),
+    ("GET", "/material-control/mes-source/batch-stock"),
+    ("POST", "/material-control/mes-source/batch-stock"),
+    ("GET", "/material-control/mes-source/sn"),
+    ("POST", "/material-control/mes-source/sn"),
+    ("GET", "/material-control/mes-source/sn-route"),
+    ("POST", "/material-control/mes-source/sn-route"),
+    ("GET", "/material-control/mes-source/sn-station"),
+    ("POST", "/material-control/mes-source/sn-station"),
+    ("GET", "/material-control/mes-source/sn-components"),
+    ("POST", "/material-control/mes-source/sn-components"),
+    ("GET", "/material-control/mes-source/batch-consumers"),
+    ("POST", "/material-control/mes-source/batch-consumers"),
+    ("GET", "/material-control/mes-source/sn-defects"),
+    ("POST", "/material-control/mes-source/sn-defects"),
+    ("GET", "/material-control/mes-source/sn-repairs"),
+    ("POST", "/material-control/mes-source/sn-repairs"),
+    ("GET", "/material-control/mes-source/sn-packing"),
+    ("POST", "/material-control/mes-source/sn-packing"),
+    ("GET", "/material-control/mes-source/packing-sns"),
+    ("POST", "/material-control/mes-source/packing-sns"),
+    ("GET", "/material-control/mes-source/sn-markings"),
+    ("POST", "/material-control/mes-source/sn-markings"),
+    ("GET", "/material-control/mes-source/markings"),
+    ("POST", "/material-control/mes-source/markings"),
+    ("GET", "/material-control/mes-source/marking-sns"),
+    ("POST", "/material-control/mes-source/marking-sns"),
 })
 EXPEDITE_ROUTES = frozenset({
     ("GET", "/expedites"),
@@ -72,7 +124,32 @@ HANDOFF_ROUTES = frozenset({
     ("POST", "/handoffs/{handoff_id}/receive"),
     ("POST", "/handoffs/{handoff_id}/resolve"),
 })
-WORKFLOW_ROUTES = MES_SOURCE_ROUTES | SAP_MATERIAL_ROUTES | EXPEDITE_ROUTES | HANDOFF_ROUTES | frozenset(
+ARRIVAL_ROUTES = frozenset({
+    ("GET", "/arrivals"),
+    ("POST", "/arrivals"),
+    ("GET", "/arrivals/{arrival_id}"),
+    ("POST", "/arrivals/{arrival_id}/notes"),
+    ("POST", "/arrivals/{arrival_id}/assign"),
+    ("POST", "/arrivals/{arrival_id}/convert"),
+    ("POST", "/arrivals/{arrival_id}/close"),
+})
+SUPPLY_PLAN_ROUTES = frozenset({
+    ("GET", "/supply-plans"),
+    ("POST", "/supply-plans"),
+    ("GET", "/supply-plans/{plan_id}"),
+    ("POST", "/supply-plans/{plan_id}/receipts"),
+    ("POST", "/supply-plans/{plan_id}/close"),
+})
+WORKBENCH_ROUTES = frozenset({
+    ("GET", "/watches"),
+    ("POST", "/watches"),
+    ("POST", "/watches/remove"),
+    ("GET", "/workbench"),
+})
+WORKFLOW_ROUTES = (
+    MES_SOURCE_ROUTES | SAP_MATERIAL_ROUTES | EXPEDITE_ROUTES | HANDOFF_ROUTES
+    | ARRIVAL_ROUTES | SUPPLY_PLAN_ROUTES | WORKBENCH_ROUTES
+) | frozenset(
     {
         ("GET", "/access"),
         ("GET", "/assets/{asset_name}"),

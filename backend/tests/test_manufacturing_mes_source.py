@@ -12,13 +12,14 @@ from app.control_plane.models import AuthContext, Role
 from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants
 
 PREFIX='/api/v1/manufacturing/workflow/material-control/mes-source'
-ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc','material-iqc','order-reports','order-operations','material-demand','order-priority','warehouses','inventory')}
+ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc','material-iqc','order-reports','order-operations','material-demand','order-priority','warehouses','inventory','order-header','material-receipts','batch-receipts','order-requisitions','requisition-lines','order-stock','batch-stock','sn','sn-route','sn-station','sn-components','batch-consumers','sn-defects','sn-repairs','sn-packing','packing-sns','sn-markings','markings','marking-sns')}
 
 def test_exact_host_routes():
     from app.manufacturing_paths import WORKFLOW_AUTH_ROUTES, PRODUCTION_TOOLS_ROUTES, SAP_MATERIAL_ROUTES
     assert {r for r in WORKFLOW_AUTH_ROUTES if '/mes-source' in r[1]} == ROUTES
     assert len(PRODUCTION_TOOLS_ROUTES)==21
-    assert len(SAP_MATERIAL_ROUTES)==5
+    assert len(SAP_MATERIAL_ROUTES)==19
+    assert len(WORKFLOW_AUTH_ROUTES)==137
 
 class Mes:
     def __init__(self): self.calls=[]
