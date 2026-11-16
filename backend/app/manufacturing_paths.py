@@ -47,6 +47,16 @@ MES_SOURCE_ROUTES = frozenset({
     ("POST", "/material-control/mes-source/material-iqc"),
     ("GET", "/material-control/mes-source/order-reports"),
     ("POST", "/material-control/mes-source/order-reports"),
+    ("GET", "/material-control/mes-source/order-operations"),
+    ("POST", "/material-control/mes-source/order-operations"),
+    ("GET", "/material-control/mes-source/material-demand"),
+    ("POST", "/material-control/mes-source/material-demand"),
+    ("GET", "/material-control/mes-source/order-priority"),
+    ("POST", "/material-control/mes-source/order-priority"),
+    ("GET", "/material-control/mes-source/warehouses"),
+    ("POST", "/material-control/mes-source/warehouses"),
+    ("GET", "/material-control/mes-source/inventory"),
+    ("POST", "/material-control/mes-source/inventory"),
 })
 EXPEDITE_ROUTES = frozenset({
     ("GET", "/expedites"),

@@ -12,7 +12,7 @@ from app.control_plane.models import AuthContext, Role
 from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants
 
 PREFIX='/api/v1/manufacturing/workflow/material-control/mes-source'
-ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc','material-iqc','order-reports')}
+ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc','material-iqc','order-reports','order-operations','material-demand','order-priority','warehouses','inventory')}
 
 def test_exact_host_routes():
     from app.manufacturing_paths import WORKFLOW_AUTH_ROUTES, PRODUCTION_TOOLS_ROUTES, SAP_MATERIAL_ROUTES
