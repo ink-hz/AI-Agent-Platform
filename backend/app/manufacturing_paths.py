@@ -157,6 +157,7 @@ WORKFLOW_ROUTES = (
         ("GET", "/me"),
         ("GET", "/members"),
         ("GET", "/members/directory"),
+        ("GET", "/members/search"),
         ("PUT", "/members/{user_id}"),
         ("GET", "/todos"),
     }

@@ -7,6 +7,43 @@ from app.manufacturing import authorize_workflow_identity
 from fastapi import HTTPException
 
 
+class FakeDirectory:
+    """Enterprise directory (花名通讯录) stand-in: member id == platform id unless remapped."""
+
+    def __init__(self, active, names=None):
+        self.active = active
+        self.names = names or {}
+        self.remap = {}
+        self.unlinked = set()
+        self.down = False
+
+    def _person(self, uid):
+        return {
+            "directory_member_id": str(self.remap.get(uid, uid)),
+            "internal_user_id": None if uid in self.unlinked else str(uid),
+            "display_name": self.names.get(uid, "Person"),
+            "departments": ["制造中心"],
+        }
+
+    def resolve(self, *, directory_member_ids, internal_user_ids):
+        if self.down:
+            raise OSError("directory unavailable")
+        wanted = {str(v) for v in directory_member_ids}
+        internal = {str(v) for v in internal_user_ids}
+        out = []
+        for uid in self.active:
+            person = self._person(uid)
+            if person["directory_member_id"] in wanted or (person["internal_user_id"] and person["internal_user_id"] in internal):
+                out.append(person)
+        return out
+
+    def search(self, query, limit):
+        if self.down:
+            raise OSError("directory unavailable")
+        return [{**self._person(uid), "linked": uid not in self.unlinked}
+                for uid in self.active if query in self.names.get(uid, "Person")][:limit]
+
+
 def _real_release(tmp_path, monkeypatch):
     import os
     import shutil
@@ -73,6 +110,7 @@ def test_actual_create_app_uses_injected_real_policy_and_trusted_clock(tmp_path,
         start_poller=False,
         identity_auth=auth,
         manufacturing_business_clock=lambda: fixed,
+        manufacturing_workflow_directory=FakeDirectory({owner, member}),
     )
     middleware = next(v for v in app.user_middleware if v.cls is IdentitySecurityMiddleware)
     middleware.kwargs["authorization"] = AuthorizationService(_NoObservationGrants())
@@ -161,10 +199,13 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     member = uuid4()
     active_subjects = {owner, member}
     app = FastAPI()
+    directory = FakeDirectory(active_subjects, {member: "Named project member", owner: "Project Owner"})
     app.include_router(
         build_manufacturing_router(
             resolve_workflow_subject=lambda uid: uid in active_subjects,
             resolve_workflow_profiles=lambda ids: [dict(user_id=str(uid),display_name="Named project member" if uid==member else "Project Owner") for uid in ids if uid in active_subjects],
+            search_workflow_directory=directory.search,
+            resolve_workflow_directory=directory.resolve,
         ),
         prefix=prefix.rstrip("/"),
     )
