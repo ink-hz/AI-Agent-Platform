@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { searchAdministratorCandidates, type AdministratorSearchResult, type AdministratorUser } from "../administratorDirectory";
+import { searchAdministratorCandidates, type AdministratorSearchResult, type RosterCandidate } from "../administratorDirectory";
 
 export function AdministratorSearch({ disabled, excludedIds, onSelect, onClose }: {
   disabled: boolean;
   excludedIds: string[];
-  onSelect: (user: AdministratorUser) => void;
+  onSelect: (user: {internal_user_id: string}) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -35,9 +35,9 @@ export function AdministratorSearch({ disabled, excludedIds, onSelect, onClose }
       if (selected === sequence.current) setLoading(false);
     }
   }
-  const candidates = result?.users.filter(user => !excludedIds.includes(user.internal_user_id)) ?? [];
-  function ambiguous(user: AdministratorUser) {
-    return candidates.some(other => other.internal_user_id !== user.internal_user_id
+  const candidates = result?.users.filter(user => user.internal_user_id === null || !excludedIds.includes(user.internal_user_id)) ?? [];
+  function ambiguous(user: RosterCandidate) {
+    return candidates.some(other => other.directory_member_id !== user.directory_member_id
       && other.display_name === user.display_name
       && [...other.departments].sort().join("\0") === [...user.departments].sort().join("\0"));
   }
@@ -56,12 +56,20 @@ export function AdministratorSearch({ disabled, excludedIds, onSelect, onClose }
     {result && !candidates.length && <p role="status">未找到可添加的成员</p>}
     {result?.truncated && <p role="status">匹配较多，请输入更完整的花名或姓名。</p>}
     <div className="administrator-results">
-      {candidates.map(user => <article key={user.internal_user_id}>
-        <div><strong>{user.display_name}</strong>{user.departments.length > 0 && <p>{user.departments.join("、")}</p>}
-          {ambiguous(user) && <small>同名且部门相同，请先核实通讯录身份。</small>}
-        </div>
-        <button type="button" disabled={disabled || !!result?.truncated || ambiguous(user)} onClick={() => onSelect(user)}>设为平台管理员</button>
-      </article>)}
+      {candidates.map(user => {
+        const accountId = user.internal_user_id;
+        return <article key={user.directory_member_id}>
+          <div>
+            <strong>{user.display_name}</strong>
+            {user.departments.length > 0 && <p>{user.departments.join("、")}</p>}
+            {ambiguous(user) && <small>同名且部门相同，请先核实通讯录身份。</small>}
+          </div>
+          {accountId === null
+            ? <small>尚未关联平台账号</small>
+            : <button type="button" disabled={disabled || !!result?.truncated || ambiguous(user)}
+                onClick={() => onSelect({internal_user_id: accountId})}>设为平台管理员</button>}
+        </article>;
+      })}
     </div>
   </section>;
 }

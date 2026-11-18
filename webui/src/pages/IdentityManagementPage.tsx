@@ -293,7 +293,7 @@ function AdministratorManagement({ account }: { account: Account }) {
     if (!beginInflightAdministrator(operation)) return;
     await dispatchInflightAdministrator(operation, true, false);
   }
-  const mutateAdministrator = async (user: ManagedUser, revoke: boolean) => {
+  const mutateAdministrator = async (user: Pick<ManagedUser, "internal_user_id">, revoke: boolean) => {
     if (account.role !== "platform_owner" || account.hard_stale_read_only || busy || administratorMutationBlocked) return;
     const operation = createAdministratorMutation(user, revoke);
     setBusy(true);

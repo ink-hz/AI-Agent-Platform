@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AdministratorSearch } from "./AdministratorSearch";
 
-const user = { internal_user_id: "synthetic-one", display_name: "同名", status: "active", role: "member", scopes: [], departments: ["研发"] };
+const user = { directory_member_id: "roster-one", internal_user_id: "synthetic-one", display_name: "同名", departments: ["研发"] };
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 const response = (users = [user], truncated = false) => new Response(JSON.stringify({ users, truncated }), { status: 200 });
@@ -31,16 +31,16 @@ it("does not load people on mount or blank searches", async () => {
   expect(fetchMock).not.toHaveBeenCalled();
 });
 it("searches by display name and selects the exact account among duplicate names", async () => {
-  const other = { ...user, internal_user_id: "synthetic-two", departments: ["市场"] };
+  const other = { ...user, directory_member_id: "roster-two", internal_user_id: "synthetic-two", departments: ["市场"] };
   const fetchMock = vi.fn().mockResolvedValue(response([user, other])); vi.stubGlobal("fetch", fetchMock);
   const { select } = await render(); await type(" 同名 "); await submit();
-  expect(String(fetchMock.mock.calls[0][0])).toBe("/api/v1/manage/users?view=candidates&q=%E5%90%8C%E5%90%8D&limit=20");
+  expect(String(fetchMock.mock.calls[0][0])).toBe("/api/v1/manage/users?view=candidates_roster&q=%E5%90%8C%E5%90%8D&limit=20");
   expect(container.textContent).toContain("研发"); expect(container.textContent).toContain("市场");
   await act(async () => container.querySelectorAll("article button")[1].dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  expect(select).toHaveBeenCalledWith(other);
+  expect(select).toHaveBeenCalledWith({internal_user_id: other.internal_user_id});
 });
 it("blocks indistinguishable names without exposing account IDs", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response([user, { ...user, internal_user_id: "synthetic-two" }])));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response([user, { ...user, directory_member_id: "roster-two", internal_user_id: "synthetic-two" }])));
   await render(); await type("同名"); await submit();
   expect([...container.querySelectorAll("article button")].every(button => button.hasAttribute("disabled"))).toBe(true);
   expect(container.textContent).toContain("请先核实通讯录身份");
@@ -73,4 +73,23 @@ it("requires a narrower search before selecting a truncated result", async () =>
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response([user], true)));
   await render(); await type("同"); await submit();
   expect(container.querySelector("article button")?.hasAttribute("disabled")).toBe(true);
+});
+
+it("shows the roster department of an employee without a platform account", async () => {
+  const match = {directory_member_id: "roster-one", internal_user_id: null, display_name: "合成员工", departments: ["制造部"]};
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({users: [match], truncated: false}))));
+  await render(); await type("合成员工"); await submit();
+  const row = container.querySelector("article");
+  expect(row?.textContent).toContain("合成员工");
+  expect(row?.textContent).toContain("制造部");
+  expect(row?.textContent).toContain("尚未关联平台账号");
+});
+
+it("blocks selection of a linked account when an unlinked namesake has the same department", async () => {
+  const namesake = {...user, directory_member_id: "unlinked", internal_user_id: null};
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({users: [user, namesake], truncated: false}))));
+  const {select} = await render(); await type(user.display_name); await submit();
+  expect(container.querySelectorAll("article")).toHaveLength(2);
+  expect(container.querySelector("article button")?.hasAttribute("disabled")).toBe(true);
+  expect(select).not.toHaveBeenCalled();
 });

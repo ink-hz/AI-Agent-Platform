@@ -69,8 +69,8 @@ function indeterminateResponse(requestId: string): Response {
 function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>): ReturnType<typeof vi.fn> {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
-    if (path.includes("view=candidates")) {
-      return Promise.resolve(new Response(JSON.stringify({ users: managedUsers.filter(user => user.role === "member" && user.status === "active").map(user => ({ ...user, departments: ["合成部门"] })), truncated: false }), { status: 200 }));
+    if (path.includes("view=candidates_roster")) {
+      return Promise.resolve(new Response(JSON.stringify({ users: managedUsers.filter(user => user.role === "member" && user.status === "active").map(user => ({ directory_member_id: "roster-" + user.internal_user_id, internal_user_id: user.internal_user_id, display_name: user.display_name, departments: ["合成部门"] })), truncated: false }), { status: 200 }));
     }
     if (!init?.method || init.method === "GET") {
       if (path.endsWith("/api/v1/manage/partners/organizations")) {

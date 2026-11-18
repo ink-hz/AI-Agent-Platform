@@ -1,9 +1,15 @@
 import { checked, platformPath, type ManagedUser } from "./auth";
 
 export interface AdministratorUser extends ManagedUser { departments: string[] }
-export interface AdministratorSearchResult { users: AdministratorUser[]; truncated: boolean }
+export interface RosterCandidate {
+  directory_member_id: string;
+  internal_user_id: string | null;
+  display_name: string;
+  departments: string[];
+}
+export interface AdministratorSearchResult { users: RosterCandidate[]; truncated: boolean }
 
-function parseResult(value: unknown): AdministratorSearchResult {
+function parseAdministratorList(value: unknown): { users: AdministratorUser[]; truncated: boolean } {
   if (!value || typeof value !== "object") throw new Error("administrator response invalid");
   const payload = value as Record<string, unknown>;
   if (!Array.isArray(payload.users) || typeof payload.truncated !== "boolean") throw new Error("administrator response invalid");
@@ -25,16 +31,16 @@ function parseResult(value: unknown): AdministratorSearchResult {
   return { users, truncated: payload.truncated };
 }
 
-async function readDirectory(params: URLSearchParams, signal?: AbortSignal): Promise<AdministratorSearchResult> {
+async function readDirectory(params: URLSearchParams, signal?: AbortSignal): Promise<unknown> {
   const response = await fetch(platformPath(`/api/v1/manage/users?${params}`), {
     credentials: "include", headers: { Accept: "application/json" }, signal,
   });
   await checked(response);
-  return parseResult(await response.json());
+  return response.json();
 }
 
 export async function listAdministratorUsers(): Promise<AdministratorUser[]> {
-  const result = await readDirectory(new URLSearchParams({ view: "administrators" }));
+  const result = parseAdministratorList(await readDirectory(new URLSearchParams({ view: "administrators" })));
   if (result.truncated || result.users.some(user => !["platform_owner", "platform_admin"].includes(user.role))) {
     throw new Error("administrator response invalid");
   }
@@ -43,7 +49,22 @@ export async function listAdministratorUsers(): Promise<AdministratorUser[]> {
 
 export async function searchAdministratorCandidates(query: string, signal?: AbortSignal): Promise<AdministratorSearchResult> {
   if (!query.trim()) return { users: [], truncated: false };
-  const result = await readDirectory(new URLSearchParams({ view: "candidates", q: query.trim(), limit: "20" }), signal);
-  if (result.users.some(user => user.role !== "member" || user.status !== "active")) throw new Error("administrator response invalid");
-  return result;
+  const result = await readDirectory(new URLSearchParams({ view: "candidates_roster", q: query.trim(), limit: "20" }), signal);
+  if (!result || typeof result !== "object" || !("users" in result) || !Array.isArray(result.users)
+    || !("truncated" in result) || typeof result.truncated !== "boolean") throw new Error("administrator response invalid");
+  const keys = new Set(["directory_member_id", "internal_user_id", "display_name", "departments"]);
+  const users = result.users.map((entry: unknown): RosterCandidate => {
+    if (!entry || typeof entry !== "object") throw new Error("administrator response invalid");
+    const row = entry as Record<string, unknown>;
+    if (Object.keys(row).some(key => !keys.has(key))
+      || typeof row.directory_member_id !== "string" || !row.directory_member_id
+      || (row.internal_user_id !== null && (typeof row.internal_user_id !== "string" || !row.internal_user_id))
+      || typeof row.display_name !== "string" || !row.display_name
+      || !Array.isArray(row.departments) || row.departments.some(name => typeof name !== "string" || !name)) {
+      throw new Error("administrator response invalid");
+    }
+    return {directory_member_id: row.directory_member_id, internal_user_id: row.internal_user_id,
+      display_name: row.display_name, departments: row.departments};
+  });
+  return {users, truncated: result.truncated};
 }

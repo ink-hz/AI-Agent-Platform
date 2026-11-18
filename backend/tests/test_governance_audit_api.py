@@ -640,6 +640,13 @@ def test_only_owner_can_search_administrator_candidates() -> None:
     assert audit.commands == []
 
 
+@pytest.mark.parametrize("context", [ADMIN, VIEWER, MEMBER])
+def test_roster_search_requires_owner(context):
+    client, _, audit = _client(context)
+    assert client.get("/api/v1/manage/users?view=candidates_roster&q=test").status_code == 403
+    assert not audit.commands
+
+
 def test_candidate_repository_escapes_like_wildcards_and_bounds_projection() -> None:
     user_id = uuid4()
 
@@ -1326,8 +1333,11 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
         (second_candidate_id, "Needle%_\\One B", "member"),
         (wildcard_decoy_id, "NeedleXXAOne decoy", "member"),
     )
+    # The first directory page matches the name but contains only ineligible accounts.
+    viewers = tuple((uuid4(), users[1][1] + " 只读", "management_viewer") for _ in range(50))
+    roster = (*viewers, *users, (None, users[1][1], None))
     with psycopg.connect(environment["admin"]) as connection:
-        for user in users:
+        for user in (*viewers, *users):
             connection.execute(
                 "insert into platform_control.internal_users "
                 "(internal_user_id,display_name,status,role) "
@@ -1338,7 +1348,7 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
             "insert into platform_control.directory_generations "
             "(generation_id,status,member_count,department_count,content_sha256,"
             "completed_at) values (%s,'complete',%s,1,%s,now())",
-            (generation_id, len(users), generation_id.hex * 2),
+            (generation_id, len(roster), generation_id.hex * 2),
         )
         connection.execute(
             "insert into platform_control.directory_departments "
@@ -1347,8 +1357,8 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
             "values (%s,%s,%s,1,%s,1,%s)",
             (generation_id, department_key, b"d" * 32, b"department" * 3, department_name),
         )
-        for index, (internal_user_id, display_name, _role) in enumerate(users):
-            member_key = uuid4()
+        for index, (internal_user_id, display_name, _role) in enumerate(roster):
+            member_key = UUID(int=index + 1)
             connection.execute(
                 "insert into platform_control.directory_members "
                 "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
@@ -1378,6 +1388,17 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
     repository = ManagementRepository(
         environment["urls"]["platform_control_app"]
     )
+    roster_matches, more = repository.search_roster_candidates(users[1][1], 20)
+    assert not more
+    assert len(roster_matches) == 2
+    assert {row["internal_user_id"] for row in roster_matches} == {first_candidate_id, None}
+    assert len({row["directory_member_id"] for row in roster_matches}) == 2
+    for row in roster_matches:
+        assert set(row) == {"directory_member_id", "internal_user_id", "display_name", "departments"}
+        assert row["departments"] == [department_name]
+    assert repository.search_roster_candidates(users[1][1], 1)[1]
+    assert repository.search_roster_candidates(users[0][1], 20) == ([], False)
+    assert repository.search_roster_candidates("", 20) == ([], False)
     administrators = repository.list_administrator_users()
     literal_candidates, literal_truncated = (
         repository.search_administrator_candidates("nEeDlE%_\\oNe", 50)
@@ -1412,6 +1433,25 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
             environment["urls"]["platform_audit_append"]
         ),
     )
+    owner = AuthContext(administrator_id, Role.PLATFORM_OWNER, uuid4(), False)
+    client, _, _ = _client(owner)
+    client.app.dependency_overrides[management_service] = lambda: service
+    params = {"view": "candidates_roster", "q": " " + users[1][1] + " "}
+    response = client.get("/api/v1/manage/users", params=params)
+    assert response.status_code == 200
+    assert response.json()["truncated"] is False
+    assert {row["internal_user_id"] for row in response.json()["users"]} == {str(first_candidate_id), None}
+    with psycopg.connect(environment["admin"]) as connection:
+        event = connection.execute(
+            "select sanitized_before_after from platform_control.audit_events "
+            "where actor_internal_user_id=%s and event_type='management_user_list_read_completed' "
+            "order by occurred_at desc limit 1", (administrator_id,),
+        ).fetchone()[0]
+        assert event["item_count"] == 2 and users[1][1] not in json.dumps(event)
+        assert connection.execute(
+            "select count(*) from platform_control.internal_users where display_name=%s",
+            (users[1][1],),
+        ).fetchone()[0] == 1
     audited_candidates, audited_truncated = service.search_administrator_candidates(
         AuthContext(administrator_id, Role.PLATFORM_OWNER, uuid4(), False),
         "nEeDlE%_\\oNe",

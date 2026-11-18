@@ -254,6 +254,48 @@ class ManagementRepository:
         except psycopg.Error:
             raise RuntimeError("identity management unavailable") from None
 
+    def search_roster_candidates(
+        self, query: str, limit: int
+    ) -> tuple[list[dict[str, Any]], bool]:
+        if not query:
+            return [], False
+        candidates = []
+        cursor = None
+        try:
+            with self._connection() as connection:
+                # All pages must see the same published directory and account roles.
+                connection.execute("set transaction isolation level repeatable read, read only")
+                while True:
+                    rows = connection.execute(
+                        "select d.row_kind, d.directory_member_id, d.internal_user_id, "
+                        "d.display_name, d.departments, d.next_cursor, "
+                        "(d.internal_user_id is null or "
+                        "(u.status='active' and u.role='member')) as eligible "
+                        "from platform_control.read_office_recipient_directory_v54("
+                        "'search', %s, array[]::uuid[], false, %s, %s, "
+                        "array[]::uuid[], array[]::uuid[]) d "
+                        "left join platform_control.internal_users u "
+                        "on u.internal_user_id=d.internal_user_id order by d.directory_member_id",
+                        (query, max(50, limit + 1), cursor),
+                    ).fetchall()
+                    if not rows:
+                        raise RuntimeError("active directory unavailable")
+                    for row in rows:
+                        if row["row_kind"] == "member" and row["eligible"]:
+                            candidates.append({
+                                "directory_member_id": row["directory_member_id"],
+                                "internal_user_id": row["internal_user_id"],
+                                "display_name": row["display_name"],
+                                "departments": row["departments"],
+                            })
+                            if len(candidates) > limit:
+                                return candidates[:limit], True
+                    cursor = rows[-1]["next_cursor"]
+                    if cursor is None:
+                        return candidates, False
+        except psycopg.Error:
+            raise RuntimeError("identity management unavailable") from None
+
     def viewer_state(self, target: UUID) -> dict[str, Any]:
         try:
             with self._connection() as connection:
@@ -657,6 +699,14 @@ class ManagementService:
             lambda: self.repository.search_administrator_candidates(query, limit),
         )
 
+    def search_roster_candidates(
+        self, context: AuthContext, query: str, limit: int
+    ) -> tuple[list[dict[str, Any]], bool]:
+        return self._directory_read(
+            context, "candidates_roster",
+            lambda: self.repository.search_roster_candidates(query, limit),
+        )
+
     def _directory_read(self, context: AuthContext, view: str, read):
         operation_id = uuid4()
         requested = self._command(
@@ -904,13 +954,19 @@ class ManagementService:
 def list_users(
     context: Auth,
     service: Service,
-    view: Literal["administrators", "candidates"] | None = None,
+    view: Literal["administrators", "candidates", "candidates_roster"] | None = None,
     q: str = "",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> dict[str, Any]:
     _manager(context)
     if view == "administrators":
         return {"users": service.list_administrator_users(context), "truncated": False}
+    if view == "candidates_roster":
+        _owner(context)
+        if len(q) > 256:
+            raise HTTPException(status_code=422, detail="directory query too long")
+        users, truncated = service.search_roster_candidates(context, q.strip(), limit)
+        return {"users": users, "truncated": truncated}
     if view == "candidates":
         _owner(context)
         users, truncated = service.search_administrator_candidates(context, q, limit)

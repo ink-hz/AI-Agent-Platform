@@ -499,7 +499,7 @@ export async function listManagedUsers(signal?: AbortSignal): Promise<ManagedUse
 
 
 export function createAdministratorMutation(
-  user: ManagedUser,
+  user: Pick<ManagedUser, "internal_user_id">,
   revoke: boolean,
 ): AdministratorMutation {
   return Object.freeze({
