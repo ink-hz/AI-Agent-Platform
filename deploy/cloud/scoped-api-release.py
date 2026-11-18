@@ -19,6 +19,7 @@ MIGRATIONS = (
     MIGRATION,
     'backend/control_migrations/127_agent_session_identity.sql',
     'backend/control_migrations/128_roster_admin_assignment.sql',
+    'backend/control_migrations/129_manufacturing_access_pages.sql',
 )
 PROJECT = 'orbbec-agent-platform'
 SERVICE = 'platform-api'

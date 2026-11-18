@@ -51,6 +51,38 @@ describe("AccessHistoryPage", () => {
     expect(container.textContent).not.toContain("session_id");
   });
 
+  it("filters the people index and timeline by 大制造 and displays the returned page names", async () => {
+    const subject = { ...subjects.items[0], latest_workspace_key: "manufacturing",
+      latest_module_display_name: "生产分析", latest_page_display_name: "设备详情" };
+    const event = { ...events.items[1], workspace_key: "manufacturing", page_key: "manufacturing.production.device",
+      module_display_name: "生产分析", page_display_name: "设备详情" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(String(input), location.origin);
+      const people = url.pathname.endsWith("/access-subjects");
+      const page = people ? subjects : events;
+      const items = url.searchParams.get("workspace_key") === "manufacturing" ? [people ? subject : event] : [];
+      return new Response(JSON.stringify({ ...page, items }));
+    });
+    try {
+      await act(async () => root.render(<AccessHistoryPage />));
+      const select = container.querySelector("select")!;
+      expect(select.querySelector('option[value="manufacturing"]')?.textContent).toBe("大制造");
+      await act(async () => { select.value = "manufacturing"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+      await act(async () => container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click());
+      const summary = container.querySelector<HTMLButtonElement>(".access-subject-summary")!;
+      expect(summary.textContent).toContain("大制造 · 生产分析 · 设备详情");
+      await act(async () => summary.click());
+      const timeline = container.querySelector(".access-timeline");
+      expect(timeline?.textContent).toContain("设备详情");
+      expect(timeline?.textContent).toContain("大制造 / 生产分析");
+      const urls = fetchMock.mock.calls.map(([input]) => new URL(String(input), location.origin));
+      expect(urls.slice(1).map(url => [url.pathname, url.searchParams.get("workspace_key"), url.searchParams.get("display_name")])).toEqual([
+        ["/api/v1/manage/access-subjects", "manufacturing", null],
+        ["/api/v1/manage/access-events", "manufacturing", "苍渊"],
+      ]);
+    } finally { fetchMock.mockRestore(); }
+  });
+
   it("distinguishes index and expanded timeline failures", async () => {
     const loadSubjects = vi.fn().mockResolvedValue(subjects);
     const loadEvents = vi.fn().mockRejectedValue(new Error("offline"));

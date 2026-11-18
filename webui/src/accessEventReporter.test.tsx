@@ -79,6 +79,7 @@ describe("page access reporter", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.referrer).toBeUndefined();
     expect(url).toBe("/api/v1/access-events/page-view");
     expect(init.credentials).toBe("include");
     expect(init.keepalive).toBe(true);

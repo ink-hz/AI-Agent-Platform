@@ -57,6 +57,21 @@ export function accessEventForRoute(route: Route): PageAccessEvent | null {
   }
 }
 
+export async function reportPageAccess({ workspace_key, page_key, agent_id }: PageAccessEvent): Promise<void> {
+  try {
+    await fetch(platformPath("/api/v1/access-events/page-view"), {
+      method: "POST",
+      credentials: "include",
+      keepalive: true,
+      referrer: workspace_key === "manufacturing" ? "" : undefined,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_event_id: crypto.randomUUID(), workspace_key, page_key, agent_id }),
+    });
+  } catch {
+    // Telemetry must not interrupt the page if the browser cannot send it.
+  }
+}
+
 export function AccessEventReporter({ account, route }: { account: Account; route: Route }) {
   const descriptor = accessEventForRoute(route);
   const workspaceKey = descriptor?.workspace_key;
@@ -66,21 +81,7 @@ export function AccessEventReporter({ account, route }: { account: Account; rout
 
   useEffect(() => {
     if (!workspaceKey || !pageKey) return;
-    void Promise.resolve().then(() => {
-      const body = {
-        access_event_id: crypto.randomUUID(),
-        workspace_key: workspaceKey,
-        page_key: pageKey,
-        ...(agentId ? { agent_id: agentId } : {}),
-      };
-      return fetch(platformPath("/api/v1/access-events/page-view"), {
-        method: "POST",
-        credentials: "include",
-        keepalive: true,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-    }).catch(() => undefined);
+    void reportPageAccess({ workspace_key: workspaceKey, page_key: pageKey, agent_id: agentId });
   }, [account.internal_user_id, agentId, navigationKey, pageKey, workspaceKey]);
   return null;
 }

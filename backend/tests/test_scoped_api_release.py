@@ -154,6 +154,7 @@ def git(repo, *args):
     'backend/migrations/cloud_agent_sync/001_agent_sources.sql',
     'backend/control_migrations/127_agent_session_identity.sql',
     'backend/control_migrations/128_roster_admin_assignment.sql',
+    'backend/control_migrations/129_manufacturing_access_pages.sql',
 ])
 def test_stage_copies_only_delta_migration_and_dist_with_private_manifest(tmp_path, migration_path):
     h = load(); repo = tmp_path / 'repo'; repo.mkdir()

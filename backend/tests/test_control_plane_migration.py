@@ -240,7 +240,7 @@ PUBLISHED_MIGRATION_SHA256 = {
 def test_control_migration_versions_are_unique_and_contiguous() -> None:
     # HR migrations have independent deployment scopes; root must not absorb them.
     expected_by_scope = {
-        MIGRATIONS: [*range(1, 89), 100, *range(102, 129)],
+        MIGRATIONS: [*range(1, 89), 100, *range(102, 130)],
         MIGRATIONS / "hr_web": list(range(89, 96)),
         MIGRATIONS / "hr_agent": [*range(96, 100), 101],
     }
@@ -251,7 +251,7 @@ def test_control_migration_versions_are_unique_and_contiguous() -> None:
         all_versions.extend(versions)
 
     assert len(all_versions) == len(set(all_versions))
-    assert sorted(all_versions) == list(range(1, 129))
+    assert sorted(all_versions) == list(range(1, 130))
 
 
 def test_live_activation_event_is_allowed_by_the_durable_ingest_boundary() -> None:
@@ -450,7 +450,7 @@ def test_user_access_history_database_enforces_catalog_and_role_boundaries(
                 "select page_key from platform_control.access_page_catalog"
             ).fetchall()
         }
-        assert len(page_keys) == 86
+        assert len(page_keys) == 123
         assert {
             "platform.brain",
             "hr.workspace",
@@ -460,6 +460,9 @@ def test_user_access_history_database_enforces_catalog_and_role_boundaries(
             "voc.manage.record_detail",
             "admin.access_history",
             "hr.position_detail",
+            "office.service.feedback",
+            "office.operations",
+            "manufacturing.overview",
         } <= page_keys
 
         foreign_targets = {

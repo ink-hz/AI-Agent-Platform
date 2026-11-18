@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AuthenticationRequired, PermissionDenied, listManagedUsers, logoutAccount, platformPath, type Account } from '../auth';
+import { reportPageAccess } from '../accessEventReporter';
+import manufacturingAccessPages from '../manufacturingAccessPages.json';
 import { manufacturingAccess, ManufacturingAccessError, type ManufacturingAccess } from '../manufacturingApi';
 import { createManufacturingMarkdownRenderer, type ManufacturingMarkdownRenderer } from '../manufacturingMarkdown';
 import { navigate } from '../router';
@@ -7,7 +9,21 @@ import './manufacturingHost.css';
 import { registerPanoramaLeaveGuard } from '../panoramaNavigation';
 
 type WorkbenchUser = {displayName: string; roleLabel: string};
-type MountOptions = {findSubjects?: (query:string,signal:AbortSignal)=>Promise<{id:string;displayName:string}[]>; bootstrap?: ManufacturingAccess; user?: WorkbenchUser; onNavigatePlatform?: () => void; onLogout?: () => Promise<void>; apiBase: string; csrfToken: string; readOnly: boolean; renderMarkdown?: ManufacturingMarkdownRenderer; onAuthError?: () => void; onDirtyChange?: (dirty: boolean) => void};
+type MountOptions = {
+  apiBase: string;
+  csrfToken: string;
+  readOnly: boolean;
+  bootstrap?: ManufacturingAccess;
+  user?: WorkbenchUser;
+  renderMarkdown?: ManufacturingMarkdownRenderer;
+  findSubjects?: (query: string, signal: AbortSignal) => Promise<{id: string; displayName: string}[]>;
+  onNavigatePlatform?: () => void;
+  onLogout?: () => Promise<void>;
+  onAuthError?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onPageView?: (pageKey: string) => void;
+};
+const manufacturingPageKeys = new Set(manufacturingAccessPages);
 type MountedWorkbench = {unmount(): void; isDirty(): boolean; updateUser?(user: WorkbenchUser): void};
 declare global {
   interface Window {OrbbecManufacturing?: {mount(element: HTMLElement, options: MountOptions): MountedWorkbench}}
@@ -121,6 +137,11 @@ export function ManufacturingPage({account}: {account: Account}) {
             } finally { logoutPending = false; }
           },
           readOnly: account.hard_stale_read_only || access.can_edit !== true,
+          onPageView(pageKey) {
+            if (active && manufacturingPageKeys.has(pageKey)) {
+              void reportPageAccess({workspace_key: 'manufacturing', page_key: pageKey});
+            }
+          },
           onDirtyChange(value) { if (active) dirty = value; },
           onAuthError: deny,
         });

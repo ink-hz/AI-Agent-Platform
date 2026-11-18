@@ -7,7 +7,8 @@ import { PermissionDenied, type Account } from './auth';
 const loadAccount = vi.hoisted(() => vi.fn());
 vi.mock('./auth', async original => ({...await original<typeof import('./auth')>(), identityShellEnabled: () => true, loadAccount}));
 vi.mock('./pages/ManufacturingPage', () => ({ManufacturingPage: ({account}: {account: Account}) => <h1>制造页面 {account.display_name}</h1>}));
-vi.mock('./accessEventReporter', () => ({AccessEventReporter: () => null}));
+const outerReporter = vi.hoisted(() => vi.fn(() => null));
+vi.mock('./accessEventReporter', () => ({AccessEventReporter: outerReporter}));
 vi.mock('./api', async original => ({...await original<typeof import('./api')>(), fetchDeployment: async () => ({mode:'local',read_only:false,freshness:'current'})}));
 const account: Account = {internal_user_id:'manager',display_name:'测试制造经理',role:'platform_admin',departments:[],gender:null,observation_agent_ids:[],workspace_scopes:[],directory_freshness:'fresh',hard_stale_read_only:false,csrf_token:'csrf'};
 let box: HTMLDivElement, root: ReturnType<typeof createRoot>;
@@ -23,6 +24,7 @@ it('renders the authorized manufacturing route outside all Agent chrome', async 
  expect(box.textContent).toContain('制造页面 测试制造经理');
  expect(box.querySelector('.platform-shell')).toBeNull();expect(box.querySelector('.topbar')).toBeNull();
  expect(box.querySelector('nav')).toBeNull();
+ expect(outerReporter).not.toHaveBeenCalled();
 });
 it('delegates signed-in member access to the manufacturing page', async () => {
  loadAccount.mockResolvedValue({...account,role:'member'});

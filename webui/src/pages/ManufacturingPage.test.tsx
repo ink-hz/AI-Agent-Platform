@@ -41,6 +41,43 @@ it('mounts with exact prefix/CSRF/readOnly and cleans up under StrictMode',async
  expect(mount.mock.calls[0][0]).toBe(box.querySelector('[data-manufacturing-root]'));
  await act(async()=>root.render(<p>Retired</p>));expect(unmount).toHaveBeenCalledTimes(1);options.onDirtyChange(true);expect(allowPanoramaNavigation('/brain')).toBe(true);
 });
+it.each(['','/_preview/dingtalk-r1'])('reports manufacturing visits through the platform at prefix "%s"', async (prefix) => {
+ window.history.replaceState({}, '', `${prefix}/manufacturing#/order/private-order?material=private-material`);
+ await render(account, true);
+ await assets();
+ expect(options.onPageView).toEqual(expect.any(Function));
+ const onPageView = options.onPageView;
+ await render({...account, display_name: 'Updated name'}, true);
+ expect(options.onPageView).toBe(onPageView);
+ const requests = vi.mocked(fetch);
+ requests.mockClear().mockResolvedValue(new Response(null, {status: 204}));
+ await act(async () => {
+   for (const invalid of ['platform.home', 'manufacturing.not_found', 'manufacturing.order/private-order',
+     'manufacturing.production.project?key=x', 'manufacturing.metrics', null, {page_key: 'manufacturing.order'}]) {
+     onPageView(invalid);
+   }
+ });
+ expect(requests).not.toHaveBeenCalled();
+ const pages = ['manufacturing.order', 'manufacturing.order', 'manufacturing.production.project'];
+ await act(async () => { for (const page of pages) onPageView(page); });
+ expect(requests).toHaveBeenCalledTimes(3);
+ const ids = new Set<string>();
+ requests.mock.calls.forEach(([url, init], index) => {
+   expect(url).toBe(`${prefix}/api/v1/access-events/page-view`);
+   expect(init).toMatchObject({method: 'POST', credentials: 'include', keepalive: true,
+     referrer: '', headers: {'Content-Type': 'application/json'}});
+   expect(new Headers(init?.headers).has('X-CSRF-Token')).toBe(false);
+   const body = JSON.parse(String(init?.body));
+   expect(body).toEqual({access_event_id: expect.stringMatching(/^[a-f0-9-]{36}$/),
+     workspace_key: 'manufacturing', page_key: pages[index]});
+   ids.add(body.access_event_id);
+ });
+ expect(ids.size).toBe(3);
+ await act(async () => options.onAuthError());
+ await act(async () => onPageView('manufacturing.order'));
+ expect(requests).toHaveBeenCalledTimes(3);
+});
+
 it.each([401,403,503])('shows safe access failure %s without assets',async(status)=>{
  vi.mocked(fetch).mockResolvedValue({ok:false,status} as Response);await render();expect(box.querySelector('[role="alert"]')).not.toBeNull();
  expect(document.querySelector('[data-manufacturing-asset]')).toBeNull();expect(mount).not.toHaveBeenCalled();

@@ -16,7 +16,7 @@ const EVENT_PAGE_SIZE = 100;
 const WORKSPACES = [
   ["", "全部产品"], ["platform", "Agent Platform"], ["hr", "HR"],
   ["marketing", "Marketing"], ["office", "行政"], ["fae", "FAE"],
-  ["voc", "VOC"], ["admin", "管理中心"],
+  ["voc", "VOC"], ["manufacturing", "大制造"], ["admin", "管理中心"],
 ] as const;
 const PRODUCT_NAMES = Object.fromEntries(WORKSPACES.filter(([key]) => key)) as Record<string, string>;
 
