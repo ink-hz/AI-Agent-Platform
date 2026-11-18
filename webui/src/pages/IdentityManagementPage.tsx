@@ -10,6 +10,7 @@ import {
   changeAdministrator,
   createAdministratorMutation,
   type Account,
+  type AdministratorAction,
   type AdministratorMutation,
   type ManagedUser,
 } from "../auth";
@@ -293,9 +294,9 @@ function AdministratorManagement({ account }: { account: Account }) {
     if (!beginInflightAdministrator(operation)) return;
     await dispatchInflightAdministrator(operation, true, false);
   }
-  const mutateAdministrator = async (user: Pick<ManagedUser, "internal_user_id">, revoke: boolean) => {
+  const mutateAdministrator = async (action: AdministratorAction) => {
     if (account.role !== "platform_owner" || account.hard_stale_read_only || busy || administratorMutationBlocked) return;
-    const operation = createAdministratorMutation(user, revoke);
+    const operation = createAdministratorMutation(action);
     setBusy(true);
     setMessage("");
     if (!beginInflightAdministrator(operation)) {
@@ -351,7 +352,13 @@ function AdministratorManagement({ account }: { account: Account }) {
     {!loaded && !message && <p role="status">正在加载…</p>}
     {!loaded && message && <button type="button" onClick={() => void load()}>重试</button>}
     {adding && canManage && <AdministratorSearch disabled={blocked} excludedIds={users.map(user => user.internal_user_id)}
-      onSelect={user => void mutateAdministrator(user, false)} onClose={() => setAdding(false)} />}
+      onSelect={user => {
+        const grant = { targetInternalUserId: user.assignment_user_id, revoke: false } as const;
+        void mutateAdministrator(user.internal_user_id === null ? {
+          ...grant,
+          directoryMemberId: user.directory_member_id, directoryGenerationId: user.directory_generation_id,
+        } : grant);
+      }} onClose={() => setAdding(false)} />}
     <div className="administrator-list">
       {users.map(user => <article key={user.internal_user_id}>
         <div><strong>{user.display_name}</strong>
@@ -359,7 +366,8 @@ function AdministratorManagement({ account }: { account: Account }) {
           {user.status !== "active" && <small className="administrator-warning">账号不可用</small>}
         </div>
         {user.role === "platform_owner" ? <span className="administrator-owner">所有者</span>
-          : canManage && <button type="button" className="is-secondary" disabled={blocked} onClick={() => void mutateAdministrator(user, true)}>撤销平台管理员</button>}
+          : canManage && <button type="button" className="is-secondary" disabled={blocked}
+              onClick={() => void mutateAdministrator({ targetInternalUserId: user.internal_user_id, revoke: true })}>撤销平台管理员</button>}
       </article>)}
     </div>
     {loaded && !users.length && <p>暂无管理员</p>}

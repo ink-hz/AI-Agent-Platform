@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../auth";
+import type { RosterCandidate } from "../administratorDirectory";
 import { IdentityManagementPage } from "./IdentityManagementPage";
 
 
@@ -16,6 +17,8 @@ const owner: Account = {
 };
 const pendingAdministratorStorageKey = `platform.identity.pending-administrator.v1:${owner.internal_user_id}`;
 const memberId = "1bf6c7ef-125d-418f-9835-e3bd70a90778";
+const directoryMemberId = "d1000000-0000-4000-8000-000000000001";
+const directoryGenerationId = "a4000000-0000-4000-8000-000000000001";
 const viewerId = "c1fc8f7b-fc86-407a-8c42-e851e9d776a5";
 const administratorId = "1b129d2e-e701-481a-8e36-d78154b1ebbc";
 
@@ -66,11 +69,17 @@ function indeterminateResponse(requestId: string): Response {
 }
 
 
-function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>): ReturnType<typeof vi.fn> {
+const rosterCandidate = {
+  directory_member_id: directoryMemberId, internal_user_id: memberId, assignment_user_id: memberId,
+  directory_generation_id: directoryGenerationId,
+  display_name: "测试成员", departments: ["合成部门"],
+};
+
+function withPartnerReads(fetchMock: ReturnType<typeof vi.fn>, candidate: RosterCandidate = rosterCandidate): ReturnType<typeof vi.fn> {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
-    if (path.includes("view=candidates_roster")) {
-      return Promise.resolve(new Response(JSON.stringify({ users: managedUsers.filter(user => user.role === "member" && user.status === "active").map(user => ({ directory_member_id: "roster-" + user.internal_user_id, internal_user_id: user.internal_user_id, display_name: user.display_name, departments: ["合成部门"] })), truncated: false }), { status: 200 }));
+    if (path.includes("view=candidates_roster_v2&")) {
+      return Promise.resolve(new Response(JSON.stringify({ users: [candidate], truncated: false }), { status: 200 }));
     }
     if (!init?.method || init.method === "GET") {
       if (path.endsWith("/api/v1/manage/partners/organizations")) {
@@ -263,6 +272,75 @@ describe("IdentityManagementPage", () => {
     expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
   });
 
+  it("replays the exact roster grant after reload and confirms only the selected internal account", async () => {
+    const requestId = "47f493ac-e830-4fe7-9e7d-58b1dfcebd56";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(requestId);
+    const unlinked = { ...rosterCandidate, internal_user_id: null };
+    const record = { version: 1, target_internal_user_id: memberId, directory_member_id: directoryMemberId,
+      directory_generation_id: directoryGenerationId, action: "assign", request_id: requestId };
+    const readState = () => JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)));
+    const granted = { ...managedUsers[0], role: "platform_admin" };
+    let listedId = directoryMemberId;
+    const writes: {url: string; init: RequestInit; state: unknown}[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method !== "POST") return usersResponse([...managedUsers, { ...granted, internal_user_id: listedId }]);
+      writes.push({ url: String(input), init, state: readState() });
+      if (writes.length === 1) throw new TypeError("connection lost");
+      return new Response(JSON.stringify({ status: "ok", internal_user_id: memberId }));
+    });
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock, unlinked));
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
+    await act(async () => container.querySelector<HTMLButtonElement>(".administrator-results button")?.click());
+    expect(readState()).toEqual({ ...record, kind: "pending_replay" });
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await act(async () => [...container.querySelectorAll("button")].find(b => b.textContent === "使用同一请求重试确认")?.click());
+    expect(writes).toHaveLength(2);
+    for (const {url, init, state} of writes) {
+      expect(url).toBe(`/api/v1/manage/roster-admins/${directoryMemberId}`);
+      expect(init.credentials).toBe("include");
+      expect(new Headers(init.headers).get("X-CSRF-Token")).toBe(owner.csrf_token);
+      expect(JSON.parse(String(init.body))).toEqual({
+        reason: "admin_access_approved", request_id: requestId, directory_generation_id: directoryGenerationId,
+      });
+      expect(state).toEqual({ ...record, kind: "inflight_no_replay" });
+    }
+    expect(readState()).toEqual({ ...record, kind: "confirmed_needs_refresh" });
+    expect(container.textContent).toContain("刷新后的角色与预期不一致");
+
+    listedId = memberId;
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    expect(writes).toHaveLength(2);
+    expect(container.textContent).toContain("变更已确认，当前角色已刷新。");
+    expect(sessionStorage.getItem(pendingAdministratorStorageKey)).toBeNull();
+  });
+
+  it.each([
+    ["invalid JSON", "{"],
+    ["missing identity", JSON.stringify({ status: "ok" })],
+    ["directory identity", JSON.stringify({ status: "ok", internal_user_id: directoryMemberId })],
+    ["unexpected status", JSON.stringify({ status: "pending", internal_user_id: memberId })],
+  ])("keeps a roster grant with %s in its receipt indeterminate even when the role is visible", async (_case, body) => {
+    const grant = { ...managedUsers[0], role: "platform_admin" };
+    const fetchMock = vi.fn().mockResolvedValueOnce(usersResponse())
+      .mockResolvedValueOnce(new Response(body))
+      .mockResolvedValueOnce(usersResponse([...managedUsers, grant]));
+    vi.stubGlobal("fetch", withPartnerReads(fetchMock, { ...rosterCandidate, internal_user_id: null }));
+    await act(async () => root.render(<IdentityManagementPage account={owner} />));
+    await findMember(container);
+    await act(async () => container.querySelector<HTMLButtonElement>(".administrator-results button")?.click());
+    expect(container.textContent).toContain("变更结果仍未知");
+    expect(container.querySelector(".is-success")).toBeNull();
+    expect(JSON.parse(String(sessionStorage.getItem(pendingAdministratorStorageKey)))).toMatchObject({
+      kind: "pending_replay", target_internal_user_id: memberId, directory_member_id: directoryMemberId,
+    });
+  });
+
   it.each([
     ["assignment", "测试成员", "设为平台管理员", "POST", "admin_access_approved", "platform_admin", "撤销平台管理员"],
     ["revocation", "目标管理员", "撤销平台管理员", "DELETE", "admin_access_revoked", "member", "设为平台管理员"],
@@ -402,6 +480,30 @@ describe("IdentityManagementPage", () => {
     ["invalid request ID", JSON.stringify({
       version: 1, kind: "pending_replay", target_internal_user_id: memberId,
       action: "assign", request_id: "not-a-uuid",
+    })],
+    ["invalid directory member ID", JSON.stringify({
+      version: 1, kind: "pending_replay", target_internal_user_id: memberId, directory_member_id: "",
+      directory_generation_id: directoryGenerationId,
+      action: "assign", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
+    })],
+    ...["inflight_no_replay", "pending_replay", "confirmed_needs_refresh"].map(kind => [
+      `a roster operation with missing generation in ${kind}`, JSON.stringify({
+        version: 1, kind, target_internal_user_id: memberId, directory_member_id: directoryMemberId,
+        action: "assign", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
+      }),
+    ]),
+    ["invalid generation", JSON.stringify({
+      version: 1, kind: "pending_replay", target_internal_user_id: memberId, directory_member_id: directoryMemberId,
+      directory_generation_id: null, action: "assign", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
+    })],
+    ["generation without directory member", JSON.stringify({
+      version: 1, kind: "pending_replay", target_internal_user_id: memberId, directory_generation_id: directoryGenerationId,
+      action: "assign", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
+    })],
+    ["roster revocation", JSON.stringify({
+      version: 1, kind: "pending_replay", target_internal_user_id: memberId, directory_member_id: directoryMemberId,
+      directory_generation_id: directoryGenerationId,
+      action: "revoke", request_id: "47f493ac-e830-4fe7-9e7d-58b1dfcebd56",
     })],
     ["invalid target ID", JSON.stringify({
       version: 1, kind: "pending_replay", target_internal_user_id: "not-a-uuid",

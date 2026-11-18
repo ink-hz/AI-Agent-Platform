@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
+from hashlib import sha256
 import re
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
@@ -17,6 +18,7 @@ from .audit import (
     AuditUnavailableError,
     ControlCommitIndeterminateError,
     IndeterminateMutationError,
+    MutationIdentityCollisionError,
     SensitiveMutationCoordinator,
     project_governance_metadata,
 )
@@ -33,6 +35,13 @@ _AGENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 class ReasonBody(BaseModel):
     reason: str
     request_id: UUID | None = None
+
+
+class RosterAdminGrantBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str
+    request_id: UUID
+    directory_generation_id: UUID
 
 
 class FaeWorkbenchGrantBody(BaseModel):
@@ -139,6 +148,12 @@ def _mutation_guards(
         raise HTTPException(
             status_code=503, detail="fresh directory required"
         )
+
+
+def _roster_admin_account_id(directory_generation_id: UUID, directory_member_id: UUID) -> UUID:
+    # Shared with assign_roster_platform_admin_v128's audit target.
+    value = f"orbbec:roster-admin:v1:{directory_generation_id}:{directory_member_id}".encode("utf-8")
+    return UUID(bytes=sha256(value).digest()[:16])
 
 
 class ManagementRepository:
@@ -255,7 +270,7 @@ class ManagementRepository:
             raise RuntimeError("identity management unavailable") from None
 
     def search_roster_candidates(
-        self, query: str, limit: int
+        self, query: str, limit: int, *, include_assignment: bool = False
     ) -> tuple[list[dict[str, Any]], bool]:
         if not query:
             return [], False
@@ -267,7 +282,7 @@ class ManagementRepository:
                 connection.execute("set transaction isolation level repeatable read, read only")
                 while True:
                     rows = connection.execute(
-                        "select d.row_kind, d.directory_member_id, d.internal_user_id, "
+                        "select d.directory_generation_id, d.row_kind, d.directory_member_id, d.internal_user_id, "
                         "d.display_name, d.departments, d.next_cursor, "
                         "(d.internal_user_id is null or "
                         "(u.status='active' and u.role='member')) as eligible "
@@ -282,12 +297,20 @@ class ManagementRepository:
                         raise RuntimeError("active directory unavailable")
                     for row in rows:
                         if row["row_kind"] == "member" and row["eligible"]:
-                            candidates.append({
+                            candidate = {
                                 "directory_member_id": row["directory_member_id"],
                                 "internal_user_id": row["internal_user_id"],
                                 "display_name": row["display_name"],
                                 "departments": row["departments"],
-                            })
+                            }
+                            if include_assignment:
+                                candidate["directory_generation_id"] = row["directory_generation_id"]
+                                candidate["assignment_user_id"] = (
+                                    row["internal_user_id"] or _roster_admin_account_id(
+                                        row["directory_generation_id"], row["directory_member_id"]
+                                    )
+                                )
+                            candidates.append(candidate)
                             if len(candidates) > limit:
                                 return candidates[:limit], True
                     cursor = rows[-1]["next_cursor"]
@@ -374,21 +397,27 @@ class ManagementRepository:
             raise RuntimeError("identity management unavailable") from None
 
     def _mutate(
-        self, query: str, parameters: tuple[Any, ...], operation_id: UUID
+        self,
+        query: str,
+        parameters: tuple[Any, ...],
+        operation_id: UUID,
+        ledger_identity: tuple[str, UUID, UUID, UUID],
     ) -> dict[str, Any]:
         try:
             connection = self._connection()
         except psycopg.Error:
-            raise RuntimeError("identity management unavailable") from None
+            # A retry may be recovering a commit whose outcome audit was lost.
+            raise ControlCommitIndeterminateError(operation_id) from None
         try:
             try:
                 row = connection.execute(query, parameters).fetchone()
             except (psycopg.errors.CheckViolation, psycopg.errors.UniqueViolation) as error:
                 connection.rollback()
                 message = getattr(error.diag, "message_primary", "")
+                if message == "operation identity collision":
+                    raise MutationIdentityCollisionError() from None
                 allowed = {
                     "matching audit intent required",
-                    "operation identity collision",
                     "viewer assignment precondition failed",
                     "viewer revocation precondition failed",
                     "admin assignment precondition failed",
@@ -403,17 +432,25 @@ class ManagementRepository:
             except psycopg.Error:
                 raise ControlCommitIndeterminateError(operation_id) from None
             if row is None or not isinstance(row["result"], dict):
-                connection.rollback()
-                raise RuntimeError("identity management unavailable")
-            canonical = connection.execute(
-                "select applied_result from platform_control.management_mutations "
-                "where operation_id = %s",
-                (operation_id,),
-            ).fetchone()
-            if canonical is None or not isinstance(canonical["applied_result"], dict):
-                connection.rollback()
-                raise RuntimeError("identity management unavailable")
+                raise ControlCommitIndeterminateError(operation_id)
             try:
+                canonical = connection.execute(
+                    "select action, actor_internal_user_id, target_internal_user_id, "
+                    "requested_audit_id_copy, applied_result "
+                    "from platform_control.management_mutations where operation_id = %s",
+                    (operation_id,),
+                ).fetchone()
+                if canonical is None or not isinstance(canonical["applied_result"], dict):
+                    raise ControlCommitIndeterminateError(operation_id)
+                stored_identity = (
+                    canonical["action"],
+                    canonical["actor_internal_user_id"],
+                    canonical["target_internal_user_id"],
+                    canonical["requested_audit_id_copy"],
+                )
+                if stored_identity != ledger_identity:
+                    connection.rollback()
+                    raise MutationIdentityCollisionError()
                 connection.commit()
             except psycopg.Error:
                 raise ControlCommitIndeterminateError(operation_id) from None
@@ -434,6 +471,7 @@ class ManagementRepository:
             "%s,%s,%s,%s,%s) as result",
             (operation_id, actor, target, expected_row_version, audit_event_id),
             operation_id,
+            ("assign_viewer", actor, target, audit_event_id),
         )
 
     def revoke_viewer(
@@ -449,6 +487,7 @@ class ManagementRepository:
             "%s,%s,%s,%s,%s) as result",
             (operation_id, actor, target, expected_row_version, audit_event_id),
             operation_id,
+            ("revoke_viewer", actor, target, audit_event_id),
         )
 
     def assign_admin(
@@ -464,6 +503,20 @@ class ManagementRepository:
             "%s,%s,%s,%s,%s) as result",
             (operation_id, actor, target, expected_row_version, audit_event_id),
             operation_id,
+            ("assign_admin", actor, target, audit_event_id),
+        )
+
+    def assign_roster_admin(
+        self, actor: UUID, directory_member_id: UUID, operation_id: UUID,
+        audit_event_id: UUID, directory_generation_id: UUID,
+    ) -> dict[str, Any]:
+        target = _roster_admin_account_id(directory_generation_id, directory_member_id)
+        return self._mutate(
+            "select platform_control.assign_roster_platform_admin_v128("
+            "%s,%s,%s,%s,%s) as result",
+            (operation_id, actor, directory_member_id, audit_event_id, directory_generation_id),
+            operation_id,
+            ("assign_admin", actor, target, audit_event_id),
         )
 
     def revoke_admin(
@@ -479,6 +532,7 @@ class ManagementRepository:
             "%s,%s,%s,%s,%s) as result",
             (operation_id, actor, target, expected_row_version, audit_event_id),
             operation_id,
+            ("revoke_admin", actor, target, audit_event_id),
         )
 
     def grant_observation(
@@ -504,6 +558,7 @@ class ManagementRepository:
                 audit_event_id,
             ),
             operation_id,
+            ("grant_scope", actor, target, audit_event_id),
         )
 
     def revoke_observation(
@@ -529,6 +584,7 @@ class ManagementRepository:
                 audit_event_id,
             ),
             operation_id,
+            ("revoke_scope", actor, target, audit_event_id),
         )
 
     def governance_audit(self) -> list[dict[str, Any]]:
@@ -700,11 +756,13 @@ class ManagementService:
         )
 
     def search_roster_candidates(
-        self, context: AuthContext, query: str, limit: int
+        self, context: AuthContext, query: str, limit: int, *, include_assignment: bool = False
     ) -> tuple[list[dict[str, Any]], bool]:
         return self._directory_read(
             context, "candidates_roster",
-            lambda: self.repository.search_roster_candidates(query, limit),
+            lambda: self.repository.search_roster_candidates(
+                query, limit, include_assignment=include_assignment
+            ),
         )
 
     def _directory_read(self, context: AuthContext, view: str, read):
@@ -811,7 +869,6 @@ class ManagementService:
             reason,
             "admin_access_revoked" if revoke else "admin_access_approved",
         )
-        action = "revocation" if revoke else "assignment"
         operation_id = request_id or uuid4()
         expected_role = "platform_admin" if revoke else "member"
         replay = self.repository.mutation_precondition(
@@ -826,20 +883,8 @@ class ManagementService:
             expected_version = state["row_version"]
         else:
             expected_version = replay["expected_target_row_version"]
-        requested = self._command(
-            f"admin_role_{action}_requested",
-            context,
-            "internal_user",
-            str(target),
-            selected_reason,
-            {
-                "operation_id": str(operation_id),
-                "previous_role": expected_role,
-                "new_role": "member" if revoke else "platform_admin",
-                "expected_row_version": expected_version,
-                "result": "requested",
-            },
-            operation_id,
+        requested = self._admin_command(
+            context, target, selected_reason, operation_id, expected_version, revoke=revoke
         )
         operation = (
             self.repository.revoke_admin if revoke else self.repository.assign_admin
@@ -856,6 +901,45 @@ class ManagementService:
                     event_id,
                 ),
             ),
+        )
+
+    def assign_roster_admin(
+        self, context: AuthContext, directory_member_id: UUID, reason: str,
+        request_id: UUID, directory_generation_id: UUID,
+    ) -> UUID:
+        selected_reason = self._reason(reason, "admin_access_approved")
+        target = _roster_admin_account_id(directory_generation_id, directory_member_id)
+        requested = self._admin_command(context, target, selected_reason, request_id, 0)
+        return self._execute(
+            requested,
+            lambda event_id: AppliedMutation(
+                target,
+                self.repository.assign_roster_admin(
+                    context.internal_user_id, directory_member_id, request_id, event_id,
+                    directory_generation_id,
+                ),
+            ),
+        )
+
+    def _admin_command(
+        self, context: AuthContext, target: UUID, selected_reason: str,
+        operation_id: UUID, expected_version: int, *, revoke: bool = False,
+    ) -> AuditCommand:
+        action = "revocation" if revoke else "assignment"
+        return self._command(
+            f"admin_role_{action}_requested",
+            context,
+            "internal_user",
+            str(target),
+            selected_reason,
+            {
+                "operation_id": str(operation_id),
+                "previous_role": "platform_admin" if revoke else "member",
+                "new_role": "member" if revoke else "platform_admin",
+                "expected_row_version": expected_version,
+                "result": "requested",
+            },
+            operation_id,
         )
 
     def change_observation(
@@ -954,18 +1038,22 @@ class ManagementService:
 def list_users(
     context: Auth,
     service: Service,
-    view: Literal["administrators", "candidates", "candidates_roster"] | None = None,
+    view: Literal[
+        "administrators", "candidates", "candidates_roster", "candidates_roster_v2"
+    ] | None = None,
     q: str = "",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> dict[str, Any]:
     _manager(context)
     if view == "administrators":
         return {"users": service.list_administrator_users(context), "truncated": False}
-    if view == "candidates_roster":
+    if view in {"candidates_roster", "candidates_roster_v2"}:
         _owner(context)
         if len(q) > 256:
             raise HTTPException(status_code=422, detail="directory query too long")
-        users, truncated = service.search_roster_candidates(context, q.strip(), limit)
+        users, truncated = service.search_roster_candidates(
+            context, q.strip(), limit, include_assignment=view == "candidates_roster_v2"
+        )
         return {"users": users, "truncated": truncated}
     if view == "candidates":
         _owner(context)
@@ -1078,6 +1166,23 @@ def revoke_voc_workbench_access(
         payload.expected_row_version,
     )
     return {"status": "ok", "row_version": result["row_version"]}
+
+
+@router.post("/roster-admins/{directory_member_id}")
+def assign_roster_admin(
+    directory_member_id: UUID,
+    payload: RosterAdminGrantBody,
+    context: Auth,
+    service: Service,
+    csrf_verified: Annotated[bool, Depends(csrf_protection)],
+    directory_is_fresh: Annotated[bool, Depends(fresh_directory)],
+) -> dict[str, str]:
+    _owner(context)
+    _mutation_guards(context, csrf_verified, directory_is_fresh)
+    target = service.assign_roster_admin(
+        context, directory_member_id, payload.reason, payload.request_id, payload.directory_generation_id
+    )
+    return {"status": "ok", "internal_user_id": str(target)}
 
 
 @router.post("/admins/{internal_user_id}")

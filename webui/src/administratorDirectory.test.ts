@@ -27,3 +27,21 @@ it("does not fetch blank candidate queries", async () => {
   const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
   expect(await searchAdministratorCandidates(" ")).toEqual({ users: [], truncated: false }); expect(fetchMock).not.toHaveBeenCalled();
 });
+
+const unlinked = {
+  directory_member_id: "cb06e6f3-7745-4a04-91fc-aaea17aa8877",
+  directory_generation_id: "e2734b94-21ca-443a-afaa-0564d82c1c6b",
+  internal_user_id: null, assignment_user_id: "9a63047d-1c04-4ea8-9699-273f7583f3a7",
+  display_name: "员工", departments: [],
+};
+it.each([
+  { ...unlinked, assignment_user_id: undefined },
+  { ...unlinked, assignment_user_id: "invalid" },
+  { ...unlinked, directory_member_id: "invalid" },
+  { ...unlinked, directory_generation_id: undefined },
+  { ...unlinked, directory_generation_id: "invalid" },
+  { ...unlinked, internal_user_id: unlinked.directory_member_id },
+])("rejects a roster candidate with an invalid assignment identity %j", async candidate => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ users: [candidate], truncated: false }))));
+  await expect(searchAdministratorCandidates("员工")).rejects.toThrow("administrator response invalid");
+});

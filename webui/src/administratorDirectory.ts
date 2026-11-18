@@ -1,9 +1,11 @@
-import { checked, platformPath, type ManagedUser } from "./auth";
+import { checked, isUuid, platformPath, type ManagedUser } from "./auth";
 
 export interface AdministratorUser extends ManagedUser { departments: string[] }
 export interface RosterCandidate {
   directory_member_id: string;
+  directory_generation_id: string;
   internal_user_id: string | null;
+  assignment_user_id: string;
   display_name: string;
   departments: string[];
 }
@@ -49,22 +51,23 @@ export async function listAdministratorUsers(): Promise<AdministratorUser[]> {
 
 export async function searchAdministratorCandidates(query: string, signal?: AbortSignal): Promise<AdministratorSearchResult> {
   if (!query.trim()) return { users: [], truncated: false };
-  const result = await readDirectory(new URLSearchParams({ view: "candidates_roster", q: query.trim(), limit: "20" }), signal);
+  const result = await readDirectory(new URLSearchParams({ view: "candidates_roster_v2", q: query.trim(), limit: "20" }), signal);
   if (!result || typeof result !== "object" || !("users" in result) || !Array.isArray(result.users)
     || !("truncated" in result) || typeof result.truncated !== "boolean") throw new Error("administrator response invalid");
-  const keys = new Set(["directory_member_id", "internal_user_id", "display_name", "departments"]);
+  const keys = new Set(["directory_member_id", "directory_generation_id", "internal_user_id", "assignment_user_id", "display_name", "departments"]);
   const users = result.users.map((entry: unknown): RosterCandidate => {
     if (!entry || typeof entry !== "object") throw new Error("administrator response invalid");
     const row = entry as Record<string, unknown>;
     if (Object.keys(row).some(key => !keys.has(key))
-      || typeof row.directory_member_id !== "string" || !row.directory_member_id
-      || (row.internal_user_id !== null && (typeof row.internal_user_id !== "string" || !row.internal_user_id))
+      || !isUuid(row.directory_member_id) || !isUuid(row.directory_generation_id) || !isUuid(row.assignment_user_id)
+      || (row.internal_user_id !== null && row.internal_user_id !== row.assignment_user_id)
       || typeof row.display_name !== "string" || !row.display_name
       || !Array.isArray(row.departments) || row.departments.some(name => typeof name !== "string" || !name)) {
       throw new Error("administrator response invalid");
     }
-    return {directory_member_id: row.directory_member_id, internal_user_id: row.internal_user_id,
-      display_name: row.display_name, departments: row.departments};
+    return { directory_member_id: row.directory_member_id, directory_generation_id: row.directory_generation_id,
+      internal_user_id: row.internal_user_id,
+      assignment_user_id: row.assignment_user_id, display_name: row.display_name, departments: row.departments };
   });
   return {users, truncated: result.truncated};
 }

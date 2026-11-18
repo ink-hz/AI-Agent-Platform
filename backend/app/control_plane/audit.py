@@ -442,6 +442,13 @@ class AuditUnavailableError(RuntimeError):
     """A required immutable audit event could not be persisted."""
 
 
+class MutationIdentityCollisionError(ValueError):
+    """The operation ID belongs to a different audited mutation."""
+
+    def __init__(self) -> None:
+        super().__init__("operation identity collision")
+
+
 class ControlCommitIndeterminateError(RuntimeError):
     """The server result of a control transaction commit is unknown."""
 
@@ -832,6 +839,10 @@ class AuditRepository:
                 return self._append_on(connection, event_id, command, sanitized)
         except AuditUnavailableError:
             raise
+        except psycopg.errors.CheckViolation as error:
+            if error.diag.constraint_name == "admin_request_identity_v128":
+                raise MutationIdentityCollisionError() from None
+            raise AuditUnavailableError("required audit unavailable") from None
         except psycopg.Error:
             raise AuditUnavailableError("required audit unavailable") from None
 
@@ -1004,6 +1015,9 @@ class SensitiveMutationCoordinator:
             applied = mutate(requested_event_id)
             if not isinstance(applied, AppliedMutation):
                 raise RuntimeError("control mutation result invalid")
+        except MutationIdentityCollisionError:
+            # A failed terminal event would prevent recovery of the original request.
+            raise
         except ControlCommitIndeterminateError:
             raise IndeterminateMutationError(
                 requested.request_id, requested_event_id

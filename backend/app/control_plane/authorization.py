@@ -335,7 +335,8 @@ _VOC_MANAGEMENT_ROUTES = frozenset({
     ("GET", "/api/v1/extensions/voc/admin/submitters"),
 })
 
-_PARTNER_OWNER_ROUTES = frozenset({
+_OWNER_MANAGEMENT_ROUTES = frozenset({
+    ("POST", "/api/v1/manage/roster-admins/{directory_member_id}"),
     ("POST", "/api/v1/manage/partners/subjects/{subject_id}/external-identity-detail"),
     ("GET", "/api/v1/manage/partners/organizations"),
     ("POST", "/api/v1/manage/partners/organizations"),
@@ -470,7 +471,7 @@ _OWNER_ROUTES = frozenset({
     _MANAGEMENT_SHELL_ROUTES
     | _AUTHENTICATED_SELF_ROUTES
     | _VOC_MANAGEMENT_ROUTES
-    | _PARTNER_OWNER_ROUTES
+    | _OWNER_MANAGEMENT_ROUTES
     | _FAE_WORKBENCH_READ_ROUTES
     | _FAE_WORKBENCH_MUTATION_ROUTES
 )
@@ -557,7 +558,7 @@ class AuthorizationService:
             return AuthorizationDecision(True, 200, "voc_management_route", None)
         if key not in _OWNER_ROUTES:
             return self._deny(403, "route_not_authorized")
-        if key in _PARTNER_OWNER_ROUTES and auth.role is not Role.PLATFORM_OWNER:
+        if key in _OWNER_MANAGEMENT_ROUTES and auth.role is not Role.PLATFORM_OWNER:
             return self._deny(403, "platform_owner_required")
         if auth.role is Role.MEMBER:
             return self._deny(403, "member_management_denied")

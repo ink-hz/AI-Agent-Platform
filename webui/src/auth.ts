@@ -32,10 +32,19 @@ export interface ManagedUser {
   scopes: string[];
 }
 
-export interface AdministratorMutation {
+export type AdministratorAction = {
   readonly targetInternalUserId: string;
-  readonly revoke: boolean;
+} & (
+  | { readonly revoke: boolean; readonly directoryMemberId?: never; readonly directoryGenerationId?: never }
+  | { readonly revoke: false; readonly directoryMemberId: string; readonly directoryGenerationId: string }
+);
+
+export type AdministratorMutation = AdministratorAction & {
   readonly requestId: string;
+};
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 export interface GovernanceEvent {
@@ -498,15 +507,8 @@ export async function listManagedUsers(signal?: AbortSignal): Promise<ManagedUse
 }
 
 
-export function createAdministratorMutation(
-  user: Pick<ManagedUser, "internal_user_id">,
-  revoke: boolean,
-): AdministratorMutation {
-  return Object.freeze({
-    targetInternalUserId: user.internal_user_id,
-    revoke,
-    requestId: crypto.randomUUID(),
-  });
+export function createAdministratorMutation(action: AdministratorAction): AdministratorMutation {
+  return Object.freeze({ ...action, requestId: crypto.randomUUID() });
 }
 
 
@@ -514,7 +516,10 @@ export async function changeAdministrator(
   account: Account,
   operation: AdministratorMutation,
 ): Promise<void> {
-  const response = await fetch(platformPath(`/api/v1/manage/admins/${encodeURIComponent(operation.targetInternalUserId)}`), {
+  const path = operation.directoryMemberId === undefined
+    ? `/api/v1/manage/admins/${encodeURIComponent(operation.targetInternalUserId)}`
+    : `/api/v1/manage/roster-admins/${encodeURIComponent(operation.directoryMemberId)}`;
+  const response = await fetch(platformPath(path), {
     method: operation.revoke ? "DELETE" : "POST",
     credentials: "include",
     headers: {
@@ -524,9 +529,16 @@ export async function changeAdministrator(
     body: JSON.stringify({
       reason: operation.revoke ? "admin_access_revoked" : "admin_access_approved",
       request_id: operation.requestId,
+      directory_generation_id: operation.directoryGenerationId,
     }),
   });
   await checked(response);
+  if (operation.directoryMemberId !== undefined) {
+    const receipt = await responseDetail(response);
+    if (!isObject(receipt) || receipt.status !== "ok" || receipt.internal_user_id !== operation.targetInternalUserId) {
+      throw new TypeError("roster administrator grant receipt invalid");
+    }
+  }
 }
 
 

@@ -15,7 +15,11 @@ import time
 import uuid
 
 MIGRATION = 'backend/migrations/cloud_agent_sync/001_agent_sources.sql'
-MIGRATIONS = (MIGRATION, 'backend/control_migrations/127_agent_session_identity.sql')
+MIGRATIONS = (
+    MIGRATION,
+    'backend/control_migrations/127_agent_session_identity.sql',
+    'backend/control_migrations/128_roster_admin_assignment.sql',
+)
 PROJECT = 'orbbec-agent-platform'
 SERVICE = 'platform-api'
 PRIVATE = Path('/opt/orbbec-agent-platform/private')

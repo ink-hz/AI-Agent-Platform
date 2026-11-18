@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+from unittest.mock import Mock
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import FastAPI, HTTPException
@@ -15,6 +16,7 @@ from app.control_plane.audit import (
     IndeterminateMutationError,
     project_governance_metadata,
 )
+from app.control_plane.authorization import AuthorizationService
 from app.control_plane.models import AuthContext, Role
 from app.control_plane.routes_manage import (
     ManagementRepository,
@@ -645,6 +647,158 @@ def test_roster_search_requires_owner(context):
     client, _, audit = _client(context)
     assert client.get("/api/v1/manage/users?view=candidates_roster&q=test").status_code == 403
     assert not audit.commands
+
+
+ROSTER_MEMBER = UUID("12345678-1234-4567-89ab-abcdef012345")
+ROSTER_GENERATION = UUID("59a5fc7e-aa32-441f-8ea8-bb39488da183")
+ROSTER_ACCOUNT = UUID("736f0b5c-0571-61cb-09d9-bb324fb97b7e")
+
+
+def _roster_grant_body(request_id):
+    return {
+        "reason": "admin_access_approved",
+        "request_id": str(request_id),
+        "directory_generation_id": str(ROSTER_GENERATION),
+    }
+
+
+@pytest.mark.parametrize("context", [ADMIN, VIEWER, MEMBER])
+def test_roster_v2_search_and_grant_require_owner(context):
+    client, repository, audit = _client(context)
+    assert client.get("/api/v1/manage/users?view=candidates_roster_v2&q=test").status_code == 403
+    response = client.post(f"/api/v1/manage/roster-admins/{ROSTER_MEMBER}",
+                           json=_roster_grant_body(uuid4()))
+    assert response.status_code == 403
+    assert not repository.mutations and not audit.commands
+
+
+@pytest.mark.parametrize(("csrf", "fresh", "status"), [(False, True, 403), (True, False, 503)])
+def test_roster_grant_requires_csrf_and_fresh_directory(csrf, fresh, status):
+    client, repository, audit = _client(OWNER, csrf=csrf, fresh=fresh)
+    response = client.post(f"/api/v1/manage/roster-admins/{ROSTER_MEMBER}",
+                           json=_roster_grant_body(uuid4()))
+    assert response.status_code == status
+    assert not repository.mutations and not audit.commands
+
+
+@pytest.mark.parametrize("field", ["request_id", "directory_generation_id", "reason", "internal_user_id"])
+def test_roster_grant_requires_operation_generation_and_exact_reason(field):
+    body = _roster_grant_body(uuid4())
+    if field == "reason":
+        body[field] = "access_approved"
+    elif field == "internal_user_id":
+        body[field] = str(uuid4())
+    else:
+        del body[field]
+    client, repository, audit = _client(OWNER)
+    response = client.post(f"/api/v1/manage/roster-admins/{ROSTER_MEMBER}", json=body)
+    assert response.status_code == 422
+    assert not repository.mutations and not audit.commands
+
+
+def test_roster_grant_uses_regular_audit_and_recovers_with_the_same_target_and_intent():
+    client, repository, audit = _client(OWNER)
+    operation = uuid4()
+    url = f"/api/v1/manage/roster-admins/{str(ROSTER_MEMBER).upper()}"
+    body = _roster_grant_body(operation)
+
+    def grant(actor, member, operation_id, event_id, generation):
+        assert (member, generation) == (ROSTER_MEMBER, ROSTER_GENERATION)
+        return repository.assign_admin(actor, ROSTER_ACCOUNT, operation_id, 0, event_id)
+    repository.assign_roster_admin = grant
+
+    audit.fail = True
+    assert client.post(url, json=body).status_code == 503
+    assert not repository.mutations
+    audit.fail = False
+    audit.fail_completed_once = True
+    first = client.post(url, json=body)
+    assert first.status_code == 503
+    assert first.json()["detail"] == {
+        "code": "management_mutation_indeterminate", "request_id": str(operation)
+    }
+    replay = client.post(url, json=body)
+    assert replay.status_code == 200
+    assert replay.json() == {"status": "ok", "internal_user_id": str(ROSTER_ACCOUNT)}
+    assert len(repository.mutations) == 1
+    requested, completed = audit.commands[-2:]
+    assert [requested.event_type, completed.event_type] == [
+        "admin_role_assignment_requested", "admin_role_assignment_completed"
+    ]
+    assert requested.actor_internal_user_id == OWNER.internal_user_id
+    assert requested.target_type == "internal_user" and requested.target_id == str(ROSTER_ACCOUNT)
+    assert requested.metadata == {
+        "operation_id": str(operation), "expected_row_version": 0,
+        "previous_role": "member", "new_role": "platform_admin", "result": "requested",
+    }
+    assert completed.metadata["linked_audit_event_id"] == str(repository.mutations[0][-1])
+
+
+@pytest.mark.parametrize("fault", [
+    "actor", "target", "audit_id", "action", "connect", "invalid_result", "unavailable", "commit"
+])
+def test_roster_grant_never_uses_another_ledger_entry_or_reports_a_lost_commit_as_failed(fault):
+    client, _, audit = _client(OWNER)
+    operation = uuid4()
+    connection = Mock()
+    def connect(*_args, **_kwargs):
+        if fault == "connect":
+            raise psycopg.OperationalError("database unavailable")
+        return connection
+
+    repository = ManagementRepository(
+        "postgresql://platform_control_app@127.0.0.1/agent_platform_control",
+        connect=connect,
+    )
+    client.app.dependency_overrides[management_service] = lambda: ManagementService(repository, audit)
+
+    def execute(query, parameters):
+        result = Mock()
+        if "assign_roster_platform_admin_v128" in query:
+            result.fetchone.return_value = {"result": {"operation_id": str(operation)}}
+            if fault == "invalid_result":
+                result.fetchone.return_value = None
+            assert parameters[-1] == ROSTER_GENERATION
+            connection.audit_event_id = parameters[-2]
+        else:
+            assert "management_mutations" in query
+            if fault == "unavailable":
+                raise psycopg.OperationalError("connection lost")
+            result.fetchone.return_value = {
+                "action": "revoke_admin" if fault == "action" else "assign_admin",
+                "actor_internal_user_id": uuid4() if fault == "actor" else OWNER.internal_user_id,
+                "target_internal_user_id": uuid4() if fault == "target" else ROSTER_ACCOUNT,
+                "requested_audit_id_copy": uuid4() if fault == "audit_id" else connection.audit_event_id,
+                "applied_result": {"operation_id": str(operation)},
+            }
+        return result
+    connection.execute.side_effect = execute
+    if fault == "commit":
+        connection.commit.side_effect = psycopg.OperationalError("commit acknowledgement lost")
+
+    response = client.post(
+        f"/api/v1/manage/roster-admins/{ROSTER_MEMBER}", json=_roster_grant_body(operation)
+    )
+    if fault in {"connect", "invalid_result", "unavailable", "commit"}:
+        assert response.status_code == 503
+        assert response.json()["detail"] == {
+            "code": "management_mutation_indeterminate", "request_id": str(operation)
+        }
+    else:
+        assert response.status_code == 409
+        connection.commit.assert_not_called()
+    assert [command.event_type for command in audit.commands] == ["admin_role_assignment_requested"]
+
+
+def test_roster_admin_policy_only_allows_post_by_owner():
+    authorization = AuthorizationService(grants=None)
+    route = "/api/v1/manage/roster-admins/{directory_member_id}"
+    assert authorization.decide(OWNER, "POST", route, ()).allowed
+    assert not authorization.decide(OWNER, "DELETE", route, ()).allowed
+    stale = AuthContext(OWNER.internal_user_id, OWNER.role, OWNER.session_id, True)
+    assert authorization.decide(stale, "POST", route, ()).status_code == 503
+    for context in [None, MEMBER, VIEWER, ADMIN]:
+        assert not authorization.decide(context, "POST", route, ()).allowed
 
 
 def test_candidate_repository_escapes_like_wildcards_and_bounds_projection() -> None:
@@ -1324,7 +1478,7 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
     first_candidate_id = uuid4()
     second_candidate_id = uuid4()
     wildcard_decoy_id = uuid4()
-    generation_id = uuid4()
+    generation_id = ROSTER_GENERATION
     department_key = uuid4()
     department_name = "平台研发"
     users = (
@@ -1358,7 +1512,7 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
             (generation_id, department_key, b"d" * 32, b"department" * 3, department_name),
         )
         for index, (internal_user_id, display_name, _role) in enumerate(roster):
-            member_key = UUID(int=index + 1)
+            member_key = ROSTER_MEMBER if internal_user_id is None else UUID(int=index + 1)
             connection.execute(
                 "insert into platform_control.directory_members "
                 "(generation_id,member_key,internal_user_id,subject_kind,lookup_hmac,"
@@ -1441,6 +1595,19 @@ def test_real_management_directory_queries_are_literal_bounded_and_audited(
     assert response.status_code == 200
     assert response.json()["truncated"] is False
     assert {row["internal_user_id"] for row in response.json()["users"]} == {str(first_candidate_id), None}
+    legacy_rows = response.json()["users"]
+    assert all(set(row) == {"directory_member_id", "internal_user_id", "display_name", "departments"}
+               for row in legacy_rows)
+    updated = client.get("/api/v1/manage/users", params={**params, "view": "candidates_roster_v2"})
+    assert updated.status_code == 200
+    assert updated.json() == {
+        "truncated": False,
+        "users": [{
+            **row,
+            "assignment_user_id": row["internal_user_id"] or str(ROSTER_ACCOUNT),
+            "directory_generation_id": str(generation_id),
+        } for row in legacy_rows],
+    }
     with psycopg.connect(environment["admin"]) as connection:
         event = connection.execute(
             "select sanitized_before_after from platform_control.audit_events "

@@ -1,8 +1,7 @@
-import type { AdministratorMutation } from "./auth";
+import { isUuid, type AdministratorMutation } from "./auth";
 
 
 const STORAGE_PREFIX = "platform.identity.pending-administrator.v1";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type PendingAdministratorState =
   | { kind: "none" }
@@ -48,22 +47,29 @@ export function loadPendingAdministrator(ownerInternalUserId: string): PendingAd
     if (value.kind === "integrity_failure" && hasExactKeys(value, ["version", "kind"])) {
       return { kind: "integrity_failure" };
     }
+    const keys = ["version", "kind", "target_internal_user_id", "action", "request_id"];
+    let roster: { directoryMemberId: string; directoryGenerationId: string } | undefined;
+    if ("directory_member_id" in value || "directory_generation_id" in value) {
+      if (value.action !== "assign" || !isUuid(value.directory_member_id) || !isUuid(value.directory_generation_id)) {
+        throw new Error("invalid pending roster assignment");
+      }
+      keys.push("directory_member_id", "directory_generation_id");
+      roster = { directoryMemberId: value.directory_member_id, directoryGenerationId: value.directory_generation_id };
+    }
     if (
       (value.kind === "inflight_no_replay"
         || value.kind === "pending_replay"
         || value.kind === "confirmed_needs_refresh")
-      && hasExactKeys(value, ["version", "kind", "target_internal_user_id", "action", "request_id"])
-      && typeof value.target_internal_user_id === "string"
-      && UUID.test(value.target_internal_user_id)
+      && hasExactKeys(value, keys)
+      && isUuid(value.target_internal_user_id)
       && (value.action === "assign" || value.action === "revoke")
-      && typeof value.request_id === "string"
-      && UUID.test(value.request_id)
+      && isUuid(value.request_id)
     ) {
       return {
         kind: value.kind,
-        operation: Object.freeze({
+        operation: Object.freeze<AdministratorMutation>({
           targetInternalUserId: value.target_internal_user_id,
-          revoke: value.action === "revoke",
+          ...(roster ? { revoke: false, ...roster } : { revoke: value.action === "revoke" }),
           requestId: value.request_id,
         }),
       };
@@ -106,6 +112,8 @@ function storeAdministratorOperation(
       version: 1,
       kind,
       target_internal_user_id: operation.targetInternalUserId,
+      directory_member_id: operation.directoryMemberId,
+      directory_generation_id: operation.directoryGenerationId,
       action: operation.revoke ? "revoke" : "assign",
       request_id: operation.requestId,
     }));
