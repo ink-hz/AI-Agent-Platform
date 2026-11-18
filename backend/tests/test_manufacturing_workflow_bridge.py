@@ -292,12 +292,38 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
     assert client.get(prefix.rstrip("/") + "/fixture/login").status_code in (403, 404, 405)
     auth.context = AuthContext(member, Role.MEMBER, auth.context.session_id, False)
     denied_access = client.get(wf + "/access").json()
-    assert denied_access["allowed"] is False and denied_access["roles"] == []
+    # r23: users without a manufacturing role open the workbench for 问题反馈 only.
+    assert denied_access["allowed"] is True and denied_access["feedback_only"] is True
+    assert denied_access["workflow_access"] is False and denied_access["roles"] == []
     assert client.get(wf + "/todos").status_code == 403
     assert (
         client.get(wf + "/assets/manufacturing.js?release=development").status_code
-        == 403
+        == 200
     )
+    report = {"operation_id": str(uuid4()), "category": "material", "severity": "urgent",
+              "description": "Missing screws", "location": "Line 3"}
+    assert client.post(wf + "/feedback", json=report).status_code == 403  # CSRF still required
+    submitted = client.post(wf + "/feedback", headers=headers, json=report)
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["submitted_by"] == str(member)  # host identity, never X-User-ID
+    feedback_id = submitted.json()["id"]
+    assert [i["id"] for i in client.get(wf + "/feedback").json()["items"]] == [feedback_id]
+    assert client.get(wf + "/feedback", params={"scope": "all"}).status_code == 403
+    assert client.get(wf + "/handbook").status_code == 403
+    import struct, zlib
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0))
+           + chunk(b"tEXt", b"GPS\x0031.2") + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00")) + chunk(b"IEND", b""))
+    photo_url = f"{wf}/feedback/{feedback_id}/photos"
+    assert client.post(photo_url, params={"operation_id": str(uuid4())}, content=png).status_code == 403  # no CSRF
+    uploaded = client.post(photo_url, params={"operation_id": str(uuid4())}, content=png,
+                           headers={**headers, "Content-Type": "image/png"})
+    assert uploaded.status_code == 200, uploaded.text
+    photo_id = uploaded.json()["photos"][0]["id"]
+    served = client.get(f"{photo_url}/{photo_id}")
+    assert served.status_code == 200 and served.headers["content-type"] == "image/png" and b"GPS" not in served.content
+    assert served.headers["cache-control"] == "private, no-store"
     auth.context = AuthContext(
         owner, Role.PLATFORM_OWNER, auth.context.session_id, False
     )
@@ -305,6 +331,9 @@ def test_real_middleware_scopes_members_and_preserves_legacy(
         client.get(wf + "/assets/manufacturing.js?release=development").status_code
         == 200
     )
+    every = client.get(wf + "/feedback", params={"scope": "all"}).json()
+    assert [i["id"] for i in every["items"]] == [feedback_id]
+    assert client.get(f"{wf}/feedback/{feedback_id}").status_code == 200
     assert client.get(wf + "/assets/missing?release=development").status_code == 404
     assert client.get(wf + "/unlisted").status_code in (403, 404)
     grant = {"roles": ["production"], "active": True}
@@ -446,6 +475,24 @@ def test_global_workflow_exact_auth_contract(role, path):
     assert service.decide(context, 'POST', route, ()).allowed is (('POST', path) in WORKFLOW_ROUTES)
     assert not service.decide(context, 'DELETE', route, ()).allowed
     assert not service.decide(context, 'GET', route + '/extra', ()).allowed
+
+
+@pytest.mark.parametrize('role', list(Role))
+def test_feedback_routes_open_to_every_authenticated_role(role):
+    # r23 问题反馈: any logged-in user reaches these routes; the release scopes each report.
+    from app.control_plane.authorization import AuthorizationService
+    from app.manufacturing_paths import FEEDBACK_ROUTES, WORKFLOW_ROUTES
+    from test_dingtalk_auth_api import _NoObservationGrants
+    assert len(FEEDBACK_ROUTES) == 8 and FEEDBACK_ROUTES <= WORKFLOW_ROUTES
+    service = AuthorizationService(_NoObservationGrants())
+    fresh = AuthContext(uuid4(), role, uuid4(), False)
+    stale = AuthContext(uuid4(), role, uuid4(), True)
+    for method, path in sorted(FEEDBACK_ROUTES):
+        route = '/api/v1/manufacturing/workflow' + path
+        assert service.decide(None, method, route, ()).status_code == 401
+        assert service.decide(fresh, method, route, ()).allowed
+        assert service.decide(stale, method, route, ()).status_code == (200 if method == 'GET' else 503)
+    assert not service.decide(fresh, 'DELETE', '/api/v1/manufacturing/workflow/feedback/{feedback_id}', ()).allowed
 
 
 def test_unavailable_global_routes_authenticate_before_validation(tmp_path, monkeypatch):

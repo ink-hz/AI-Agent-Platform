@@ -227,7 +227,8 @@ def test_manufacturing_admin_through_real_policy(tmp_path, monkeypatch, prefix):
     directory.down = True
     as_user(admin)
     access = client.get(wf + "/access").json()
-    assert access["manufacturing_admin"] is False and access["allowed"] is False
+    # r23: every logged-in user may open the workbench (问题反馈); no role or admin while the directory is down.
+    assert access["manufacturing_admin"] is False and access["workflow_access"] is False
     assert client.get(wf + "/members").status_code == 403
     directory.down = False
 
