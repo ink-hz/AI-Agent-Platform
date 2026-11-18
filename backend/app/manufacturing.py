@@ -10,18 +10,22 @@ from pathlib import Path
 from collections.abc import Callable
 from datetime import datetime
 
+from uuid import UUID
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.routing import APIRoute
 from starlette.responses import JSONResponse
 from starlette.routing import Match
 
+from .control_plane.dsn import validate_control_dsn
 from .control_plane.models import AuthContext, Role
 from .manufacturing_paths import (
     MANUFACTURING_PREFIX,
     MANUFACTURING_ROUTES,
-    MES_ORDER_ROUTES,
+    EXPEDITE_ROUTES,
+    HANDOFF_ROUTES,
+    MES_SOURCE_ROUTES,
     SAP_MATERIAL_ROUTES,
-    MATERIAL_REFERENCE_ROUTES,
     NATIVE_ACCESS_ROUTES,
     PRODUCTION_TOOLS_ROUTES,
     WORKFLOW_ROUTES,
@@ -60,6 +64,85 @@ def authorize_workflow_identity(request: Request, write: bool = False) -> dict:
         "configuration_admin": context.role
         in {Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN},
     }
+
+
+class WorkflowDirectory:
+    """Read-only enterprise directory (花名通讯录) lookups for manufacturing membership.
+
+    Uses the same security-definer read as the office recipient directory but
+    selects only non-secret columns: never provider ids, ciphertexts or real names.
+    Every call is a bounded, read-only transaction; any failure raises OSError so
+    the manufacturing release fails closed (no roles, no 制造管理员).
+    """
+
+    _SQL = (
+        "select row_kind,directory_member_id,internal_user_id,display_name,status,departments "
+        "from platform_control.read_office_recipient_directory_v54(%s,%s,%s,%s,%s,%s,%s,%s)"
+    )
+
+    def __init__(self, database_url: str, *, connect=None) -> None:
+        validate_control_dsn(database_url, purpose="app")
+        if connect is None:
+            import psycopg
+
+            connect = psycopg.connect
+        self._database_url = database_url
+        self._connect = connect
+
+    def __repr__(self) -> str:
+        return "WorkflowDirectory(database_url=<redacted>)"
+
+    def _read(self, operation, *, query="", limit=1, member_ids=(), internal_ids=()):
+        from psycopg.rows import dict_row
+
+        try:
+            with self._connect(
+                self._database_url,
+                connect_timeout=3,
+                options="-c statement_timeout=5000 -c default_transaction_read_only=on",
+                row_factory=dict_row,
+            ) as connection:
+                return list(connection.execute(
+                    self._SQL,
+                    (operation, query, [], False, limit, None, list(member_ids), list(internal_ids)),
+                ).fetchall())
+        except Exception:  # noqa: BLE001 - never expose DSNs or directory internals
+            raise OSError("directory unavailable") from None
+
+    @staticmethod
+    def _person(row):
+        departments = row.get("departments") or []
+        return {
+            "directory_member_id": str(row["directory_member_id"]),
+            "internal_user_id": None if row.get("internal_user_id") is None else str(row["internal_user_id"]),
+            "display_name": str(row["display_name"]),
+            "departments": [str(name) for name in departments],
+        }
+
+    def search(self, query: str, limit: int) -> list[dict]:
+        if (not isinstance(query, str) or not 1 <= len(query.strip()) <= 64
+                or isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50):
+            raise ValueError("invalid directory search")
+        rows = self._read("search", query=query.strip(), limit=limit)
+        return [
+            {**self._person(row), "linked": row.get("internal_user_id") is not None}
+            for row in rows
+            if row.get("row_kind") == "member" and row.get("status") == "active" and row.get("display_name")
+        ][:limit]
+
+    def resolve(self, *, directory_member_ids, internal_user_ids) -> list[dict]:
+        members = [UUID(str(value)) for value in directory_member_ids]
+        internals = [UUID(str(value)) for value in internal_user_ids]
+        if not members and not internals:
+            return []
+        if len(members) + len(internals) > 200:
+            raise ValueError("directory resolve limit exceeded")
+        rows = self._read("resolve", member_ids=members, internal_ids=internals)
+        return [
+            self._person(row)
+            for row in rows
+            if row.get("row_kind") == "member" and row.get("status") == "active" and row.get("display_name")
+        ]
 
 
 def _workflow_unavailable(
@@ -288,7 +371,7 @@ def _native_access_router(module, protected_paths):
     return _native_access_components(module, protected_paths)[0]
 
 
-def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflow_profiles=None, workflow_business_clock: Callable[[], datetime] | None = None) -> APIRouter:
+def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflow_profiles=None, workflow_business_clock: Callable[[], datetime] | None = None, search_workflow_directory=None, resolve_workflow_directory=None) -> APIRouter:
     """Load legacy and workflow independently; reserve workflow ahead of legacy catchall."""
     namespace = None
     root_text = os.environ.get("PLATFORM_MANUFACTURING_ROOT", "")
@@ -395,6 +478,17 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
             sap_parameter = inspect.signature(module.build_workflow_router).parameters.get("sap_access_service")
             if sap_parameter is not None and sap_parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}:
                 profile_options["sap_access_service"] = native_readers.get("sap")
+            directory_parameters = [
+                inspect.signature(module.build_workflow_router).parameters.get(name)
+                for name in ("search_directory", "resolve_directory")
+            ]
+            if all(
+                parameter is not None and parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+                for parameter in directory_parameters
+            ):
+                # Enterprise directory reads for 花名-keyed membership; None fails closed.
+                profile_options["search_directory"] = search_workflow_directory
+                profile_options["resolve_directory"] = resolve_workflow_directory
             if workflow_business_clock is not None:
                 clock_parameter = inspect.signature(module.build_workflow_router).parameters.get("business_clock")
                 if clock_parameter is None or clock_parameter.kind not in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}:
@@ -429,7 +523,7 @@ def build_manufacturing_router(*, resolve_workflow_subject=None, resolve_workflo
                 for method, path in PRODUCTION_TOOLS_ROUTES
                 if not native_compatible or (method, MANUFACTURING_PREFIX + "/workflow" + path) not in released}
     reserved |= {(method, MANUFACTURING_PREFIX + "/workflow" + path)
-                 for method, path in MES_ORDER_ROUTES | MATERIAL_REFERENCE_ROUTES | SAP_MATERIAL_ROUTES
+                 for method, path in MES_SOURCE_ROUTES | SAP_MATERIAL_ROUTES | EXPEDITE_ROUTES | HANDOFF_ROUTES
                  if (method, MANUFACTURING_PREFIX + "/workflow" + path) not in released}
     native_unavailable = _workflow_unavailable()
     native_unavailable.routes = [

@@ -32,7 +32,7 @@ def test_old_release_still_serves_legacy_only_workflow_probe_and_assets(bundle, 
     assert probe.json()['dataset'] is None
     assert probe.json()['legacy_access'] is True
     assert c.get(BASE + '/assets/manufacturing.js').status_code == 200
-    assert c.get(BASE + '/workflow/projects').status_code == 503
+    assert c.get(BASE + '/workflow/me').status_code == 503
 
 
 def bridge():
@@ -50,7 +50,7 @@ def bundle(tmp_path, monkeypatch):
     (assets / 'manufacturing.js').write_text('window.OrbbecManufacturing = {}')
     (assets / 'manufacturing.css').write_text('.mf-app {}')
     # Host contract double: no installed sibling package is required by this suite.
-    (package / '__init__.py').write_text('''from fastapi import APIRouter, Request\nfrom starlette.responses import Response\nfrom pathlib import Path\ndef build_router(*, database_path, assets_dir, authorize, release):\n r=APIRouter(prefix="/api/v1/manufacturing")\n @r.get("/access")\n def access(request: Request):\n  actor=authorize(request)\n  return {"allowed":True,"available":True,"can_edit":not actor["read_only"],"release":release}\n @r.get("/catalog")\n def catalog(request: Request):\n  return authorize(request)\n @r.put("/lines/{line_id}/stages/{stage_id}")\n def write(request: Request):\n  return authorize(request,write=True)\n @r.get("/assets/{asset_name}")\n def asset(request: Request,asset_name:str):\n  authorize(request)\n  return Response((Path(assets_dir)/asset_name).read_bytes(),media_type="text/javascript")\n return r\n''')
+    (package / '__init__.py').write_text('''from fastapi import APIRouter, Request\nfrom starlette.responses import Response\nfrom pathlib import Path\ndef build_router(*, database_path, assets_dir, authorize, release):\n r=APIRouter(prefix="/api/v1/manufacturing")\n @r.get("/access")\n def access(request: Request):\n  actor=authorize(request)\n  return {"allowed":True,"available":True,"can_edit":not actor["read_only"],"release":release}\n @r.get("/health")\n def health(request: Request):\n  return authorize(request)\n @r.put("/lines/{line_id}/stages/{stage_id}")\n def retired_write(request: Request):\n  return authorize(request,write=True)\n @r.get("/assets/{asset_name}")\n def asset(request: Request,asset_name:str):\n  authorize(request)\n  return Response((Path(assets_dir)/asset_name).read_bytes(),media_type="text/javascript")\n return r\n''')
     monkeypatch.setenv('PLATFORM_MANUFACTURING_ROOT', str(root))
     monkeypatch.setenv('PLATFORM_MANUFACTURING_DATABASE_PATH', str(tmp_path / 'db/workbench.sqlite3'))
     monkeypatch.setenv('PLATFORM_MANUFACTURING_RELEASE', 'test-release')
@@ -74,7 +74,7 @@ def test_identity_roles_and_trusted_actor(bundle, role):
     c=client(auth)
     assert c.get(BASE+'/access').status_code == 401
     c.cookies.set(auth.cookie_name,'valid-cookie')
-    response=c.get(BASE+'/catalog',headers={'X-User-ID':'forged','X-Display-Name':'forged'})
+    response=c.get(BASE+'/health',headers={'X-User-ID':'forged','X-Display-Name':'forged'})
     assert response.status_code == (200 if role in {Role.PLATFORM_ADMIN,Role.PLATFORM_OWNER} else 403)
     assert response.headers['cache-control'] == 'private, no-store'
     if response.status_code == 200:
@@ -84,22 +84,29 @@ def test_identity_roles_and_trusted_actor(bundle, role):
 
 def test_no_identity_mode_never_bypasses_callback(bundle):
     c=client()
-    assert c.get(BASE+'/catalog',headers={'X-Role':'platform_owner'}).status_code == 401
+    assert c.get(BASE+'/health',headers={'X-Role':'platform_owner'}).status_code == 401
 
 
 @pytest.mark.parametrize('headers', [{}, {'Origin':'https://agent.example.test'}, {'Origin':'https://evil.test','X-CSRF-Token':'csrf-value'}, {'Origin':'https://agent.example.test','X-CSRF-Token':'invalid'}])
 def test_real_middleware_origin_csrf(bundle,headers):
     auth=FakeAuth(); c=client(auth); c.cookies.set(auth.cookie_name,'valid-cookie')
-    assert c.put(BASE+'/lines/cameras/stages/S1',headers=headers,json={}).status_code == 403
+    assert c.post(BASE+'/workflow/handoffs',headers=headers,json={}).status_code == 403
+    valid={'Origin':'https://agent.example.test','X-CSRF-Token':auth.csrf}
+    # Accepted writes reach the (unconfigured) workflow boundary, not a 403.
+    assert c.post(BASE+'/workflow/handoffs',headers=valid,json={}).status_code == 503
 
 
-def test_write_and_hard_stale(bundle):
+def test_retired_legacy_write_is_denied_and_hard_stale_is_read_only(bundle):
+    # Phase 1 has no legacy-prefix business writes. Even when a release still
+    # exposes a retired handler, the exact host allowlist denies it with valid CSRF.
+    # Legacy-prefix write security stays covered by native access POST routes.
     auth=FakeAuth(); c=client(auth); c.cookies.set(auth.cookie_name,'valid-cookie')
     headers={'Origin':'https://agent.example.test','X-CSRF-Token':auth.csrf}
-    assert c.put(BASE+'/lines/cameras/stages/S1',headers=headers,json={}).status_code == 200
+    assert c.put(BASE+'/lines/cameras/stages/S1',headers=headers,json={}).status_code == 403
+    assert c.get(BASE+'/access').json()['can_edit'] is True
     auth.context=AuthContext(auth.context.internal_user_id,auth.context.role,auth.context.session_id,True)
     assert c.get(BASE+'/access').json()['can_edit'] is False
-    assert c.put(BASE+'/lines/cameras/stages/S1',headers=headers,json={}).status_code == 503
+    assert c.get(BASE+'/health').status_code == 200
 
 
 @pytest.mark.parametrize('prefix',['/','/_preview/dingtalk-r1/'])
@@ -130,11 +137,14 @@ def test_disabled_is_safe_and_known_routes_preserved(tmp_path,monkeypatch,config
     auth=FakeAuth(); c=client(auth); c.cookies.set(auth.cookie_name,'valid-cookie')
     access=c.get(BASE+'/access')
     assert access.status_code==200 and access.json()['available'] is False
-    for path in ['/health','/catalog','/lines/cameras','/lines/cameras/stages/S1','/assets/manufacturing.js']:
+    for path in ['/health','/handbook','/assets/manufacturing.js']:
         result=c.get(BASE+path)
         assert result.status_code==503
         assert 'private internals' not in result.text
-    assert c.get(BASE+'/unknown').status_code in {403,404}
+    for path in ['/unknown','/catalog','/lines/cameras','/dashboard','/projects']:
+        result=c.get(BASE+path)
+        assert result.status_code in {403,404}
+        assert 'private internals' not in result.text
 
 
 @pytest.mark.parametrize('prefix',['/','/_preview/dingtalk-r1/'])
@@ -153,10 +163,15 @@ def test_login_return_and_shell(tmp_path,monkeypatch,prefix):
 
 def test_real_business_package(real_release, tmp_path, monkeypatch):
     auth=FakeAuth(); c=client(auth); c.cookies.set(auth.cookie_name,'valid-cookie')
-    assert c.get(BASE+'/catalog').status_code==200
-    response=c.put(BASE+'/lines/cameras/stages/S1',json={'expected_version':0,'practice':'integration','participants':[],'handoffs':[],'systems':[]},headers={'Origin':auth.public_base_url,'X-CSRF-Token':auth.csrf,'X-User-ID':'forged'})
-    assert response.status_code==200 and response.json()['updated_by']==str(auth.context.internal_user_id)
-    assert c.get(BASE+'/lines/cameras/stages/S1').json()['record']['practice']=='integration'
+    access=c.get(BASE+'/access')
+    assert access.status_code==200 and access.json()['available'] is True
+    assert access.json()['release']=='project-v2-test'
+    assert c.get(BASE+'/health').json()=={'ready':True,'release':'project-v2-test'}
+    headers={'Origin':auth.public_base_url,'X-CSRF-Token':auth.csrf,'X-User-ID':'forged'}
+    # Retired phase-0 business routes are not reachable through the host.
+    assert c.get(BASE+'/catalog').status_code==403
+    assert c.put(BASE+'/lines/cameras/stages/S1',json={},headers=headers).status_code==403
+    assert not (tmp_path/'real.sqlite3').exists()
 
 
 def test_preview_shell_csp_allows_private_workbench_assets_for_spa_entry(tmp_path,monkeypatch):
@@ -170,28 +185,33 @@ def test_preview_shell_csp_allows_private_workbench_assets_for_spa_entry(tmp_pat
             assert 'https://agent.example.test/_preview/dingtalk-r1/assets/' in value
 
 
+LEGACY_ROUTES = [('GET','/access'),('GET','/health'),('GET','/assets/{asset_name}'),('GET','/handbook')]
+RETIRED_LEGACY_ROUTES = [
+ ('GET','/catalog'),('GET','/lines/{line_id}'),('GET','/lines/{line_id}/stages/{stage_id}'),
+ ('PUT','/lines/{line_id}/stages/{stage_id}'),('POST','/lines/{line_id}/stages/{stage_id}/tasks'),
+ ('GET','/dashboard'),('GET','/projects'),('POST','/projects'),('GET','/projects/{project_id}'),
+ ('PATCH','/projects/{project_id}'),('POST','/projects/{project_id}/tasks'),('GET','/project-tasks'),
+ ('GET','/collaboration'),('POST','/systems'),('PATCH','/systems/{system_id}'),('POST','/authorities'),
+ ('GET','/projects/{project_id}/controls'),('POST','/projects/{project_id}/packages'),
+ ('POST','/projects/{project_id}/handoffs'),('POST','/projects/{project_id}/readiness'),
+]
+
+
+def test_legacy_allowlist_is_exact():
+    from app.manufacturing_paths import MANUFACTURING_ROUTES, NATIVE_ACCESS_ROUTES
+    assert MANUFACTURING_ROUTES == frozenset(LEGACY_ROUTES) | NATIVE_ACCESS_ROUTES
+
+
 @pytest.mark.parametrize('role',list(Role))
-@pytest.mark.parametrize('method,path',[
- ('GET','/access'),('GET','/health'),('GET','/catalog'),('GET','/assets/{asset_name}'),
- ('GET','/lines/{line_id}'),('GET','/lines/{line_id}/stages/{stage_id}'),
- ('PUT','/lines/{line_id}/stages/{stage_id}'),
- ('POST','/lines/{line_id}/stages/{stage_id}/tasks'),
- ('PATCH','/lines/{line_id}/stages/{stage_id}/tasks/{task_id}'),
- ('GET','/dashboard'), ('GET','/projects'), ('POST','/projects'),
- ('GET','/projects/{project_id}'), ('PATCH','/projects/{project_id}'),
- ('PUT','/projects/{project_id}/stages/{stage_id}'),
- ('POST','/projects/{project_id}/tasks'),
- ('PATCH','/projects/{project_id}/tasks/{task_id}'),
- ('GET','/project-tasks'), ('GET','/handbook'),
- ('GET','/collaboration'), ('POST','/systems'), ('PATCH','/systems/{system_id}'),
- ('POST','/authorities'), ('PATCH','/authorities/{authority_id}'),
- ('GET','/projects/{project_id}/controls'), ('POST','/projects/{project_id}/packages'),
- ('PUT','/projects/{project_id}/packages/{package_id}'),
- ('POST','/projects/{project_id}/packages/{package_id}/actions'),
- ('POST','/projects/{project_id}/handoffs'), ('PATCH','/projects/{project_id}/handoffs/{handoff_id}'),
- ('POST','/projects/{project_id}/readiness'), ('PUT','/projects/{project_id}/readiness/{readiness_id}'),
- ('POST','/projects/{project_id}/readiness/{readiness_id}/issues'),
-])
+@pytest.mark.parametrize('method,path',RETIRED_LEGACY_ROUTES)
+def test_retired_legacy_routes_are_denied(role,method,path):
+    service=AuthorizationService(_NoObservationGrants())
+    context=AuthContext(uuid4(),role,uuid4(),False)
+    assert not service.decide(context,method,BASE+path,()).allowed
+
+
+@pytest.mark.parametrize('role',list(Role))
+@pytest.mark.parametrize('method,path',LEGACY_ROUTES)
 def test_central_exact_route_contract(role,method,path):
     service=AuthorizationService(_NoObservationGrants())
     context=AuthContext(uuid4(),role,uuid4(),False)
@@ -287,7 +307,7 @@ def test_real_project_routes_through_create_app_and_csrf(real_release, tmp_path,
     assert registered == MANUFACTURING_ROUTES | frozenset(
         (method, '/workflow' + path) for method, path in WORKFLOW_ROUTES
     )
-    assert c.get(BASE + '/dashboard').status_code == 401
+    assert c.get(BASE + '/handbook').status_code == 401
     c.cookies.set(auth.cookie_name, 'valid-cookie')
     headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf, 'X-User-ID': 'forged'}
     for asset in ['manufacturing.js', 'manufacturing.css']:
@@ -296,30 +316,17 @@ def test_real_project_routes_through_create_app_and_csrf(real_release, tmp_path,
         assert response.content == (real_release / 'webui/dist' / asset).read_bytes()
         assert response.headers['cache-control'] == 'private, no-store'
         assert c.get(BASE + '/assets/' + asset + '?release=old').status_code == 409
-    value = {'operation_id': str(uuid4()), 'name': 'Bridge project', 'line_id': 'cameras', 'owner': 'PM'}
+    # Workflow writes keep the real host Origin/CSRF boundary. The workflow store
+    # is not configured here, so an accepted write reaches the unavailable router.
+    handoff = {'operation_id': str(uuid4()), 'material': 'M-1', 'quantity': '1', 'unit': 'PC',
+               'to_user': str(uuid4()), 'from_location': 'WH', 'to_location': 'LINE'}
     for invalid in [{}, {'Origin': auth.public_base_url},
             {'Origin': 'https://evil.test', 'X-CSRF-Token': auth.csrf},
             {'Origin': auth.public_base_url, 'X-CSRF-Token': 'wrong'}]:
-        assert c.post(BASE + '/projects', json=value, headers=invalid).status_code == 403
-    created = c.post(BASE + '/projects', json=value, headers=headers)
-    assert created.status_code == 200, created.text
-    project_id = created.json()['project']['id']
-    project_url = BASE + '/projects/' + project_id
-    result = c.get(project_url)
-    assert result.json()['project']['updated_by'] == str(auth.context.internal_user_id)
-    assert c.get(BASE + '/projects').json()['items'][0]['id'] == project_id
-    assert c.get(BASE + '/dashboard').status_code == 200
-    updated = c.patch(project_url, json={'expected_version': 1, 'summary': 'Bridge update'}, headers=headers)
-    assert updated.status_code == 200
-    stage = result.json()['stages'][0]
-    stage_value = {key: stage[key] for key in ['practice', 'participants', 'handoffs', 'systems', 'status', 'owner', 'due_date', 'blocker']}
-    stage_value.update(expected_version=stage['version'], practice='Bridge stage')
-    assert c.put(project_url + '/stages/' + stage['id'], json=stage_value, headers=headers).status_code == 200
-    task = c.post(project_url + '/tasks', json={'operation_id': str(uuid4()), 'stage_id': stage['id'], 'title': 'Bridge task'}, headers=headers)
-    assert task.status_code == 200, task.text
-    task_id = task.json()['id']
-    assert c.patch(project_url + '/tasks/' + task_id, json={'expected_version': 1, 'status': 'doing'}, headers=headers).status_code == 200
-    assert c.get(BASE + '/project-tasks').json()['items'][0]['id'] == task_id
+        assert c.post(BASE + '/workflow/handoffs', json=handoff, headers=invalid).status_code == 403
+    response = c.post(BASE + '/workflow/handoffs', json=handoff, headers=headers)
+    assert response.status_code == 503
+    assert response.headers['cache-control'] == 'private, no-store'
     for document, relative in [('handbook', 'docs/manufacturing-system-handbook.md'), ('workflow', 'docs/workflows/manufacturing-process-overview.md')]:
         response = c.get(BASE + '/handbook', params={'document': document, 'release': 'project-v2-test'})
         assert response.status_code == 200
@@ -329,7 +336,7 @@ def test_real_project_routes_through_create_app_and_csrf(real_release, tmp_path,
         assert response.headers['cache-control'] == 'private, no-store'
     assert c.get(BASE + '/handbook?release=old').status_code == 409
     assert c.get(BASE + '/handbook?document=../../private').status_code == 422
-    for path in ['/projects/missing', '/unknown', '/assets/private.json']:
+    for path in ['/projects/missing', '/unknown', '/assets/private.json', '/dashboard', '/catalog']:
         response = c.get(BASE + path)
         assert response.status_code in {403, 404}
         assert response.headers['cache-control'] == 'private, no-store'
@@ -338,14 +345,11 @@ def test_real_project_routes_through_create_app_and_csrf(real_release, tmp_path,
     response = c.get(BASE + '/handbook')
     assert response.status_code == 503 and 'private invalid metadata' not in response.text
     auth.context = AuthContext(auth.context.internal_user_id, role, auth.context.session_id, True)
-    assert c.get(BASE + '/dashboard').status_code == 200
-    for method, path in [('POST', '/projects'), ('PATCH', '/projects/' + project_id),
-            ('PUT', '/projects/' + project_id + '/stages/' + stage['id']),
-            ('POST', '/projects/' + project_id + '/tasks'),
-            ('PATCH', '/projects/' + project_id + '/tasks/' + task_id)]:
-        response = c.request(method, BASE + path, json={}, headers=headers)
-        assert response.status_code == 503
-        assert response.headers['cache-control'] == 'private, no-store'
+    assert c.get(BASE + '/health').status_code == 200
+    response = c.post(BASE + '/workflow/handoffs', json=handoff, headers=headers)
+    assert response.status_code == 503
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert not (tmp_path / 'real.sqlite3').exists()
 
 
 def test_real_project_routes_member_denied_before_validation(real_release, tmp_path, monkeypatch):
@@ -383,93 +387,21 @@ def test_all_exact_routes_remain_private_and_unavailable_when_disabled(tmp_path,
 
 
 @pytest.mark.parametrize('role', [Role.PLATFORM_OWNER, Role.PLATFORM_ADMIN])
-def test_real_collaboration_lifecycle_and_security(real_release, tmp_path, monkeypatch, role):
-    """Actual app/auth/router/database, including version replacement after invalidation."""
-    from copy import deepcopy
+def test_real_retired_collaboration_routes_never_reach_storage(real_release, tmp_path, monkeypatch, role):
+    """Phase-0 collaboration ledger routes are retired; administrators cannot reach them."""
     auth = FakeAuth()
     auth.context = AuthContext(uuid4(), role, uuid4(), False)
     _, c = real_app_client(tmp_path, monkeypatch, auth)
     assert c.get(BASE + '/collaboration').status_code == 401
     c.cookies.set(auth.cookie_name, 'valid-cookie')
-    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf, 'X-User-ID': 'forged'}
-
-    def write(method, path, body):
-        r = c.request(method, BASE + path, json={'operation_id': str(uuid4()), **body}, headers=headers)
-        assert r.status_code == 200, r.text
-        assert r.headers['cache-control'] == 'private, no-store'
-        return r.json()
-
-    system_body = {'name': 'Disposable ERP carrier', 'kind': 'ERP', 'line_ids': ['cameras'],
-                   'business_owner': 'Operations', 'it_owner': 'IT', 'method': 'manual'}
-    for bad in [{}, {'Origin': auth.public_base_url}, {'Origin': 'https://evil.invalid', 'X-CSRF-Token': auth.csrf}]:
-        assert c.post(BASE + '/systems', json={'operation_id': str(uuid4()), **system_body}, headers=bad).status_code == 403
-    system = write('POST', '/systems', system_body)
-    assert system['recording_mode'] == 'manual'
-    write('POST', '/authorities', {'line_id': 'cameras', 'object_type': 'mbom', 'system_id': system['id'],
-                                 'entry_point': 'Registered BOM editor', 'owner': 'Engineering'})
-    created = write('POST', '/projects', {'name': 'Disposable integration pilot', 'line_id': 'cameras', 'owner': 'PM'})
-    pid = created['project']['id']; project = '/projects/' + pid
-    item = {'id': 'bom', 'kind': 'mbom', 'title': 'Manufacturing BOM', 'source_system_id': system['id'],
-            'source_name': system['name'], 'source_ref': 'BOM-1', 'revision': 'A', 'evidence': 'DOC-1',
-            'owner': 'Engineering', 'status': 'verified'}
-    body = {'title': 'Pilot basis', 'product_ref': 'CAM-1', 'scope': 'WO-1', 'provider': 'Engineering',
-            'owner': 'PM', 'internal_version': 'A', 'items': [item]}
-    p = write('POST', project + '/packages', body)
-
-    def action(package, name, **extra):
-        return write('POST', project + '/packages/' + package['id'] + '/actions',
-                     {'expected_version': package['version'], 'action': name, **extra})
-
-    p = action(action(p, 'submit'), 'verify')
-    h = write('POST', project + '/handoffs', {'package_id': p['id'], 'from_party': 'Engineering',
-              'to_party': 'Manufacturing', 'owner': 'PM', 'method': 'file'})
-    handoff = project + '/handoffs/' + h['id']
-    h = write('PATCH', handoff, {'expected_version': h['version'], 'action': 'send', 'evidence': 'SENT-1',
-                               'occurred_at': '2026-10-27T05:00:00Z'})
-    bad_receipt = {'operation_id': str(uuid4()), 'expected_version': h['version'], 'action': 'receive',
-                   'received_revision': 999, 'evidence': 'REC-1', 'occurred_at': '2026-10-27T06:00:00Z'}
-    assert c.patch(BASE + handoff, json=bad_receipt, headers=headers).status_code == 422
-    h = write('PATCH', handoff, {**bad_receipt, 'operation_id': str(uuid4()), 'received_revision': p['revision']})
-    assert h['status'] == 'received'
-    checks = [{'id': 'version', 'kind': 'version', 'label': 'Version evidence', 'required': True,
-               'owner': 'Engineering', 'status': 'pending', 'package_item_id': 'bom'}]
-    ready_body = {'title': 'Start check', 'package_id': p['id'], 'work_order_ref': 'WO-1', 'scope': 'Pilot batch',
-                  'planned_use_date': '2026-10-27', 'owner': 'PM', 'required': True, 'items': checks}
-    ready = write('POST', project + '/readiness', ready_body)
-    issue = write('POST', project + '/readiness/' + ready['id'] + '/issues',
-                  {'item_id': 'version', 'title': 'Confirm basis', 'owner': 'Engineering'})
-    assert issue['source'] == {'type': 'readiness', 'id': ready['id'], 'item_id': 'version'}
-    for stage in created['stages']:
-        value = {key: stage[key] for key in ['status', 'owner', 'due_date', 'blocker', 'practice', 'participants', 'handoffs', 'systems']}
-        value.update(status='done', expected_version=stage['version'])
-        assert c.put(BASE + project + '/stages/' + stage['id'], json=value, headers=headers).status_code == 200
-    assert c.patch(BASE + project + '/tasks/' + issue['id'], json={'expected_version': 1, 'status': 'done'}, headers=headers).status_code == 200
-    assert c.get(BASE + project).json()['project']['status'] == 'active'
-    verified = [{**checks[0], 'status': 'verified', 'source_ref': 'BOM-1', 'evidence': 'CHECK-1'}]
-    ready = write('PUT', project + '/readiness/' + ready['id'], {'expected_version': ready['version'], 'items': verified})
-    assert ready['status'] == 'complete' and c.get(BASE + project).json()['project']['status'] == 'completed'
-    p = action(p, 'invalidate', reason='Source approval withdrawn')
-    old = next(r for r in c.get(BASE + project + '/controls').json()['readiness'] if r['id'] == ready['id'])
-    assert old['status'] == 'pending' and c.get(BASE + project).json()['project']['status'] == 'active'
-    newer = action(p, 'revise')
-    newer_body = deepcopy(body); newer_body['internal_version'] = 'B'; newer_body['items'][0].update(revision='B', source_ref='BOM-2', evidence='DOC-2')
-    newer = write('PUT', project + '/packages/' + newer['id'], {'expected_version': newer['version'], **newer_body})
-    newer = action(action(newer, 'submit'), 'verify')
-    replacement = write('POST', project + '/readiness', {**ready_body, 'package_id': newer['id'],
-                          'supersedes_id': old['id'], 'supersedes_version': old['version']})
-    assert replacement['status'] == 'pending'
-    replacement = write('PUT', project + '/readiness/' + replacement['id'], {'expected_version': replacement['version'],
-                         'items': [{**checks[0], 'status': 'verified', 'source_ref': 'BOM-2', 'evidence': 'CHECK-2'}]})
-    controls = c.get(BASE + project + '/controls').json()
-    historical = next(r for r in controls['readiness'] if r['id'] == old['id'])
-    assert historical['superseded_by'] == replacement['id']
-    assert c.get(BASE + project).json()['project']['status'] == 'completed'
-    assert c.get(BASE + '/projects').json()['items'][0]['status'] == 'completed'
-    assert c.get(BASE + '/dashboard').json()['projects'][0]['status'] == 'completed'
-    assert all(event['actor_id'] == str(auth.context.internal_user_id) for event in controls['events'])
-    auth.context = AuthContext(auth.context.internal_user_id, role, auth.context.session_id, True)
-    assert c.get(BASE + project + '/controls').status_code == 200
-    assert c.post(BASE + '/systems', json={'operation_id': str(uuid4()), **system_body}, headers=headers).status_code == 503
+    headers = {'Origin': auth.public_base_url, 'X-CSRF-Token': auth.csrf}
+    for method, path in RETIRED_LEGACY_ROUTES:
+        concrete = (path.replace('{project_id}', 'p').replace('{stage_id}', 'S1').replace('{line_id}', 'cameras')
+                    .replace('{system_id}', 's'))
+        response = c.request(method, BASE + concrete, json={'operation_id': str(uuid4())}, headers=headers)
+        assert response.status_code in {403, 404, 405}, (method, path, response.status_code)
+        assert response.headers['cache-control'] == 'private, no-store'
+    assert not (tmp_path / 'real.sqlite3').exists()
     c.close()
 
 

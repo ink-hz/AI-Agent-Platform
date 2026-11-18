@@ -12,13 +12,14 @@ from app.control_plane.models import AuthContext, Role
 from test_dingtalk_auth_api import FakeAuth, _NoObservationGrants
 
 PREFIX='/api/v1/manufacturing/workflow/material-control/mes-source'
-ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc')}
+ROUTES={('GET',PREFIX+'/status')} | {(method,PREFIX+'/'+kind) for method in ('GET','POST') for kind in ('orders','order-materials','priority','iqc','material-iqc','order-reports','order-operations','material-demand','order-priority','warehouses','inventory','order-header','material-receipts','batch-receipts','order-requisitions','requisition-lines','order-stock','batch-stock','sn','sn-route','sn-station','sn-components','batch-consumers','sn-defects','sn-repairs','sn-packing','packing-sns','sn-markings','markings','marking-sns')}
 
 def test_exact_host_routes():
     from app.manufacturing_paths import WORKFLOW_AUTH_ROUTES, PRODUCTION_TOOLS_ROUTES, SAP_MATERIAL_ROUTES
     assert {r for r in WORKFLOW_AUTH_ROUTES if '/mes-source' in r[1]} == ROUTES
     assert len(PRODUCTION_TOOLS_ROUTES)==21
-    assert len(SAP_MATERIAL_ROUTES)==5
+    assert len(SAP_MATERIAL_ROUTES)==19
+    assert len(WORKFLOW_AUTH_ROUTES)==138
 
 class Mes:
     def __init__(self): self.calls=[]
@@ -65,7 +66,8 @@ def test_real_host_identity_and_source_cache(tmp_path, monkeypatch):
         assert result.status_code==200,result.text
         assert result.json()['snapshot']['data']['items'][0]['shop_order']=='TEST1'
         assert mes.calls==[str(owner)]
-        assert client.get('/api/v1/manufacturing/workflow/projects').json()['items']==[]
+        assert client.get('/api/v1/manufacturing/workflow/todos').json()['items']==[]
+        assert client.get('/api/v1/manufacturing/workflow/projects').status_code==403
         auth.context=AuthContext(owner,Role.PLATFORM_OWNER,auth.context.session_id,True)
         assert client.get(PREFIX+'/status').json()['can_refresh'] is False
         assert client.post(path,headers=headers).status_code==503

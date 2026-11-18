@@ -241,7 +241,7 @@ from .sdk_workbench.native_service import NativeSdkService
 from .sdk_workbench.sso_repository import SdkSsoRepository
 from .sdk_workbench.service import SdkService
 from .sdk_workbench.zentao import ZenTaoClient
-from .manufacturing import build_manufacturing_router
+from .manufacturing import WorkflowDirectory, build_manufacturing_router
 from .spa import SpaStaticFiles, load_public_asset_manifest
 from .voc_extension.client import VocExtensionClient
 from .voc_extension.directory import VocSubmitterDirectory
@@ -893,6 +893,7 @@ def create_app(
     identity_auth=None,
     identity_authorization: AuthorizationService | None = None,
     manufacturing_business_clock: Callable[[], datetime] | None = None,
+    manufacturing_workflow_directory=None,
     voc_extension_client=None,
     sdk_service=None,
     sdk_plan_service=None,
@@ -1752,11 +1753,23 @@ def create_app(
         getattr(getattr(identity_auth, "repository", None), "is_active_internal_user", None)
         if identity_enabled else None
     )
+    workflow_directory = manufacturing_workflow_directory if identity_enabled else None
+    if workflow_directory is None and identity_enabled and getattr(config.control_plane, "control_database_url_file", ""):
+        try:
+            workflow_directory = WorkflowDirectory(
+                read_secret_file(config.control_plane.control_database_url_file)
+            )
+        except (OSError, ValueError, RuntimeError):
+            # Includes SecretFileUnavailable: manufacturing member roles then fail
+            # closed while the platform still starts.
+            logging.getLogger(__name__).warning("MANUFACTURING_DIRECTORY_UNAVAILABLE")
     app.include_router(
         build_manufacturing_router(
             resolve_workflow_subject=workflow_subject_resolver,
             resolve_workflow_profiles=getattr(getattr(identity_auth, "repository", None), "active_internal_user_profiles", None) if identity_enabled else None,
             workflow_business_clock=manufacturing_business_clock,
+            search_workflow_directory=workflow_directory.search if workflow_directory else None,
+            resolve_workflow_directory=workflow_directory.resolve if workflow_directory else None,
         ),
         prefix=identity_auth.route_prefix.rstrip("/") if identity_enabled else "",
     )
