@@ -146,9 +146,27 @@ WORKBENCH_ROUTES = frozenset({
     ("POST", "/watches/remove"),
     ("GET", "/workbench"),
 })
+# r23 问题反馈: open to every authenticated user; the manufacturing release limits
+# each report to its submitter, assignee and administrators.
+FEEDBACK_ROUTES = frozenset({
+    ("GET", "/feedback"),
+    ("POST", "/feedback"),
+    ("GET", "/feedback/{feedback_id}"),
+    ("POST", "/feedback/{feedback_id}/comments"),
+    ("POST", "/feedback/{feedback_id}/assign"),
+    ("POST", "/feedback/{feedback_id}/status"),
+    ("POST", "/feedback/{feedback_id}/photos"),
+    ("GET", "/feedback/{feedback_id}/photos/{photo_id}"),
+})
+# r25 设置 → 产品族映射: one administrator write (OEM / 自研 / 未分类 rules, platform-local);
+# the editor and the reconciliation panel read through GET /workbench?view=... .
+PRODUCT_TAG_ROUTES = frozenset({
+    ("POST", "/product-tag-rules"),
+})
 WORKFLOW_ROUTES = (
     MES_SOURCE_ROUTES | SAP_MATERIAL_ROUTES | EXPEDITE_ROUTES | HANDOFF_ROUTES
-    | ARRIVAL_ROUTES | SUPPLY_PLAN_ROUTES | WORKBENCH_ROUTES
+    | ARRIVAL_ROUTES | SUPPLY_PLAN_ROUTES | WORKBENCH_ROUTES | FEEDBACK_ROUTES
+    | PRODUCT_TAG_ROUTES
 ) | frozenset(
     {
         ("GET", "/access"),
