@@ -158,9 +158,15 @@ FEEDBACK_ROUTES = frozenset({
     ("POST", "/feedback/{feedback_id}/photos"),
     ("GET", "/feedback/{feedback_id}/photos/{photo_id}"),
 })
+# r25 设置 → 产品族映射: one administrator write (OEM / 自研 / 未分类 rules, platform-local);
+# the editor and the reconciliation panel read through GET /workbench?view=... .
+PRODUCT_TAG_ROUTES = frozenset({
+    ("POST", "/product-tag-rules"),
+})
 WORKFLOW_ROUTES = (
     MES_SOURCE_ROUTES | SAP_MATERIAL_ROUTES | EXPEDITE_ROUTES | HANDOFF_ROUTES
     | ARRIVAL_ROUTES | SUPPLY_PLAN_ROUTES | WORKBENCH_ROUTES | FEEDBACK_ROUTES
+    | PRODUCT_TAG_ROUTES
 ) | frozenset(
     {
         ("GET", "/access"),

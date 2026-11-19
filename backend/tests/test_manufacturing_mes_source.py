@@ -19,7 +19,7 @@ def test_exact_host_routes():
     assert {r for r in WORKFLOW_AUTH_ROUTES if '/mes-source' in r[1]} == ROUTES
     assert len(PRODUCTION_TOOLS_ROUTES)==21
     assert len(SAP_MATERIAL_ROUTES)==19
-    assert len(WORKFLOW_AUTH_ROUTES)==146
+    assert len(WORKFLOW_AUTH_ROUTES)==147
 
 class Mes:
     def __init__(self): self.calls=[]

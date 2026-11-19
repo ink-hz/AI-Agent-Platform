@@ -478,6 +478,22 @@ def test_global_workflow_exact_auth_contract(role, path):
 
 
 @pytest.mark.parametrize('role', list(Role))
+def test_product_tag_rule_route_is_a_workflow_route(role):
+    # r25 产品族映射: the host only authenticates; the release limits writes to administrators.
+    from app.control_plane.authorization import AuthorizationService
+    from app.manufacturing_paths import PRODUCT_TAG_ROUTES, WORKFLOW_ROUTES
+    from test_dingtalk_auth_api import _NoObservationGrants
+    assert PRODUCT_TAG_ROUTES == {('POST', '/product-tag-rules')} and PRODUCT_TAG_ROUTES <= WORKFLOW_ROUTES
+    service = AuthorizationService(_NoObservationGrants())
+    route = '/api/v1/manufacturing/workflow/product-tag-rules'
+    assert service.decide(None, 'POST', route, ()).status_code == 401
+    assert service.decide(AuthContext(uuid4(), role, uuid4(), False), 'POST', route, ()).allowed
+    assert service.decide(AuthContext(uuid4(), role, uuid4(), True), 'POST', route, ()).status_code == 503
+    assert not service.decide(AuthContext(uuid4(), role, uuid4(), False), 'GET', route, ()).allowed
+    assert not service.decide(AuthContext(uuid4(), role, uuid4(), False), 'PUT', route, ()).allowed
+
+
+@pytest.mark.parametrize('role', list(Role))
 def test_feedback_routes_open_to_every_authenticated_role(role):
     # r23 问题反馈: any logged-in user reaches these routes; the release scopes each report.
     from app.control_plane.authorization import AuthorizationService
